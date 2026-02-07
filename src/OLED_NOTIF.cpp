@@ -1,0 +1,134 @@
+#include "OLED_NOTIF.h"
+
+// --- NEW BITMAPS (10x10 pixels) ---
+
+// 1. Arrow Up (for Overload)
+const unsigned char icon_arrow_up [] PROGMEM = {
+  0x18, 0x00, 0x3C, 0x00, 0x7E, 0x00, 0xFF, 0xC0, 0x18, 0x00, 
+  0x18, 0x00, 0x18, 0x00, 0x18, 0x00, 0x18, 0x00, 0x18, 0x00 
+};
+
+// 2. Lightning (Refined for Arcing)
+const unsigned char icon_lightning [] PROGMEM = {
+  0x03, 0x00, 0x06, 0x00, 0x0C, 0x00, 0x1F, 0x80, 0x3F, 0xC0, 
+  0x07, 0xE0, 0x03, 0x00, 0x06, 0x00, 0x0C, 0x00, 0x18, 0x00 
+};
+
+// 3. "More Fire" Fire (More organic flame shape)
+const unsigned char icon_fire_better [] PROGMEM = {
+  0x08, 0x00, 0x1C, 0x00, 0x36, 0x00, 0x63, 0x00, 0x5D, 0x00, 
+  0x5D, 0x00, 0x7F, 0x00, 0x3E, 0x00, 0x1C, 0x00, 0x08, 0x00 
+};
+
+OLED_NOTIF::OLED_NOTIF(uint8_t address) {
+    _address = address;
+    display = new Adafruit_SSD1306(SCREEN_WIDTH, SCREEN_HEIGHT, &Wire, OLED_RESET);
+}
+
+OLED_NOTIF::~OLED_NOTIF() {
+    delete display;
+}
+
+bool OLED_NOTIF::begin() {
+    if (!display->begin(SSD1306_SWITCHCAPVCC, _address)) {
+        return false;
+    }
+    display->cp437(true); 
+    display->clearDisplay();
+    display->display();
+    return true;
+}
+
+void OLED_NOTIF::updateDashboard(float voltage, float current, float temperature, FaultState state) {
+    display->clearDisplay();
+    display->setTextColor(SSD1306_WHITE);
+    display->setTextSize(1); 
+
+    // --- LEFT COLUMN (Data) ---
+    display->setCursor(0, 0); 
+    display->print(voltage, 1); display->print("V");
+
+    display->setCursor(0, 11); 
+    display->print(current, 2); display->print("A");
+
+    display->setCursor(0, 22); 
+    display->print(temperature, 1); display->print((char)248); display->print("C");
+
+
+    // --- RIGHT COLUMN (Status) ---
+    // Calculate Right Center: Start x=55, End x=128. Center ~91.
+    int centerX = 91;
+
+    // 1. Header
+    const char* label = "STATUS";
+    int16_t x1, y1;
+    uint16_t w, h;
+    display->setTextSize(1);
+    display->getTextBounds(label, 0, 0, &x1, &y1, &w, &h);
+    display->setCursor(centerX - (w / 2), 0); 
+    display->print(label);
+
+    // 2. State Logic (Blinking)
+    bool showContent = true;
+    if (state != STATE_NORMAL) {
+        // Blink logic: ON for 500ms, OFF for 500ms
+        if ((millis() / 750) % 2 != 0) showContent = false;
+    }
+
+    if (showContent) {
+        display->setTextSize(2);
+        
+        if (state == STATE_NORMAL) {
+             const char* text = "NORMAL";
+             display->getTextBounds(text, 0, 0, &x1, &y1, &w, &h);
+             display->setCursor(centerX - (w / 2), 14);
+             display->print(text);
+        } 
+        else if (state == STATE_OVERLOAD) {
+             // Layout: [Arrow] [LOAD] [Arrow]
+             const char* text = "LOAD";
+             display->getTextBounds(text, 0, 0, &x1, &y1, &w, &h); // w is approx 48px
+             
+             // Total width = Icon(10) + Gap(2) + Text(48) + Gap(2) + Icon(10) = 72px
+             int startX = centerX - (72 / 2); // Center the whole group
+             
+             display->drawBitmap(startX, 16, icon_arrow_up, 10, 10, SSD1306_WHITE);
+             display->setCursor(startX + 12, 14);
+             display->print(text);
+             display->drawBitmap(startX + 12 + w + 2, 16, icon_arrow_up, 10, 10, SSD1306_WHITE);
+        } 
+        else if (state == STATE_HEATING) {
+             // Layout: [Fire] [HEAT] [Fire]
+             const char* text = "HEAT";
+             display->getTextBounds(text, 0, 0, &x1, &y1, &w, &h); // w is approx 48px
+             
+             // Total width = Icon(10) + Gap(2) + Text(48) + Gap(2) + Icon(10) = 72px
+             int startX = centerX - (72 / 2); 
+             
+             display->drawBitmap(startX, 16, icon_fire_better, 10, 10, SSD1306_WHITE);
+             display->setCursor(startX + 12, 14);
+             display->print(text);
+             display->drawBitmap(startX + 12 + w + 2, 16, icon_fire_better, 10, 10, SSD1306_WHITE);
+        }
+        else if (state == STATE_ARCING) {
+             // Layout: [Lightning] [ARC] [Lightning]
+             const char* text = "ARC";
+             display->getTextBounds(text, 0, 0, &x1, &y1, &w, &h); // w is approx 36px
+             
+             // Total width = Icon(10) + Gap(2) + Text(36) + Gap(2) + Icon(10) = 60px
+             int startX = centerX - (60 / 2);
+             
+             display->drawBitmap(startX, 16, icon_lightning, 10, 10, SSD1306_WHITE);
+             display->setCursor(startX + 12, 14);
+             display->print(text);
+             display->drawBitmap(startX + 12 + w + 2, 16, icon_lightning, 10, 10, SSD1306_WHITE);
+        }
+    }
+
+    display->display();
+}
+
+void OLED_NOTIF::clear() {
+    display->clearDisplay();
+    display->display();
+}
