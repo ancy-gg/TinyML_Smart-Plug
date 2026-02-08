@@ -71,7 +71,7 @@ static String stateToString(FaultState s) {
     case STATE_ARCING:   return "ARCING";
     case STATE_HEATING:  return "HEATING";
     case STATE_OVERLOAD: return "OVERLOAD";
-    default:             return "NORMAL";
+    default:             return "HAPPY";
   }
 }
 
