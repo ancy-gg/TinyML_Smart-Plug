@@ -405,3 +405,10 @@ html, body{
 .toast-ok{ border-color: rgba(46,204,113,0.45); }
 
 .small{ font-size: 12px; }
+
+.fw-btn{ min-width: 190px; }
+.btn-disabled, .btn:disabled{
+  opacity: 0.35;
+  filter: grayscale(1);
+  cursor: not-allowed;
+}

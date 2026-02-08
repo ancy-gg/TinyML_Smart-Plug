@@ -2,120 +2,106 @@
 <html lang="en">
 <head>
   <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
   <title>TinyML Smart Plug</title>
 
-  <link rel="manifest" href="manifest.json" />
+  <link rel="manifest" href="manifest.json">
   <meta name="theme-color" content="#111111" />
+  <link rel="apple-touch-icon" href="icon-192.png">
 
-  <!-- External CSS -->
   <link rel="stylesheet" href="styles.css" />
-
-  <!-- Firebase (Compat SDK for simple RTDB usage) -->
-  <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-app-compat.js"></script>
-  <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-database-compat.js"></script>
 </head>
 
 <body>
   <main class="app">
     <header class="top">
-    <div class="brand">
+      <div class="brand">
+        <img class="logo" src="icon-512.png" alt="TinyML Smart Plug Logo" />
         <h1 class="title">TinyML Smart Plug</h1>
-    </div>
+      </div>
 
-    <div class="status-wrap">
+      <div class="status-wrap">
         <div id="statusBadge" class="status status-DISCONNECTED">DISCONNECTED</div>
         <div class="subline">
-        <span class="label">Last update:</span>
-        <span id="lastUpdateText" class="mono">—</span>
+          <span class="label">Last update:</span>
+          <span id="lastUpdateText" class="mono">—</span>
         </div>
-    </div>
+      </div>
     </header>
 
     <section class="grid">
       <div class="card">
         <div class="card-label">Voltage</div>
-        <div class="card-value">
-          <span id="vVal">—</span><span class="unit"> V</span>
-        </div>
+        <div class="card-value"><span id="vVal">—</span><span class="unit">V</span></div>
       </div>
 
       <div class="card">
         <div class="card-label">Current</div>
-        <div class="card-value">
-          <span id="iVal">—</span><span class="unit"> A</span>
-        </div>
+        <div class="card-value"><span id="iVal">—</span><span class="unit">A</span></div>
       </div>
 
       <div class="card">
-        <div class="card-label">Temp</div>
-        <div class="card-value">
-          <span id="tVal">—</span><span class="unit"> °C</span>
-        </div>
+        <div class="card-label">Temperature</div>
+        <div class="card-value"><span id="tVal">—</span><span class="unit">°C</span></div>
       </div>
 
       <div class="card">
         <div class="card-label">ZCV (Δt)</div>
-        <div class="card-value">
-          <span id="zcvVal">—</span>
-        </div>
+        <div class="card-value"><span id="zcvVal">—</span></div>
       </div>
 
       <div class="card">
         <div class="card-label">THD</div>
-        <div class="card-value">
-          <span id="thdVal">—</span><span class="unit"> %</span>
-        </div>
+        <div class="card-value"><span id="thdVal">—</span><span class="unit">%</span></div>
       </div>
 
       <div class="card">
         <div class="card-label">Entropy</div>
-        <div class="card-value">
-          <span id="entVal">—</span><span class="unit"> H</span>
-        </div>
+        <div class="card-value"><span id="entVal">—</span><span class="unit">H</span></div>
       </div>
     </section>
 
     <section class="history">
-    <div class="history-head">
-    <div>
-        <h2 class="history-title">History Logs</h2>
-        <div class="history-hint" id="historyHint">Showing: Last 7 days</div>
-    </div>
+      <div class="history-head">
+        <div>
+          <h2 class="history-title">Fault History</h2>
+          <div class="history-hint" id="historyHint">Showing: Last 7 days</div>
+        </div>
 
-    <div class="history-actions">
-    <select id="rangeSelect" class="select">
-        <option value="today">Today</option>
-        <option value="yesterday">Yesterday</option>
-        <option value="7d" selected>Last 7 days</option>
-        <option value="30d">Last 30 days</option>
-    </select>
-    <button id="btnDownloadCSV" class="btn" type="button">Download CSV</button>
-    <button id="btnClearHistory" class="btn btn-danger" type="button">Clear history</button>
-    </div>
-    </div>
+        <div class="history-actions">
+          <select id="rangeSelect" class="select">
+            <option value="today">Today</option>
+            <option value="yesterday">Yesterday</option>
+            <option value="7d" selected>Last 7 days</option>
+            <option value="30d">Last 30 days</option>
+          </select>
 
-    <div class="history-table-wrap">
+          <button id="btnDownloadCSV" class="btn" type="button">Download CSV</button>
+          <button id="btnClearHistory" class="btn btn-danger" type="button">Clear history</button>
+        </div>
+      </div>
+
+      <div class="history-table-wrap">
         <table class="history-table">
-        <thead>
+          <thead>
             <tr>
-            <th>Time</th>
-            <th>Status</th>
-            <th>V</th>
-            <th>A</th>
-            <th>°C</th>
-            <th>ZCV</th>
-            <th>THD%</th>
-            <th>H</th>
+              <th>Time</th>
+              <th>Status</th>
+              <th>V</th>
+              <th>A</th>
+              <th>°C</th>
+              <th>ZCV</th>
+              <th>THD%</th>
+              <th>H</th>
             </tr>
-        </thead>
-        <tbody id="historyBody">
-            <tr><td colspan="8" class="muted">No data yet.</td></tr>
-        </tbody>
+          </thead>
+          <tbody id="historyBody">
+            <tr><td colspan="8" class="muted">No fault history yet.</td></tr>
+          </tbody>
         </table>
-    </div>
+      </div>
     </section>
-
+    
     <footer class="footer">
       <div class="muted small">
         TinyML Smart Plug Monitoring Dashboard<br/>
@@ -125,7 +111,9 @@
     <div id="toast" class="toast" role="status" aria-live="polite"></div>
   </main>
 
-    <script src="app.js"></script>
-
+  <!-- Firebase compat (global firebase) -->
+  <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-database-compat.js"></script>
+  <script src="app.js"></script>
 </body>
 </html>
