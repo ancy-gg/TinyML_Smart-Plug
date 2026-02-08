@@ -2,23 +2,17 @@
 #define NETWORK_MANAGER_H
 
 #include <Arduino.h>
-#include <WiFi.h>
-#include <Preferences.h>
+#include <WiFiManager.h> // The magic library
 
 class NetworkManager {
 public:
-    void begin();
-    void update(); // Call this in loop()
+    void begin(void (*apCallback)(WiFiManager*)); // We pass a function to update OLED
+    void update(); 
     bool isConnected();
-    bool isAPMode();
+    void resetSettings(); // Helper to clear WiFi if needed
 
 private:
-    Preferences preferences;
-    bool _isAPMode = false;
-    unsigned long _lastWiFiCheck = 0;
-    
-    void checkDoubleReset();
-    void setupAP();
+    WiFiManager wm;
 };
 
 #endif

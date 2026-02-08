@@ -1,70 +1,37 @@
 #include "NetworkManager.h"
 
-#define DRD_TIMEOUT 10000 // 10 seconds to clear the "reset flag"
-#define WIFI_SSID "YOUR_WIFI_NAME"
-#define WIFI_PASS "YOUR_WIFI_PASS"
-
-void NetworkManager::begin() {
-    checkDoubleReset();
-
-    if (_isAPMode) {
-        setupAP();
-    } else {
-        // NON-BLOCKING CONNECTION:
-        // We call begin() but DO NOT use a while loop to wait.
-        WiFi.mode(WIFI_STA);
-        WiFi.begin(WIFI_SSID, WIFI_PASS);
-        Serial.println("[Net] Attempting WiFi connection in background...");
+void NetworkManager::begin(void (*apCallback)(WiFiManager*)) {
+    // 1. Setup the callback (so we can update OLED when AP opens)
+    if (apCallback != nullptr) {
+        wm.setAPCallback(apCallback);
     }
-}
 
-void NetworkManager::checkDoubleReset() {
-    preferences.begin("boot_config", false);
-    
-    // Read the reset counter
-    int boots = preferences.getInt("boots", 0);
-    
-    if (boots >= 1) {
-        Serial.println("[Net] Double Reset Detected! Starting AP Mode...");
-        _isAPMode = true;
-        preferences.putInt("boots", 0); // Clear immediately
-    } else {
-        // Set flag to 1. We will clear it in update() after 6 seconds.
-        Serial.println("[Net] Normal Boot. Waiting to see if user resets...");
-        preferences.putInt("boots", 1);
+    // 2. Optional: Remove debug clutter
+    wm.setDebugOutput(true); 
+
+    // 3. THE MAGIC LINE
+    // It tries to connect to saved WiFi. 
+    // If it fails, it opens an AP named "TinyML_Setup".
+    // It BLOCKS here until the user configures it.
+    if (!wm.autoConnect("TinyML WiFi")) {
+        Serial.println("failed to connect and hit timeout");
+        // If we get here, we timed out or failed. Restart.
+        ESP.restart();
     }
-}
 
-void NetworkManager::setupAP() {
-    WiFi.mode(WIFI_AP);
-    WiFi.softAP("TinyML_Config_AP", "12345678");
-    Serial.println("[Net] AP Mode Started. IP: 192.168.4.1");
+    // 4. If we get here, we are connected!
+    Serial.println("connected...yeey :)");
 }
 
 void NetworkManager::update() {
-    // 1. Clear the Double Reset Flag after 6 seconds
-    static bool flagCleared = false;
-    if (!flagCleared && millis() > 6000) {
-        preferences.putInt("boots", 0);
-        preferences.end();
-        flagCleared = true;
-        if(!_isAPMode) Serial.println("[Net] Boot flag cleared. Normal operation confirmed.");
-    }
-
-    // 2. Optional: Reconnect logic if WiFi drops (every 5 seconds)
-    if (!_isAPMode && millis() - _lastWiFiCheck > 5000) {
-        _lastWiFiCheck = millis();
-        if (WiFi.status() != WL_CONNECTED) {
-            Serial.print("."); // Just a heartbeat to show we are trying
-            // WiFi.reconnect() is handled automatically by ESP32 usually
-        }
-    }
+    // WiFiManager handles reconnections automatically in the background.
+    // We don't need to do anything here!
 }
 
 bool NetworkManager::isConnected() {
     return WiFi.status() == WL_CONNECTED;
 }
 
-bool NetworkManager::isAPMode() {
-    return _isAPMode;
+void NetworkManager::resetSettings() {
+    wm.resetSettings();
 }
