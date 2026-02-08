@@ -20,7 +20,7 @@
 // ======================
 // FIRMWARE VERSION (MUST MATCH what you publish in /ota/desired_version)
 // ======================
-static const char* FW_VERSION = "TSP-v0.0.0";   // <-- bump this every release
+static const char* FW_VERSION = "TSP-v0.0.1";   // <-- bump this every release
 
 // ======================
 // PULL-OTA RTDB PATHS
@@ -77,7 +77,7 @@ void setup() {
   Wire.begin();
   oled.begin();
 
-  oled.showStatus("SYSTEM", "Booting...");
+  oled.showStatus("SYSTEM", "Starting...");
   bootStage = BOOTING;
   bootStageStart = millis();
 
