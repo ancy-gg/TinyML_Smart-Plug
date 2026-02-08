@@ -128,6 +128,26 @@ void OLED_NOTIF::updateDashboard(float voltage, float current, float temperature
     display->display();
 }
 
+void OLED_NOTIF::showStatus(const char* title, const char* msg) {
+    display->clearDisplay();
+    display->setTextColor(SSD1306_WHITE);
+    
+    // Draw Title (Top)
+    display->setTextSize(1);
+    display->setCursor(0, 0);
+    display->println(title);
+    
+    // Draw Divider Line
+    display->drawLine(0, 10, 128, 10, SSD1306_WHITE);
+    
+    // Draw Message (Middle)
+    display->setTextSize(1);
+    display->setCursor(0, 15);
+    display->println(msg);
+    
+    display->display();
+}
+
 void OLED_NOTIF::clear() {
     display->clearDisplay();
     display->display();

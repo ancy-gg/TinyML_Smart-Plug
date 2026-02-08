@@ -1,16 +1,15 @@
 #include "CloudHandler.h"
 
 void CloudHandler::begin(const char* apiKey, const char* dbUrl) {
-    config.api_key = apiKey;
     config.database_url = dbUrl;
-
-    // Anonymous sign in
-    if (Firebase.signUp(&config, &auth, "", "")) {
-        Serial.println("[Cloud] Authorization success");
-    }
     
+    // We use the Database Secret as the signer
+    config.signer.test_mode = true; 
+
     Firebase.begin(&config, &auth);
     Firebase.reconnectWiFi(true);
+
+    Serial.println("[Cloud] Firebase Initialized with Secret.");
 }
 
 void CloudHandler::update(float v, float c, float t, float zcv, float thd, float entropy, String state) {
@@ -18,9 +17,10 @@ void CloudHandler::update(float v, float c, float t, float zcv, float thd, float
     if (millis() - _lastSend < 5000) return;
     _lastSend = millis();
 
-    // 2. Check Connection
-    if (!Firebase.ready()) return;
-
+    if (!Firebase.ready()) {
+        Serial.println("[Cloud] Firebase not ready yet...");
+        return;
+    }
     // 3. Prepare JSON
     FirebaseJson json;
     json.set("voltage", v);
@@ -40,6 +40,16 @@ void CloudHandler::update(float v, float c, float t, float zcv, float thd, float
         Serial.println("OK");
     } else {
         Serial.print("Error: ");
+        Serial.println(fbdo.errorReason());
+    }
+
+
+
+    Serial.print("[Cloud] Attempting Send... ");
+    if (Firebase.RTDB.updateNode(&fbdo, "/live_data", &json)) {
+        Serial.println("SUCCESS!");
+    } else {
+        Serial.print("FAILED. Reason: ");
         Serial.println(fbdo.errorReason());
     }
 }
