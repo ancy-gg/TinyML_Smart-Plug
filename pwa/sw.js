@@ -1,4 +1,4 @@
-const CACHE_NAME = 'esp32-monitor-v5'; // <--- Always bump this number when you deploy!
+const CACHE_NAME = 'esp32-monitor-v6'; // <--- Always bump this number when you deploy!
 const urlsToCache = [
   '/',
   '/index.html',
