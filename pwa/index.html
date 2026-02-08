@@ -1,73 +1,119 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>TinyML Smart Plug</title>
-    <link rel="manifest" href="manifest.json">
-    <link rel="apple-touch-icon" href="icons/icon-192.png">
-    <style>
-        body { font-family: 'Segoe UI', sans-serif; background: #1a1a1a; color: white; text-align: center; padding: 20px; }
-        .container { max-width: 400px; margin: 0 auto; }
-        
-        /* Status Badge */
-        .status-box { padding: 15px; border-radius: 10px; margin-bottom: 20px; font-weight: bold; font-size: 1.5rem; transition: 0.3s; }
-        .status-NORMAL { background: #2ecc71; color: #000; }
-        .status-ARCING { background: #e74c3c; color: white; animation: flash 0.5s infinite;}
-        .status-HEATING { background: #f39c12; color: #000; animation: flash 0.5s infinite;}
-        .status-OVERLOAD { background: #e67e22; color: #000; }
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>TinyML Smart Plug</title>
 
-        /* Data Grid */
-        .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 15px; }
-        .card { background: #333; padding: 15px; border-radius: 10px; text-align: left; }
-        .label { color: #aaa; font-size: 0.9rem; display: block; margin-bottom: 5px; }
-        .value { font-size: 1.4rem; font-weight: bold; color: #fff; }
-        .unit { font-size: 0.9rem; color: #888; }
+  <link rel="manifest" href="manifest.json" />
+  <meta name="theme-color" content="#111111" />
 
-        @keyframes flash { 0% { opacity: 1; } 50% { opacity: 0.5; } 100% { opacity: 1; } }
-    </style>
+  <!-- External CSS -->
+  <link rel="stylesheet" href="styles.css" />
+
+  <!-- Firebase (Compat SDK for simple RTDB usage) -->
+  <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-database-compat.js"></script>
 </head>
+
 <body>
+  <main class="app">
+    <header class="top">
+      <h1 class="title">TinyML Smart Plug</h1>
 
-<div class="container">
-    <h2>TinyML Smart Plug</h2>
+      <div class="status-wrap">
+        <div id="statusBadge" class="status status-DISCONNECTED">
+          DISCONNECTED
+        </div>
 
-    <div id="status-box" class="status-box status-NORMAL">
-        WAITING...
-    </div>
+        <div class="subline">
+          <span class="label">Last update:</span>
+          <span id="lastUpdateText" class="mono">—</span>
+        </div>
+      </div>
+    </header>
 
-    <div class="grid">
-        <div class="card"><span class="label">Voltage</span><span id="v-val" class="value">--</span> <span class="unit">V</span></div>
-        <div class="card"><span class="label">Current</span><span id="c-val" class="value">--</span> <span class="unit">A</span></div>
-        <div class="card"><span class="label">Temp</span><span id="t-val" class="value">--</span> <span class="unit">°C</span></div>
-        
-        <div class="card"><span class="label">ZCV (∆t)</span><span id="z-val" class="value">--</span></div>
-        <div class="card"><span class="label">THD</span><span id="h-val" class="value">--</span> <span class="unit">%</span></div>
-        <div class="card"><span class="label">Entropy</span><span id="e-val" class="value">--</span> <span class="unit">H</span></div>
-    </div>
-</div>
+    <section class="grid">
+      <div class="card">
+        <div class="card-label">Voltage</div>
+        <div class="card-value">
+          <span id="vVal">—</span><span class="unit"> V</span>
+        </div>
+      </div>
 
-<script type="module">
-    import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
-    import { getDatabase, ref, onValue } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-database.js";
+      <div class="card">
+        <div class="card-label">Current</div>
+        <div class="card-value">
+          <span id="iVal">—</span><span class="unit"> A</span>
+        </div>
+      </div>
 
-    if ('serviceWorker' in navigator) {
-        navigator.serviceWorker.register('sw.js').then((registration) => {
-            
-            // Check for updates every time page loads
-            registration.update();
+      <div class="card">
+        <div class="card-label">Temp</div>
+        <div class="card-value">
+          <span id="tVal">—</span><span class="unit"> °C</span>
+        </div>
+      </div>
 
-            // If a new service worker takes over, reload the page automatically
-            let refreshing;
-            navigator.serviceWorker.addEventListener('controllerchange', () => {
-                if (refreshing) return;
-                window.location.reload();
-                refreshing = true;
-            });
+      <div class="card">
+        <div class="card-label">ZCV (Δt)</div>
+        <div class="card-value">
+          <span id="zcvVal">—</span>
+        </div>
+      </div>
 
-        });
-    }
+      <div class="card">
+        <div class="card-label">THD</div>
+        <div class="card-value">
+          <span id="thdVal">—</span><span class="unit"> %</span>
+        </div>
+      </div>
 
+      <div class="card">
+        <div class="card-label">Entropy</div>
+        <div class="card-value">
+          <span id="entVal">—</span><span class="unit"> H</span>
+        </div>
+      </div>
+    </section>
+
+    <section class="history">
+      <div class="history-head">
+        <h2 class="history-title">History Logs</h2>
+        <div class="history-hint">Latest 50 entries</div>
+      </div>
+
+      <div class="history-table-wrap">
+        <table class="history-table">
+          <thead>
+            <tr>
+              <th>Time</th>
+              <th>Status</th>
+              <th>V</th>
+              <th>A</th>
+              <th>°C</th>
+              <th>ZCV</th>
+              <th>THD%</th>
+              <th>H</th>
+            </tr>
+          </thead>
+          <tbody id="historyBody">
+            <tr><td colspan="8" class="muted">No data yet.</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <footer class="footer">
+      <div class="muted small">
+        PWA • Firebase RTDB • Auto-disconnect indicator
+      </div>
+    </footer>
+  </main>
+
+  <script>
+
+    // 1) Firebase config 
     const firebaseConfig = {
      apiKey: "AIzaSyAmJlZZszyWPJFgIkTAAl_TbIySys1nvEw",
      authDomain: "tinyml-smart-plug.firebaseapp.com",
@@ -79,31 +125,183 @@
      measurementId: "G-XR8LM91VLN"
     };
 
-    const app = initializeApp(firebaseConfig);
-    const db = getDatabase(app);
+    firebase.initializeApp(firebaseConfig);
+    const db = firebase.database();
 
-    const dataRef = ref(db, 'live_data');
-    onValue(dataRef, (snapshot) => {
-        const data = snapshot.val();
-        if (data) {
-            document.getElementById('v-val').innerText = data.voltage.toFixed(1);
-            document.getElementById('c-val').innerText = data.current.toFixed(2);
-            document.getElementById('t-val').innerText = data.temp.toFixed(1);
-            
-            document.getElementById('z-val').innerText = data.zcv.toFixed(2);
-            document.getElementById('h-val').innerText = data.thd.toFixed(1);
-            document.getElementById('e-val').innerText = data.entropy.toFixed(3);
 
-            const statusBox = document.getElementById('status-box');
-            statusBox.innerText = data.status;
-            statusBox.className = `status-box status-${data.status}`;
-        }
+    // 2) UI helpers
+    const el = (id) => document.getElementById(id);
+
+    const statusBadge = el("statusBadge");
+    const lastUpdateText = el("lastUpdateText");
+
+    const vVal   = el("vVal");
+    const iVal   = el("iVal");
+    const tVal   = el("tVal");
+    const zcvVal = el("zcvVal");
+    const thdVal = el("thdVal");
+    const entVal = el("entVal");
+
+    const historyBody = el("historyBody");
+
+    const STALE_MS = 8000; // after this with no updates -> DISCONNECTED
+
+    let lastSeenMs = 0;       // when we last received live_data (browser time)
+    let lastServerEpoch = 0;  // server_ts if present (ms epoch)
+    let lastIso = "";         // ts_iso if present
+
+    function toFixedOrDash(x, digits = 2) {
+      if (x === null || x === undefined || x === "" || Number.isNaN(Number(x))) return "—";
+      const n = Number(x);
+      return n.toFixed(digits);
+    }
+
+    function formatEpochMs(ms) {
+      if (!ms || ms <= 0) return "—";
+      const d = new Date(ms);
+      const pad = (v, n=2) => String(v).padStart(n, "0");
+      return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())} ` +
+             `${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}.` +
+             `${pad(d.getMilliseconds(), 3)}`;
+    }
+
+    function setStatus(label, kind) {
+      // kind: "ARCING", "NORMAL", "WARNING", "DISCONNECTED", etc.
+      statusBadge.textContent = label;
+
+      // reset classes
+      statusBadge.className = "status";
+      // map to CSS classes
+      const k = (kind || label || "DISCONNECTED").toUpperCase();
+      if (k.includes("DISCON")) statusBadge.classList.add("status-DISCONNECTED");
+      else if (k.includes("ARC")) statusBadge.classList.add("status-ARCING");
+      else if (k.includes("OVERLOAD") || k.includes("WARN")) statusBadge.classList.add("status-WARN");
+      else if (k.includes("HEAT") || k.includes("TEMP")) statusBadge.classList.add("status-WARN");
+      else statusBadge.classList.add("status-OK");
+    }
+
+    function renderLastUpdate() {
+      // Priority: ts_iso (device) -> server_ts (firebase) -> "connected but no time"
+      if (lastIso && lastIso.trim().length > 0) {
+        lastUpdateText.textContent = lastIso;
+        return;
+      }
+      if (lastServerEpoch && lastServerEpoch > 0) {
+        lastUpdateText.textContent = formatEpochMs(lastServerEpoch);
+        return;
+      }
+      if (lastSeenMs > 0) {
+        lastUpdateText.textContent = "(time not synced)";
+        return;
+      }
+      lastUpdateText.textContent = "—";
+    }
+
+    // =============================
+    // 3) Live data listener
+    // =============================
+    const liveRef = db.ref("live_data");
+    liveRef.on("value", (snap) => {
+      const data = snap.val();
+      if (!data) return;
+
+      lastSeenMs = Date.now();
+
+      // server timestamp (ms epoch)
+      // note: when you store server_ts/.sv=timestamp, Firebase will write server_ts as a number
+      if (typeof data.server_ts === "number") lastServerEpoch = data.server_ts;
+      if (typeof data.ts_epoch_ms === "number") lastServerEpoch = data.ts_epoch_ms;
+      if (typeof data.ts_iso === "string") lastIso = data.ts_iso;
+
+      // Update UI values
+      vVal.textContent   = toFixedOrDash(data.voltage, 1);
+      iVal.textContent   = toFixedOrDash(data.current, 2);
+      tVal.textContent   = toFixedOrDash(data.temp, 1);
+      zcvVal.textContent = toFixedOrDash(data.zcv, 2);
+      thdVal.textContent = toFixedOrDash(data.thd, 1);
+      entVal.textContent = toFixedOrDash(data.entropy, 3);
+
+      // Status
+      const status = (data.status ?? "CONNECTED").toString();
+      setStatus(status.toUpperCase(), status.toUpperCase());
+
+      renderLastUpdate();
+    }, (err) => {
+      // if read fails, treat as disconnected
+      console.error(err);
+      setStatus("DISCONNECTED", "DISCONNECTED");
     });
 
-    if ('serviceWorker' in navigator) {
-        navigator.serviceWorker.register('sw.js');
-    }
-</script>
+    // =============================
+    // 4) History (latest 50)
+    // =============================
+    // If your history node is "/history" with push IDs (as in the firmware code),
+    // ordering by server_ts gives correct time order.
+    const histRef = db.ref("history").orderByChild("server_ts").limitToLast(50);
 
+    histRef.on("value", (snap) => {
+      const obj = snap.val();
+      if (!obj) {
+        historyBody.innerHTML = `<tr><td colspan="8" class="muted">No history yet.</td></tr>`;
+        return;
+      }
+
+      // Convert push-id object -> array
+      const arr = Object.values(obj);
+
+      // Ensure newest on top
+      arr.sort((a, b) => (b.server_ts || 0) - (a.server_ts || 0));
+
+      const rows = arr.map((r) => {
+        const timeStr = (r.ts_iso && r.ts_iso.trim()) ? r.ts_iso : formatEpochMs(r.server_ts || r.ts_epoch_ms || 0);
+        const status = (r.status ?? "").toString();
+
+        const statusClass =
+          status.toUpperCase().includes("ARC") ? "pill pill-ARC" :
+          status.toUpperCase().includes("DISCON") ? "pill pill-DIS" :
+          status.toUpperCase().includes("WARN") || status.toUpperCase().includes("OVER") ? "pill pill-WARN" :
+          "pill pill-OK";
+
+        return `
+          <tr>
+            <td class="mono">${timeStr || "—"}</td>
+            <td><span class="${statusClass}">${status || "—"}</span></td>
+            <td class="mono">${toFixedOrDash(r.voltage, 1)}</td>
+            <td class="mono">${toFixedOrDash(r.current, 2)}</td>
+            <td class="mono">${toFixedOrDash(r.temp, 1)}</td>
+            <td class="mono">${toFixedOrDash(r.zcv, 2)}</td>
+            <td class="mono">${toFixedOrDash(r.thd, 1)}</td>
+            <td class="mono">${toFixedOrDash(r.entropy, 3)}</td>
+          </tr>
+        `;
+      }).join("");
+
+      historyBody.innerHTML = rows;
+    });
+
+    // =============================
+    // 5) Disconnected watchdog
+    // =============================
+    setInterval(() => {
+      if (!lastSeenMs) {
+        setStatus("DISCONNECTED", "DISCONNECTED");
+        renderLastUpdate();
+        return;
+      }
+      const age = Date.now() - lastSeenMs;
+      if (age > STALE_MS) {
+        setStatus("DISCONNECTED", "DISCONNECTED");
+      }
+    }, 500);
+
+    // =============================
+    // 6) PWA service worker
+    // =============================
+    if ("serviceWorker" in navigator) {
+      window.addEventListener("load", () => {
+        navigator.serviceWorker.register("sw.js").catch(console.error);
+      });
+    }
+  </script>
 </body>
 </html>
