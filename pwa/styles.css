@@ -415,3 +415,72 @@ html, body{
 .subline { opacity: 0.9; font-size: 12px; margin-top: 6px; }
 .label { opacity: 0.7; margin-right: 6px; }
 .mono { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace; }
+
+/* ---------- OTA Panel ---------- */
+.ota-panel { margin-top: 18px; }
+
+.ota-grid{
+  display:grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 14px;
+  margin-top: 12px;
+}
+
+.ota-box{
+  background: rgba(255,255,255,0.03);
+  border: 1px solid rgba(255,255,255,0.10);
+  border-radius: var(--radius);
+  padding: 14px;
+}
+
+.ota-label{
+  font-weight: 900;
+  margin-bottom: 10px;
+  letter-spacing: 0.2px;
+}
+
+.ota-line{
+  margin: 6px 0;
+  word-break: break-word;
+}
+
+.ota-field{
+  display:flex;
+  flex-direction:column;
+  gap: 6px;
+  margin: 10px 0;
+}
+
+.ota-input{
+  width: 100%;
+  padding: 10px 12px;
+  border-radius: 12px;
+  border: 1px solid rgba(255,255,255,0.12);
+  background: rgba(0,0,0,0.20);
+  color: var(--text);
+  outline: none;
+}
+
+.ota-row{
+  display:flex;
+  gap: 10px;
+  margin: 8px 0 2px;
+  flex-wrap: wrap;
+}
+
+.ota-small{
+  margin-top: 8px;
+  font-size: 12px;
+}
+
+.btn-primary{
+  background: rgba(46,204,113,0.20);
+  border-color: rgba(46,204,113,0.35);
+}
+.btn-primary:hover{
+  filter: brightness(1.10);
+}
+
+@media (max-width: 860px){
+  .ota-grid{ grid-template-columns: 1fr; }
+}

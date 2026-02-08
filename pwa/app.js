@@ -3,6 +3,7 @@
 // - No lag between history and top status
 // - Shows Device IP when connected
 // - CSV export + today/yesterday/7d/30d filters
+// - OTA Release Control (writes /ota/*)
 // =============================
 
 const firebaseConfig = {
@@ -49,15 +50,34 @@ const STALE_MS = 12000;
 const HISTORY_LIMIT = 5000;
 const MAX_RENDER_ROWS = 300;
 
+// ---------- OTA repo host (your GitHub firmware folder) ----------
+const OTA_REPO_RAW_BASE = "https://raw.githubusercontent.com/ancy-gg/TinyML_Smart-Plug/main/firmware/";
+const OTA_DEFAULT_BIN   = "firmware.bin";
+
 // ---------- State ----------
 let lastSeenMs = 0;
 let lastEpochMs = 0;
-
-// For “no lag”: we track what timestamp last drove the top status
 let topStatusSourceEpoch = 0;
 
 let historyCache = [];
 let currentFilteredHistory = [];
+
+// ---------- OTA helpers ----------
+function buildRepoFirmwareUrl(binName) {
+  const name = (binName || OTA_DEFAULT_BIN).trim();
+  return OTA_REPO_RAW_BASE + encodeURIComponent(name);
+}
+function isLikelyVersion(v) {
+  return typeof v === "string" && v.trim().length >= 3;
+}
+function isHttpsUrl(u) {
+  try {
+    const url = new URL(u);
+    return url.protocol === "https:";
+  } catch {
+    return false;
+  }
+}
 
 // ---------- Toast ----------
 function toast(msg, kind = "ok") {
@@ -112,7 +132,6 @@ function parseTsIsoToEpoch(tsIso) {
   return new Date(Number(Y), Number(Mo) - 1, Number(D), Number(H), Number(Mi), Number(S), ms).getTime();
 }
 
-// Best timestamp from record
 function getRecordEpochMs(r) {
   if (!r || typeof r !== "object") return 0;
   if (typeof r.server_ts === "number" && r.server_ts > 0) return r.server_ts;
@@ -160,7 +179,6 @@ function setTopStatus(kind) {
 
   statusBadge.innerHTML = statusBadgeHTML(k);
 
-  // animate only if not disconnected
   if (k !== "DISCONNECTED") {
     statusBadge.classList.remove("bump");
     void statusBadge.offsetWidth;
@@ -250,7 +268,6 @@ function applyHistoryFilter() {
 
   historyBody.innerHTML = rows;
 }
-
 if (rangeSelect) rangeSelect.addEventListener("change", applyHistoryFilter);
 
 // ---------- LIVE DATA ----------
@@ -302,8 +319,7 @@ db.ref("live_data").on("value", (snap) => {
     setTopStatus((data.status ?? "OK").toString());
     if (lastUpdateText) lastUpdateText.textContent = formatEpochMsTZ(liveEpoch);
   } else {
-    // Still update the "last update" display if needed
-    if (lastUpdateText && liveEpoch > 0) lastUpdateText.textContent = formatEpochMsTZ(topStatusSourceEpoch);
+    if (lastUpdateText && topStatusSourceEpoch > 0) lastUpdateText.textContent = formatEpochMsTZ(topStatusSourceEpoch);
   }
 
 }, (err) => {
@@ -327,7 +343,7 @@ db.ref("history")
 
     historyCache = Object.values(obj);
 
-    // NO LAG: find the most recent history item and, if newer than top, drive the top badge
+    // NO LAG: find most recent history item and, if newer than top, drive top badge
     let bestEpoch = 0;
     let bestRec = null;
     for (const r of historyCache) {
@@ -435,6 +451,72 @@ setInterval(() => {
     if (deviceIpLine) deviceIpLine.style.display = "none";
   }
 }, 500);
+
+// ---------- OTA (Option B: PWA writes /ota/*) ----------
+(function initOta() {
+  const otaCurVer = el("otaCurVer");
+  const otaCurUrl = el("otaCurUrl");
+
+  const otaDesiredVer = el("otaDesiredVer");
+  const otaBinName = el("otaBinName");
+  const otaFirmwareUrl = el("otaFirmwareUrl");
+
+  const btnFillRepoUrl = el("btnFillRepoUrl");
+  const btnPublishOta = el("btnPublishOta");
+
+  // If panel isn't present, do nothing (prevents console errors)
+  if (!btnPublishOta || !otaDesiredVer) return;
+
+  // Live read current RTDB values
+  db.ref("ota").on("value", (snap) => {
+    const v = snap.val() || {};
+    if (otaCurVer) otaCurVer.textContent = (v.desired_version || "—").toString();
+    if (otaCurUrl) otaCurUrl.textContent = (v.firmware_url || "—").toString();
+  });
+
+  btnFillRepoUrl?.addEventListener("click", () => {
+    const url = buildRepoFirmwareUrl(otaBinName?.value || OTA_DEFAULT_BIN);
+    if (otaFirmwareUrl) otaFirmwareUrl.value = url;
+    toast("Repo firmware URL filled.", "ok");
+  });
+
+  btnPublishOta.addEventListener("click", async () => {
+    const desired = (otaDesiredVer.value || "").trim();
+    let url = (otaFirmwareUrl?.value || "").trim();
+
+    if (!url) url = buildRepoFirmwareUrl(otaBinName?.value || OTA_DEFAULT_BIN);
+
+    if (!isLikelyVersion(desired)) {
+      toast("Enter a valid desired version (e.g., TSP-v0.1.1).", "err");
+      return;
+    }
+    if (!isHttpsUrl(url)) {
+      toast("Firmware URL must be a valid HTTPS URL.", "err");
+      return;
+    }
+
+    btnPublishOta.disabled = true;
+    const oldText = btnPublishOta.textContent;
+    btnPublishOta.textContent = "Publishing...";
+
+    try {
+      await db.ref("ota").update({
+        desired_version: desired,
+        firmware_url: url,
+        published_at: firebase.database.ServerValue.TIMESTAMP
+      });
+
+      // After this, you'll see "ota" appear in Firebase console.
+      toast("OTA published. Devices will pull on next check.", "ok");
+    } catch (e) {
+      console.error(e);
+      toast("Publish failed (Firebase rules may block writes).", "err");
+    } finally {
+      btnPublishOta.disabled = false;
+      btnPublishOta.textContent = oldText || "Publish OTA";
+    }
+  });
+})();
 
 // ---------- Service worker ----------
 if ("serviceWorker" in navigator) {

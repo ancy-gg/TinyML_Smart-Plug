@@ -21,15 +21,17 @@
       </div>
 
       <div class="status-wrap">
-            <div id="statusBadge" class="status status-DISCONNECTED">DISCONNECTED</div>
-            <div class="subline">
-            <span class="label">Last update:</span>
-            <span id="lastUpdateText" class="mono">—</span>
-            <div id="deviceIpLine" class="subline" style="display:none;">
-             <span class="label">Device IP:</span>
-                <span id="deviceIpText" class="mono">—</span>
-                </div>
-            </div>
+        <div id="statusBadge" class="status status-DISCONNECTED">DISCONNECTED</div>
+
+        <div class="subline">
+          <span class="label">Last update:</span>
+          <span id="lastUpdateText" class="mono">—</span>
+        </div>
+
+        <div id="deviceIpLine" class="subline" style="display:none;">
+          <span class="label">Device IP:</span>
+          <span id="deviceIpText" class="mono">—</span>
+        </div>
       </div>
     </header>
 
@@ -105,13 +107,70 @@
         </table>
       </div>
     </section>
-    
+
+<!-- ================= OTA RELEASE PANEL ================= -->
+    <section class="history ota-panel">
+      <div class="history-head">
+        <div>
+          <h2 class="history-title">Firmware OTA (Release Control)</h2>
+          <div class="history-hint">
+            Writes: <span class="mono">/ota/desired_version</span> and <span class="mono">/ota/firmware_url</span>
+          </div>
+        </div>
+
+        <div class="history-actions">
+          <button id="btnPublishOta" class="btn btn-primary" type="button">Publish OTA</button>
+        </div>
+      </div>
+
+      <div class="ota-grid">
+        <div class="ota-box">
+          <div class="ota-label">Current (RTDB)</div>
+          <div class="ota-line"><span class="muted">desired_version:</span> <span class="mono" id="otaCurVer">—</span></div>
+          <div class="ota-line"><span class="muted">firmware_url:</span> <span class="mono" id="otaCurUrl">—</span></div>
+        </div>
+
+        <div class="ota-box">
+          <div class="ota-label">Publish new release</div>
+
+          <label class="ota-field">
+            <span class="muted">Desired version</span>
+            <input id="otaDesiredVer" class="ota-input" placeholder="TSP-v0.1.1" />
+          </label>
+
+          <label class="ota-field">
+            <span class="muted">Firmware .bin name (repo)</span>
+            <input id="otaBinName" class="ota-input" value="firmware.bin" />
+          </label>
+
+          <div class="ota-row">
+            <button id="btnFillRepoUrl" class="btn" type="button">Use Repo URL</button>
+          </div>
+
+          <label class="ota-field">
+            <span class="muted">Firmware URL (final)</span>
+            <input
+              id="otaFirmwareUrl"
+              class="ota-input mono"
+              placeholder="https://raw.githubusercontent.com/ancy-gg/TinyML_Smart-Plug/main/firmware/firmware.bin"
+            />
+          </label>
+
+          <div class="ota-small muted">
+            Tip: push your new <span class="mono">firmware.bin</span> into <span class="mono">/firmware/</span> then publish here.
+          </div>
+        </div>
+      </div>
+    </section>
+    <!-- ===================================================== -->
+
     <footer class="footer">
       <div class="muted small">
         TinyML Smart Plug Monitoring Dashboard<br/>
         Developed by ancy-gg | Powered by Firebase
       </div>
     </footer>
+
     <div id="toast" class="toast" role="status" aria-live="polite"></div>
   </main>
 

@@ -1,0 +1,11 @@
+# Name,     Type, SubType, Offset,   Size,     Flags
+nvs,        data, nvs,     0x9000,   0x5000,
+otadata,    data, ota,     0xE000,   0x2000,
+
+# app partitions MUST start on 0x10000 boundary
+app0,       app,  ota_0,   0x10000,  0x2C0000,
+app1,       app,  ota_1,   0x2D0000, 0x2C0000,
+
+# filesystem partition (declared as spiffs subtype; can be mounted as LittleFS)
+storage,    data, spiffs,  0x590000, 0x260000,
+coredump,   data, coredump,0x7F0000, 0x10000,
