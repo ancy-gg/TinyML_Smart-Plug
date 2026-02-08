@@ -12,25 +12,22 @@
 // ======================
 // FIREBASE CONFIG
 // ======================
-// NOTE: CloudHandler in your project uses test_mode=true, so API_KEY isn't actually required,
-// but keeping it is fine.
 #define API_KEY "AIzaSyAmJlZZszyWPJFgIkTAAl_TbIySys1nvEw"
 
-// IMPORTANT: use full https URL + trailing slash for Firebase RTDB
+// Use FULL https URL
 #define DATABASE_URL "tinyml-smart-plug-default-rtdb.asia-southeast1.firebasedatabase.app"
 
 // ======================
-// FIRMWARE VERSION (BUMP PER RELEASE)
+// FIRMWARE VERSION (MUST MATCH what you publish in /ota/desired_version)
 // ======================
-static const char* FW_VERSION = "TSPfw-v0.2.0";
+static const char* FW_VERSION = "TSP-v0.0.0";   // <-- bump this every release
 
 // ======================
-// PULL-OTA RTDB PATHS (Option B from PWA)
+// PULL-OTA RTDB PATHS
 // ======================
 static const char* OTA_DESIRED_VERSION_PATH = "/ota/desired_version";
 static const char* OTA_FIRMWARE_URL_PATH    = "/ota/firmware_url";
 
-// How often ESP checks Firebase for updates
 static const uint32_t OTA_CHECK_INTERVAL_MS = 60 * 1000; // 60 seconds
 
 // ======================
@@ -71,7 +68,7 @@ static String stateToString(FaultState s) {
     case STATE_ARCING:   return "ARCING";
     case STATE_HEATING:  return "HEATING";
     case STATE_OVERLOAD: return "OVERLOAD";
-    default:             return "HAPPY";
+    default:             return "NORMAL"; // your test string (normal state)
   }
 }
 
@@ -97,7 +94,8 @@ void setup() {
   pullOta.begin(FW_VERSION, &cloudHandler);
   pullOta.setPaths(OTA_DESIRED_VERSION_PATH, OTA_FIRMWARE_URL_PATH);
   pullOta.setCheckInterval(OTA_CHECK_INTERVAL_MS);
-  pullOta.requestCheckNow();
+  pullOta.setInsecureTLS(true);     // <-- recommended for GitHub raw reliability
+  pullOta.requestCheckNow();        // check immediately after boot
 
   // Show boot screens sequence (non-blocking in loop)
   bootStage = SHOW_IP;
@@ -111,11 +109,10 @@ void setup() {
 }
 
 void loop() {
-  // Keep these ALWAYS running
   netManager.update();
   timeSync.update();
 
-  // Non-blocking boot screen flow (each shows ~2 seconds)
+  // Non-blocking boot screen flow
   if (bootStage != RUNNING) {
     const unsigned long elapsed = millis() - bootStageStart;
 
@@ -136,7 +133,6 @@ void loop() {
 
     if (bootStage == SHOW_OTA) {
       if (elapsed < 50) {
-        // Pull-OTA "ready" means WiFi connected; it checks Firebase on interval
         String msg = netManager.isConnected() ? "PULL READY" : "NO WIFI";
         oled.showStatus("OTA (HTTPS)", msg.c_str());
         Serial.printf("[Main] OTA %s\n", msg.c_str());
@@ -151,7 +147,7 @@ void loop() {
 
     if (bootStage == SHOW_FIREBASE) {
       if (elapsed < 50) {
-        oled.showStatus("FIREBASE", "Running...");
+        oled.showStatus("FIREBASE", "Engaged...");
         Serial.println("[Main] Firebase running...");
       }
       if (elapsed >= 1200) {
@@ -165,19 +161,16 @@ void loop() {
   // ----- MAIN RUNNING -----
   SimData data = sim.getCycleData();
 
-  // State logic
   if (data.tinyMLOutput == 1) currentState = STATE_ARCING;
   else if (data.temp > TEMP_THRESHOLD) currentState = STATE_HEATING;
   else if (data.current > CURRENT_THRESHOLD) currentState = STATE_OVERLOAD;
   else currentState = STATE_NORMAL;
 
-  // OLED sample-and-hold (update only every OLED_HOLD_MS)
   if (millis() - lastOledUpdate >= OLED_HOLD_MS) {
     lastOledUpdate = millis();
     oled.updateDashboard(data.voltage, data.current, data.temp, currentState);
   }
 
-  // Cloud upload (CloudHandler handles 10s/ fault rules internally)
   if (netManager.isConnected()) {
     cloudHandler.update(
       data.voltage, data.current, data.temp,

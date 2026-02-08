@@ -12,6 +12,10 @@ void CloudHandler::begin(const char* apiKey, const char* dbUrl) {
   Serial.println("[Cloud] Firebase Initialized.");
 }
 
+bool CloudHandler::isReady() const {
+  return Firebase.ready();
+}
+
 bool CloudHandler::getString(const char* path, String& out) {
   if (!Firebase.ready()) return false;
   if (!path || !*path) return false;
@@ -21,7 +25,8 @@ bool CloudHandler::getString(const char* path, String& out) {
     Serial.println(fbdo.errorReason());
     return false;
   }
-  out = fbdo.to<const char*>();
+
+  out = fbdo.stringData();
   return true;
 }
 
@@ -29,7 +34,8 @@ void CloudHandler::update(float v, float c, float t, float zcv, float thd, float
                           const String& state, TimeSync* time) {
   if (!Firebase.ready()) return;
 
-  const bool isNormal = (state == "NORMAL");
+  // Treat your test string "HAPPY" as normal too (so it behaves like NORMAL)
+  const bool isNormal = (state == "NORMAL" || state == "HAPPY");
   const bool stateChanged = (state != _lastSentLiveState);
 
   const unsigned long now = millis();
@@ -39,6 +45,7 @@ void CloudHandler::update(float v, float c, float t, float zcv, float thd, float
     if (stateChanged) shouldSendLive = true;
     else if (now - _lastLiveSend >= _normalIntervalMs) shouldSendLive = true;
   } else {
+    // fault: send live only on change
     if (stateChanged) shouldSendLive = true;
   }
 
@@ -79,6 +86,7 @@ void CloudHandler::update(float v, float c, float t, float zcv, float thd, float
     return;
   }
 
+  // history: faults only, on change
   if (!isNormal) {
     if (state != _lastLoggedFaultState) {
       _lastLoggedFaultState = state;

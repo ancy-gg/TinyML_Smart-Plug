@@ -15,11 +15,14 @@ public:
   void setCheckInterval(uint32_t ms);
   void requestCheckNow();
 
+  // Recommended for GitHub Raw reliability (no cert maintenance)
+  void setInsecureTLS(bool en);
+
 private:
   bool fetchOtaTargets(String& desiredVersion, String& firmwareUrl);
   bool performUpdateFromUrl(const String& url);
 
-  const char* _currentVersion = "TSP-v0.0.0.0";
+  const char* _currentVersion = "TSP-v0.0.0";
   CloudHandler* _cloud = nullptr;
 
   const char* _pathDesired = "/ota/desired_version";
@@ -28,6 +31,8 @@ private:
   uint32_t _intervalMs = 60000;
   uint32_t _lastCheckMs = 0;
   bool _checkNow = true;
+
+  bool _insecureTLS = true;
 };
 
 #endif

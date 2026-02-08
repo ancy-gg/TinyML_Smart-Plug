@@ -14,9 +14,9 @@ public:
   void update(float v, float c, float t, float zcv, float thd, float entropy,
               const String& state, TimeSync* time);
 
-  // --- OTA support helpers ---
+  // --- For Pull-OTA ---
+  bool isReady() const;
   bool getString(const char* path, String& out);
-  bool isReady() const { return Firebase.ready(); }
 
 private:
   FirebaseData fbdo;
