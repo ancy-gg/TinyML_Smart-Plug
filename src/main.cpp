@@ -41,8 +41,6 @@ void setup() {
     // 1. WiFi (Blocks until success)
     netManager.begin(configModeCallback);
 
-
-
     // 2. Show IP
     String ipStr = "IP: ";
     ipStr += WiFi.localIP().toString(); 
