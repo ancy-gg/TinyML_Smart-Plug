@@ -32,7 +32,7 @@
     <h2>TinyML Smart Plug</h2>
 
     <div id="status-box" class="status-box status-NORMAL">
-        NORMAL
+        WAITING...
     </div>
 
     <div class="grid">
@@ -49,6 +49,23 @@
 <script type="module">
     import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
     import { getDatabase, ref, onValue } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-database.js";
+
+    if ('serviceWorker' in navigator) {
+        navigator.serviceWorker.register('sw.js').then((registration) => {
+            
+            // Check for updates every time page loads
+            registration.update();
+
+            // If a new service worker takes over, reload the page automatically
+            let refreshing;
+            navigator.serviceWorker.addEventListener('controllerchange', () => {
+                if (refreshing) return;
+                window.location.reload();
+                refreshing = true;
+            });
+
+        });
+    }
 
     const firebaseConfig = {
      apiKey: "AIzaSyAmJlZZszyWPJFgIkTAAl_TbIySys1nvEw",
