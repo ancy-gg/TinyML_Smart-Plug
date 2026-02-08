@@ -5,6 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>TinyML Smart Plug</title>
     <link rel="manifest" href="manifest.json">
+    <link rel="apple-touch-icon" href="pwa/icons/icon-192.png">
     <style>
         body { font-family: 'Segoe UI', sans-serif; background: #1a1a1a; color: white; text-align: center; padding: 20px; }
         .container { max-width: 400px; margin: 0 auto; }
@@ -12,8 +13,8 @@
         /* Status Badge */
         .status-box { padding: 15px; border-radius: 10px; margin-bottom: 20px; font-weight: bold; font-size: 1.5rem; transition: 0.3s; }
         .status-NORMAL { background: #2ecc71; color: #000; }
-        .status-ARCING { background: #e74c3c; color: white; animation: flash 0.5s infinite; }
-        .status-HEATING { background: #f39c12; color: #000; }
+        .status-ARCING { background: #e74c3c; color: white; animation: flash 0.5s infinite;}
+        .status-HEATING { background: #f39c12; color: #000; animation: flash 0.5s infinite;}
         .status-OVERLOAD { background: #e67e22; color: #000; }
 
         /* Data Grid */
