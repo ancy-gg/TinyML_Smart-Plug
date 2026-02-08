@@ -1,0 +1,15 @@
+{
+  "name": "ESP32 Monitor",
+  "short_name": "Voltage",
+  "start_url": ".",
+  "display": "standalone",
+  "background_color": "#222222",
+  "theme_color": "#222222",
+  "icons": [
+    {
+      "src": "https://cdn-icons-png.flaticon.com/512/6408/6408830.png",
+      "sizes": "512x512",
+      "type": "image/png"
+    }
+  ]
+}

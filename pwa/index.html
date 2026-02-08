@@ -1,0 +1,91 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>TinyML Smart Plug</title>
+    <link rel="manifest" href="manifest.json">
+    <style>
+        body { font-family: 'Segoe UI', sans-serif; background: #1a1a1a; color: white; text-align: center; padding: 20px; }
+        .container { max-width: 400px; margin: 0 auto; }
+        
+        /* Status Badge */
+        .status-box { padding: 15px; border-radius: 10px; margin-bottom: 20px; font-weight: bold; font-size: 1.5rem; transition: 0.3s; }
+        .status-NORMAL { background: #2ecc71; color: #000; }
+        .status-ARCING { background: #e74c3c; color: white; animation: flash 0.5s infinite; }
+        .status-HEATING { background: #f39c12; color: #000; }
+        .status-OVERLOAD { background: #e67e22; color: #000; }
+
+        /* Data Grid */
+        .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 15px; }
+        .card { background: #333; padding: 15px; border-radius: 10px; text-align: left; }
+        .label { color: #aaa; font-size: 0.9rem; display: block; margin-bottom: 5px; }
+        .value { font-size: 1.4rem; font-weight: bold; color: #fff; }
+        .unit { font-size: 0.9rem; color: #888; }
+
+        @keyframes flash { 0% { opacity: 1; } 50% { opacity: 0.5; } 100% { opacity: 1; } }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <h2>TinyML Smart Plug</h2>
+
+    <div id="status-box" class="status-box status-NORMAL">
+        NORMAL
+    </div>
+
+    <div class="grid">
+        <div class="card"><span class="label">Voltage</span><span id="v-val" class="value">--</span> <span class="unit">V</span></div>
+        <div class="card"><span class="label">Current</span><span id="c-val" class="value">--</span> <span class="unit">A</span></div>
+        <div class="card"><span class="label">Temp</span><span id="t-val" class="value">--</span> <span class="unit">°C</span></div>
+        
+        <div class="card"><span class="label">ZCV (∆t)</span><span id="z-val" class="value">--</span></div>
+        <div class="card"><span class="label">THD</span><span id="h-val" class="value">--</span> <span class="unit">%</span></div>
+        <div class="card"><span class="label">Entropy</span><span id="e-val" class="value">--</span> <span class="unit">H</span></div>
+    </div>
+</div>
+
+<script type="module">
+    import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
+    import { getDatabase, ref, onValue } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-database.js";
+
+    const firebaseConfig = {
+     apiKey: "AIzaSyAmJlZZszyWPJFgIkTAAl_TbIySys1nvEw",
+     authDomain: "tinyml-smart-plug.firebaseapp.com",
+     databaseURL: "https://tinyml-smart-plug-default-rtdb.asia-southeast1.firebasedatabase.app",
+     projectId: "tinyml-smart-plug",
+     storageBucket: "tinyml-smart-plug.firebasestorage.app",
+      messagingSenderId: "476671598143",
+      appId: "1:476671598143:web:c99b4f1100988784f9628a",
+     measurementId: "G-XR8LM91VLN"
+    };
+
+    const app = initializeApp(firebaseConfig);
+    const db = getDatabase(app);
+
+    const dataRef = ref(db, 'live_data');
+    onValue(dataRef, (snapshot) => {
+        const data = snapshot.val();
+        if (data) {
+            document.getElementById('v-val').innerText = data.voltage.toFixed(1);
+            document.getElementById('c-val').innerText = data.current.toFixed(2);
+            document.getElementById('t-val').innerText = data.temp.toFixed(1);
+            
+            document.getElementById('z-val').innerText = data.zcv.toFixed(2);
+            document.getElementById('h-val').innerText = data.thd.toFixed(1);
+            document.getElementById('e-val').innerText = data.entropy.toFixed(3);
+
+            const statusBox = document.getElementById('status-box');
+            statusBox.innerText = data.status;
+            statusBox.className = `status-box status-${data.status}`;
+        }
+    });
+
+    if ('serviceWorker' in navigator) {
+        navigator.serviceWorker.register('sw.js');
+    }
+</script>
+
+</body>
+</html>
