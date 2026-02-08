@@ -3,17 +3,22 @@
 
 #include <Firebase_ESP_Client.h>
 
+class TimeSync; // forward decl
+
 class CloudHandler {
 public:
     void begin(const char* apiKey, const char* dbUrl);
-    void update(float v, float c, float t, float zcv, float thd, float entropy, String state); // Handles timing internally
+
+    // Pass TimeSync so cloud packets can include real wall-clock time.
+    void update(float v, float c, float t, float zcv, float thd, float entropy,
+                const String& state, TimeSync* time);
 
 private:
     FirebaseData fbdo;
     FirebaseAuth auth;
     FirebaseConfig config;
     unsigned long _lastSend = 0;
-    const unsigned long _interval = 3000; // 3 seconds
+    const unsigned long _interval = 5000; // ms
 };
 
 #endif

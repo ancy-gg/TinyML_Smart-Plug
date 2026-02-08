@@ -4,6 +4,7 @@
 #include "CloudHandler.h"
 #include "Simulation.h"
 #include "OLED_NOTIF.h"
+#include "TimeSync.h"
 
 // --- CONFIG ---
 #define API_KEY "AIzaSyAmJlZZszyWPJFgIkTAAl_TbIySys1nvEw"
@@ -12,6 +13,7 @@
 // --- OBJECTS ---
 NetworkManager netManager;
 CloudHandler cloudHandler;
+TimeSync timeSync;
 Simulation sim;
 OLED_NOTIF oled(0x3C);
 
@@ -39,6 +41,8 @@ void setup() {
     // 1. WiFi (Blocks until success)
     netManager.begin(configModeCallback);
 
+
+
     // 2. Show IP
     String ipStr = "IP: ";
     ipStr += WiFi.localIP().toString(); 
@@ -50,6 +54,9 @@ void setup() {
     Serial.println("[Main] Initializing Firebase...");
     oled.showStatus("FIREBASE", "Connecting...");
     
+    // Start non-blocking SNTP
+    timeSync.begin("Asia/Manila"); // fallback if needed: "CST-8"
+    oled.showStatus("Time Sync", "Manila");
     cloudHandler.begin(API_KEY, DATABASE_URL);
     
     Serial.println("[Main] Setup Complete. Entering Loop.");
@@ -62,6 +69,7 @@ const int OLED_FRAME_RATE = 33;
 void loop() {
     // 1. Network Housekeeping
     netManager.update();
+    timeSync.update();
 
     // 2. Get Data
     SimData data = sim.getCycleData();
@@ -87,6 +95,6 @@ void loop() {
         else if (currentState == STATE_OVERLOAD) stateStr = "OVERLOAD";
         
         cloudHandler.update(data.voltage, data.current, data.temp, 
-                          data.zcv, data.thd, data.entropy, stateStr);
+                          data.zcv, data.thd, data.entropy, stateStr, &timeSync);
     }
 }
