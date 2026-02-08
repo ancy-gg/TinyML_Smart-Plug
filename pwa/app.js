@@ -1,6 +1,8 @@
 // =============================
 // TinyML Smart Plug PWA - app.js
-// Fault history + CSV export + auto disconnect
+// - No lag between history and top status
+// - Shows Device IP when connected
+// - CSV export + today/yesterday/7d/30d filters
 // =============================
 
 const firebaseConfig = {
@@ -17,14 +19,18 @@ const firebaseConfig = {
 firebase.initializeApp(firebaseConfig);
 const db = firebase.database();
 
+// ---------- DOM helpers ----------
 const el = (id) => document.getElementById(id);
 
 const statusBadge = el("statusBadge");
 const lastUpdateText = el("lastUpdateText");
 
-const vVal = el("vVal");
-const iVal = el("iVal");
-const tVal = el("tVal");
+const deviceIpLine = el("deviceIpLine");
+const deviceIpText = el("deviceIpText");
+
+const vVal   = el("vVal");
+const iVal   = el("iVal");
+const tVal   = el("tVal");
 const zcvVal = el("zcvVal");
 const thdVal = el("thdVal");
 const entVal = el("entVal");
@@ -37,13 +43,18 @@ const btnDownloadCSV = el("btnDownloadCSV");
 const btnClearHistory = el("btnClearHistory");
 const toastEl = el("toast");
 
+// ---------- Settings ----------
 const DISPLAY_TZ = "Asia/Manila";
 const STALE_MS = 12000;
 const HISTORY_LIMIT = 5000;
 const MAX_RENDER_ROWS = 300;
 
+// ---------- State ----------
 let lastSeenMs = 0;
 let lastEpochMs = 0;
+
+// For “no lag”: we track what timestamp last drove the top status
+let topStatusSourceEpoch = 0;
 
 let historyCache = [];
 let currentFilteredHistory = [];
@@ -59,7 +70,7 @@ function toast(msg, kind = "ok") {
   }, 2400);
 }
 
-// ---------- Utils ----------
+// ---------- Formatting ----------
 function toFixedOrDash(x, digits = 2) {
   if (x === null || x === undefined || x === "" || Number.isNaN(Number(x))) return "—";
   return Number(x).toFixed(digits);
@@ -82,12 +93,12 @@ function formatEpochMsTZ(ms, tz = DISPLAY_TZ) {
 
   const get = (type) => parts.find(p => p.type === type)?.value ?? "00";
   const yyyy = get("year");
-  const MM = get("month");
-  const dd = get("day");
-  const HH = get("hour");
-  const mm = get("minute");
-  const ss = get("second");
-  const mmm = String(d.getMilliseconds()).padStart(3, "0");
+  const MM   = get("month");
+  const dd   = get("day");
+  const HH   = get("hour");
+  const mm   = get("minute");
+  const ss   = get("second");
+  const mmm  = String(d.getMilliseconds()).padStart(3, "0");
 
   return `${yyyy}-${MM}-${dd} ${HH}:${mm}:${ss}.${mmm}`;
 }
@@ -101,22 +112,17 @@ function parseTsIsoToEpoch(tsIso) {
   return new Date(Number(Y), Number(Mo) - 1, Number(D), Number(H), Number(Mi), Number(S), ms).getTime();
 }
 
+// Best timestamp from record
 function getRecordEpochMs(r) {
   if (!r || typeof r !== "object") return 0;
   if (typeof r.server_ts === "number" && r.server_ts > 0) return r.server_ts;
   if (typeof r.ts_epoch_ms === "number" && r.ts_epoch_ms > 0) return r.ts_epoch_ms;
   if (typeof r.ts_iso === "string" && r.ts_iso.trim()) return parseTsIsoToEpoch(r.ts_iso.trim());
+  if (typeof r.epoch_ms === "number" && r.epoch_ms > 0) return r.epoch_ms;
   return 0;
 }
 
-function animateNumber(node) {
-  if (!node) return;
-  node.classList.remove("tick");
-  void node.offsetWidth;
-  node.classList.add("tick");
-}
-
-// ---------- Status visuals ----------
+// ---------- Status mapping ----------
 function classifyStatus(s) {
   const u = (s || "").toUpperCase();
   if (u.includes("DISCON")) return "DISCONNECTED";
@@ -131,8 +137,8 @@ function classifyStatus(s) {
 function statusBadgeHTML(kind) {
   switch (kind) {
     case "OVERLOAD": return `OVERLOAD <span class="emoji blink">⚠️</span>`;
-    case "HEATING": return `HEATING <span class="emoji flicker">🔥</span>`;
-    case "ARCING": return `ARCING <span class="emoji zap">⚡</span>`;
+    case "HEATING":  return `HEATING <span class="emoji flicker">🔥</span>`;
+    case "ARCING":   return `ARCING <span class="emoji zap">⚡</span>`;
     case "DISCONNECTED": return `DISCONNECTED`;
     case "NORMAL": return `NORMAL`;
     default: return `${kind}`;
@@ -154,6 +160,7 @@ function setTopStatus(kind) {
 
   statusBadge.innerHTML = statusBadgeHTML(k);
 
+  // animate only if not disconnected
   if (k !== "DISCONNECTED") {
     statusBadge.classList.remove("bump");
     void statusBadge.offsetWidth;
@@ -164,16 +171,24 @@ function setTopStatus(kind) {
 function pillHTML(kind) {
   const k = classifyStatus(kind);
   if (k === "OVERLOAD") return `<span class="pill pill-OVERLOAD">OVERLOAD <span class="emoji blink">⚠️</span></span>`;
-  if (k === "HEATING") return `<span class="pill pill-HEATING">HEATING <span class="emoji flicker">🔥</span></span>`;
-  if (k === "ARCING") return `<span class="pill pill-ARCING">ARCING <span class="emoji zap">⚡</span></span>`;
+  if (k === "HEATING")  return `<span class="pill pill-HEATING">HEATING <span class="emoji flicker">🔥</span></span>`;
+  if (k === "ARCING")   return `<span class="pill pill-ARCING">ARCING <span class="emoji zap">⚡</span></span>`;
   if (k === "DISCONNECTED") return `<span class="pill pill-DIS">DISCONNECTED</span>`;
   if (k === "NORMAL") return `<span class="pill pill-OK">NORMAL</span>`;
   return `<span class="pill pill-OK">${k}</span>`;
 }
 
+function animateNumber(node) {
+  if (!node) return;
+  node.classList.remove("tick");
+  void node.offsetWidth;
+  node.classList.add("tick");
+}
+
 // ---------- Range filter ----------
 function getRangeBounds(rangeKey) {
   const now = Date.now();
+
   const todayStr = new Intl.DateTimeFormat("en-CA", {
     timeZone: DISPLAY_TZ,
     year: "numeric",
@@ -206,7 +221,6 @@ function applyHistoryFilter() {
   });
 
   currentFilteredHistory = filtered.slice();
-
   if (historyHint) historyHint.textContent = `Showing: ${rangeLabel(key)} (${filtered.length})`;
 
   if (!filtered.length) {
@@ -239,22 +253,39 @@ function applyHistoryFilter() {
 
 if (rangeSelect) rangeSelect.addEventListener("change", applyHistoryFilter);
 
-// ---------- Live data ----------
+// ---------- LIVE DATA ----------
 db.ref("live_data").on("value", (snap) => {
   const data = snap.val();
   if (!data) return;
 
   lastSeenMs = Date.now();
 
-  // prefer server_ts
-  if (typeof data.server_ts === "number" && data.server_ts > 0) lastEpochMs = data.server_ts;
-  else if (typeof data.ts_epoch_ms === "number" && data.ts_epoch_ms > 0) lastEpochMs = data.ts_epoch_ms;
-  else if (typeof data.ts_iso === "string") lastEpochMs = parseTsIsoToEpoch(data.ts_iso);
+  // device IP line
+  const wifi = !!data.wifi_connected;
+  const ip = (data.ip || "").toString().trim();
+  if (deviceIpLine && deviceIpText) {
+    if (wifi && ip) {
+      deviceIpLine.style.display = "";
+      deviceIpText.textContent = ip;
+    } else {
+      deviceIpLine.style.display = "none";
+      deviceIpText.textContent = "—";
+    }
+  }
 
-  const v = toFixedOrDash(data.voltage, 1);
-  const i = toFixedOrDash(data.current, 2);
-  const t = toFixedOrDash(data.temp, 1);
-  const z = toFixedOrDash(data.zcv, 2);
+  // timestamps
+  const liveEpoch =
+    (typeof data.server_ts === "number" && data.server_ts > 0) ? data.server_ts :
+    (typeof data.ts_epoch_ms === "number" && data.ts_epoch_ms > 0) ? data.ts_epoch_ms :
+    (typeof data.ts_iso === "string") ? parseTsIsoToEpoch(data.ts_iso) : 0;
+
+  if (liveEpoch > 0) lastEpochMs = liveEpoch;
+
+  // values
+  const v  = toFixedOrDash(data.voltage, 1);
+  const i  = toFixedOrDash(data.current, 2);
+  const t  = toFixedOrDash(data.temp, 1);
+  const z  = toFixedOrDash(data.zcv, 2);
   const th = toFixedOrDash(data.thd, 1);
   const en = toFixedOrDash(data.entropy, 3);
 
@@ -265,15 +296,24 @@ db.ref("live_data").on("value", (snap) => {
   if (thdVal && thdVal.textContent !== th) { thdVal.textContent = th; animateNumber(thdVal); }
   if (entVal && entVal.textContent !== en) { entVal.textContent = en; animateNumber(entVal); }
 
-  setTopStatus((data.status ?? "OK").toString());
-  if (lastUpdateText) lastUpdateText.textContent = formatEpochMsTZ(lastEpochMs);
+  // NO LAG: only update top status if this live update is newer than what we've shown
+  if (liveEpoch >= topStatusSourceEpoch) {
+    topStatusSourceEpoch = liveEpoch;
+    setTopStatus((data.status ?? "OK").toString());
+    if (lastUpdateText) lastUpdateText.textContent = formatEpochMsTZ(liveEpoch);
+  } else {
+    // Still update the "last update" display if needed
+    if (lastUpdateText && liveEpoch > 0) lastUpdateText.textContent = formatEpochMsTZ(topStatusSourceEpoch);
+  }
+
 }, (err) => {
   console.error(err);
   setTopStatus("DISCONNECTED");
   if (lastUpdateText) lastUpdateText.textContent = "—";
+  if (deviceIpLine) deviceIpLine.style.display = "none";
 });
 
-// ---------- History ----------
+// ---------- HISTORY ----------
 db.ref("history")
   .orderByChild("server_ts")
   .limitToLast(HISTORY_LIMIT)
@@ -284,11 +324,30 @@ db.ref("history")
       applyHistoryFilter();
       return;
     }
+
     historyCache = Object.values(obj);
+
+    // NO LAG: find the most recent history item and, if newer than top, drive the top badge
+    let bestEpoch = 0;
+    let bestRec = null;
+    for (const r of historyCache) {
+      const ep = getRecordEpochMs(r);
+      if (ep > bestEpoch) {
+        bestEpoch = ep;
+        bestRec = r;
+      }
+    }
+
+    if (bestRec && bestEpoch > topStatusSourceEpoch) {
+      topStatusSourceEpoch = bestEpoch;
+      setTopStatus((bestRec.status ?? "OK").toString());
+      if (lastUpdateText) lastUpdateText.textContent = formatEpochMsTZ(bestEpoch);
+    }
+
     applyHistoryFilter();
   });
 
-// ---------- CSV download ----------
+// ---------- CSV ----------
 function csvEscape(v) {
   const s = String(v ?? "");
   return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
@@ -313,8 +372,9 @@ if (btnDownloadCSV) {
       return;
     }
 
-    // oldest->newest
-    const rows = currentFilteredHistory.slice().sort((a, b) => getRecordEpochMs(a) - getRecordEpochMs(b));
+    const rows = currentFilteredHistory
+      .slice()
+      .sort((a, b) => getRecordEpochMs(a) - getRecordEpochMs(b)); // oldest->newest
 
     const header = ["timestamp","epoch_ms","status","voltage","current","temp","zcv","thd","entropy"];
     const lines = [header.join(",")];
@@ -322,6 +382,7 @@ if (btnDownloadCSV) {
     for (const r of rows) {
       const epoch = getRecordEpochMs(r);
       const ts = formatEpochMsTZ(epoch);
+
       lines.push([
         csvEscape(ts),
         csvEscape(epoch),
@@ -371,10 +432,11 @@ setInterval(() => {
   }
   if (Date.now() - lastSeenMs > STALE_MS) {
     setTopStatus("DISCONNECTED");
+    if (deviceIpLine) deviceIpLine.style.display = "none";
   }
 }, 500);
 
-// ---------- Service worker (auto update on refresh) ----------
+// ---------- Service worker ----------
 if ("serviceWorker" in navigator) {
   navigator.serviceWorker.register("sw.js").then((reg) => {
     reg.update();

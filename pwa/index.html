@@ -16,16 +16,20 @@
   <main class="app">
     <header class="top">
       <div class="brand">
-        <img class="logo" src="icon-512.png" alt="TinyML Smart Plug Logo" />
+        <img class="logo" src="icons/icon-512.png" alt="TinyML Smart Plug Logo" />
         <h1 class="title">TinyML Smart Plug</h1>
       </div>
 
       <div class="status-wrap">
-        <div id="statusBadge" class="status status-DISCONNECTED">DISCONNECTED</div>
-        <div class="subline">
-          <span class="label">Last update:</span>
-          <span id="lastUpdateText" class="mono">—</span>
-        </div>
+            <div id="statusBadge" class="status status-DISCONNECTED">DISCONNECTED</div>
+            <div class="subline">
+            <span class="label">Last update:</span>
+            <span id="lastUpdateText" class="mono">—</span>
+            <div id="deviceIpLine" class="subline" style="display:none;">
+             <span class="label">Device IP:</span>
+                <span id="deviceIpText" class="mono">—</span>
+                </div>
+            </div>
       </div>
     </header>
 
