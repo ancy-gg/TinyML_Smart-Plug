@@ -20,7 +20,7 @@
 // Firebase Configuration
 #define API_KEY "AIzaSyAmJlZZszyWPJFgIkTAAl_TbIySys1nvEw"
 #define DATABASE_URL "tinyml-smart-plug-default-rtdb.asia-southeast1.firebasedatabase.app"
-static const char* FW_VERSION = "TSP-v0.0.2"; // Always update this
+static const char* FW_VERSION = "TSP-v0.0.3"; // Always update this
 
 // OTA Paths
 static const char* OTA_DESIRED_VERSION_PATH = "/ota/desired_version";
