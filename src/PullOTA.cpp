@@ -80,8 +80,7 @@ bool PullOTA::fetchOtaTargets(String& desiredVersion, String& firmwareUrl) {
 
 bool PullOTA::performUpdateFromUrl(const String& url) {
   WiFiClientSecure client;
-  if (_insecureTLS) client.setInsecure();   // most reliable for GitHub raw
-  // else: you would need to set a correct root CA cert here
+  if (_insecureTLS) client.setInsecure();   // most reliable for GitHub
 
   HTTPClient http;
   http.setTimeout(OTA_HTTP_TIMEOUT_MS);

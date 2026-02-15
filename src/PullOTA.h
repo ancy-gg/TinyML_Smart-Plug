@@ -14,8 +14,6 @@ public:
   void setPaths(const char* desiredVersionPath, const char* firmwareUrlPath);
   void setCheckInterval(uint32_t ms);
   void requestCheckNow();
-
-  // Recommended for GitHub Raw reliability (no cert maintenance)
   void setInsecureTLS(bool en);
 
 private:

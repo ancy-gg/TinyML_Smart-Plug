@@ -1,5 +1,5 @@
 // Change this on each deploy:
-const BUILD_VERSION = "TSPweb-v0.2.5";
+const BUILD_VERSION = "TSPweb-v0.2.6";
 
 const CACHE_NAME = BUILD_VERSION;
 

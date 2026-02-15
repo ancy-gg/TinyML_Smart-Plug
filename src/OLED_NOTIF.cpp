@@ -1,20 +1,20 @@
 #include "OLED_NOTIF.h"
 
-// --- NEW BITMAPS (10x10 pixels) ---
+// -10 by 10 Bitmaps
 
-// 1. Arrow Up (for Overload)
+// Arrow Up
 const unsigned char icon_arrow_up [] PROGMEM = {
   0x18, 0x00, 0x3C, 0x00, 0x7E, 0x00, 0xFF, 0xC0, 0x18, 0x00, 
   0x18, 0x00, 0x18, 0x00, 0x18, 0x00, 0x18, 0x00, 0x18, 0x00 
 };
 
-// 2. Lightning (Refined for Arcing)
+// Lightning
 const unsigned char icon_lightning [] PROGMEM = {
   0x03, 0x00, 0x06, 0x00, 0x0C, 0x00, 0x1F, 0x80, 0x3F, 0xC0, 
   0x07, 0xE0, 0x03, 0x00, 0x06, 0x00, 0x0C, 0x00, 0x18, 0x00 
 };
 
-// 3. "More Fire" Fire (More organic flame shape)
+// Fire
 const unsigned char icon_fire_better [] PROGMEM = {
   0x08, 0x00, 0x1C, 0x00, 0x36, 0x00, 0x63, 0x00, 0x5D, 0x00, 
   0x5D, 0x00, 0x7F, 0x00, 0x3E, 0x00, 0x1C, 0x00, 0x08, 0x00 
@@ -44,7 +44,7 @@ void OLED_NOTIF::updateDashboard(float voltage, float current, float temperature
     display->setTextColor(SSD1306_WHITE);
     display->setTextSize(1); 
 
-    // --- LEFT COLUMN (Data) ---
+    // Data (LEFT)
     display->setCursor(0, 0); 
     display->print(voltage, 1); display->print("V");
 
@@ -55,11 +55,10 @@ void OLED_NOTIF::updateDashboard(float voltage, float current, float temperature
     display->print(temperature, 1); display->print((char)248); display->print("C");
 
 
-    // --- RIGHT COLUMN (Status) ---
-    // Calculate Right Center: Start x=55, End x=128. Center ~91.
+    // Status (RIGHT)
     int centerX = 91;
 
-    // 1. Header
+    // Header
     const char* label = "STATUS";
     int16_t x1, y1;
     uint16_t w, h;
@@ -68,10 +67,9 @@ void OLED_NOTIF::updateDashboard(float voltage, float current, float temperature
     display->setCursor(centerX - (w / 2), 0); 
     display->print(label);
 
-    // 2. State Logic (Blinking)
+    // State Logic with Blinking for Faults
     bool showContent = true;
     if (state != STATE_NORMAL) {
-        // Blink logic: ON for 500ms, OFF for 500ms
         if ((millis() / 750) % 2 != 0) showContent = false;
     }
 
@@ -85,12 +83,10 @@ void OLED_NOTIF::updateDashboard(float voltage, float current, float temperature
              display->print(text);
         } 
         else if (state == STATE_OVERLOAD) {
-             // Layout: [Arrow] [LOAD] [Arrow]
+             // Overload
              const char* text = "LOAD";
-             display->getTextBounds(text, 0, 0, &x1, &y1, &w, &h); // w is approx 48px
-             
-             // Total width = Icon(10) + Gap(2) + Text(48) + Gap(2) + Icon(10) = 72px
-             int startX = centerX - (72 / 2); // Center the whole group
+             display->getTextBounds(text, 0, 0, &x1, &y1, &w, &h);
+             int startX = centerX - (72 / 2); 
              
              display->drawBitmap(startX, 16, icon_arrow_up, 10, 10, SSD1306_WHITE);
              display->setCursor(startX + 12, 14);
@@ -98,11 +94,9 @@ void OLED_NOTIF::updateDashboard(float voltage, float current, float temperature
              display->drawBitmap(startX + 12 + w + 2, 16, icon_arrow_up, 10, 10, SSD1306_WHITE);
         } 
         else if (state == STATE_HEATING) {
-             // Layout: [Fire] [HEAT] [Fire]
+             // Heating
              const char* text = "HEAT";
-             display->getTextBounds(text, 0, 0, &x1, &y1, &w, &h); // w is approx 48px
-             
-             // Total width = Icon(10) + Gap(2) + Text(48) + Gap(2) + Icon(10) = 72px
+             display->getTextBounds(text, 0, 0, &x1, &y1, &w, &h);
              int startX = centerX - (72 / 2); 
              
              display->drawBitmap(startX, 16, icon_fire_better, 10, 10, SSD1306_WHITE);
@@ -111,11 +105,9 @@ void OLED_NOTIF::updateDashboard(float voltage, float current, float temperature
              display->drawBitmap(startX + 12 + w + 2, 16, icon_fire_better, 10, 10, SSD1306_WHITE);
         }
         else if (state == STATE_ARCING) {
-             // Layout: [Lightning] [ARC] [Lightning]
+             // Arcing
              const char* text = "ARC";
-             display->getTextBounds(text, 0, 0, &x1, &y1, &w, &h); // w is approx 36px
-             
-             // Total width = Icon(10) + Gap(2) + Text(36) + Gap(2) + Icon(10) = 60px
+             display->getTextBounds(text, 0, 0, &x1, &y1, &w, &h);
              int startX = centerX - (60 / 2);
              
              display->drawBitmap(startX, 16, icon_lightning, 10, 10, SSD1306_WHITE);
@@ -132,7 +124,7 @@ void OLED_NOTIF::showStatus(const char* title, const char* msg) {
     display->clearDisplay();
     display->setTextColor(SSD1306_WHITE);
     
-    // Draw Title (Top)
+    // Draw Title
     display->setTextSize(1);
     display->setCursor(0, 0);
     display->println(title);
@@ -140,7 +132,7 @@ void OLED_NOTIF::showStatus(const char* title, const char* msg) {
     // Draw Divider Line
     display->drawLine(0, 10, 128, 10, SSD1306_WHITE);
     
-    // Draw Message (Middle)
+    // Draw Message
     display->setTextSize(1);
     display->setCursor(0, 15);
     display->println(msg);

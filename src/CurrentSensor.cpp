@@ -39,7 +39,7 @@ float CurrentSensor::readCurrentRMS() {
     float amps = voltageRMS / _mvPerAmp;
 
     // Noise Gate: Ignore tiny currents < 100mA
-    if (amps < 0.10f) amps = 0.0f;
+    /* if (amps < 0.10f) amps = 0.0f; */
 
     return amps;
 }

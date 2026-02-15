@@ -2,7 +2,7 @@
 #define NETWORK_MANAGER_H
 
 #include <Arduino.h>
-#include <WiFiManager.h> // Ensure you have tzapu/WiFiManager installed
+#include <WiFiManager.h> 
 
 class NetworkManager {
 public:

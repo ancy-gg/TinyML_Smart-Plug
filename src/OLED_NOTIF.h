@@ -28,7 +28,6 @@ public:
     
     bool begin();
     
-    // Updated to include temperature
     void updateDashboard(float voltage, float current, float temperature, FaultState state);
     void showStatus(const char* title, const char* msg);    
     void clear();

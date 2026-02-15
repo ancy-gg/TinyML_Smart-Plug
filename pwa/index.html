@@ -112,34 +112,30 @@
     <section class="history ota-panel">
       <div class="history-head">
         <div>
-          <h2 class="history-title">Firmware OTA (Release Control)</h2>
-          <div class="history-hint">
-            Writes: <span class="mono">/ota/desired_version</span> and <span class="mono">/ota/firmware_url</span>
-          </div>
+          <h2 class="history-title">Over-the-Air (OTA) Updates</h2>
         </div>
 
         <div class="history-actions">
-          <button id="btnPublishOta" class="btn btn-primary" type="button">Publish OTA</button>
+          <button id="btnPublishOta" class="btn btn-primary" type="button">Update Firmware</button>
         </div>
       </div>
 
       <div class="ota-grid">
         <div class="ota-box">
-          <div class="ota-label">Current (RTDB)</div>
-          <div class="ota-line"><span class="muted">desired_version:</span> <span class="mono" id="otaCurVer">—</span></div>
-          <div class="ota-line"><span class="muted">firmware_url:</span> <span class="mono" id="otaCurUrl">—</span></div>
+          <div class="ota-label">Current Firmware Version</div>
+          <div class="ota-line"><span class="muted">Version:</span> <span class="mono" id="otaCurVer">—</span></div>
         </div>
 
         <div class="ota-box">
-          <div class="ota-label">Publish new release</div>
+          <div class="ota-label">Publish Firmware</div>
 
           <label class="ota-field">
-            <span class="muted">Desired version</span>
+            <span class="muted">Version</span>
             <input id="otaDesiredVer" class="ota-input" placeholder="TSP-v0.1.1" />
           </label>
 
           <label class="ota-field">
-            <span class="muted">Firmware .bin name (repo)</span>
+            <span class="muted">BIN Name</span>
             <input id="otaBinName" class="ota-input" value="firmware.bin" />
           </label>
 
@@ -148,17 +144,13 @@
           </div>
 
           <label class="ota-field">
-            <span class="muted">Firmware URL (final)</span>
+            <span class="muted">Firmware URL</span>
             <input
               id="otaFirmwareUrl"
               class="ota-input mono"
               placeholder="https://raw.githubusercontent.com/ancy-gg/TinyML_Smart-Plug/main/firmware/firmware.bin"
             />
           </label>
-
-          <div class="ota-small muted">
-            Tip: push your new <span class="mono">firmware.bin</span> into <span class="mono">/firmware/</span> then publish here.
-          </div>
         </div>
       </div>
     </section>

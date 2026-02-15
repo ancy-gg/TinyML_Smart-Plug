@@ -34,8 +34,7 @@ void CloudHandler::update(float v, float c, float t, float zcv, float thd, float
                           const String& state, TimeSync* time) {
   if (!Firebase.ready()) return;
 
-  // Treat your test string "HAPPY" as normal too (so it behaves like NORMAL)
-  const bool isNormal = (state == "NORMAL" || state == "HAPPY");
+  const bool isNormal = (state == "NORMAL");
   const bool stateChanged = (state != _lastSentLiveState);
 
   const unsigned long now = millis();
@@ -45,7 +44,7 @@ void CloudHandler::update(float v, float c, float t, float zcv, float thd, float
     if (stateChanged) shouldSendLive = true;
     else if (now - _lastLiveSend >= _normalIntervalMs) shouldSendLive = true;
   } else {
-    // fault: send live only on change
+    // Faults update during state changes
     if (stateChanged) shouldSendLive = true;
   }
 
@@ -86,7 +85,7 @@ void CloudHandler::update(float v, float c, float t, float zcv, float thd, float
     return;
   }
 
-  // history: faults only, on change
+  // History: faults only, on state change
   if (!isNormal) {
     if (state != _lastLoggedFaultState) {
       _lastLoggedFaultState = state;

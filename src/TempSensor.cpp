@@ -10,20 +10,14 @@ void TempSensor::begin() {
 }
 
 float TempSensor::readTempC() {
-    // Read voltage in mV directly from ESP32 calibration
     uint32_t mv = analogReadMilliVolts(_pin);
-    float vOut = mv / 1000.0f; // Convert to Volts
+    float vOut = mv / 1000.0f;
 
-    // Safety: If voltage is near 0 (unplugged) or max (shorted), return error
+    // Error when uplugged or open
     if (vOut < 0.1) return -99.0f; 
 
     // Calculate Resistance of NTC
-    // V_out = VCC * R_ntc / (R_divider + R_ntc)
-    // => R_ntc = (V_out * R_divider) / (VCC - V_out)
-    
-    // Prevent divide by zero if V_out approx VCC (which shouldn't happen on 3.3V pin with 5V source unless clipped)
     if (vOut >= VCC - 0.1) vOut = VCC - 0.1; 
-
     float rNtc = (vOut * R_DIVIDER) / (VCC - vOut);
 
     // Steinhart-Hart Equation

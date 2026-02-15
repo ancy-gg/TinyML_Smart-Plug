@@ -2,40 +2,32 @@
 #include <Wire.h>
 #include <WiFi.h>
 
-// --- CORE LIBRARIES ---
+// Headers
 #include "NetworkManager.h"
 #include "CloudHandler.h"
-#include "OLED_NOTIF.h"  // <--- Defines 'FaultState' enum here
+#include "OLED_NOTIF.h"  
 #include "TimeSync.h"
 #include "PullOTA.h"
-
-// --- SENSOR LIBRARIES ---
 #include "VoltageSensor.h"
 #include "CurrentSensor.h"
 #include "TempSensor.h"
 
-// ======================
-// PIN MAP (XIAO ESP32S3)
-// ======================
-#define PIN_VOLT    A0  // D0
-#define PIN_CURR    A1  // D1
-#define PIN_TEMP    A2  // D2
+// Pin Definitions
+#define PIN_VOLT    A0  
+#define PIN_CURR    A1 
+#define PIN_TEMP    A2  
 
-// ======================
-// CONFIG
-// ======================
+// Firebase Configuration
 #define API_KEY "AIzaSyAmJlZZszyWPJFgIkTAAl_TbIySys1nvEw"
 #define DATABASE_URL "tinyml-smart-plug-default-rtdb.asia-southeast1.firebasedatabase.app"
-static const char* FW_VERSION = "TSP-v0.0.2"; 
+static const char* FW_VERSION = "TSP-v0.0.2"; // Always update this
 
 // OTA Paths
 static const char* OTA_DESIRED_VERSION_PATH = "/ota/desired_version";
 static const char* OTA_FIRMWARE_URL_PATH    = "/ota/firmware_url";
 static const uint32_t OTA_CHECK_INTERVAL_MS = 60 * 1000; 
 
-// ======================
-// OBJECTS
-// ======================
+// Declarations
 NetworkManager netManager;
 CloudHandler cloudHandler;
 OLED_NOTIF oled(0x3C);
@@ -46,33 +38,30 @@ VoltageSensor voltSensor(PIN_VOLT);
 CurrentSensor currSensor(PIN_CURR);
 TempSensor tempSensor(PIN_TEMP);
 
-// ======================
-// STATE & THRESHOLDS
-// ======================
+// Thresholds
 const float TEMP_THRESHOLD = 70.0;
-const float CURRENT_THRESHOLD = 16.0;
+const float CURRENT_THRESHOLD = 10.0;
 
-// FaultState is defined in OLED_NOTIF.h, so we just use it:
+// Initial State
 FaultState currentState = STATE_NORMAL;
 
 // OLED Timer
 static unsigned long lastOledUpdate = 0;
 static const unsigned long OLED_HOLD_MS = 250;
 
-// Boot Animation State
+// Boot Up Sequence
 enum BootStage { BOOTING, SHOW_IP, SHOW_OTA, SHOW_FIREBASE, RUNNING };
 static BootStage bootStage = BOOTING;
 static unsigned long bootStageStart = 0;
 
-// ======================
-// HELPER FUNCTIONS
-// ======================
+// WiFi Manager
 void configModeCallback(WiFiManager *myWiFiManager) {
   (void)myWiFiManager;
   Serial.println("[Main] AP Mode Active");
   oled.showStatus("WIFI SETUP", "AP: TinyML_Setup");
 }
 
+// Strings for FaultState
 static String stateToString(FaultState s) {
   switch (s) {
     case STATE_ARCING:   return "ARCING";
@@ -82,57 +71,49 @@ static String stateToString(FaultState s) {
   }
 }
 
-// ======================
 // SETUP
-// ======================
 void setup() {
   Serial.begin(115200);
   Wire.begin();
   
-  // 1. Init Sensors
+  // Sensors
   voltSensor.begin();
   currSensor.begin();
   tempSensor.begin();
 
-  // 2. Init OLED
+  // OLED
   oled.begin();
   oled.showStatus("SYSTEM", "Starting...");
   bootStage = BOOTING;
   bootStageStart = millis();
 
-  // 3. Network
+  //WiFi
   netManager.begin(configModeCallback);
 
-  // 4. Time
+  //Time Synchronization
   timeSync.begin("Asia/Manila");
 
-  // 5. Cloud
+  //Firebase
   cloudHandler.begin(API_KEY, DATABASE_URL);
 
-  // 6. OTA
+  //OTA Updates
   pullOta.begin(FW_VERSION, &cloudHandler);
   pullOta.setPaths(OTA_DESIRED_VERSION_PATH, OTA_FIRMWARE_URL_PATH);
   pullOta.setCheckInterval(OTA_CHECK_INTERVAL_MS);
   pullOta.setInsecureTLS(true);     
   pullOta.requestCheckNow();        
 
-  // Trigger Boot Animation
+  //WiFi Boot Up
   bootStage = SHOW_IP;
   bootStageStart = millis();
-
-  Serial.println("\n==============================");
-  Serial.printf("[Main] FW_VERSION: %s\n", FW_VERSION);
-  Serial.println("==============================\n");
 }
 
-// ======================
 // LOOP
-// ======================
 void loop() {
   netManager.update();
   timeSync.update();
 
-  // --- BOOT SCREEN SEQUENCE ---
+  // Boot Up Sequence
   if (bootStage != RUNNING) {
     const unsigned long elapsed = millis() - bootStageStart;
 
@@ -178,31 +159,28 @@ void loop() {
     }
   }
 
-  // --- MAIN LOGIC ---
-  
-  // 1. Read Sensors
+  // MAIN LOOP
   float v = voltSensor.readVoltageRMS();
   float c = currSensor.readCurrentRMS();
   float t = tempSensor.readTempC();
 
-  // 2. Placeholders for ML features
+  // TinyML Inference (Placeholder)
   float zcv = 0.0f;
   float thd = 0.0f;
   float entropy = 0.0f;
 
-  // 3. Determine State
+  // Determine Fault State
   if (c > CURRENT_THRESHOLD) currentState = STATE_OVERLOAD;
   else if (t > TEMP_THRESHOLD) currentState = STATE_HEATING;
   else currentState = STATE_NORMAL;
 
-  // 4. Update OLED (Throttled)
+  // Update Display
   if (millis() - lastOledUpdate >= OLED_HOLD_MS) {
     lastOledUpdate = millis();
-    // Correctly passes FaultState enum, no casting needed
     oled.updateDashboard(v, c, t, currentState); 
   }
 
-  // 5. Update Cloud & OTA
+  //Cloud Updates
   if (netManager.isConnected()) {
     cloudHandler.update(
       v, c, t,

@@ -8,13 +8,10 @@
 class CloudHandler {
 public:
   void begin(const char* apiKey, const char* dbUrl);
-
-  // live_data: NORMAL -> every 10s, faults -> only on state change
-  // history: faults only, only when state changes into a fault (or between faults)
   void update(float v, float c, float t, float zcv, float thd, float entropy,
               const String& state, TimeSync* time);
-
-  // --- For Pull-OTA ---
+              
+  // For OTA
   bool isReady() const;
   bool getString(const char* path, String& out);
 
