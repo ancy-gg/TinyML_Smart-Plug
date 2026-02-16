@@ -39,19 +39,19 @@ static constexpr int HEAT_FRAMES_DEC  = 1;
 
 // ========= Pins (YOUR EXACT WIRING) =========
 // ESP32 ADC (12-bit)
-static constexpr int PIN_VOLT_ADC  = 0;   // ZMPT101B
-static constexpr int PIN_TEMP_ADC  = 1;   // NTC divider
-static constexpr int PIN_RESET_BTN = 6;   // freed GPIO
+static constexpr int PIN_VOLT_ADC  = D0;   // ZMPT101B
+static constexpr int PIN_TEMP_ADC  = D1;   // NTC divider
+static constexpr int PIN_RESET_BTN = D6;   // freed GPIO
 
 // ADS8684 SPI (Current sensor AUX, 16-bit)
-static constexpr int PIN_ADC_CS   = 7;
-static constexpr int PIN_ADC_SCK  = 8;
-static constexpr int PIN_ADC_MISO = 9;
-static constexpr int PIN_ADC_MOSI = 10;
+static constexpr int PIN_ADC_CS   = D7;
+static constexpr int PIN_ADC_SCK  = D8;
+static constexpr int PIN_ADC_MISO = D9;
+static constexpr int PIN_ADC_MOSI = D10;
 
 // Outputs (edit only if your actual board wiring differs)
-static constexpr int PIN_RELAY      = 2;
-static constexpr int PIN_BUZZER_PWM = 3;
+static constexpr int PIN_RELAY      = D2;
+static constexpr int PIN_BUZZER_PWM = D3;
 
 // ========= ADS8684 =========
 static constexpr float ADS_VREF_V = 4.096f;

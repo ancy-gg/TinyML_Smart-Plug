@@ -62,46 +62,55 @@ bool hardwareReady = false; // Flag to track if ADC is present
 // -------------------------------------------------------------------------
 void setup() {
   Serial.begin(115200);
-  delay(1000); // Give serial time to settle
+  // Wait a moment for Serial to stabilize so you can see logs
+  delay(2000); 
+  Serial.println("\n\n--- BOARD BOOT ---");
 
   // 1. Hardware Init
   oled.begin();
   oled.showStatus("System", "Starting...");
+  Serial.println("[Init] OLED Done");
   
   actuators.begin(PIN_RELAY, PIN_BUZZER_PWM, PIN_RESET_BTN, &oled);
+  Serial.println("[Init] Actuators Done");
   
   // 2. Sensor Init
   voltSensor.begin();
   tempSensor.begin();
   
-  hardwareReady = curSensor.begin();
+  // --- CRITICAL FIX: DISABLE SPI SENSOR FOR NOW ---
+  // The line below is likely causing the crash because the pins are floating.
+  // hardwareReady = curSensor.begin(); <--- COMMENTED OUT
   
-  if (!hardwareReady) {
-    Serial.println("!!! WARNING: ADS8684 Missing or Failed !!!");
-    Serial.println("System will run in REDUCED mode (No Current Sensing)");
-    oled.showStatus("Warning", "No Current Sensor");
-    delay(2000); 
-  } else {
-    Serial.println("ADS8684 Initialized OK.");
-  }
+  hardwareReady = false; // Force "Not Ready" manually
+  Serial.println("[Init] SPI Sensor SKIPPED (Safe Mode)");
+  
+  // Show warning on screen so you know it's intentional
+  oled.showStatus("Warning", "Sensors OFF");
+  delay(1000); 
 
   // 3. Network Connection
   oled.showStatus("WiFi", "Connecting...");
+  Serial.println("[WiFi] Attempting connection...");
+  
+  // This might block if it needs to generate the "TinyML_Setup" AP
   net.begin([](WiFiManager* wm) {
     oled.showStatus("Setup Mode", "Connect to AP");
+    Serial.println("[WiFi] Entered AP Mode");
   });
+  Serial.println("[WiFi] Connected!");
 
-  // 4. Start Core 0 Pipeline (ONLY IF HARDWARE IS READY)
+  // 4. Start Core 0 Pipeline
+  // We strictly skip this if hardwareReady is false
   if (hardwareReady) {
     qFeat = xQueueCreate(3, sizeof(FeatureFrame));
     if (!core0.begin(qFeat, &curSensor, &arcFeat)) {
-      Serial.println("Core0 Start Failed!");
+      Serial.println("[Core0] Start Failed!");
     } else {
-      Serial.println("Core0 Pipeline Started.");
+      Serial.println("[Core0] Pipeline Started.");
     }
   } else {
-    // If no hardware, don't create queue or start task
-    Serial.println("Skipping Core0 Pipeline start.");
+    Serial.println("[Core0] SKIPPED (Safe Mode)");
   }
   
   // Default Calibration
@@ -115,6 +124,7 @@ void setup() {
 
   // 5. Cloud & Time
   oled.showStatus("Cloud", "Connecting...");
+  Serial.println("[Cloud] Init...");
   cloud.begin(API_KEY, DATABASE_URL);
   timeSync.begin();
   
@@ -128,7 +138,7 @@ void setup() {
 
   // Ready!
   oled.showStatus("System", "Ready");
-  Serial.println("Setup Complete.");
+  Serial.println("Setup Complete. Entering Loop.");
 }
 
 // -------------------------------------------------------------------------
