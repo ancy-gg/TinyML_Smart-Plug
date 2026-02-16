@@ -1,45 +1,19 @@
 #include "CurrentSensor.h"
 
-CurrentSensor::CurrentSensor(int pin) {
-    _pin = pin;
-    _mvPerAmp = 100.0f; // Default to ACS712-20A (100mV/A)
+CurrentSensor::CurrentSensor()
+: _adc(ADS8684::Config{
+    .host = SPI2_HOST,
+    .pin_cs = PIN_ADC_CS,
+    .pin_sck = PIN_ADC_SCK,
+    .pin_miso = PIN_ADC_MISO,
+    .pin_mosi = PIN_ADC_MOSI,
+    .spi_clock_hz = ADS_SPI_HZ
+  }) {}
+
+bool CurrentSensor::begin() {
+  return _adc.begin();
 }
 
-void CurrentSensor::begin() {
-    pinMode(_pin, INPUT);
-}
-
-void CurrentSensor::setMvPerAmp(float mvPerAmp) {
-    _mvPerAmp = mvPerAmp;
-}
-
-float CurrentSensor::readCurrentRMS() {
-    int maxVal = 0;
-    int minVal = 4096;
-    unsigned long start = millis();
-
-    // Sample for 40ms to catch peaks
-    while (millis() - start < 40) {
-        int val = analogRead(_pin);
-        if (val > maxVal) maxVal = val;
-        if (val < minVal) minVal = val;
-    }
-
-    // Filter noise
-    if ((maxVal - minVal) < 10) return 0.0f;
-
-    // Calculate Peak-to-Peak Voltage in mV
-    // (ADC_Value * 3300mV / 4095)
-    float voltagePkPk = (maxVal - minVal) * (3300.0f / 4095.0f);
-
-    // RMS Voltage of the AC signal
-    float voltageRMS = (voltagePkPk / 2.0f) * 0.7071f;
-
-    // Convert to Amps
-    float amps = voltageRMS / _mvPerAmp;
-
-    // Noise Gate: Ignore tiny currents < 100mA
-    /* if (amps < 0.10f) amps = 0.0f; */
-
-    return amps;
+size_t CurrentSensor::capture(uint16_t* dst, size_t n, float* measuredFsHz) {
+  return _adc.readRawBurst(dst, n, measuredFsHz);
 }

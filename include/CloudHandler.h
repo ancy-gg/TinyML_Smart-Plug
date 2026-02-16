@@ -10,10 +10,15 @@ public:
   void begin(const char* apiKey, const char* dbUrl);
   void update(float v, float c, float t, float zcv, float thd, float entropy,
               const String& state, TimeSync* time);
-              
-  // For OTA
+
+  // For OTA + configs
   bool isReady() const;
   bool getString(const char* path, String& out);
+  bool getBool(const char* path, bool& out);
+  bool getInt(const char* path, int& out);
+
+  // For ML logger upload
+  bool pushJSON(const char* path, FirebaseJson& json);
 
 private:
   FirebaseData fbdo;

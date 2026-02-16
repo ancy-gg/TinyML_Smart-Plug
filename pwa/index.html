@@ -156,6 +156,28 @@
     </section>
     <!-- ===================================================== -->
 
+    <section class="history">
+      <div class="history-head">
+        <div>
+          <h2 class="history-title">ML Training Logs</h2>
+          <div class="history-hint muted">Collects 30 frames/sec then uploads CSV to /ml_logs</div>
+        </div>
+        <div class="history-actions">
+          <label class="muted">
+            <input type="checkbox" id="mlLogEnable" />
+            Enable Logger
+          </label>
+          <select id="mlLogDur" class="select">
+            <option value="5">5s</option>
+            <option value="10" selected>10s</option>
+          </select>
+          <button id="btnDownloadLatestMl" class="btn" type="button">Download Latest CSV</button>
+        </div>
+      </div>
+      <div class="muted small" id="mlLogStatus">—</div>
+    </section>
+
+
     <footer class="footer">
       <div class="muted small">
         TinyML Smart Plug Monitoring Dashboard<br/>

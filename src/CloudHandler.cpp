@@ -17,17 +17,29 @@ bool CloudHandler::isReady() const {
 }
 
 bool CloudHandler::getString(const char* path, String& out) {
-  if (!Firebase.ready()) return false;
-  if (!path || !*path) return false;
-
-  if (!Firebase.RTDB.getString(&fbdo, path)) {
-    Serial.print("[Cloud] getString FAIL: ");
-    Serial.println(fbdo.errorReason());
-    return false;
-  }
-
+  if (!Firebase.ready() || !path || !*path) return false;
+  if (!Firebase.RTDB.getString(&fbdo, path)) return false;
   out = fbdo.stringData();
   return true;
+}
+
+bool CloudHandler::getBool(const char* path, bool& out) {
+  if (!Firebase.ready() || !path || !*path) return false;
+  if (!Firebase.RTDB.getBool(&fbdo, path)) return false;
+  out = fbdo.boolData();
+  return true;
+}
+
+bool CloudHandler::getInt(const char* path, int& out) {
+  if (!Firebase.ready() || !path || !*path) return false;
+  if (!Firebase.RTDB.getInt(&fbdo, path)) return false;
+  out = fbdo.intData();
+  return true;
+}
+
+bool CloudHandler::pushJSON(const char* path, FirebaseJson& json) {
+  if (!Firebase.ready() || !path || !*path) return false;
+  return Firebase.RTDB.pushJSON(&fbdo, path, &json);
 }
 
 void CloudHandler::update(float v, float c, float t, float zcv, float thd, float entropy,
@@ -44,7 +56,6 @@ void CloudHandler::update(float v, float c, float t, float zcv, float thd, float
     if (stateChanged) shouldSendLive = true;
     else if (now - _lastLiveSend >= _normalIntervalMs) shouldSendLive = true;
   } else {
-    // Faults update during state changes
     if (stateChanged) shouldSendLive = true;
   }
 
@@ -79,20 +90,12 @@ void CloudHandler::update(float v, float c, float t, float zcv, float thd, float
   json.set("uptime_ms", (int)millis());
   json.set("server_ts/.sv", "timestamp");
 
-  if (!Firebase.RTDB.updateNode(&fbdo, "/live_data", &json)) {
-    Serial.print("[Cloud] live_data FAIL: ");
-    Serial.println(fbdo.errorReason());
-    return;
-  }
+  if (!Firebase.RTDB.updateNode(&fbdo, "/live_data", &json)) return;
 
-  // History: faults only, on state change
   if (!isNormal) {
     if (state != _lastLoggedFaultState) {
       _lastLoggedFaultState = state;
-      if (!Firebase.RTDB.pushJSON(&fbdo, "/history", &json)) {
-        Serial.print("[Cloud] history FAIL: ");
-        Serial.println(fbdo.errorReason());
-      }
+      Firebase.RTDB.pushJSON(&fbdo, "/history", &json);
     }
   } else {
     _lastLoggedFaultState = "";

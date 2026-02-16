@@ -518,6 +518,72 @@ setInterval(() => {
   });
 })();
 
+// TinyML Logger
+const mlLogEnable = el("mlLogEnable");
+const mlLogDur = el("mlLogDur");
+const btnDownloadLatestMl = el("btnDownloadLatestMl");
+const mlLogStatus = el("mlLogStatus");
+
+function downloadTextFileGeneric(filename, text, mime="text/csv;charset=utf-8") {
+  const blob = new Blob([text], { type: mime });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
+}
+
+if (mlLogEnable) {
+  db.ref("ml_log/enabled").on("value", (s) => {
+    const v = !!s.val();
+    mlLogEnable.checked = v;
+  });
+
+  mlLogEnable.addEventListener("change", async () => {
+    await db.ref("ml_log").update({ enabled: !!mlLogEnable.checked });
+    toast("Logger updated.", "ok");
+  });
+}
+
+if (mlLogDur) {
+  mlLogDur.addEventListener("change", async () => {
+    const dur = parseInt(mlLogDur.value || "10", 10);
+    await db.ref("ml_log").update({ duration_s: dur });
+    toast("Duration updated.", "ok");
+  });
+}
+
+if (btnDownloadLatestMl) {
+  btnDownloadLatestMl.addEventListener("click", async () => {
+    try {
+      const snap = await db.ref("ml_logs").limitToLast(1).get();
+      if (!snap.exists()) {
+        toast("No ML logs yet.", "err");
+        return;
+      }
+      const obj = snap.val();
+      const key = Object.keys(obj)[0];
+      const rec = obj[key];
+      const csv = rec?.csv || "";
+      if (!csv) {
+        toast("Latest log missing CSV.", "err");
+        return;
+      }
+
+      const ts = new Date().toISOString().slice(0,19).replace(/[:T]/g,"-");
+      downloadTextFileGeneric(`TSP_ML_${ts}.csv`, csv);
+      if (mlLogStatus) mlLogStatus.textContent = `Downloaded latest log: ${key}`;
+      toast("ML CSV downloaded.", "ok");
+    } catch (e) {
+      console.error(e);
+      toast("Failed to download ML log.", "err");
+    }
+  });
+}
+
 // ---------- Service worker ----------
 if ("serviceWorker" in navigator) {
   navigator.serviceWorker.register("sw.js").then((reg) => {

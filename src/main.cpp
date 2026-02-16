@@ -1,196 +1,185 @@
 #include <Arduino.h>
 #include <Wire.h>
 #include <WiFi.h>
+#include <freertos/FreeRTOS.h>
+#include <freertos/queue.h>
 
-// Headers
+#include "SmartPlugConfig.h"
+#include "SmartPlugTypes.h"
+
 #include "NetworkManager.h"
 #include "CloudHandler.h"
-#include "OLED_NOTIF.h"  
+#include "OLED_NOTIF.h"
 #include "TimeSync.h"
 #include "PullOTA.h"
-#include "VoltageSensor.h"
-#include "CurrentSensor.h"
-#include "TempSensor.h"
 
-// Pin Definitions
-#define PIN_VOLT    A0  
-#define PIN_CURR    A1 
-#define PIN_TEMP    A2  
+#include "VoltageSensor.h"
+#include "TempSensor.h"
+#include "CurrentSensor.h"
+
+#include "ArcFeatures.h"
+#include "ArcModel.h"
+#include "FaultLogic.h"
+#include "Actuators.h"
+#include "Core0Pipeline.h"
+#include "DataLogger.h"
+#include <esp_task_wdt.h>
 
 // Firebase Configuration
 #define API_KEY "AIzaSyAmJlZZszyWPJFgIkTAAl_TbIySys1nvEw"
 #define DATABASE_URL "tinyml-smart-plug-default-rtdb.asia-southeast1.firebasedatabase.app"
-static const char* FW_VERSION = "TSP-v0.0.3"; // Always update this
+static const char* FW_VERSION = "TSP-v0.1.0";
 
-// OTA Paths
 static const char* OTA_DESIRED_VERSION_PATH = "/ota/desired_version";
 static const char* OTA_FIRMWARE_URL_PATH    = "/ota/firmware_url";
-static const uint32_t OTA_CHECK_INTERVAL_MS = 60 * 1000; 
+static const uint32_t OTA_CHECK_INTERVAL_MS = 60 * 1000;
 
-// Declarations
+// Globals
 NetworkManager netManager;
 CloudHandler cloudHandler;
 OLED_NOTIF oled(0x3C);
 TimeSync timeSync;
 PullOTA pullOta;
 
-VoltageSensor voltSensor(PIN_VOLT);
-CurrentSensor currSensor(PIN_CURR);
-TempSensor tempSensor(PIN_TEMP);
+VoltageSensor voltSensor(PIN_VOLT_ADC);
+TempSensor tempSensor(PIN_TEMP_ADC);
+CurrentSensor currentSensor;
 
-// Thresholds
-const float TEMP_THRESHOLD = 70.0;
-const float CURRENT_THRESHOLD = 10.0;
+ArcFeatures arcFeatures;
+FaultLogic faultLogic;
+Actuators actuators;
 
-// Initial State
-FaultState currentState = STATE_NORMAL;
+Core0Pipeline core0;
+QueueHandle_t qFeat = nullptr;
 
-// OLED Timer
-static unsigned long lastOledUpdate = 0;
-static const unsigned long OLED_HOLD_MS = 250;
+DataLogger logger;
 
-// Boot Up Sequence
-enum BootStage { BOOTING, SHOW_IP, SHOW_OTA, SHOW_FIREBASE, RUNNING };
-static BootStage bootStage = BOOTING;
-static unsigned long bootStageStart = 0;
-
-// WiFi Manager
-void configModeCallback(WiFiManager *myWiFiManager) {
-  (void)myWiFiManager;
-  Serial.println("[Main] AP Mode Active");
+// WiFiManager callback
+void configModeCallback(WiFiManager *wm) {
+  (void)wm;
   oled.showStatus("WIFI SETUP", "AP: TinyML_Setup");
 }
 
-// Strings for FaultState
-static String stateToString(FaultState s) {
-  switch (s) {
-    case STATE_ARCING:   return "ARCING";
-    case STATE_HEATING:  return "HEATING";
-    case STATE_OVERLOAD: return "OVERLOAD";
-    default:             return "NORMAL"; 
-  }
+static uint64_t epochProvider() {
+  return timeSync.nowEpochMs();
 }
 
-// SETUP
 void setup() {
   Serial.begin(115200);
   Wire.begin();
-  
-  // Sensors
-  voltSensor.begin();
-  currSensor.begin();
-  tempSensor.begin();
 
-  // OLED
+  analogReadResolution(12);
+
   oled.begin();
   oled.showStatus("SYSTEM", "Starting...");
-  bootStage = BOOTING;
-  bootStageStart = millis();
 
-  //WiFi
+  voltSensor.begin();
+  tempSensor.begin();
+
   netManager.begin(configModeCallback);
-
-  //Time Synchronization
   timeSync.begin("Asia/Manila");
 
-  //Firebase
   cloudHandler.begin(API_KEY, DATABASE_URL);
 
-  //OTA Updates
   pullOta.begin(FW_VERSION, &cloudHandler);
   pullOta.setPaths(OTA_DESIRED_VERSION_PATH, OTA_FIRMWARE_URL_PATH);
   pullOta.setCheckInterval(OTA_CHECK_INTERVAL_MS);
-  pullOta.setInsecureTLS(true);     
-  pullOta.requestCheckNow();        
+  pullOta.setInsecureTLS(true);
+  pullOta.requestCheckNow();
 
-  //WiFi Boot Up
-  bootStage = SHOW_IP;
-  bootStageStart = millis();
+  currentSensor.begin();
+
+  actuators.begin(PIN_RELAY, PIN_BUZZER_PWM, PIN_RESET_BTN, &oled);
+
+  // queue holds only latest frame
+  qFeat = xQueueCreate(1, sizeof(FeatureFrame));
+
+  // core0 pipeline
+  core0.setTimeProvider(epochProvider);
+  core0.setCalib(CurrentCalib{}); // default; tune later
+  core0.begin(qFeat, &currentSensor, &arcFeatures);
+
+  esp_task_wdt_init(5, true); // 5 second timeout, panic on trigger
+  esp_task_wdt_add(NULL); 
+
+  logger.begin(&cloudHandler);
+#if ENABLE_ML_LOGGER
+  logger.setEnabled(false);         // default off
+  logger.setDurationSeconds(10);
+#endif
+
+  oled.showStatus("READY", WiFi.localIP().toString().c_str());
 }
 
-// LOOP
 void loop() {
   netManager.update();
   timeSync.update();
 
-  // Boot Up Sequence
-  if (bootStage != RUNNING) {
-    const unsigned long elapsed = millis() - bootStageStart;
-
-    if (bootStage == SHOW_IP) {
-      if (elapsed < 50) {
-        String ipStr = "IP: ";
-        ipStr += WiFi.localIP().toString();
-        oled.showStatus("CONNECTED", ipStr.c_str());
-        Serial.println(ipStr);
-      }
-      if (elapsed >= 2000) {
-        bootStage = SHOW_OTA;
-        bootStageStart = millis();
-      }
-      delay(1);
-      return;
-    }
-
-    if (bootStage == SHOW_OTA) {
-      if (elapsed < 50) {
-        String msg = netManager.isConnected() ? "PULL READY" : "NO WIFI";
-        oled.showStatus("OTA (HTTPS)", msg.c_str());
-        Serial.printf("[Main] OTA %s\n", msg.c_str());
-      }
-      if (elapsed >= 2000) {
-        bootStage = SHOW_FIREBASE;
-        bootStageStart = millis();
-      }
-      delay(1);
-      return;
-    }
-
-    if (bootStage == SHOW_FIREBASE) {
-      if (elapsed < 50) {
-        oled.showStatus("FIREBASE", "Engaged...");
-        Serial.println("[Main] Firebase running...");
-      }
-      if (elapsed >= 1200) {
-        bootStage = RUNNING;
-      }
-      delay(1);
-      return;
-    }
+  if (actuators.resetLongPressed()) {
+    faultLogic.resetLatch();
+    oled.showStatus("RESET", "Latch cleared");
+    delay(250);
   }
 
-  // MAIN LOOP
-  float v = voltSensor.readVoltageRMS();
-  float c = currSensor.readCurrentRMS();
-  float t = tempSensor.readTempC();
+  // Voltage and Temperature Sensor
+  static float vRms = 0.0f;
+  static float tC = 0.0f;
+  static uint32_t tV = 0, tT = 0;
 
-  // TinyML Inference (Placeholder)
-  float zcv = 0.0f;
-  float thd = 0.0f;
-  float entropy = 0.0f;
-
-  // Determine Fault State
-  if (c > CURRENT_THRESHOLD) currentState = STATE_OVERLOAD;
-  else if (t > TEMP_THRESHOLD) currentState = STATE_HEATING;
-  else currentState = STATE_NORMAL;
-
-  // Update Display
-  if (millis() - lastOledUpdate >= OLED_HOLD_MS) {
-    lastOledUpdate = millis();
-    oled.updateDashboard(v, c, t, currentState); 
+  // Voltage
+  float newV = voltSensor.update();
+  if (newV >= 0.0f) {
+    vRms = newV; 
   }
 
-  //Cloud Updates
+  // Temperature 
+  if (millis() - tT > 500) {
+    tT = millis();
+    tC = tempSensor.readTempC();
+  }
+
+  // get latest feature frame from core0
+  FeatureFrame f;
+  bool got = (xQueueReceive(qFeat, &f, 0) == pdTRUE);
+
+  if (!got) {
+    // still show basic dashboard
+    FaultState st = STATE_NORMAL;
+    actuators.apply(st, vRms, 0.0f, tC);
+    delay(1);
+    return;
+  }
+
+  // fill core1-only fields
+  f.vrms = vRms;
+  f.temp_c = tC;
+
+  // tinyml / baseline rule model
+  f.model_pred = (uint8_t)ArcPredict(f.entropy, f.thd_pct, f.zcv_ms, f.vrms, f.irms, f.temp_c);
+
+  // state decision
+  FaultState st = faultLogic.update(f.temp_c, f.irms, (int)f.model_pred);
+
+  // outputs
+  actuators.apply(st, f.vrms, f.irms, f.temp_c);
+
+  // optional logger
+#if ENABLE_ML_LOGGER
+  logger.ingest(f, st, faultLogic.arcCounter());
+  logger.loop();
+#endif
+
+  // cloud + OTA
   if (netManager.isConnected()) {
     cloudHandler.update(
-      v, c, t,
-      zcv, thd, entropy,
-      stateToString(currentState),
+      f.vrms, f.irms, f.temp_c,
+      f.zcv_ms, f.thd_pct, f.entropy,
+      String(stateToCstr(st)),
       &timeSync
     );
-
     pullOta.loop();
   }
-
+  
+esp_task_wdt_reset();
   delay(1);
 }
