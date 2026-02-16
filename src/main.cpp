@@ -3,11 +3,12 @@
 #include <WiFi.h>
 #include <freertos/FreeRTOS.h>
 #include <freertos/queue.h>
-#include <esp_task_wdt.h>
 
+// --- Config & Types ---
 #include "SmartPlugConfig.h"
 #include "SmartPlugTypes.h"
 
+// --- Modules ---
 #include "NetworkManager.h"
 #include "CloudHandler.h"
 #include "OLED_NOTIF.h"
@@ -25,16 +26,17 @@
 #include "Core0Pipeline.h"
 #include "DataLogger.h"
 
-// Firebase Configuration
+// --- Firebase Configuration ---
 #define API_KEY "AIzaSyAmJlZZszyWPJFgIkTAAl_TbIySys1nvEw"
 #define DATABASE_URL "tinyml-smart-plug-default-rtdb.asia-southeast1.firebasedatabase.app"
-static const char* FW_VERSION = "TSP-v0.1.1"; 
+static const char* FW_VERSION = "TSP-v0.1.2-NoWDT"; 
 
+// --- OTA Constants ---
 static const char* OTA_DESIRED_VERSION_PATH = "/ota/desired_version";
 static const char* OTA_FIRMWARE_URL_PATH    = "/ota/firmware_url";
 static const uint32_t OTA_CHECK_INTERVAL_MS = 60000;
 
-// Global Objects
+// --- Global Objects ---
 OLED_NOTIF      oled(0x3C);
 NetworkManager  net;
 CloudHandler    cloud;
@@ -74,29 +76,31 @@ void setup() {
   if (!curSensor.begin()) {
     Serial.println("ADS8684 Init Failed!");
     oled.showStatus("Error", "ADS Init Fail");
-    delay(2000);
+    delay(2000); // Allow user to read error
   }
 
-  // 3. Network (This blocks, but WDT is not active yet, so it is safe)
+  // 3. Network Connection (Blocking)
   oled.showStatus("WiFi", "Connecting...");
   net.begin([](WiFiManager* wm) {
     oled.showStatus("Setup Mode", "Connect to AP");
   });
 
-  // 4. Core 0 Pipeline
+  // 4. Start Core 0 Pipeline (High Speed Data)
   qFeat = xQueueCreate(3, sizeof(FeatureFrame));
   if (!core0.begin(qFeat, &curSensor, &arcFeat)) {
     Serial.println("Core0 Start Failed!");
   }
   
-  CurrentCalib cal; // default
+  // Default Calibration
+  CurrentCalib cal; 
   core0.setCalib(cal);
   
+  // Time Provider for Logs
   core0.setTimeProvider([]() -> uint64_t {
     return timeSync.nowEpochMs();
   });
 
-  // 5. Cloud & Time (Also Blocking, but safe now)
+  // 5. Cloud & Time (Blocking)
   oled.showStatus("Cloud", "Connecting...");
   cloud.begin(API_KEY, DATABASE_URL);
   timeSync.begin();
@@ -109,29 +113,22 @@ void setup() {
   ota.setPaths(OTA_DESIRED_VERSION_PATH, OTA_FIRMWARE_URL_PATH);
   ota.setCheckInterval(OTA_CHECK_INTERVAL_MS);
 
-  // 6. FINAL STEP: Enable Watchdog NOW 
-  // We do this LAST so we don't crash during the slow WiFi/Cloud connect above.
-  // Timeout = 10 seconds.
-  esp_task_wdt_init(10, true);
-  esp_task_wdt_add(NULL); 
-
+  // Ready!
   oled.showStatus("System", "Ready");
-  Serial.println("Setup Complete. Watchdog Active.");
+  Serial.println("Setup Complete. No Watchdog.");
 }
 
 // -------------------------------------------------------------------------
 // Loop (Core 1)
 // -------------------------------------------------------------------------
 void loop() {
-  // 1. Feed the Watchdog (Keep system alive)
-  esp_task_wdt_reset();
-
-  // 2. Maintain Connections
+  // 1. Maintain Connections
   net.update();
   ota.loop();
   logger.loop();
   timeSync.update();
 
+  // 2. Handle Manual Reset Button
   if (actuators.resetLongPressed()) {
     faultLogic.resetLatch();
     oled.showStatus("RESET", "Latch cleared");
@@ -143,14 +140,14 @@ void loop() {
   static float tC = 0.0f;
   static uint32_t tT = 0;
 
-  // Voltage: Call update() every loop. It returns -1 if busy, or value if done.
-  // This replaces the old blocking readVoltageRMS().
+  // Voltage: Call update() every loop. 
+  // IMPORTANT: Ensure you updated VoltageSensor.h/.cpp to the non-blocking version!
   float newV = voltSensor.update();
   if (newV >= 0.0f) {
     vRms = newV;
   }
 
-  // Temp: Every 500ms
+  // Temp: Read every 500ms
   if (millis() - tT > 500) {
     tT = millis();
     tC = tempSensor.readTempC();
@@ -158,7 +155,7 @@ void loop() {
 
   // 4. Get Data from Core 0
   FeatureFrame f;
-  // Use 0 tick wait so we don't block
+  // Wait 0 ticks so we don't block
   bool got = (xQueueReceive(qFeat, &f, 0) == pdTRUE);
 
   if (!got) {
@@ -166,6 +163,7 @@ void loop() {
     return; 
   }
 
+  // Add slow sensor data to frame
   f.vrms = vRms;
   f.temp_c = tC;
 
