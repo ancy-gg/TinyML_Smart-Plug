@@ -3,6 +3,7 @@
 #include <WiFi.h>
 #include <freertos/FreeRTOS.h>
 #include <freertos/queue.h>
+#include <esp_task_wdt.h>
 
 #include "SmartPlugConfig.h"
 #include "SmartPlugTypes.h"
@@ -23,96 +24,112 @@
 #include "Actuators.h"
 #include "Core0Pipeline.h"
 #include "DataLogger.h"
-#include <esp_task_wdt.h>
 
 // Firebase Configuration
 #define API_KEY "AIzaSyAmJlZZszyWPJFgIkTAAl_TbIySys1nvEw"
 #define DATABASE_URL "tinyml-smart-plug-default-rtdb.asia-southeast1.firebasedatabase.app"
-static const char* FW_VERSION = "TSP-v0.1.0";
+static const char* FW_VERSION = "TSP-v0.1.1"; 
 
 static const char* OTA_DESIRED_VERSION_PATH = "/ota/desired_version";
 static const char* OTA_FIRMWARE_URL_PATH    = "/ota/firmware_url";
-static const uint32_t OTA_CHECK_INTERVAL_MS = 60 * 1000;
+static const uint32_t OTA_CHECK_INTERVAL_MS = 60000;
 
-// Globals
-NetworkManager netManager;
-CloudHandler cloudHandler;
-OLED_NOTIF oled(0x3C);
-TimeSync timeSync;
-PullOTA pullOta;
+// Global Objects
+OLED_NOTIF      oled(0x3C);
+NetworkManager  net;
+CloudHandler    cloud;
+TimeSync        timeSync;
+PullOTA         ota;
 
-VoltageSensor voltSensor(PIN_VOLT_ADC);
-TempSensor tempSensor(PIN_TEMP_ADC);
-CurrentSensor currentSensor;
+VoltageSensor   voltSensor(PIN_VOLT_ADC);
+TempSensor      tempSensor(PIN_TEMP_ADC);
+CurrentSensor   curSensor; 
 
-ArcFeatures arcFeatures;
-FaultLogic faultLogic;
-Actuators actuators;
+ArcFeatures     arcFeat;
+FaultLogic      faultLogic;
+Actuators       actuators;
+Core0Pipeline   core0;
+DataLogger      logger;
 
-Core0Pipeline core0;
+// Inter-core Queue
 QueueHandle_t qFeat = nullptr;
 
-DataLogger logger;
-
-// WiFiManager callback
-void configModeCallback(WiFiManager *wm) {
-  (void)wm;
-  oled.showStatus("WIFI SETUP", "AP: TinyML_Setup");
-}
-
-static uint64_t epochProvider() {
-  return timeSync.nowEpochMs();
-}
-
+// -------------------------------------------------------------------------
+// Setup
+// -------------------------------------------------------------------------
 void setup() {
   Serial.begin(115200);
-  Wire.begin();
-
-  analogReadResolution(12);
-
+  
+  // 1. Hardware Init
   oled.begin();
-  oled.showStatus("SYSTEM", "Starting...");
-
+  oled.showStatus("System", "Starting...");
+  
+  actuators.begin(PIN_RELAY, PIN_BUZZER_PWM, PIN_RESET_BTN, &oled);
+  
+  // 2. Sensor Init
   voltSensor.begin();
   tempSensor.begin();
+  
+  // SPI Init for ADS8684
+  if (!curSensor.begin()) {
+    Serial.println("ADS8684 Init Failed!");
+    oled.showStatus("Error", "ADS Init Fail");
+    delay(2000);
+  }
 
-  netManager.begin(configModeCallback);
-  timeSync.begin("Asia/Manila");
+  // 3. Network (This blocks, but WDT is not active yet, so it is safe)
+  oled.showStatus("WiFi", "Connecting...");
+  net.begin([](WiFiManager* wm) {
+    oled.showStatus("Setup Mode", "Connect to AP");
+  });
 
-  cloudHandler.begin(API_KEY, DATABASE_URL);
+  // 4. Core 0 Pipeline
+  qFeat = xQueueCreate(3, sizeof(FeatureFrame));
+  if (!core0.begin(qFeat, &curSensor, &arcFeat)) {
+    Serial.println("Core0 Start Failed!");
+  }
+  
+  CurrentCalib cal; // default
+  core0.setCalib(cal);
+  
+  core0.setTimeProvider([]() -> uint64_t {
+    return timeSync.nowEpochMs();
+  });
 
-  pullOta.begin(FW_VERSION, &cloudHandler);
-  pullOta.setPaths(OTA_DESIRED_VERSION_PATH, OTA_FIRMWARE_URL_PATH);
-  pullOta.setCheckInterval(OTA_CHECK_INTERVAL_MS);
-  pullOta.setInsecureTLS(true);
-  pullOta.requestCheckNow();
+  // 5. Cloud & Time (Also Blocking, but safe now)
+  oled.showStatus("Cloud", "Connecting...");
+  cloud.begin(API_KEY, DATABASE_URL);
+  timeSync.begin();
+  
+  logger.begin(&cloud);
+  logger.setEnabled(false); 
 
-  currentSensor.begin();
+  // OTA Setup
+  ota.begin(FW_VERSION, &cloud);
+  ota.setPaths(OTA_DESIRED_VERSION_PATH, OTA_FIRMWARE_URL_PATH);
+  ota.setCheckInterval(OTA_CHECK_INTERVAL_MS);
 
-  actuators.begin(PIN_RELAY, PIN_BUZZER_PWM, PIN_RESET_BTN, &oled);
-
-  // queue holds only latest frame
-  qFeat = xQueueCreate(1, sizeof(FeatureFrame));
-
-  // core0 pipeline
-  core0.setTimeProvider(epochProvider);
-  core0.setCalib(CurrentCalib{}); // default; tune later
-  core0.begin(qFeat, &currentSensor, &arcFeatures);
-
-  esp_task_wdt_init(5, true); // 5 second timeout, panic on trigger
+  // 6. FINAL STEP: Enable Watchdog NOW 
+  // We do this LAST so we don't crash during the slow WiFi/Cloud connect above.
+  // Timeout = 10 seconds.
+  esp_task_wdt_init(10, true);
   esp_task_wdt_add(NULL); 
 
-  logger.begin(&cloudHandler);
-#if ENABLE_ML_LOGGER
-  logger.setEnabled(false);         // default off
-  logger.setDurationSeconds(10);
-#endif
-
-  oled.showStatus("READY", WiFi.localIP().toString().c_str());
+  oled.showStatus("System", "Ready");
+  Serial.println("Setup Complete. Watchdog Active.");
 }
 
+// -------------------------------------------------------------------------
+// Loop (Core 1)
+// -------------------------------------------------------------------------
 void loop() {
-  netManager.update();
+  // 1. Feed the Watchdog (Keep system alive)
+  esp_task_wdt_reset();
+
+  // 2. Maintain Connections
+  net.update();
+  ota.loop();
+  logger.loop();
   timeSync.update();
 
   if (actuators.resetLongPressed()) {
@@ -121,65 +138,47 @@ void loop() {
     delay(250);
   }
 
-  // Voltage and Temperature Sensor
+  // 3. Slow Sensors (Non-blocking)
   static float vRms = 0.0f;
   static float tC = 0.0f;
-  static uint32_t tV = 0, tT = 0;
+  static uint32_t tT = 0;
 
-  // Voltage
+  // Voltage: Call update() every loop. It returns -1 if busy, or value if done.
+  // This replaces the old blocking readVoltageRMS().
   float newV = voltSensor.update();
   if (newV >= 0.0f) {
-    vRms = newV; 
+    vRms = newV;
   }
 
-  // Temperature 
+  // Temp: Every 500ms
   if (millis() - tT > 500) {
     tT = millis();
     tC = tempSensor.readTempC();
   }
 
-  // get latest feature frame from core0
+  // 4. Get Data from Core 0
   FeatureFrame f;
+  // Use 0 tick wait so we don't block
   bool got = (xQueueReceive(qFeat, &f, 0) == pdTRUE);
 
   if (!got) {
-    // still show basic dashboard
-    FaultState st = STATE_NORMAL;
-    actuators.apply(st, vRms, 0.0f, tC);
-    delay(1);
-    return;
+    // Queue empty? Skip logic to avoid flickering 0 values.
+    return; 
   }
 
-  // fill core1-only fields
   f.vrms = vRms;
   f.temp_c = tC;
 
-  // tinyml / baseline rule model
-  f.model_pred = (uint8_t)ArcPredict(f.entropy, f.thd_pct, f.zcv_ms, f.vrms, f.irms, f.temp_c);
+  // 5. Fault Logic
+  FaultState state = faultLogic.update(tC, f.irms, f.model_pred);
 
-  // state decision
-  FaultState st = faultLogic.update(f.temp_c, f.irms, (int)f.model_pred);
+  // 6. Actuators & Display
+  actuators.apply(state, vRms, f.irms, tC);
 
-  // outputs
-  actuators.apply(st, f.vrms, f.irms, f.temp_c);
+  // 7. Cloud Update
+  cloud.update(vRms, f.irms, tC, f.zcv_ms, f.thd_pct, f.entropy,
+               String(stateToCstr(state)), &timeSync);
 
-  // optional logger
-#if ENABLE_ML_LOGGER
-  logger.ingest(f, st, faultLogic.arcCounter());
-  logger.loop();
-#endif
-
-  // cloud + OTA
-  if (netManager.isConnected()) {
-    cloudHandler.update(
-      f.vrms, f.irms, f.temp_c,
-      f.zcv_ms, f.thd_pct, f.entropy,
-      String(stateToCstr(st)),
-      &timeSync
-    );
-    pullOta.loop();
-  }
-  
-esp_task_wdt_reset();
-  delay(1);
+  // 8. Data Logging
+  logger.ingest(f, state, faultLogic.arcCounter());
 }
