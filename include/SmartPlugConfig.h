@@ -8,10 +8,8 @@
 //#define USE_M2CGEN_RF
 
 
-// Data Logging
-#ifndef ENABLE_ML_LOGGER
-#define ENABLE_ML_LOGGER 0
-#endif
+#define ENABLE_CURRENT_SENSOR 1
+#define ENABLE_ML_LOGGER 1
 
 // Sampling and FFT
 static constexpr float   FS_TARGET_HZ = 125000.0f;
