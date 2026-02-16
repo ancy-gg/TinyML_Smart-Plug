@@ -29,7 +29,7 @@
 // --- Firebase Configuration ---
 #define API_KEY "AIzaSyAmJlZZszyWPJFgIkTAAl_TbIySys1nvEw"
 #define DATABASE_URL "tinyml-smart-plug-default-rtdb.asia-southeast1.firebasedatabase.app"
-static const char* FW_VERSION = "TSP-v0.1.2"; 
+static const char* FW_VERSION = "TSP-v0.1.3"; 
 
 // --- OTA Constants ---
 static const char* OTA_DESIRED_VERSION_PATH = "/ota/desired_version";
@@ -55,13 +55,15 @@ DataLogger      logger;
 
 // Inter-core Queue
 QueueHandle_t qFeat = nullptr;
+bool hardwareReady = false; // Flag to track if ADC is present
 
 // -------------------------------------------------------------------------
 // Setup
 // -------------------------------------------------------------------------
 void setup() {
   Serial.begin(115200);
-  
+  delay(1000); // Give serial time to settle
+
   // 1. Hardware Init
   oled.begin();
   oled.showStatus("System", "Starting...");
@@ -72,35 +74,46 @@ void setup() {
   voltSensor.begin();
   tempSensor.begin();
   
-  // SPI Init for ADS8684
-  if (!curSensor.begin()) {
-    Serial.println("ADS8684 Init Failed!");
-    oled.showStatus("Error", "ADS Init Fail");
-    delay(2000); // Allow user to read error
+  hardwareReady = curSensor.begin();
+  
+  if (!hardwareReady) {
+    Serial.println("!!! WARNING: ADS8684 Missing or Failed !!!");
+    Serial.println("System will run in REDUCED mode (No Current Sensing)");
+    oled.showStatus("Warning", "No Current Sensor");
+    delay(2000); 
+  } else {
+    Serial.println("ADS8684 Initialized OK.");
   }
 
-  // 3. Network Connection (Blocking)
+  // 3. Network Connection
   oled.showStatus("WiFi", "Connecting...");
   net.begin([](WiFiManager* wm) {
     oled.showStatus("Setup Mode", "Connect to AP");
   });
 
-  // 4. Start Core 0 Pipeline (High Speed Data)
-  qFeat = xQueueCreate(3, sizeof(FeatureFrame));
-  if (!core0.begin(qFeat, &curSensor, &arcFeat)) {
-    Serial.println("Core0 Start Failed!");
+  // 4. Start Core 0 Pipeline (ONLY IF HARDWARE IS READY)
+  if (hardwareReady) {
+    qFeat = xQueueCreate(3, sizeof(FeatureFrame));
+    if (!core0.begin(qFeat, &curSensor, &arcFeat)) {
+      Serial.println("Core0 Start Failed!");
+    } else {
+      Serial.println("Core0 Pipeline Started.");
+    }
+  } else {
+    // If no hardware, don't create queue or start task
+    Serial.println("Skipping Core0 Pipeline start.");
   }
   
   // Default Calibration
   CurrentCalib cal; 
   core0.setCalib(cal);
   
-  // Time Provider for Logs
+  // Time Provider
   core0.setTimeProvider([]() -> uint64_t {
     return timeSync.nowEpochMs();
   });
 
-  // 5. Cloud & Time (Blocking)
+  // 5. Cloud & Time
   oled.showStatus("Cloud", "Connecting...");
   cloud.begin(API_KEY, DATABASE_URL);
   timeSync.begin();
@@ -115,7 +128,7 @@ void setup() {
 
   // Ready!
   oled.showStatus("System", "Ready");
-  Serial.println("Setup Complete. No Watchdog.");
+  Serial.println("Setup Complete.");
 }
 
 // -------------------------------------------------------------------------
@@ -128,55 +141,54 @@ void loop() {
   logger.loop();
   timeSync.update();
 
-  // 2. Handle Manual Reset Button
   if (actuators.resetLongPressed()) {
     faultLogic.resetLatch();
     oled.showStatus("RESET", "Latch cleared");
     delay(250);
   }
 
-  // 3. Slow Sensors (Non-blocking)
+  // 2. Slow Sensors (Non-blocking)
   static float vRms = 0.0f;
   static float tC = 0.0f;
   static uint32_t tT = 0;
 
-  // Voltage: Call update() every loop. 
-  // IMPORTANT: Ensure you updated VoltageSensor.h/.cpp to the non-blocking version!
   float newV = voltSensor.update();
-  if (newV >= 0.0f) {
-    vRms = newV;
-  }
+  if (newV >= 0.0f) vRms = newV;
 
-  // Temp: Read every 500ms
   if (millis() - tT > 500) {
     tT = millis();
     tC = tempSensor.readTempC();
   }
 
-  // 4. Get Data from Core 0
+  // 3. Get Data from Core 0
   FeatureFrame f;
-  // Wait 0 ticks so we don't block
-  bool got = (xQueueReceive(qFeat, &f, 0) == pdTRUE);
+  bool got = false;
 
-  if (!got) {
-    // Queue empty? Skip logic to avoid flickering 0 values.
-    return; 
+  // CRITICAL FIX: Only check queue if hardware was ready!
+  if (hardwareReady && qFeat != nullptr) {
+    got = (xQueueReceive(qFeat, &f, 0) == pdTRUE);
   }
 
-  // Add slow sensor data to frame
+  // If we didn't get data (queue empty OR hardware missing), handle it:
+  if (!got) {
+    if (!hardwareReady) {
+      // SAFE MODE: Simulate a "Normal" state so OLED/Cloud still update
+      FaultState st = STATE_NORMAL;
+      actuators.apply(st, vRms, 0.0f, tC);
+      
+      // Update cloud occasionally even if no current data
+      cloud.update(vRms, 0.0f, tC, 0, 0, 0, "NORMAL", &timeSync);
+    }
+    return; // Skip the rest of the logic
+  }
+
+  // If we DID get data (Hardware is working):
   f.vrms = vRms;
   f.temp_c = tC;
 
-  // 5. Fault Logic
   FaultState state = faultLogic.update(tC, f.irms, f.model_pred);
-
-  // 6. Actuators & Display
   actuators.apply(state, vRms, f.irms, tC);
-
-  // 7. Cloud Update
   cloud.update(vRms, f.irms, tC, f.zcv_ms, f.thd_pct, f.entropy,
                String(stateToCstr(state)), &timeSync);
-
-  // 8. Data Logging
   logger.ingest(f, state, faultLogic.arcCounter());
 }
