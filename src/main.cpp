@@ -83,16 +83,18 @@ void Core0Task(void* pvParameters) {
     float fs = 0.0f;
     const size_t got = curSensor.capture(s_raw, N_SAMP, &fs);
 
-    // --- DEBUG BLOCK ---
+// --- DEBUG BLOCK ---
     static uint32_t lastPrint = 0;
     if (millis() - lastPrint > 1000) {
       lastPrint = millis();
-      Serial.printf("[SPI DEBUG] Captured: %d samples | RAW ADC[0]: %u\n", got, s_raw[0]);
+      // Added 'fs' to the printout so we can see the exact speed!
+      Serial.printf("[SPI DEBUG] Captured: %d | RAW: %u | FS: %.1f Hz\n", got, s_raw[0], fs);
     }
     // -------------------
 
-    if (got > 0) {
-      if (got == N_SAMP && fs > 20000.0f) {
+    // LOWERED THRESHOLD TO 10 kHz to accommodate 1 MHz SPI
+    if (got == N_SAMP && fs > 10000.0f) {
+      if (arcFeat.compute(s_raw, N_SAMP, fs, curCalib, MAINS_F0_HZ, out)) {
         if (arcFeat.compute(s_raw, N_SAMP, fs, curCalib, MAINS_F0_HZ, out)) {
           f.irms    = out.irms_a;
           f.thd_pct = out.thd_pct;
