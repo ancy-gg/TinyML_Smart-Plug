@@ -1,8 +1,8 @@
 #include "ADS8684.h"
 
 static inline uint16_t u16_from_rx(const uint8_t rx[4]) {
-  // Conversion result in last 16 clocks
-  return (uint16_t(rx[2]) << 8) | uint16_t(rx[3]);
+  // ADS8684 outputs the 16-bit conversion result concurrently on the FIRST 16 clocks!
+  return (uint16_t(rx[0]) << 8) | uint16_t(rx[1]);
 }
 
 bool ADS8684::begin() {
