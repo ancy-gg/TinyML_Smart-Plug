@@ -1,5 +1,5 @@
 // Change this on each deploy:
-const BUILD_VERSION = "TSPweb-v0.2.11";
+const BUILD_VERSION = "TSPweb-v0.2.13";
 
 const CACHE_NAME = BUILD_VERSION;
 
@@ -9,8 +9,8 @@ const CORE_ASSETS = [
   "/styles.css",
   "/app.js",
   "/manifest.json",
-  "/icon-192.png",
-  "/icon-512.png",
+  "icons/icon-192.png",
+  "icons/icon-512.png",
   "/404.html"
 ];
 

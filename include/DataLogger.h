@@ -23,7 +23,7 @@ private:
   struct Rec {
     uint64_t epoch_ms;
 
-    // Training fields
+    // training fields
     float spectral_entropy;
     float thd_pct;
     float zcv;
@@ -32,7 +32,7 @@ private:
     float temp_c;
     uint8_t label_arc;
 
-    // Debug
+    // debug
     uint8_t model_pred;
     uint8_t state;
     uint8_t arc_cnt;
@@ -44,7 +44,7 @@ private:
   bool _wasEnabled = false;
 
   String _sessionId = "";
-  String _loadType = "unknown";
+  String _loadType  = "unknown";
   int8_t _labelOverride = -1; // -1 auto, 0 normal, 1 arc
 
   uint16_t _durationS = ML_LOG_DURATION_S;
@@ -53,7 +53,7 @@ private:
   uint32_t _lastFlushAttemptMs = 0;
 
   uint16_t _count = 0;
-  static constexpr uint16_t MAX_REC = 600; // safe upper cap
+  static constexpr uint16_t MAX_REC = 600;
   Rec _buf[MAX_REC];
 
   bool flushToFirebase(bool finalFlush);

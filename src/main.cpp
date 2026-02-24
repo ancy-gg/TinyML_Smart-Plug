@@ -36,7 +36,7 @@
 // --- Firebase Configuration ---
 #define API_KEY "AIzaSyAmJlZZszyWPJFgIkTAAl_TbIySys1nvEw"
 #define DATABASE_URL "tinyml-smart-plug-default-rtdb.asia-southeast1.firebasedatabase.app"
-static const char* FW_VERSION = "TSP-v0.2.2"; 
+static const char* FW_VERSION = "TSP-v0.2.3"; 
 
 // --- OTA Constants ---
 static const char* OTA_DESIRED_VERSION_PATH = "/ota/desired_version";
@@ -243,6 +243,7 @@ void loop() {
   net.update();
   ota.loop();
   timeSync.update();
+
 #if ENABLE_ML_LOGGER
   pollMlControl(cloud, logger);
 #endif
@@ -330,9 +331,23 @@ void loop() {
   actuators.apply(stateOut, vRms, f.irms, tC);
 
 #if ENABLE_ML_LOGGER
-  if (gotData) {
+  // Log at a controlled rate (so you don’t spam the DB)
+  static uint32_t lastMlLogMs = 0;
+  const uint32_t logPeriodMs = 1000UL / ML_LOG_RATE_HZ;
+
+  if (millis() - lastMlLogMs >= logPeriodMs) {
+    lastMlLogMs = millis();
+
+    // Make timestamps “now” even if we reused an old FFT frame
+    f.uptime_ms = millis();
+    f.epoch_ms  = timeSync.isSynced() ? timeSync.nowEpochMs() : 0;
+
+    // This will log even if ADS8684 is missing (i_rms/thd/etc may be 0)
     logger.ingest(f, stateOut, faultLogic.arcCounter());
   }
+
+  // REQUIRED: actually uploads buffered chunks when duration/full triggers
+  logger.loop();
 #endif
 
   // 5. SLOW LIVE DASHBOARD UPDATE (Every 5 seconds)
