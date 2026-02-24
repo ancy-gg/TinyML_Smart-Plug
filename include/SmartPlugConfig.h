@@ -53,7 +53,7 @@ static constexpr int PIN_BUZZER_PWM = D3;
 
 // ========= ADS8684 =========
 static constexpr float ADS_VREF_V = 4.096f;
-static constexpr int   ADS_SPI_HZ = 4000000;  // ~125kSPS theoretical (SPI/32 clocks)
+static constexpr int   ADS_SPI_HZ = 1000000;  // ~125kSPS theoretical (SPI/32 clocks)
 
 // ========= Current calibration (you will tune later) =========
 struct CurrentCalib {

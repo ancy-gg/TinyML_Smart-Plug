@@ -152,7 +152,7 @@ void setup() {
 
 #if ENABLE_ML_LOGGER
   logger.begin(&cloudHandler);
-  logger.setEnabled(false);             // default OFF
+  logger.setEnabled(true);             // default ON
   logger.setDurationSeconds(ML_LOG_DURATION_S);
 #endif
 

@@ -49,6 +49,10 @@ void Core0Pipeline::taskLoop() {
     float fs = 0.0f;
     const size_t got = _cur->capture(s_raw, N_SAMP, &fs);
 
+    if (got > 0) {
+      // ---> ADD THIS DEBUG LINE <---
+      Serial.printf("RAW ADC[0]: %u | RAW ADC[1]: %u\n", s_raw[0], s_raw[1]);
+    }
     if (got == N_SAMP && fs > 20000.0f) {
       if (_feat->compute(s_raw, N_SAMP, fs, _cal, MAINS_F0_HZ, out)) {
         f.irms    = out.irms_a;
