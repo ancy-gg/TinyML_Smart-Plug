@@ -1,7 +1,9 @@
 #include "ADS8684.h"
 
 static inline uint16_t u16_from_rx(const uint8_t rx[4]) {
-  return (uint16_t(rx[0]) << 8) | uint16_t(rx[1]);
+  // ESP32 Little-Endian Fix: 
+  // MSB lands in rx[3], LSB lands in rx[2]
+  return (uint16_t(rx[3]) << 8) | uint16_t(rx[2]);
 }
 
 bool ADS8684::begin() {
@@ -45,17 +47,8 @@ esp_err_t ADS8684::xfer32(uint16_t cmd, uint16_t* out_data) {
   esp_err_t err = spi_device_polling_transmit(_dev, &t);
   if (err != ESP_OK) return err;
 
-  // ---- THE DIAGNOSTIC TRIPWIRE ----
-  // This will print the raw hex bytes to the terminal once every 4096 samples
-  static int counter = 0;
-  if (counter++ % 4096 == 0) {
-    Serial.printf("\n[SPI RAW BYTES] rx0:%02X  rx1:%02X  rx2:%02X  rx3:%02X", 
-                   t.rx_data[0], t.rx_data[1], t.rx_data[2], t.rx_data[3]);
-  }
-  // ---------------------------------
-
-  // Temporarily return rx[0] and rx[1] just to keep the code compiling
-  if (out_data) *out_data = (uint16_t(t.rx_data[0]) << 8) | uint16_t(t.rx_data[1]);
+  // Extract the true 16-bit value
+  if (out_data) *out_data = u16_from_rx(t.rx_data);
   return ESP_OK;
 }
 
