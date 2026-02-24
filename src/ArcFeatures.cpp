@@ -7,27 +7,23 @@ static inline float clampf(float x, float lo, float hi) {
 }
 
 static inline float codeToCurrentA(uint16_t code, const CurrentCalib& cal) {
-  // ADS8684 AUX volts 0..4.096
-  const float v_aux = (float(code) * 4.096f) / 65535.0f;
-  // undo divider to recover sensor output
-  const float v_sensor = v_aux / cal.dividerRatio;
-  // sensor model
-  return (v_sensor - cal.offsetV) / cal.voltsPerAmp;
+  const float v_aux    = (float(code) * ADS_VREF_V) / 65535.0f;     // 0..VREF
+  const float v_sensor = v_aux / cal.dividerRatio;                  // undo divider
+  return (v_sensor - cal.offsetV) / cal.voltsPerAmp;                // sensor model
 }
 
 bool ArcFeatures::compute(const uint16_t* raw, size_t n, float fs_hz,
                           const CurrentCalib& cal, float mainsHz,
                           ArcFeatOut& out) {
-  if (!raw || n != 4096) return false;
+  if (!raw || n != N_SAMP) return false;
 
   out.fs_hz = fs_hz;
 
-  // static buffers to avoid stack + heap churn
-  static float iSig[4096];
-  static float vReal[4096];
-  static float vImag[4096];
+  static float iSig[N_SAMP];
+  static float vReal[N_SAMP];
+  static float vImag[N_SAMP];
 
-  // 1) Convert once + compute mean
+  // 1) Convert + mean remove
   double mean = 0.0;
   for (size_t i = 0; i < n; i++) {
     const float a = codeToCurrentA(raw[i], cal);
@@ -36,26 +32,54 @@ bool ArcFeatures::compute(const uint16_t* raw, size_t n, float fs_hz,
   }
   mean /= (double)n;
 
-  // 2) RMS + zero crossing variation
+  // 2) RMS (raw)
   double acc = 0.0;
+  for (size_t i = 0; i < n; i++) {
+    const float s = iSig[i] - (float)mean;
+    vReal[i] = s;
+    vImag[i] = 0.0f;
+    acc += (double)s * (double)s;
+  }
+  const float irms_raw = (float)sqrt(acc / (double)n);
 
+  // 2a) Learn idle RMS noise floor (EMA)
+  static bool  idleInit = false;
+  static float idleEma  = 0.0f;
+  if (!idleInit) { idleInit = true; idleEma = irms_raw; }
+
+  // Only adapt baseline when we're near it
+  if (irms_raw < (idleEma * 2.0f + 1e-6f)) {
+    idleEma = 0.98f * idleEma + 0.02f * irms_raw;
+  }
+
+  // 2b) Subtract noise in quadrature to make idle show ~0A
+  const float irms_clean = sqrtf(fmaxf(0.0f, irms_raw*irms_raw - idleEma*idleEma));
+  out.irms_a = irms_clean;
+
+  // 2c) Idle gate (use clean current)
+  const float idleGate = fmaxf(IDLE_IRMS_A, idleEma * 2.5f);
+  if (irms_clean < idleGate) {
+    out.irms_a  = 0.0f;
+    out.thd_pct = 0.0f;
+    out.entropy = 0.0f;
+    out.zcv_ms  = 0.0f;
+    return true;
+  }
+
+  // 3) ZCV with stronger hysteresis (based on raw RMS so it still works near idle)
   int crossings[80];
   int cCount = 0;
+  const float hys = fmaxf(ZC_HYS_MIN_A, ZC_HYS_FRAC * irms_raw);
 
-  float prev = iSig[0] - (float)mean;
-  for (size_t i = 1; i < n; i++) {
-    const float cur = iSig[i] - (float)mean;
-    const double d = (double)cur;
-    acc += d * d;
+  int state = 0;
+  if (vReal[0] >  hys) state =  1;
+  if (vReal[0] < -hys) state = -1;
 
-    if (cCount < 80) {
-      if ((prev <= 0 && cur > 0) || (prev >= 0 && cur < 0)) {
-        crossings[cCount++] = (int)i;
-      }
-    }
-    prev = cur;
+  for (size_t i = 1; i < n && cCount < 80; i++) {
+    const float s = vReal[i];
+    if (state <= 0 && s >  hys) { crossings[cCount++] = (int)i; state =  1; }
+    else if (state >= 0 && s < -hys) { crossings[cCount++] = (int)i; state = -1; }
   }
-  out.irms_a = (float)sqrt(acc / (double)n);
 
   if (cCount >= 6) {
     double sum = 0.0, sum2 = 0.0;
@@ -67,50 +91,80 @@ bool ArcFeatures::compute(const uint16_t* raw, size_t n, float fs_hz,
       sum2 += dtMs * dtMs;
       m++;
     }
-    const double mu = sum / (double)m;
+    const double mu  = sum / (double)m;
     const double var = (sum2 / (double)m) - (mu * mu);
     out.zcv_ms = (float)sqrt(var > 0 ? var : 0);
   } else {
     out.zcv_ms = 0.0f;
   }
 
-  // 3) Prepare FFT buffers
-  for (size_t i = 0; i < n; i++) {
-    vReal[i] = iSig[i] - (float)mean;
-    vImag[i] = 0.0f;
-  }
-
+  // 4) FFT
   ArduinoFFT<float> FFT(vReal, vImag, n, fs_hz);
   FFT.windowing(FFTWindow::Hann, FFTDirection::Forward);
   FFT.compute(FFTDirection::Forward);
   FFT.complexToMagnitude();
 
   const float binHz = fs_hz / (float)n;
-  int k1 = (int)lround(mainsHz / binHz);
-  if (k1 < 1) k1 = 1;
-  if (k1 > (int)(n/2 - 2)) k1 = (int)(n/2 - 2);
+  int kNom = (int)lround(mainsHz / binHz);
+  if (kNom < 1) kNom = 1;
+  if (kNom > (int)(n/2 - 2)) kNom = (int)(n/2 - 2);
 
-  float fund = vReal[k1];
-  if (fund < 1e-9f) fund = 1e-9f;
+  int k1 = kNom;
+  float fund = 0.0f;
+  for (int dk = -2; dk <= 2; dk++) {
+    const int k = kNom + dk;
+    if (k >= 1 && k < (int)(n/2)) {
+      if (vReal[k] > fund) { fund = vReal[k]; k1 = k; }
+    }
+  }
 
-  // THD harmonics 2..10
+  // Noise estimate 500..3000 Hz excluding harmonics
+  const int b0 = fmax(1, (int)ceil(500.0f / binHz));
+  const int b1 = fmin((int)(n/2 - 1), (int)floor(3000.0f / binHz));
+  double noiseSum = 0.0;
+  int noiseN = 0;
+
+  for (int b = b0; b <= b1; b++) {
+    bool skip = false;
+    for (int h = 1; h <= 10; h++) {
+      const int kh = h * k1;
+      if (kh >= (int)(n/2)) break;
+      if (abs(b - kh) <= 2) { skip = true; break; }
+    }
+    if (!skip) { noiseSum += (double)vReal[b]; noiseN++; }
+  }
+
+  const float noiseMag = (noiseN > 0) ? (float)(noiseSum / (double)noiseN) : 0.0f;
+
+  if (fund < FUND_MAG_MIN || (noiseMag > 0.0f && fund < (FUND_SNR_MIN * noiseMag))) {
+    out.thd_pct = 0.0f;
+    out.entropy = 0.0f;
+    out.zcv_ms  = 0.0f;
+    return true;
+  }
+
+  // THD 2..10
   double harm2 = 0.0;
   for (int h = 2; h <= 10; h++) {
-    int kh = h * k1;
-    if (kh >= (int)(n/2)) break;
-    const double a = (double)vReal[kh];
-    harm2 += a * a;
+    int khNom = h * k1;
+    if (khNom >= (int)(n/2)) break;
+    float hm = 0.0f;
+    for (int dk = -1; dk <= 1; dk++) {
+      const int kh = khNom + dk;
+      if (kh >= 1 && kh < (int)(n/2)) hm = fmaxf(hm, vReal[kh]);
+    }
+    harm2 += (double)hm * (double)hm;
   }
   out.thd_pct = (float)(sqrt(harm2) / (double)fund * 100.0);
 
-  // Spectral entropy up to 50kHz (or nyquist)
-  const int maxBin = (int)min((double)(n/2), floor(50000.0 / binHz));
+  // Spectral entropy up to ENTROPY_MAX_HZ (or Nyquist)
+  const int maxBin = (int)fmin((double)(n/2), floor((double)ENTROPY_MAX_HZ / (double)binHz));
   double psum = 0.0;
 
   for (int b = 1; b < maxBin; b++) {
     const double pw = (double)vReal[b] * (double)vReal[b];
     psum += pw;
-    vImag[b] = (float)pw; // reuse storage
+    vImag[b] = (float)pw;
   }
 
   if (psum < 1e-18 || maxBin <= 2) {

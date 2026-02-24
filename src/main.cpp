@@ -36,7 +36,7 @@
 // --- Firebase Configuration ---
 #define API_KEY "AIzaSyAmJlZZszyWPJFgIkTAAl_TbIySys1nvEw"
 #define DATABASE_URL "tinyml-smart-plug-default-rtdb.asia-southeast1.firebasedatabase.app"
-static const char* FW_VERSION = "TSP-v0.1.19"; 
+static const char* FW_VERSION = "TSP-v0.2.0"; 
 
 // --- OTA Constants ---
 static const char* OTA_DESIRED_VERSION_PATH = "/ota/desired_version";
@@ -92,9 +92,7 @@ void Core0Task(void* pvParameters) {
     }
     // -------------------
 
-    // LOWERED THRESHOLD TO 10 kHz to accommodate 1 MHz SPI
-    // LOWERED THRESHOLD TO 10 kHz to accommodate 1 MHz SPI
-    if (got == N_SAMP && fs > 10000.0f) {
+    if (got == N_SAMP && fs > 20000.0f) {
       
       bool success = arcFeat.compute(s_raw, N_SAMP, fs, curCalib, MAINS_F0_HZ, out);
       
@@ -210,81 +208,93 @@ void loop() {
     delay(250);
   }
 
-  // 3. Slow Sensors (Non-blocking)
+  // 3. Slow Sensors (Non-blocking) + smoothing
   static float vRms = 0.0f;
   static float tC = 0.0f;
   static uint32_t tT = 0;
 
+  constexpr float V_EMA_ALPHA = 0.20f; // 0.1–0.3 good
+  constexpr float T_EMA_ALPHA = 0.10f; // slower
+
   float newV = voltSensor.update();
-  if (newV >= 0.0f) vRms = newV;
+  if (newV >= 0.0f) {
+    if (vRms <= 0.0f) vRms = newV;
+    else vRms = (1.0f - V_EMA_ALPHA) * vRms + V_EMA_ALPHA * newV;
+  }
 
   if (millis() - tT > 500) {
     tT = millis();
-    tC = tempSensor.readTempC();
+    float newT = tempSensor.readTempC();
+    if (newT > -50.0f && newT < 120.0f) { // ignore -99 + outliers
+      if (tC <= -50.0f || tC >= 120.0f) tC = newT;
+      else tC = (1.0f - T_EMA_ALPHA) * tC + T_EMA_ALPHA * newT;
+    }
   }
 
-// 4. GET DATA FROM CORE 0 (KEEP LAST GOOD FRAME)
-static FeatureFrame lastF = {};
-static bool hasLast = false;
-static uint32_t lastRxMs = 0;
+  // 4. GET DATA FROM CORE 0 (KEEP LAST GOOD FRAME)
+  static FeatureFrame lastF = {};
+  static bool hasLast = false;
 
-FeatureFrame f;
-bool gotData = false;
+  FeatureFrame f;
+  bool gotData = false;
 
 #if ENABLE_CURRENT_SENSOR
-if (qFeat != nullptr) {
-  gotData = (xQueueReceive(qFeat, &f, 0) == pdTRUE);
-}
+  if (qFeat != nullptr) {
+    gotData = (xQueueReceive(qFeat, &f, 0) == pdTRUE);
+  }
 #endif
 
-if (gotData) {
-  lastF = f;
-  hasLast = true;
-  lastRxMs = millis();
-} else if (hasLast) {
-  // Reuse last valid current/FFT features so OLED + Cloud don't fall to zero
-  f = lastF;
-} else {
-  // Still waiting for first valid frame
-  f.irms = 0.0f;
-  f.zcv_ms = 0.0f;
-  f.thd_pct = 0.0f;
-  f.entropy = 0.0f;
-}
+  if (gotData) {
+    lastF = f;
+    hasLast = true;
+  } else if (hasLast) {
+    f = lastF; // reuse last valid frame instead of forcing zeros
+  } else {
+    // still waiting for first frame
+    memset(&f, 0, sizeof(f));
+  }
 
-// Optional: mark stale if Core0 stops updating
-if (hasLast && (millis() - lastRxMs) > 2000) {
-  f.irms = 0.0f;
-  f.thd_pct = 0.0f;
-  f.entropy = 0.0f;
-  f.zcv_ms = 0.0f;
-}
-  
+  // 3b. Moving average for slow sensors (see section 3 below)
   // Fill in core-1 gathered values
-  f.vrms = vRms;
+  f.vrms   = vRms;
   f.temp_c = tC;
 
-  // Predict Fault State
-  f.model_pred = ArcPredict(f.entropy, f.thd_pct, f.zcv_ms, f.vrms, f.irms, f.temp_c);
+  // 4b. TRANSIENT HOLDOFF (place it HERE: after f.irms is valid, before prediction)
+  static float prevIrms = 0.0f;
+  const float dI = fabsf(f.irms - prevIrms);
+  prevIrms = f.irms;
+
+  static uint32_t transientUntil = 0;
+  // Tune: fan OFF spike seems big; start with 0.6A and 600ms
+  if (dI > 0.6f) transientUntil = millis() + 600;
+  const bool isTransient = (millis() < transientUntil);
+
+  // Predict Fault State (suppress prediction during transient)
+  int pred = ArcPredict(f.entropy, f.thd_pct, f.zcv_ms, f.vrms, f.irms, f.temp_c);
+  if (isTransient) pred = 0;
+  f.model_pred = pred;
+
   FaultState state = faultLogic.update(tC, f.irms, f.model_pred);
 
-  // Apply outputs
-  actuators.apply(state, vRms, f.irms, tC);
+  // Apply outputs (Data collection mode: never trip relay)
+  FaultState stateOut = state;
+#ifdef DATA_COLLECTION_MODE
+  stateOut = STATE_NORMAL;
+#endif
+  actuators.apply(stateOut, vRms, f.irms, tC);
 
 #if ENABLE_ML_LOGGER
+  // log only when a NEW frame arrived
   if (gotData) {
-    // THIS HAPPENS ~30 TIMES A SECOND (Does not block)
-    logger.ingest(f, state, faultLogic.arcCounter()); 
+    logger.ingest(f, state, faultLogic.arcCounter());
   }
 #endif
 
   // 5. SLOW LIVE DASHBOARD UPDATE (Every 5 seconds)
   static uint32_t lastCloudUpdate = 0;
-  if (millis() - lastCloudUpdate > 5000) { 
+  if (millis() - lastCloudUpdate > 5000) {
     lastCloudUpdate = millis();
-    
-    // This blocks for ~1-2 seconds, but the logger buffer is safe.
-    cloud.update(vRms, f.irms, tC, f.zcv_ms, f.thd_pct, f.entropy, 
-                 String(stateToCstr(state)), &timeSync);
+    cloud.update(vRms, f.irms, tC, f.zcv_ms, f.thd_pct, f.entropy,
+                 String(stateToCstr(stateOut)), &timeSync);
   }
 }

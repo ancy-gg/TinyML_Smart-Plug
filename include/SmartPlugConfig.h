@@ -25,6 +25,14 @@ static constexpr float ENTROPY_ARC_H   = 0.75f;  // 0..1
 static constexpr float THD_ARC_H_PCT   = 20.0f;  // %
 static constexpr float ZCV_ARC_H_MS    = 0.35f;  // ms
 
+// No Load
+static constexpr float IDLE_IRMS_A      = 0.05f;   // start here; tune later after observing your real noise
+static constexpr float FUND_SNR_MIN     = 8.0f;    // fundamental must be >= this * avg noise magnitude
+static constexpr float FUND_MAG_MIN     = 1e-4f;   // absolute minimum FFT magnitude for a valid fundamental
+static constexpr float ZC_HYS_FRAC      = 0.30f;   // hysteresis = frac * Irms
+static constexpr float ZC_HYS_MIN_A     = 0.01f;   // minimum hysteresis in amps
+static constexpr float ENTROPY_MAX_HZ   = 8000.0f; // compute entropy up to this freq (or Nyquist)
+
 // ========= Leaky integrator =========
 static constexpr int ARC_CNT_INC  = 2;
 static constexpr int ARC_CNT_DEC  = 1;
@@ -53,7 +61,7 @@ static constexpr int PIN_BUZZER_PWM = D3;
 
 // ========= ADS8684 =========
 static constexpr float ADS_VREF_V = 4.096f;
-static constexpr int   ADS_SPI_HZ = 1000000;  // ~125kSPS theoretical (SPI/32 clocks)
+static constexpr int   ADS_SPI_HZ = 4000000;  // ~125kSPS theoretical (SPI/32 clocks)
 
 // ========= Current calibration (you will tune later) =========
 struct CurrentCalib {
@@ -64,7 +72,7 @@ struct CurrentCalib {
   float offsetV = 2.5f;
 
   // Sensor sensitivity (V/A) (replace for your ACS37035 variant!)
-  float voltsPerAmp = 0.066f;
+  float voltsPerAmp = 0.100f; //100mV/A
 };
 
 // ========= Voltage calibration =========
