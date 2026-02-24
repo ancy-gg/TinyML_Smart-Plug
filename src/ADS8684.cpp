@@ -1,7 +1,9 @@
 #include "ADS8684.h"
 #include <Arduino.h>
 #include <esp_timer.h>
+#include "driver/gpio.h"
 
+#define ADS8684_DEBUG_BYTES 1
 // Set to 1 temporarily if you want to see RX bytes (debug only)
 #ifndef ADS8684_DEBUG_BYTES
 #define ADS8684_DEBUG_BYTES 0
@@ -32,6 +34,10 @@ bool ADS8684::begin() {
   devcfg.queue_size = 1;
 
   err = spi_bus_add_device(_cfg.host, &devcfg, &_dev);
+
+  gpio_pulldown_en((gpio_num_t)_cfg.pin_miso);
+  gpio_pullup_dis((gpio_num_t)_cfg.pin_miso);
+  
   if (err != ESP_OK) return false;
 
   delay(50);
