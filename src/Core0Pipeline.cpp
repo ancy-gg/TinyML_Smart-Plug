@@ -40,6 +40,9 @@ void Core0Pipeline::taskEntry(void* arg) {
 
 void Core0Pipeline::taskLoop() {
   ArcFeatOut out;
+  
+  // TRIPWIRE 1: Check if the task even launched
+  Serial.println("\n[Core0] TASK HAS SUCCESSFULLY STARTED!");
 
   while (true) {
     FeatureFrame f;
@@ -49,16 +52,16 @@ void Core0Pipeline::taskLoop() {
     float fs = 0.0f;
     const size_t got = _cur->capture(s_raw, N_SAMP, &fs);
 
-    if (got > 0) {
-      
-      // --- DEBUG BLOCK ---
-      static uint32_t lastPrint = 0;
-      if (millis() - lastPrint > 1000) {
-        lastPrint = millis();
-        Serial.printf("[SPI DEBUG] RAW ADC[0]: %u | RAW ADC[1]: %u\n", s_raw[0], s_raw[1]);
-      }
-      // ----------------------------
+    // --- MOVE THE DEBUG BLOCK OUTSIDE THE IF STATEMENT ---
+    static uint32_t lastPrint = 0;
+    if (millis() - lastPrint > 1000) {
+      lastPrint = millis();
+      // Print 'got' to see if the capture is failing and returning 0
+      Serial.printf("[SPI DEBUG] Captured: %d samples | RAW ADC[0]: %u\n", got, s_raw[0]);
+    }
+    // -----------------------------------------------------
 
+    if (got > 0) {
       if (got == N_SAMP && fs > 20000.0f) {
         if (_feat->compute(s_raw, N_SAMP, fs, _cal, MAINS_F0_HZ, out)) {
           f.irms    = out.irms_a;
@@ -70,7 +73,7 @@ void Core0Pipeline::taskLoop() {
           xQueueOverwrite(_q, &f);
         }
       }
-    } // <--- THIS WAS THE MISSING BRACE
+    }
 
     vTaskDelay(1);
   }
