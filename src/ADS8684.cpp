@@ -53,10 +53,10 @@ esp_err_t ADS8684::xfer32(uint16_t cmd, uint16_t* out_data) {
 }
 
 bool ADS8684::selectAux() {
-  // MAN_Ch_5 = 0xD400 (used for AUX on ADS868x family in manual channel mode)
-  // Needs one dummy read to prime
+  // MAN_AUX = 0xE000 (The TRUE command for the AUX pin)
+  // Needs one dummy read to prime the pipeline
   uint16_t dummy = 0;
-  if (xfer32(0xD400, &dummy) != ESP_OK) return false;
+  if (xfer32(0xE000, &dummy) != ESP_OK) return false;
   if (xfer32(0x0000, &dummy) != ESP_OK) return false;
   _auxSelected = true;
   return true;
