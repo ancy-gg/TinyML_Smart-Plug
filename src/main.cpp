@@ -36,7 +36,7 @@
 // --- Firebase Configuration ---
 #define API_KEY "AIzaSyAmJlZZszyWPJFgIkTAAl_TbIySys1nvEw"
 #define DATABASE_URL "tinyml-smart-plug-default-rtdb.asia-southeast1.firebasedatabase.app"
-static const char* FW_VERSION = "TSP-v0.1.13"; 
+static const char* FW_VERSION = "TSP-v0.1.15"; 
 
 // --- OTA Constants ---
 static const char* OTA_DESIRED_VERSION_PATH = "/ota/desired_version";
@@ -93,20 +93,30 @@ void Core0Task(void* pvParameters) {
     // -------------------
 
     // LOWERED THRESHOLD TO 10 kHz to accommodate 1 MHz SPI
+    // LOWERED THRESHOLD TO 10 kHz to accommodate 1 MHz SPI
     if (got == N_SAMP && fs > 10000.0f) {
-      if (arcFeat.compute(s_raw, N_SAMP, fs, curCalib, MAINS_F0_HZ, out)) {
-        if (arcFeat.compute(s_raw, N_SAMP, fs, curCalib, MAINS_F0_HZ, out)) {
-          f.irms    = out.irms_a;
-          f.thd_pct = out.thd_pct;
-          f.entropy = out.entropy;
-          f.zcv_ms  = out.zcv_ms;
+      
+      bool success = arcFeat.compute(s_raw, N_SAMP, fs, curCalib, MAINS_F0_HZ, out);
+      
+      if (success) {
+        // --- ADD THIS TRUTH FILTER ---
+        Serial.printf("[MATH SUCCESS] Irms: %.2f A | THD: %.1f%%\n", out.irms_a, out.thd_pct);
+        
+        f.irms    = out.irms_a;
+        f.thd_pct = out.thd_pct;
+        f.entropy = out.entropy;
+        f.zcv_ms  = out.zcv_ms;
 
-          // Push to Core 1. We use xQueueOverwrite which requires a queue size of exactly 1.
-          if (qFeat != nullptr) {
-            xQueueOverwrite(qFeat, &f);
-          }
+        // Push to Core 1. We use xQueueOverwrite which requires a queue size of exactly 1.
+        if (qFeat != nullptr) {
+          xQueueOverwrite(qFeat, &f);
         }
+      } else {
+        // --- CATCH THE FAILURE ---
+        Serial.println("[MATH FAILED] arcFeat.compute() actively rejected the data!");
       }
+    } else {
+      Serial.printf("[SPI ERROR] Incomplete capture or low sampling rate! Got: %d | FS: %.1f Hz\n", got, fs);
     }
 
     // Give FreeRTOS a tiny breather to feed the idle task and prevent watchdog resets
