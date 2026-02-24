@@ -11,27 +11,21 @@ String DataLogger::sanitizeToken(const String& s) {
   o.replace(" ", "_");
   o.replace("/", "_");
   o.replace("\\", "_");
-  if (o.length() > 24) o = o.substring(0, 24);
+  if (o.length() > 32) o = o.substring(0, 32);
   return o;
 }
 
 void DataLogger::setSession(const String& sessionId, const String& loadType, int labelOverride) {
 #if ENABLE_ML_LOGGER
   _sessionId = sanitizeToken(sessionId);
-  _loadType = sanitizeToken(loadType);
+  _loadType  = sanitizeToken(loadType);
   _labelOverride = (int8_t)labelOverride;
 #else
   (void)sessionId; (void)loadType; (void)labelOverride;
 #endif
 }
 
-void DataLogger::setEnabled(bool en) {
-#if ENABLE_ML_LOGGER
-  _enabled = en;
-#else
-  _enabled = en;
-#endif
-}
+void DataLogger::setEnabled(bool en) { _enabled = en; }
 
 void DataLogger::setDurationSeconds(uint16_t sec) {
   if (sec < 5) sec = 5;
@@ -43,7 +37,6 @@ void DataLogger::ingest(const FeatureFrame& f, FaultState st, int arcCounter) {
 #if ENABLE_ML_LOGGER
   if (!_enabled) return;
   if (_sessionId.length() < 3) return;
-
   if (_count >= MAX_REC) return;
 
   if (_count == 0) _chunkStartMs = millis();
@@ -58,15 +51,11 @@ void DataLogger::ingest(const FeatureFrame& f, FaultState st, int arcCounter) {
   r.i_rms            = f.irms;
   r.temp_c           = f.temp_c;
 
-  // Label override supports manual labeling:
-  // -1: auto (device state)
-  //  0: force normal
-  //  1: force arc
+  // labeling: allow website override for clean datasets
   uint8_t lab = 0;
   if (_labelOverride == 0) lab = 0;
   else if (_labelOverride == 1) lab = 1;
   else lab = (st == STATE_ARCING) ? 1 : 0;
-
   r.label_arc = lab;
 
   r.model_pred = f.model_pred;
@@ -81,11 +70,13 @@ void DataLogger::loop() {
 #if ENABLE_ML_LOGGER
   if (!_cloud || !_cloud->isReady()) return;
 
-  // detect falling edge to flush remaining
+  // flush remaining on disable
   if (_wasEnabled && !_enabled) {
-    if (_count > 0) flushToFirebase(true);
-    _count = 0;
-    _chunkStartMs = 0;
+    if (_count > 0) {
+      flushToFirebase(true);
+      _count = 0;
+      _chunkStartMs = 0;
+    }
   }
   _wasEnabled = _enabled;
 
@@ -101,7 +92,6 @@ void DataLogger::loop() {
 
   if (!timeUp && !full) return;
 
-  // retry limit
   if (_lastFlushAttemptMs && (now - _lastFlushAttemptMs) < 2000) return;
   _lastFlushAttemptMs = now;
 
@@ -115,12 +105,12 @@ void DataLogger::loop() {
 
 #if ENABLE_ML_LOGGER
 bool DataLogger::flushToFirebase(bool finalFlush) {
-  if (!_sessionId.length() < 3) return false;
   if (!_cloud || !_cloud->isReady()) return false;
+  if (_sessionId.length() < 3) return false;
 
-  // CSV matches Python FEATURES + adds load_type/session_id/epoch_ms at end
+  // CSV matches python + adds load_type/session_id/epoch_ms
   String csv;
-  csv.reserve(_count * 80 + 160);
+  csv.reserve(_count * 90 + 200);
   csv += "spectral_entropy,thd_pct,zcv,v_rms,i_rms,temp_c,label_arc,load_type,session_id,epoch_ms\n";
 
   for (uint16_t i = 0; i < _count; i++) {
@@ -149,7 +139,8 @@ bool DataLogger::flushToFirebase(bool finalFlush) {
   json.set("meta/label_override", (int)_labelOverride);
   json.set("meta/duration_s", (int)_durationS);
 
-  String path = "/ml_logs/";
+  // IMPORTANT: write under the session node
+  String path = "/ml_logs/"; 
   path += _sessionId;
   const bool ok = _cloud->pushJSON(path.c_str(), json);
 

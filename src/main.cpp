@@ -36,7 +36,7 @@
 // --- Firebase Configuration ---
 #define API_KEY "AIzaSyAmJlZZszyWPJFgIkTAAl_TbIySys1nvEw"
 #define DATABASE_URL "tinyml-smart-plug-default-rtdb.asia-southeast1.firebasedatabase.app"
-static const char* FW_VERSION = "TSP-v0.2.1"; 
+static const char* FW_VERSION = "TSP-v0.2.2"; 
 
 // --- OTA Constants ---
 static const char* OTA_DESIRED_VERSION_PATH = "/ota/desired_version";
@@ -190,19 +190,21 @@ void setup() {
 }
 
 #if ENABLE_ML_LOGGER
-static void pollMlControlAndApply(CloudHandler& cloud, DataLogger& logger) {
+static void pollMlControl(CloudHandler& cloud, DataLogger& logger) {
   static uint32_t lastPoll = 0;
+  static bool lastEnabled = false;
+  static String lastSession = "";
+
   if (millis() - lastPoll < ML_CTRL_POLL_MS) return;
   lastPoll = millis();
 
-  bool en = false;
-  int  dur = 10;
-  int  labelOv = -1;
+  bool enabled = false;
+  int dur = 10;
+  int labelOv = -1;
   String sid = "";
   String load = "unknown";
 
-  // If paths don't exist yet, these will fail gracefully.
-  cloud.getBool("/ml_log/enabled", en);
+  cloud.getBool("/ml_log/enabled", enabled);
   cloud.getInt("/ml_log/duration_s", dur);
   cloud.getInt("/ml_log/label_override", labelOv);
   cloud.getString("/ml_log/session_id", sid);
@@ -211,16 +213,25 @@ static void pollMlControlAndApply(CloudHandler& cloud, DataLogger& logger) {
   if (dur < 5) dur = 5;
   if (dur > 60) dur = 60;
 
-  // Apply only if session is valid
-  if (en && sid.length() < 3) {
-    Serial.println("[ML_LOG] enabled but session_id missing; ignoring.");
+  // session required when enabled
+  if (enabled && sid.length() < 3) {
+    Serial.println("[ML_LOG] enabled but session_id missing; forcing off.");
     logger.setEnabled(false);
     return;
   }
 
+  // Apply session context
   logger.setDurationSeconds((uint16_t)dur);
-  logger.setSession(sid, load, labelOv);   // new method (see DataLogger.h/cpp below)
-  logger.setEnabled(en);
+  logger.setSession(sid, load, labelOv);
+
+  // Edge handling: enable/disable
+  if (enabled != lastEnabled || sid != lastSession) {
+    Serial.printf("[ML_LOG] enabled=%d sid=%s load=%s labelOv=%d dur=%d\n",
+                  (int)enabled, sid.c_str(), load.c_str(), labelOv, dur);
+    logger.setEnabled(enabled);
+    lastEnabled = enabled;
+    lastSession = sid;
+  }
 }
 #endif
 
@@ -233,7 +244,7 @@ void loop() {
   ota.loop();
   timeSync.update();
 #if ENABLE_ML_LOGGER
-  pollMlControlAndApply(cloud, logger);
+  pollMlControl(cloud, logger);
 #endif
 
   // 2. Reset Button Logic
@@ -285,7 +296,10 @@ void loop() {
   } else if (hasLast) {
     f = lastF;  // reuse last valid FFT frame instead of forcing zeros
   } else {
-    memset(&f, 0, sizeof(f));
+    f.irms = 0.0f;
+    f.zcv_ms = 0.0f;
+    f.thd_pct = 0.0f;
+    f.entropy = 0.0f;
   }
 
   // Fill core-1 values

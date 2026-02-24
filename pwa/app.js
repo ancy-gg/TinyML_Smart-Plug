@@ -518,7 +518,7 @@ setInterval(() => {
   });
 })();
 
-// TinyML Logger (Session-based)
+// ---------- TinyML Logger (Session-based) ----------
 const mlLogEnable = el("mlLogEnable");
 const mlLogDur = el("mlLogDur");
 const mlLoadType = el("mlLoadType");
@@ -526,12 +526,12 @@ const mlLabelOverride = el("mlLabelOverride");
 
 const btnDownloadSessionMl = el("btnDownloadSessionMl");
 const btnDownloadAllMl = el("btnDownloadAllMl");
+const btnClearMlLogs = el("btnClearMlLogs");
 
 const mlLogStatus = el("mlLogStatus");
 const mlSessionBody = el("mlSessionBody");
 
 let currentSessionId = "";
-let sessionsCache = {}; // sessionId -> meta
 
 function downloadTextFileGeneric(filename, text, mime="text/csv;charset=utf-8") {
   const blob = new Blob([text], { type: mime });
@@ -548,7 +548,6 @@ function downloadTextFileGeneric(filename, text, mime="text/csv;charset=utf-8") 
 function makeSessionId() {
   return "sess_" + Date.now();
 }
-
 function labelText(v) {
   if (String(v) === "1") return "ARC";
   if (String(v) === "0") return "NORMAL";
@@ -559,18 +558,13 @@ async function fetchSessionCsv(sessionId) {
   const snap = await db.ref(`ml_logs/${sessionId}`).get();
   if (!snap.exists()) return "";
 
-  const chunksObj = snap.val();
+  const chunksObj = snap.val() || {};
   const keys = Object.keys(chunksObj);
 
-  // sort by created_at if present
-  keys.sort((a,b) => {
-    const ta = chunksObj[a]?.created_at || 0;
-    const tb = chunksObj[b]?.created_at || 0;
-    return ta - tb;
-  });
+  keys.sort((a,b) => (chunksObj[a]?.created_at || 0) - (chunksObj[b]?.created_at || 0));
 
   let header = "";
-  let combinedLines = [];
+  let rows = [];
 
   for (const k of keys) {
     const csv = chunksObj[k]?.csv || "";
@@ -581,36 +575,35 @@ async function fetchSessionCsv(sessionId) {
 
     if (!header) {
       header = lines[0];
-      combinedLines.push(...lines.slice(1));
+      rows.push(...lines.slice(1));
     } else {
-      // drop header if repeated
       const startIdx = (lines[0].trim() === header.trim()) ? 1 : 0;
-      combinedLines.push(...lines.slice(startIdx));
+      rows.push(...lines.slice(startIdx));
     }
   }
 
   if (!header) return "";
-  return header + "\n" + combinedLines.join("\n") + "\n";
+  return header + "\n" + rows.join("\n") + "\n";
 }
 
 function sessionFilename(meta, sessionId) {
   const start = meta?.start_ms || 0;
   const end = meta?.end_ms || 0;
 
-  const startStr = formatEpochMsTZ(start).replace(/[ :.]/g,"-");
+  const startStr = start ? formatEpochMsTZ(start).replace(/[ :.]/g,"-") : "START";
   const endStr   = end ? formatEpochMsTZ(end).replace(/[ :.]/g,"-") : "OPEN";
-
   const load = (meta?.load_type || "unknown").toString().replace(/[^a-zA-Z0-9_-]/g,"_");
+
   return `TSP_ML_${startStr}__${endStr}__${load}__${sessionId}.csv`;
 }
 
-// Listen to /ml_log control
+// Sync control state
 if (mlLogEnable) {
   db.ref("ml_log").on("value", (s) => {
     const v = s.val() || {};
     mlLogEnable.checked = !!v.enabled;
     if (typeof v.duration_s === "number" && mlLogDur) mlLogDur.value = String(v.duration_s);
-    if (v.load_type && mlLoadType) mlLoadType.value = v.load_type;
+    if (mlLoadType && v.load_type) mlLoadType.value = v.load_type;
     if (mlLabelOverride && (v.label_override !== undefined)) mlLabelOverride.value = String(v.label_override);
     if (v.session_id) currentSessionId = v.session_id;
   });
@@ -625,7 +618,6 @@ if (mlLogEnable) {
       const sid = makeSessionId();
       currentSessionId = sid;
 
-      // write control
       await db.ref("ml_log").update({
         enabled: true,
         duration_s: dur,
@@ -634,7 +626,6 @@ if (mlLogEnable) {
         label_override: labelOv
       });
 
-      // create session meta
       await db.ref(`ml_sessions/${sid}`).set({
         start_ms: firebase.database.ServerValue.TIMESTAMP,
         end_ms: null,
@@ -646,8 +637,8 @@ if (mlLogEnable) {
       if (mlLogStatus) mlLogStatus.textContent = `Logging enabled. Session: ${sid}`;
       toast("Logger enabled (session created).", "ok");
     } else {
-      // disable
       const sid = currentSessionId;
+
       await db.ref("ml_log").update({ enabled: false });
 
       if (sid) {
@@ -662,34 +653,25 @@ if (mlLogEnable) {
   });
 }
 
-if (mlLogDur) {
-  mlLogDur.addEventListener("change", async () => {
-    const dur = parseInt(mlLogDur.value || "10", 10);
-    await db.ref("ml_log").update({ duration_s: dur });
-    toast("Duration updated.", "ok");
-  });
-}
+mlLogDur?.addEventListener("change", async () => {
+  const dur = parseInt(mlLogDur.value || "10", 10);
+  await db.ref("ml_log").update({ duration_s: dur });
+  toast("Duration updated.", "ok");
+});
 
-if (mlLoadType) {
-  mlLoadType.addEventListener("change", async () => {
-    await db.ref("ml_log").update({ load_type: mlLoadType.value.trim() || "unknown" });
-  });
-}
+mlLoadType?.addEventListener("change", async () => {
+  await db.ref("ml_log").update({ load_type: (mlLoadType.value || "unknown").trim() || "unknown" });
+});
 
-if (mlLabelOverride) {
-  mlLabelOverride.addEventListener("change", async () => {
-    const v = parseInt(mlLabelOverride.value || "-1", 10);
-    await db.ref("ml_log").update({ label_override: v });
-  });
-}
+mlLabelOverride?.addEventListener("change", async () => {
+  const v = parseInt(mlLabelOverride.value || "-1", 10);
+  await db.ref("ml_log").update({ label_override: v });
+});
 
 // Session list UI
 if (mlSessionBody) {
   db.ref("ml_sessions").limitToLast(50).on("value", (s) => {
     const obj = s.val() || {};
-    sessionsCache = obj;
-
-    // sort by start_ms descending
     const ids = Object.keys(obj).sort((a,b) => (obj[b]?.start_ms||0) - (obj[a]?.start_ms||0));
 
     mlSessionBody.innerHTML = ids.map((sid) => {
@@ -711,11 +693,10 @@ if (mlSessionBody) {
       `;
     }).join("");
 
-    // attach handlers
     mlSessionBody.querySelectorAll("button[data-sid]").forEach(btn => {
       btn.addEventListener("click", async () => {
         const sid = btn.getAttribute("data-sid");
-        const meta = sessionsCache[sid] || {};
+        const meta = obj[sid] || {};
         const csv = await fetchSessionCsv(sid);
         if (!csv) { toast("No data for this session yet.", "err"); return; }
         downloadTextFileGeneric(sessionFilename(meta, sid), csv);
@@ -727,58 +708,71 @@ if (mlSessionBody) {
 }
 
 // Download current session
-if (btnDownloadSessionMl) {
-  btnDownloadSessionMl.addEventListener("click", async () => {
-    const sid = currentSessionId;
-    if (!sid) { toast("No active session_id.", "err"); return; }
+btnDownloadSessionMl?.addEventListener("click", async () => {
+  const sid = currentSessionId;
+  if (!sid) { toast("No active session_id.", "err"); return; }
 
-    const metaSnap = await db.ref(`ml_sessions/${sid}`).get();
-    const meta = metaSnap.exists() ? metaSnap.val() : {};
+  const metaSnap = await db.ref(`ml_sessions/${sid}`).get();
+  const meta = metaSnap.exists() ? metaSnap.val() : {};
 
+  const csv = await fetchSessionCsv(sid);
+  if (!csv) { toast("No session logs yet.", "err"); return; }
+
+  downloadTextFileGeneric(sessionFilename(meta, sid), csv);
+  if (mlLogStatus) mlLogStatus.textContent = `Downloaded session: ${sid}`;
+  toast("Session CSV downloaded.", "ok");
+});
+
+// Download ALL sessions combined
+btnDownloadAllMl?.addEventListener("click", async () => {
+  const metaSnap = await db.ref("ml_sessions").get();
+  const sessions = metaSnap.exists() ? metaSnap.val() : {};
+  const ids = Object.keys(sessions || {});
+  if (ids.length === 0) { toast("No sessions yet.", "err"); return; }
+
+  ids.sort((a,b) => (sessions[a]?.start_ms||0) - (sessions[b]?.start_ms||0));
+
+  let header = "";
+  let rows = [];
+
+  for (const sid of ids) {
     const csv = await fetchSessionCsv(sid);
-    if (!csv) { toast("No session logs yet.", "err"); return; }
+    if (!csv) continue;
+    const lines = csv.split("\n").filter(x => x.trim().length);
+    if (lines.length === 0) continue;
 
-    downloadTextFileGeneric(sessionFilename(meta, sid), csv);
-    if (mlLogStatus) mlLogStatus.textContent = `Downloaded session: ${sid}`;
-    toast("Session CSV downloaded.", "ok");
-  });
-}
-
-// Download ALL sessions combined (one CSV)
-if (btnDownloadAllMl) {
-  btnDownloadAllMl.addEventListener("click", async () => {
-    const ids = Object.keys(sessionsCache || {});
-    if (ids.length === 0) { toast("No sessions yet.", "err"); return; }
-
-    // sort oldest->newest
-    ids.sort((a,b) => (sessionsCache[a]?.start_ms||0) - (sessionsCache[b]?.start_ms||0));
-
-    let header = "";
-    let rows = [];
-
-    for (const sid of ids) {
-      const csv = await fetchSessionCsv(sid);
-      if (!csv) continue;
-      const lines = csv.split("\n").filter(x => x.trim().length);
-      if (lines.length === 0) continue;
-
-      if (!header) {
-        header = lines[0];
-        rows.push(...lines.slice(1));
-      } else {
-        const startIdx = (lines[0].trim() === header.trim()) ? 1 : 0;
-        rows.push(...lines.slice(startIdx));
-      }
+    if (!header) {
+      header = lines[0];
+      rows.push(...lines.slice(1));
+    } else {
+      const startIdx = (lines[0].trim() === header.trim()) ? 1 : 0;
+      rows.push(...lines.slice(startIdx));
     }
+  }
 
-    if (!header || rows.length === 0) { toast("No session rows found.", "err"); return; }
+  if (!header || rows.length === 0) { toast("No session rows found.", "err"); return; }
 
-    const ts = new Date().toISOString().slice(0,19).replace(/[:T]/g,"-");
-    downloadTextFileGeneric(`TSP_ML_ALL_${ts}.csv`, header + "\n" + rows.join("\n") + "\n");
-    if (mlLogStatus) mlLogStatus.textContent = `Downloaded ALL sessions (${rows.length} rows)`;
-    toast("All sessions downloaded.", "ok");
-  });
-}
+  const ts = new Date().toISOString().slice(0,19).replace(/[:T]/g,"-");
+  downloadTextFileGeneric(`TSP_ML_ALL_${ts}.csv`, header + "\n" + rows.join("\n") + "\n");
+  if (mlLogStatus) mlLogStatus.textContent = `Downloaded ALL sessions (${rows.length} rows)`;
+  toast("All sessions downloaded.", "ok");
+});
+
+// Clear logs button
+btnClearMlLogs?.addEventListener("click", async () => {
+  if (!confirm("Delete ALL ML logs and sessions? This cannot be undone.")) return;
+
+  try {
+    await db.ref("ml_log").update({ enabled: false });
+    await db.ref("ml_logs").remove();
+    await db.ref("ml_sessions").remove();
+    if (mlLogStatus) mlLogStatus.textContent = "ML logs cleared.";
+    toast("ML logs cleared.", "ok");
+  } catch (e) {
+    console.error(e);
+    toast("Failed to clear ML logs (rules may block).", "err");
+  }
+});
 
 // ---------- Service worker ----------
 if ("serviceWorker" in navigator) {

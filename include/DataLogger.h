@@ -12,21 +12,18 @@ public:
   void setEnabled(bool en);
   bool enabled() const { return _enabled; }
 
-  void setDurationSeconds(uint16_t sec);
-
-  // New: session + context
+  void setDurationSeconds(uint16_t sec);   // 5..60
   void setSession(const String& sessionId, const String& loadType, int labelOverride);
 
-  // call on new frames only
   void ingest(const FeatureFrame& f, FaultState st, int arcCounter);
-
-  // flushes by time, and flushes remaining when disabled
   void loop();
 
 private:
 #if ENABLE_ML_LOGGER
   struct Rec {
     uint64_t epoch_ms;
+
+    // Training fields
     float spectral_entropy;
     float thd_pct;
     float zcv;
@@ -34,6 +31,8 @@ private:
     float i_rms;
     float temp_c;
     uint8_t label_arc;
+
+    // Debug
     uint8_t model_pred;
     uint8_t state;
     uint8_t arc_cnt;
@@ -54,11 +53,11 @@ private:
   uint32_t _lastFlushAttemptMs = 0;
 
   uint16_t _count = 0;
-  static constexpr uint16_t MAX_REC = 420;
+  static constexpr uint16_t MAX_REC = 600; // safe upper cap
   Rec _buf[MAX_REC];
 
   bool flushToFirebase(bool finalFlush);
-  String sanitizeToken(const String& s);
+  static String sanitizeToken(const String& s);
 
 #else
   CloudHandler* _cloud = nullptr;

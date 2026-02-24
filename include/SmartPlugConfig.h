@@ -22,12 +22,12 @@ static constexpr float OVERLOAD_TRIP_A = 10.0f;
 
 // ========= Arc decision thresholds (baseline) =========
 static constexpr float ENTROPY_ARC_H   = 0.75f;  // 0..1
-static constexpr float THD_ARC_H_PCT   = 20.0f;  // %
-static constexpr float ZCV_ARC_H_MS    = 0.35f;  // ms
+static constexpr float THD_ARC_H_PCT   = 100.0f;  // %
+static constexpr float ZCV_ARC_H_MS    = 2.0f;  // ms
 
 // ========= Feature gating / transient control =========
-static constexpr float IDLE_IRMS_A      = 0.025f;   // idle gate just above your ~0.03A noise
-static constexpr float FUND_SNR_MIN     = 8.0f;    // fundamental must be >= 8x avg noise mag
+static constexpr float IDLE_IRMS_A      = 0.02f;   // idle gate just above your ~0.02A noise
+static constexpr float FUND_SNR_MIN     = 6.0f;    // fundamental must be >= 6x avg noise mag
 static constexpr float FUND_MAG_MIN     = 1e-4f;   // absolute magnitude guard
 static constexpr float ZC_HYS_FRAC      = 0.30f;   // hysteresis = 30% of Irms
 static constexpr float ZC_HYS_MIN_A     = 0.01f;   // minimum hysteresis
