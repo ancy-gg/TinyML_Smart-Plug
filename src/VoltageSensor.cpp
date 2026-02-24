@@ -13,47 +13,30 @@ void VoltageSensor::setSensitivity(float factor) {
 float VoltageSensor::update() {
   uint32_t now = micros();
 
-  // 1. Start a new sampling batch
+  // 1. Start a new sampling batch if not already running
   if (!_sampling) {
     _sampling = true;
     _startTime = now;
-    _sampleCount = 0;
-    _sum = 0;
-    _sqSum = 0;
+    _maxVal = 0;
+    _minVal = 4095;
     return -1.0f; // Not ready yet
   }
 
-  // 2. Take ONE sample right now
-  uint32_t val = analogRead(_pin);
-  _sum += val;
-  _sqSum += (val * val);
-  _sampleCount++;
+  // 2. Take ONE sample right now (very fast)
+  int val = analogRead(_pin);
+  if (val > _maxVal) _maxVal = val;
+  if (val < _minVal) _minVal = val;
 
-  // 3. Check if we have sampled long enough (33.3ms)
+  // 3. Check if we have sampled long enough (33ms)
   if ((now - _startTime) >= _sampleDurationUs) {
+    // Done! Calculate RMS
     _sampling = false; // Reset for next time
 
-    if (_sampleCount == 0) return 0.0f; // Prevent divide by zero
+    if (_maxVal - _minVal < 5) return 0.0f; // Noise filter
 
-    // Calculate Mean (This is the exact DC Offset)
-    double mean = (double)_sum / _sampleCount;
-    
-    // Calculate Mean of Squares
-    double meanOfSquares = (double)_sqSum / _sampleCount;
-    
-    // Variance = Mean of Squares - Square of Mean (This removes the DC!)
-    double variance = meanOfSquares - (mean * mean);
-    
-    // If noise causes tiny negative float errors, clamp to 0
-    if (variance < 0.0) variance = 0.0; 
-
-    // True RMS in ADC codes
-    double rmsRaw = sqrt(variance);
-
-    // Convert raw ADC RMS to actual Volts
-    double vRMS_Sensor = rmsRaw * (3.3 / 4095.0);
-    
-    return (float)(vRMS_Sensor * _sensitivity);
+    float vPeakToPeak = (_maxVal - _minVal) * (3.3f / 4095.0f);
+    float vRMS_Sensor = (vPeakToPeak * 0.5f) * 0.70710678f;
+    return vRMS_Sensor * _sensitivity;
   }
 
   // 4. Still sampling, return -1 to indicate "wait"
