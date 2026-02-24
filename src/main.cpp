@@ -36,7 +36,7 @@
 // --- Firebase Configuration ---
 #define API_KEY "AIzaSyAmJlZZszyWPJFgIkTAAl_TbIySys1nvEw"
 #define DATABASE_URL "tinyml-smart-plug-default-rtdb.asia-southeast1.firebasedatabase.app"
-static const char* FW_VERSION = "TSP-v0.1.18"; 
+static const char* FW_VERSION = "TSP-v0.1.19"; 
 
 // --- OTA Constants ---
 static const char* OTA_DESIRED_VERSION_PATH = "/ota/desired_version";
@@ -99,9 +99,6 @@ void Core0Task(void* pvParameters) {
       bool success = arcFeat.compute(s_raw, N_SAMP, fs, curCalib, MAINS_F0_HZ, out);
       
       if (success) {
-        // --- ADD THIS TRUTH FILTER ---
-        Serial.printf("[MATH SUCCESS] Irms: %.2f A | THD: %.1f%%\n", out.irms_a, out.thd_pct);
-        
         f.irms    = out.irms_a;
         f.thd_pct = out.thd_pct;
         f.entropy = out.entropy;
