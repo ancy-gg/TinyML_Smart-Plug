@@ -175,8 +175,8 @@ void setup() {
   
 #if ENABLE_ML_LOGGER
   logger.begin(&cloud);
-  logger.setEnabled(true); // Force true for testing
-  logger.setDurationSeconds(10); 
+  logger.setEnabled(false);          // controlled by website checkbox
+  logger.setDurationSeconds(10);     // default; website can override
 #endif
 
   // 6. OTA Setup
@@ -189,6 +189,41 @@ void setup() {
   Serial.println("Setup Complete.");
 }
 
+#if ENABLE_ML_LOGGER
+static void pollMlControlAndApply(CloudHandler& cloud, DataLogger& logger) {
+  static uint32_t lastPoll = 0;
+  if (millis() - lastPoll < ML_CTRL_POLL_MS) return;
+  lastPoll = millis();
+
+  bool en = false;
+  int  dur = 10;
+  int  labelOv = -1;
+  String sid = "";
+  String load = "unknown";
+
+  // If paths don't exist yet, these will fail gracefully.
+  cloud.getBool("/ml_log/enabled", en);
+  cloud.getInt("/ml_log/duration_s", dur);
+  cloud.getInt("/ml_log/label_override", labelOv);
+  cloud.getString("/ml_log/session_id", sid);
+  cloud.getString("/ml_log/load_type", load);
+
+  if (dur < 5) dur = 5;
+  if (dur > 60) dur = 60;
+
+  // Apply only if session is valid
+  if (en && sid.length() < 3) {
+    Serial.println("[ML_LOG] enabled but session_id missing; ignoring.");
+    logger.setEnabled(false);
+    return;
+  }
+
+  logger.setDurationSeconds((uint16_t)dur);
+  logger.setSession(sid, load, labelOv);   // new method (see DataLogger.h/cpp below)
+  logger.setEnabled(en);
+}
+#endif
+
 // -------------------------------------------------------------------------
 // Loop (Core 1)
 // -------------------------------------------------------------------------
@@ -198,7 +233,7 @@ void loop() {
   ota.loop();
   timeSync.update();
 #if ENABLE_ML_LOGGER
-  logger.loop();
+  pollMlControlAndApply(cloud, logger);
 #endif
 
   // 2. Reset Button Logic
@@ -213,7 +248,7 @@ void loop() {
   static float tC = 0.0f;
   static uint32_t tT = 0;
 
-  constexpr float V_EMA_ALPHA = 0.20f; // 0.1–0.3 good
+  constexpr float V_EMA_ALPHA = 0.30f; // 0.1–0.3 good
   constexpr float T_EMA_ALPHA = 0.10f; // slower
 
   float newV = voltSensor.update();
@@ -248,45 +283,41 @@ void loop() {
     lastF = f;
     hasLast = true;
   } else if (hasLast) {
-    f = lastF; // reuse last valid frame instead of forcing zeros
+    f = lastF;  // reuse last valid FFT frame instead of forcing zeros
   } else {
-    // still waiting for first frame
     memset(&f, 0, sizeof(f));
   }
 
-  // 3b. Moving average for slow sensors (see section 3 below)
-  // Fill in core-1 gathered values
+  // Fill core-1 values
   f.vrms   = vRms;
   f.temp_c = tC;
 
-  // 4b. TRANSIENT HOLDOFF (place it HERE: after f.irms is valid, before prediction)
+  // ---- TRANSIENT HOLDOFF (fan OFF kick / plug sparks) ----
   static float prevIrms = 0.0f;
   const float dI = fabsf(f.irms - prevIrms);
   prevIrms = f.irms;
 
   static uint32_t transientUntil = 0;
-  // Tune: fan OFF spike seems big; start with 0.6A and 600ms
-  if (dI > 0.6f) transientUntil = millis() + 600;
+  if (dI > 0.6f) transientUntil = millis() + 600;   // tune if needed
   const bool isTransient = (millis() < transientUntil);
 
-  // Predict Fault State (suppress prediction during transient)
+  // Predict
   int pred = ArcPredict(f.entropy, f.thd_pct, f.zcv_ms, f.vrms, f.irms, f.temp_c);
-  if (isTransient) pred = 0;
-  f.model_pred = pred;
+  if (isTransient) pred = 0; // suppress arc vote during transient
+  f.model_pred = (uint8_t)pred;
 
   FaultState state = faultLogic.update(tC, f.irms, f.model_pred);
 
-  // Apply outputs (Data collection mode: never trip relay)
+  // Apply outputs
   FaultState stateOut = state;
 #ifdef DATA_COLLECTION_MODE
-  stateOut = STATE_NORMAL;
+  stateOut = STATE_NORMAL;  // never trip relay while collecting data
 #endif
   actuators.apply(stateOut, vRms, f.irms, tC);
 
 #if ENABLE_ML_LOGGER
-  // log only when a NEW frame arrived
   if (gotData) {
-    logger.ingest(f, state, faultLogic.arcCounter());
+    logger.ingest(f, stateOut, faultLogic.arcCounter());
   }
 #endif
 

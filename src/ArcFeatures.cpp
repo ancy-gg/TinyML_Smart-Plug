@@ -7,9 +7,9 @@ static inline float clampf(float x, float lo, float hi) {
 }
 
 static inline float codeToCurrentA(uint16_t code, const CurrentCalib& cal) {
-  const float v_aux    = (float(code) * ADS_VREF_V) / 65535.0f;     // 0..VREF
-  const float v_sensor = v_aux / cal.dividerRatio;                  // undo divider
-  return (v_sensor - cal.offsetV) / cal.voltsPerAmp;                // sensor model
+  const float v_aux = (float(code) * ADS_VREF_V) / 65535.0f;      // 0..Vref
+  const float v_sensor = v_aux / cal.dividerRatio;               // undo divider
+  return (v_sensor - cal.offsetV) / cal.voltsPerAmp;
 }
 
 bool ArcFeatures::compute(const uint16_t* raw, size_t n, float fs_hz,
@@ -23,16 +23,16 @@ bool ArcFeatures::compute(const uint16_t* raw, size_t n, float fs_hz,
   static float vReal[N_SAMP];
   static float vImag[N_SAMP];
 
-  // 1) Convert + mean remove
+  // 1) Convert + mean
   double mean = 0.0;
   for (size_t i = 0; i < n; i++) {
-    const float a = codeToCurrentA(raw[i], cal);
+    float a = codeToCurrentA(raw[i], cal);
     iSig[i] = a;
     mean += a;
   }
   mean /= (double)n;
 
-  // 2) RMS (raw)
+  // 2) RMS raw + center
   double acc = 0.0;
   for (size_t i = 0; i < n; i++) {
     const float s = iSig[i] - (float)mean;
@@ -42,31 +42,27 @@ bool ArcFeatures::compute(const uint16_t* raw, size_t n, float fs_hz,
   }
   const float irms_raw = (float)sqrt(acc / (double)n);
 
-  // 2a) Learn idle RMS noise floor (EMA)
+  // 2a) Learn idle floor (EMA)
   static bool  idleInit = false;
   static float idleEma  = 0.0f;
   if (!idleInit) { idleInit = true; idleEma = irms_raw; }
-
-  // Only adapt baseline when we're near it
   if (irms_raw < (idleEma * 2.0f + 1e-6f)) {
     idleEma = 0.98f * idleEma + 0.02f * irms_raw;
   }
 
-  // 2b) Subtract noise in quadrature to make idle show ~0A
+  // 2b) Quadrature subtract noise so idle shows ~0A
   const float irms_clean = sqrtf(fmaxf(0.0f, irms_raw*irms_raw - idleEma*idleEma));
   out.irms_a = irms_clean;
 
-  // 2c) Idle gate (use clean current)
   const float idleGate = fmaxf(IDLE_IRMS_A, idleEma * 2.5f);
   if (irms_clean < idleGate) {
-    out.irms_a  = 0.0f;
     out.thd_pct = 0.0f;
     out.entropy = 0.0f;
     out.zcv_ms  = 0.0f;
     return true;
   }
 
-  // 3) ZCV with stronger hysteresis (based on raw RMS so it still works near idle)
+  // 3) ZCV with hysteresis to prevent noise jitter
   int crossings[80];
   int cCount = 0;
   const float hys = fmaxf(ZC_HYS_MIN_A, ZC_HYS_FRAC * irms_raw);
@@ -91,7 +87,7 @@ bool ArcFeatures::compute(const uint16_t* raw, size_t n, float fs_hz,
       sum2 += dtMs * dtMs;
       m++;
     }
-    const double mu  = sum / (double)m;
+    const double mu = sum / (double)m;
     const double var = (sum2 / (double)m) - (mu * mu);
     out.zcv_ms = (float)sqrt(var > 0 ? var : 0);
   } else {
@@ -109,25 +105,26 @@ bool ArcFeatures::compute(const uint16_t* raw, size_t n, float fs_hz,
   if (kNom < 1) kNom = 1;
   if (kNom > (int)(n/2 - 2)) kNom = (int)(n/2 - 2);
 
+  // Search best fundamental near expected bin
   int k1 = kNom;
   float fund = 0.0f;
   for (int dk = -2; dk <= 2; dk++) {
-    const int k = kNom + dk;
+    int k = kNom + dk;
     if (k >= 1 && k < (int)(n/2)) {
       if (vReal[k] > fund) { fund = vReal[k]; k1 = k; }
     }
   }
 
-  // Noise estimate 500..3000 Hz excluding harmonics
-  const int b0 = fmax(1, (int)ceil(500.0f / binHz));
-  const int b1 = fmin((int)(n/2 - 1), (int)floor(3000.0f / binHz));
+  // Estimate noise mag 500..3000Hz excluding harmonics
+  const int b0 = max(1, (int)ceil(500.0f / binHz));
+  const int b1 = min((int)(n/2 - 1), (int)floor(3000.0f / binHz));
   double noiseSum = 0.0;
   int noiseN = 0;
 
   for (int b = b0; b <= b1; b++) {
     bool skip = false;
     for (int h = 1; h <= 10; h++) {
-      const int kh = h * k1;
+      int kh = h * k1;
       if (kh >= (int)(n/2)) break;
       if (abs(b - kh) <= 2) { skip = true; break; }
     }
@@ -150,15 +147,15 @@ bool ArcFeatures::compute(const uint16_t* raw, size_t n, float fs_hz,
     if (khNom >= (int)(n/2)) break;
     float hm = 0.0f;
     for (int dk = -1; dk <= 1; dk++) {
-      const int kh = khNom + dk;
-      if (kh >= 1 && kh < (int)(n/2)) hm = fmaxf(hm, vReal[kh]);
+      int kh = khNom + dk;
+      if (kh >= 1 && kh < (int)(n/2)) hm = max(hm, vReal[kh]);
     }
     harm2 += (double)hm * (double)hm;
   }
   out.thd_pct = (float)(sqrt(harm2) / (double)fund * 100.0);
 
-  // Spectral entropy up to ENTROPY_MAX_HZ (or Nyquist)
-  const int maxBin = (int)fmin((double)(n/2), floor((double)ENTROPY_MAX_HZ / (double)binHz));
+  // Entropy band-limited
+  const int maxBin = (int)min((double)(n/2), floor((double)ENTROPY_MAX_HZ / (double)binHz));
   double psum = 0.0;
 
   for (int b = 1; b < maxBin; b++) {
@@ -172,7 +169,7 @@ bool ArcFeatures::compute(const uint16_t* raw, size_t n, float fs_hz,
   } else {
     double H = 0.0;
     for (int b = 1; b < maxBin; b++) {
-      const double p = (double)vImag[b] / psum;
+      double p = (double)vImag[b] / psum;
       if (p > 1e-18) H += -p * log(p);
     }
     H /= log((double)(maxBin - 1));

@@ -518,11 +518,20 @@ setInterval(() => {
   });
 })();
 
-// TinyML Logger
+// TinyML Logger (Session-based)
 const mlLogEnable = el("mlLogEnable");
 const mlLogDur = el("mlLogDur");
-const btnDownloadLatestMl = el("btnDownloadLatestMl");
+const mlLoadType = el("mlLoadType");
+const mlLabelOverride = el("mlLabelOverride");
+
+const btnDownloadSessionMl = el("btnDownloadSessionMl");
+const btnDownloadAllMl = el("btnDownloadAllMl");
+
 const mlLogStatus = el("mlLogStatus");
+const mlSessionBody = el("mlSessionBody");
+
+let currentSessionId = "";
+let sessionsCache = {}; // sessionId -> meta
 
 function downloadTextFileGeneric(filename, text, mime="text/csv;charset=utf-8") {
   const blob = new Blob([text], { type: mime });
@@ -536,15 +545,120 @@ function downloadTextFileGeneric(filename, text, mime="text/csv;charset=utf-8") 
   URL.revokeObjectURL(url);
 }
 
+function makeSessionId() {
+  return "sess_" + Date.now();
+}
+
+function labelText(v) {
+  if (String(v) === "1") return "ARC";
+  if (String(v) === "0") return "NORMAL";
+  return "AUTO";
+}
+
+async function fetchSessionCsv(sessionId) {
+  const snap = await db.ref(`ml_logs/${sessionId}`).get();
+  if (!snap.exists()) return "";
+
+  const chunksObj = snap.val();
+  const keys = Object.keys(chunksObj);
+
+  // sort by created_at if present
+  keys.sort((a,b) => {
+    const ta = chunksObj[a]?.created_at || 0;
+    const tb = chunksObj[b]?.created_at || 0;
+    return ta - tb;
+  });
+
+  let header = "";
+  let combinedLines = [];
+
+  for (const k of keys) {
+    const csv = chunksObj[k]?.csv || "";
+    if (!csv) continue;
+
+    const lines = csv.split("\n").filter(x => x.trim().length);
+    if (lines.length === 0) continue;
+
+    if (!header) {
+      header = lines[0];
+      combinedLines.push(...lines.slice(1));
+    } else {
+      // drop header if repeated
+      const startIdx = (lines[0].trim() === header.trim()) ? 1 : 0;
+      combinedLines.push(...lines.slice(startIdx));
+    }
+  }
+
+  if (!header) return "";
+  return header + "\n" + combinedLines.join("\n") + "\n";
+}
+
+function sessionFilename(meta, sessionId) {
+  const start = meta?.start_ms || 0;
+  const end = meta?.end_ms || 0;
+
+  const startStr = formatEpochMsTZ(start).replace(/[ :.]/g,"-");
+  const endStr   = end ? formatEpochMsTZ(end).replace(/[ :.]/g,"-") : "OPEN";
+
+  const load = (meta?.load_type || "unknown").toString().replace(/[^a-zA-Z0-9_-]/g,"_");
+  return `TSP_ML_${startStr}__${endStr}__${load}__${sessionId}.csv`;
+}
+
+// Listen to /ml_log control
 if (mlLogEnable) {
-  db.ref("ml_log/enabled").on("value", (s) => {
-    const v = !!s.val();
-    mlLogEnable.checked = v;
+  db.ref("ml_log").on("value", (s) => {
+    const v = s.val() || {};
+    mlLogEnable.checked = !!v.enabled;
+    if (typeof v.duration_s === "number" && mlLogDur) mlLogDur.value = String(v.duration_s);
+    if (v.load_type && mlLoadType) mlLoadType.value = v.load_type;
+    if (mlLabelOverride && (v.label_override !== undefined)) mlLabelOverride.value = String(v.label_override);
+    if (v.session_id) currentSessionId = v.session_id;
   });
 
   mlLogEnable.addEventListener("change", async () => {
-    await db.ref("ml_log").update({ enabled: !!mlLogEnable.checked });
-    toast("Logger updated.", "ok");
+    const enabled = !!mlLogEnable.checked;
+    const dur = parseInt(mlLogDur?.value || "10", 10);
+    const load = (mlLoadType?.value || "unknown").trim() || "unknown";
+    const labelOv = parseInt(mlLabelOverride?.value || "-1", 10);
+
+    if (enabled) {
+      const sid = makeSessionId();
+      currentSessionId = sid;
+
+      // write control
+      await db.ref("ml_log").update({
+        enabled: true,
+        duration_s: dur,
+        session_id: sid,
+        load_type: load,
+        label_override: labelOv
+      });
+
+      // create session meta
+      await db.ref(`ml_sessions/${sid}`).set({
+        start_ms: firebase.database.ServerValue.TIMESTAMP,
+        end_ms: null,
+        load_type: load,
+        duration_s: dur,
+        label_override: labelOv
+      });
+
+      if (mlLogStatus) mlLogStatus.textContent = `Logging enabled. Session: ${sid}`;
+      toast("Logger enabled (session created).", "ok");
+    } else {
+      // disable
+      const sid = currentSessionId;
+      await db.ref("ml_log").update({ enabled: false });
+
+      if (sid) {
+        await db.ref(`ml_sessions/${sid}`).update({
+          end_ms: firebase.database.ServerValue.TIMESTAMP
+        });
+      }
+
+      if (mlLogStatus) mlLogStatus.textContent = `Logging disabled. Session closed: ${sid || "—"}`;
+      toast("Logger disabled.", "ok");
+    }
   });
 }
 
@@ -556,31 +670,113 @@ if (mlLogDur) {
   });
 }
 
-if (btnDownloadLatestMl) {
-  btnDownloadLatestMl.addEventListener("click", async () => {
-    try {
-      const snap = await db.ref("ml_logs").limitToLast(1).get();
-      if (!snap.exists()) {
-        toast("No ML logs yet.", "err");
-        return;
-      }
-      const obj = snap.val();
-      const key = Object.keys(obj)[0];
-      const rec = obj[key];
-      const csv = rec?.csv || "";
-      if (!csv) {
-        toast("Latest log missing CSV.", "err");
-        return;
-      }
+if (mlLoadType) {
+  mlLoadType.addEventListener("change", async () => {
+    await db.ref("ml_log").update({ load_type: mlLoadType.value.trim() || "unknown" });
+  });
+}
 
-      const ts = new Date().toISOString().slice(0,19).replace(/[:T]/g,"-");
-      downloadTextFileGeneric(`TSP_ML_${ts}.csv`, csv);
-      if (mlLogStatus) mlLogStatus.textContent = `Downloaded latest log: ${key}`;
-      toast("ML CSV downloaded.", "ok");
-    } catch (e) {
-      console.error(e);
-      toast("Failed to download ML log.", "err");
+if (mlLabelOverride) {
+  mlLabelOverride.addEventListener("change", async () => {
+    const v = parseInt(mlLabelOverride.value || "-1", 10);
+    await db.ref("ml_log").update({ label_override: v });
+  });
+}
+
+// Session list UI
+if (mlSessionBody) {
+  db.ref("ml_sessions").limitToLast(50).on("value", (s) => {
+    const obj = s.val() || {};
+    sessionsCache = obj;
+
+    // sort by start_ms descending
+    const ids = Object.keys(obj).sort((a,b) => (obj[b]?.start_ms||0) - (obj[a]?.start_ms||0));
+
+    mlSessionBody.innerHTML = ids.map((sid) => {
+      const meta = obj[sid] || {};
+      const st = meta.start_ms ? formatEpochMsTZ(meta.start_ms) : "—";
+      const en = meta.end_ms ? formatEpochMsTZ(meta.end_ms) : "—";
+      const load = meta.load_type || "unknown";
+      const lab  = labelText(meta.label_override);
+
+      return `
+        <tr>
+          <td class="mono">${sid}</td>
+          <td class="mono">${st}</td>
+          <td class="mono">${en}</td>
+          <td class="mono">${String(load)}</td>
+          <td class="mono">${lab}</td>
+          <td><button class="btn btn-small" data-sid="${sid}">Download</button></td>
+        </tr>
+      `;
+    }).join("");
+
+    // attach handlers
+    mlSessionBody.querySelectorAll("button[data-sid]").forEach(btn => {
+      btn.addEventListener("click", async () => {
+        const sid = btn.getAttribute("data-sid");
+        const meta = sessionsCache[sid] || {};
+        const csv = await fetchSessionCsv(sid);
+        if (!csv) { toast("No data for this session yet.", "err"); return; }
+        downloadTextFileGeneric(sessionFilename(meta, sid), csv);
+        if (mlLogStatus) mlLogStatus.textContent = `Downloaded session: ${sid}`;
+        toast("Session CSV downloaded.", "ok");
+      });
+    });
+  });
+}
+
+// Download current session
+if (btnDownloadSessionMl) {
+  btnDownloadSessionMl.addEventListener("click", async () => {
+    const sid = currentSessionId;
+    if (!sid) { toast("No active session_id.", "err"); return; }
+
+    const metaSnap = await db.ref(`ml_sessions/${sid}`).get();
+    const meta = metaSnap.exists() ? metaSnap.val() : {};
+
+    const csv = await fetchSessionCsv(sid);
+    if (!csv) { toast("No session logs yet.", "err"); return; }
+
+    downloadTextFileGeneric(sessionFilename(meta, sid), csv);
+    if (mlLogStatus) mlLogStatus.textContent = `Downloaded session: ${sid}`;
+    toast("Session CSV downloaded.", "ok");
+  });
+}
+
+// Download ALL sessions combined (one CSV)
+if (btnDownloadAllMl) {
+  btnDownloadAllMl.addEventListener("click", async () => {
+    const ids = Object.keys(sessionsCache || {});
+    if (ids.length === 0) { toast("No sessions yet.", "err"); return; }
+
+    // sort oldest->newest
+    ids.sort((a,b) => (sessionsCache[a]?.start_ms||0) - (sessionsCache[b]?.start_ms||0));
+
+    let header = "";
+    let rows = [];
+
+    for (const sid of ids) {
+      const csv = await fetchSessionCsv(sid);
+      if (!csv) continue;
+      const lines = csv.split("\n").filter(x => x.trim().length);
+      if (lines.length === 0) continue;
+
+      if (!header) {
+        header = lines[0];
+        rows.push(...lines.slice(1));
+      } else {
+        const startIdx = (lines[0].trim() === header.trim()) ? 1 : 0;
+        rows.push(...lines.slice(startIdx));
+      }
     }
+
+    if (!header || rows.length === 0) { toast("No session rows found.", "err"); return; }
+
+    const ts = new Date().toISOString().slice(0,19).replace(/[:T]/g,"-");
+    downloadTextFileGeneric(`TSP_ML_ALL_${ts}.csv`, header + "\n" + rows.join("\n") + "\n");
+    if (mlLogStatus) mlLogStatus.textContent = `Downloaded ALL sessions (${rows.length} rows)`;
+    toast("All sessions downloaded.", "ok");
   });
 }
 
