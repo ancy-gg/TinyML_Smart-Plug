@@ -1,3 +1,5 @@
+#define ADS8684_DEBUG_BYTES 1
+
 #include <Arduino.h>
 #include <Wire.h>
 #include <WiFi.h>
@@ -36,7 +38,7 @@
 // --- Firebase Configuration ---
 #define API_KEY "AIzaSyAmJlZZszyWPJFgIkTAAl_TbIySys1nvEw"
 #define DATABASE_URL "tinyml-smart-plug-default-rtdb.asia-southeast1.firebasedatabase.app"
-static const char* FW_VERSION = "TSP-v0.1.16"; 
+static const char* FW_VERSION = "TSP-v0.1.17"; 
 
 // --- OTA Constants ---
 static const char* OTA_DESIRED_VERSION_PATH = "/ota/desired_version";
@@ -226,23 +228,42 @@ void loop() {
     tC = tempSensor.readTempC();
   }
 
-  // 4. GET DATA FROM CORE 0 AND INGEST AS FAST AS POSSIBLE
-  FeatureFrame f;
-  bool gotData = false;
-  
+// 4. GET DATA FROM CORE 0 (KEEP LAST GOOD FRAME)
+static FeatureFrame lastF = {};
+static bool hasLast = false;
+static uint32_t lastRxMs = 0;
+
+FeatureFrame f;
+bool gotData = false;
+
 #if ENABLE_CURRENT_SENSOR
-  if (qFeat != nullptr) {
-    gotData = (xQueueReceive(qFeat, &f, 0) == pdTRUE);
-  }
+if (qFeat != nullptr) {
+  gotData = (xQueueReceive(qFeat, &f, 0) == pdTRUE);
+}
 #endif
 
-  // If no hardware or queue is empty, populate with zeroes to keep loop alive
-  if (!gotData) {
-    f.irms = 0.0f;
-    f.zcv_ms = 0.0f;
-    f.thd_pct = 0.0f;
-    f.entropy = 0.0f;
-  }
+if (gotData) {
+  lastF = f;
+  hasLast = true;
+  lastRxMs = millis();
+} else if (hasLast) {
+  // Reuse last valid current/FFT features so OLED + Cloud don't fall to zero
+  f = lastF;
+} else {
+  // Still waiting for first valid frame
+  f.irms = 0.0f;
+  f.zcv_ms = 0.0f;
+  f.thd_pct = 0.0f;
+  f.entropy = 0.0f;
+}
+
+// Optional: mark stale if Core0 stops updating
+if (hasLast && (millis() - lastRxMs) > 2000) {
+  f.irms = 0.0f;
+  f.thd_pct = 0.0f;
+  f.entropy = 0.0f;
+  f.zcv_ms = 0.0f;
+}
   
   // Fill in core-1 gathered values
   f.vrms = vRms;
