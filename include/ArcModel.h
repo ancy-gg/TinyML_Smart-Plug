@@ -12,7 +12,7 @@
   #define ARC_THRESHOLD 0.50f
 #endif
 
-// Predeiction Logic
+// Prediction Logic
 static inline int ArcPredict(float entropy, float thd_pct, float zcv,
                              float v_rms, float i_rms, float temp_c) {
 

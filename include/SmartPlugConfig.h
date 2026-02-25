@@ -7,8 +7,6 @@
 // TinyML Mode
 //#define USE_M2CGEN_RF
 
-
-#define ENABLE_CURRENT_SENSOR 1
 #define ENABLE_ML_LOGGER 1
 
 // Sampling and FFT

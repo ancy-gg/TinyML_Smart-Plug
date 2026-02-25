@@ -4,46 +4,36 @@
 #include <freertos/FreeRTOS.h>
 #include <freertos/task.h>
 #include <freertos/queue.h>
-
-// --- Config & Types ---
 #include "SmartPlugConfig.h"
 #include "SmartPlugTypes.h"
-
-// --- Modules ---
 #include "NetworkManager.h"
 #include "CloudHandler.h"
 #include "OLED_NOTIF.h"
 #include "TimeSync.h"
 #include "PullOTA.h"
-
+#include "CurrentSensor.h"
 #include "VoltageSensor.h"
 #include "TempSensor.h"
 #include "FaultLogic.h"
 #include "Actuators.h"
 #include "ArcModel.h"
+#include "ArcFeatures.h"
 
-// Include ML Logger if enabled
 #if ENABLE_ML_LOGGER
   #include "DataLogger.h"
 #endif
 
-// Conditionally include Current Sensor / FFT if enabled
-#if ENABLE_CURRENT_SENSOR
-  #include "CurrentSensor.h"
-  #include "ArcFeatures.h"
-#endif
-
-// --- Firebase Configuration ---
+// Firebase Credentials
 #define API_KEY "AIzaSyAmJlZZszyWPJFgIkTAAl_TbIySys1nvEw"
 #define DATABASE_URL "tinyml-smart-plug-default-rtdb.asia-southeast1.firebasedatabase.app"
-static const char* FW_VERSION = "TSP-v0.2.3"; 
+static const char* FW_VERSION = "TSP-v0.2.4"; 
 
-// --- OTA Constants ---
+// Firmware Updates
 static const char* OTA_DESIRED_VERSION_PATH = "/ota/desired_version";
 static const char* OTA_FIRMWARE_URL_PATH    = "/ota/firmware_url";
 static const uint32_t OTA_CHECK_INTERVAL_MS = 60000;
 
-// --- Global Objects ---
+// Global Objects
 OLED_NOTIF      oled(0x3C);
 NetworkManager  net;
 CloudHandler    cloud;
@@ -60,16 +50,14 @@ Actuators       actuators;
 DataLogger      logger;
 #endif
 
-#if ENABLE_CURRENT_SENSOR
 CurrentSensor   curSensor; 
 ArcFeatures     arcFeat;
-CurrentCalib    curCalib; // default calibration
-static uint16_t s_raw[N_SAMP]; // RAW ADC Buffer
+CurrentCalib    curCalib; 
+static uint16_t s_raw[N_SAMP]; 
 QueueHandle_t   qFeat = nullptr;
 
-// -------------------------------------------------------------------------
-// Core 0 Task (High Speed Pipeline)
-// -------------------------------------------------------------------------
+
+// Core 0 Task (Current Features)
 void Core0Task(void* pvParameters) {
   ArcFeatOut out;
   
@@ -83,15 +71,6 @@ void Core0Task(void* pvParameters) {
     float fs = 0.0f;
     const size_t got = curSensor.capture(s_raw, N_SAMP, &fs);
 
-// --- DEBUG BLOCK ---
-    static uint32_t lastPrint = 0;
-    if (millis() - lastPrint > 1000) {
-      lastPrint = millis();
-      // Added 'fs' to the printout so we can see the exact speed!
-      Serial.printf("[SPI DEBUG] Captured: %d | RAW: %u | FS: %.1f Hz\n", got, s_raw[0], fs);
-    }
-    // -------------------
-
     if (got == N_SAMP && fs > 20000.0f) {
       
       bool success = arcFeat.compute(s_raw, N_SAMP, fs, curCalib, MAINS_F0_HZ, out);
@@ -102,44 +81,36 @@ void Core0Task(void* pvParameters) {
         f.entropy = out.entropy;
         f.zcv_ms  = out.zcv_ms;
 
-        // Push to Core 1. We use xQueueOverwrite which requires a queue size of exactly 1.
+        // Push to Core 1 (Loop) via Queue
         if (qFeat != nullptr) {
           xQueueOverwrite(qFeat, &f);
         }
-      } else {
-        // --- CATCH THE FAILURE ---
-        Serial.println("[MATH FAILED] arcFeat.compute() actively rejected the data!");
-      }
-    } else {
-      Serial.printf("[SPI ERROR] Incomplete capture or low sampling rate! Got: %d | FS: %.1f Hz\n", got, fs);
-    }
-
-    // Give FreeRTOS a tiny breather to feed the idle task and prevent watchdog resets
+      } 
+    } 
     vTaskDelay(1);
   }
 }
-#endif
 
-// -------------------------------------------------------------------------
 // Setup
-// -------------------------------------------------------------------------
 void setup() {
   Serial.begin(115200);
   delay(1000); 
 
-  // 1. Hardware Init
+  // Initialization
+  // OLED
   oled.begin();
   oled.showStatus("System", "Starting...");
   
+  // Actuators (relays off by default)
   actuators.begin(PIN_RELAY, PIN_BUZZER_PWM, PIN_RESET_BTN, &oled);
   
-  // 2. Sensor Init
+  // Sensors (connected to ESP ADC)
   voltSensor.begin();
+  voltSensor.setWindowMs(200);                 // 200ms stable Vrms
+  voltSensor.setClampHysteresis(25.0f, 35.0f); // clip-to-zero w/ hysteresis
   tempSensor.begin();
   
-  // 3. SPI Sensor Init & Core 0 Start
-#if ENABLE_CURRENT_SENSOR
-  oled.showStatus("CURRENT", "Init ADC...");
+  // SPI ADC for current sensing
   bool hwReady = curSensor.begin();
   
   if (!hwReady) {
@@ -148,38 +119,33 @@ void setup() {
     delay(2000); 
   } else {
     Serial.println("ADS8684 Initialized OK.");
-    oled.showStatus("CURRENT", "Ready");
+    oled.showStatus("Sensors", "Ready");
     
-    // Create queue with exactly 1 element so xQueueOverwrite works
+    // Initialize Queue for Dual Core Communication
     qFeat = xQueueCreate(1, sizeof(FeatureFrame));
     
-    // Launch the Pipeline Task on Core 0
+    // Launch the Task on Core 0
     xTaskCreatePinnedToCore(Core0Task, "Core0Sense", 12288, nullptr, 3, nullptr, 0);
   }
-#else
-  Serial.println("[Init] SPI Sensor Disabled in Config.");
-  oled.showStatus("Warning", "Sensor OFF");
-  delay(1000);
-#endif
 
-  // 4. Network Connection
+  // WiFi Setup
   oled.showStatus("WiFi", "Connecting...");
   net.begin([](WiFiManager* wm) {
     oled.showStatus("Setup Mode", "Connect to AP");
   });
 
-  // 5. Cloud & Time
+  // Time Sync for Logging and OTA
   oled.showStatus("Cloud", "Connecting...");
   cloud.begin(API_KEY, DATABASE_URL);
   timeSync.begin();
   
 #if ENABLE_ML_LOGGER
   logger.begin(&cloud);
-  logger.setEnabled(false);          // controlled by website checkbox
-  logger.setDurationSeconds(10);     // default; website can override
+  logger.setEnabled(false);          
+  logger.setDurationSeconds(10);  
 #endif
 
-  // 6. OTA Setup
+  // Firmware Update Setup
   ota.begin(FW_VERSION, &cloud);
   ota.setPaths(OTA_DESIRED_VERSION_PATH, OTA_FIRMWARE_URL_PATH);
   ota.setCheckInterval(OTA_CHECK_INTERVAL_MS);
@@ -235,11 +201,8 @@ static void pollMlControl(CloudHandler& cloud, DataLogger& logger) {
 }
 #endif
 
-// -------------------------------------------------------------------------
-// Loop (Core 1)
-// -------------------------------------------------------------------------
+// Core1 Task (Main Loop)
 void loop() {
-  // 1. Maintain background tasks
   net.update();
   ota.loop();
   timeSync.update();
@@ -248,20 +211,20 @@ void loop() {
   pollMlControl(cloud, logger);
 #endif
 
-  // 2. Reset Button Logic
+  // Reset Button Logic
   if (actuators.resetLongPressed()) {
     faultLogic.resetLatch();
     oled.showStatus("RESET", "Latch cleared");
     delay(250);
   }
 
-  // 3. Slow Sensors (Non-blocking) + smoothing
+  // Slow Sensors (Non-blocking)
   static float vRms = 0.0f;
   static float tC = 0.0f;
   static uint32_t tT = 0;
 
-  constexpr float V_EMA_ALPHA = 0.30f; // 0.1–0.3 good
-  constexpr float T_EMA_ALPHA = 0.10f; // slower
+  constexpr float V_EMA_ALPHA = 1.00f; 
+  constexpr float T_EMA_ALPHA = 0.10f; 
 
   float newV = voltSensor.update();
   if (newV >= 0.0f) {
@@ -272,30 +235,28 @@ void loop() {
   if (millis() - tT > 500) {
     tT = millis();
     float newT = tempSensor.readTempC();
-    if (newT > -50.0f && newT < 120.0f) { // ignore -99 + outliers
+    if (newT > -50.0f && newT < 120.0f) { 
       if (tC <= -50.0f || tC >= 120.0f) tC = newT;
       else tC = (1.0f - T_EMA_ALPHA) * tC + T_EMA_ALPHA * newT;
     }
   }
 
-  // 4. GET DATA FROM CORE 0 (KEEP LAST GOOD FRAME)
+  // Get latest features from Core 0 
   static FeatureFrame lastF = {};
   static bool hasLast = false;
 
   FeatureFrame f;
   bool gotData = false;
 
-#if ENABLE_CURRENT_SENSOR
   if (qFeat != nullptr) {
     gotData = (xQueueReceive(qFeat, &f, 0) == pdTRUE);
   }
-#endif
 
   if (gotData) {
     lastF = f;
     hasLast = true;
   } else if (hasLast) {
-    f = lastF;  // reuse last valid FFT frame instead of forcing zeros
+    f = lastF; 
   } else {
     f.irms = 0.0f;
     f.zcv_ms = 0.0f;
@@ -307,7 +268,7 @@ void loop() {
   f.vrms   = vRms;
   f.temp_c = tC;
 
-  // ---- TRANSIENT HOLDOFF (fan OFF kick / plug sparks) ----
+  // Transient Detection 
   static float prevIrms = 0.0f;
   const float dI = fabsf(f.irms - prevIrms);
   prevIrms = f.irms;
@@ -346,11 +307,10 @@ void loop() {
     logger.ingest(f, stateOut, faultLogic.arcCounter());
   }
 
-  // REQUIRED: actually uploads buffered chunks when duration/full triggers
   logger.loop();
 #endif
 
-  // 5. SLOW LIVE DASHBOARD UPDATE (Every 5 seconds)
+  // Live Dashboard
   static uint32_t lastCloudUpdate = 0;
   if (millis() - lastCloudUpdate > 5000) {
     lastCloudUpdate = millis();
