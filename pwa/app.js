@@ -763,19 +763,14 @@ btnClearMlLogs?.addEventListener("click", async () => {
   if (!confirm("Delete ALL ML logs and sessions? This cannot be undone.")) return;
 
   try {
-    // Atomic multi-path delete (often more reliable than multiple remove() calls)
-    await db.ref().update({
-      "ml_log/enabled": false,
-      "ml_logs": null,
-      "ml_sessions": null
-    });
-
+    await db.ref("ml_log").update({ enabled: false });
+    await db.ref("ml_logs").remove();
+    await db.ref("ml_sessions").remove();
     if (mlLogStatus) mlLogStatus.textContent = "ML logs cleared.";
     toast("ML logs cleared.", "ok");
   } catch (e) {
-    console.error("Clear ML logs failed:", e);
-    const msg = e?.message ? e.message : String(e);
-    toast(`Failed to clear ML logs: ${msg}`, "err");
+    console.error(e);
+    toast("Failed to clear ML logs (rules may block).", "err");
   }
 });
 
