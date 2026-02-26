@@ -4,6 +4,7 @@
 #include <freertos/FreeRTOS.h>
 #include <freertos/task.h>
 #include <freertos/queue.h>
+
 #include "SmartPlugConfig.h"
 #include "SmartPlugTypes.h"
 #include "NetworkManager.h"
@@ -11,6 +12,8 @@
 #include "OLED_NOTIF.h"
 #include "TimeSync.h"
 #include "PullOTA.h"
+#include "BootGuard.h"  
+
 #include "CurrentSensor.h"
 #include "VoltageSensor.h"
 #include "TempSensor.h"
@@ -26,7 +29,7 @@
 // Firebase Credentials
 #define API_KEY "AIzaSyAmJlZZszyWPJFgIkTAAl_TbIySys1nvEw"
 #define DATABASE_URL "tinyml-smart-plug-default-rtdb.asia-southeast1.firebasedatabase.app"
-static const char* FW_VERSION = "TSP-v0.2.3"; 
+static const char* FW_VERSION = "TSP-v0.2.4";
 
 // Firmware Updates
 static const char* OTA_DESIRED_VERSION_PATH = "/ota/desired_version";
@@ -50,18 +53,18 @@ Actuators       actuators;
 DataLogger      logger;
 #endif
 
-CurrentSensor   curSensor; 
+CurrentSensor   curSensor;
 ArcFeatures     arcFeat;
-CurrentCalib    curCalib; 
-static uint16_t s_raw[N_SAMP]; 
+CurrentCalib    curCalib;
+static uint16_t s_raw[N_SAMP];
 QueueHandle_t   qFeat = nullptr;
 
+// ✅ NEW
+static bool gSafeMode = false;
 
 // Core 0 Task (Current Features)
 void Core0Task(void* pvParameters) {
   ArcFeatOut out;
-  
-  Serial.println("\n[Core0] TASK HAS SUCCESSFULLY STARTED!");
 
   while (true) {
     FeatureFrame f;
@@ -72,87 +75,101 @@ void Core0Task(void* pvParameters) {
     const size_t got = curSensor.capture(s_raw, N_SAMP, &fs);
 
     if (got == N_SAMP && fs > 20000.0f) {
-      
       bool success = arcFeat.compute(s_raw, N_SAMP, fs, curCalib, MAINS_F0_HZ, out);
-      
+
       if (success) {
         f.irms    = out.irms_a;
         f.thd_pct = out.thd_pct;
         f.entropy = out.entropy;
         f.zcv_ms  = out.zcv_ms;
 
-        // Push to Core 1 (Loop) via Queue
-        if (qFeat != nullptr) {
-          xQueueOverwrite(qFeat, &f);
-        }
-      } 
-    } 
+        if (qFeat != nullptr) xQueueOverwrite(qFeat, &f);
+      }
+    }
+
     vTaskDelay(1);
   }
 }
 
-// Setup
+static bool bootHoldForSafeModeMs(uint32_t holdMs = 1500) {
+  // Manual recovery: hold reset button during boot to force SAFE MODE
+  pinMode(PIN_RESET_BTN, INPUT_PULLUP);
+  if (digitalRead(PIN_RESET_BTN) != LOW) return false;
+
+  const uint32_t t0 = millis();
+  while (millis() - t0 < holdMs) {
+    if (digitalRead(PIN_RESET_BTN) != LOW) return false;
+    delay(10);
+  }
+  return true;
+}
+
 void setup() {
   Serial.begin(115200);
-  delay(1000); 
+  delay(200);
 
-  // Initialization
-  // OLED
+  // BootGuard first
+  BootGuard::begin(/*stableWindowMs=*/45000, /*maxCrashBoots=*/3);
+  gSafeMode = BootGuard::safeMode();
+
+  // Manual override (VERY useful when USB is blocked)
+  if (bootHoldForSafeModeMs(1500)) gSafeMode = true;
+
   oled.begin();
-  oled.showStatus("System", "Starting...");
-  
-  // Actuators (relays off by default)
-  actuators.begin(PIN_RELAY, PIN_BUZZER_PWM, PIN_RESET_BTN, &oled);
-  
-  // Sensors (connected to ESP ADC)
-  voltSensor.begin();
-  voltSensor.setWindowMs(200);                 // 200ms stable Vrms
-  voltSensor.setClampHysteresis(25.0f, 35.0f); // clip-to-zero w/ hysteresis
-  tempSensor.begin();
-  
-  // SPI ADC for current sensing
-  bool hwReady = curSensor.begin();
-  
-  if (!hwReady) {
-    Serial.println("!!! WARNING: ADS8684 Missing or Failed !!!");
-    oled.showStatus("WARN", "No ADS8684");
-    delay(2000); 
+  if (gSafeMode) {
+    oled.showStatus("SAFE MODE", "OTA only");
+  } else if (BootGuard::pendingVerify()) {
+    oled.showStatus("OTA", "Verifying...");
   } else {
-    Serial.println("ADS8684 Initialized OK.");
-    oled.showStatus("Sensors", "Ready");
-    
-    // Initialize Queue for Dual Core Communication
-    qFeat = xQueueCreate(1, sizeof(FeatureFrame));
-    
-    // Launch the Task on Core 0
-    xTaskCreatePinnedToCore(Core0Task, "Core0Sense", 12288, nullptr, 3, nullptr, 0);
+    oled.showStatus("System", "Starting...");
   }
 
-  // WiFi Setup
+  // Actuators (safe default)
+  actuators.begin(PIN_RELAY, PIN_BUZZER_PWM, PIN_RESET_BTN, &oled);
+
+  // If NOT safe mode, bring up sensors + core0 sampling
+  if (!gSafeMode) {
+    voltSensor.begin();
+    voltSensor.setWindowMs(200);
+    voltSensor.setClampHysteresis(25.0f, 35.0f);
+    tempSensor.begin();
+
+    bool hwReady = curSensor.begin();
+    if (!hwReady) {
+      oled.showStatus("WARN", "No ADS8684");
+      delay(800);
+    } else {
+      qFeat = xQueueCreate(1, sizeof(FeatureFrame));
+      xTaskCreatePinnedToCore(Core0Task, "Core0Sense", 12288, nullptr, 3, nullptr, 0);
+      oled.showStatus("Sensors", "Ready");
+    }
+  }
+
+  // WiFi + Cloud + Time (needed for Pull OTA)
   oled.showStatus("WiFi", "Connecting...");
   net.begin([](WiFiManager* wm) {
     oled.showStatus("Setup Mode", "Connect to AP");
   });
 
-  // Time Sync for Logging and OTA
   oled.showStatus("Cloud", "Connecting...");
   cloud.begin(API_KEY, DATABASE_URL);
   timeSync.begin();
-  
+
 #if ENABLE_ML_LOGGER
-  logger.begin(&cloud);
-  logger.setEnabled(false);          
-  logger.setDurationSeconds(10);  
+  if (!gSafeMode) {
+    logger.begin(&cloud);
+    logger.setEnabled(false);
+    logger.setDurationSeconds(10);
+  }
 #endif
 
-  // Firmware Update Setup
+  // Pull OTA
   ota.begin(FW_VERSION, &cloud);
   ota.setPaths(OTA_DESIRED_VERSION_PATH, OTA_FIRMWARE_URL_PATH);
   ota.setCheckInterval(OTA_CHECK_INTERVAL_MS);
 
-  // Ready!
-  oled.showStatus("System", "Ready");
-  Serial.println("Setup Complete.");
+  if (gSafeMode) oled.showStatus("SAFE MODE", "Waiting OTA");
+  else          oled.showStatus("System", "Ready");
 }
 
 #if ENABLE_ML_LOGGER
@@ -179,21 +196,15 @@ static void pollMlControl(CloudHandler& cloud, DataLogger& logger) {
   if (dur < 5) dur = 5;
   if (dur > 60) dur = 60;
 
-  // session required when enabled
   if (enabled && sid.length() < 3) {
-    Serial.println("[ML_LOG] enabled but session_id missing; forcing off.");
     logger.setEnabled(false);
     return;
   }
 
-  // Apply session context
   logger.setDurationSeconds((uint16_t)dur);
   logger.setSession(sid, load, labelOv);
 
-  // Edge handling: enable/disable
   if (enabled != lastEnabled || sid != lastSession) {
-    Serial.printf("[ML_LOG] enabled=%d sid=%s load=%s labelOv=%d dur=%d\n",
-                  (int)enabled, sid.c_str(), load.c_str(), labelOv, dur);
     logger.setEnabled(enabled);
     lastEnabled = enabled;
     lastSession = sid;
@@ -201,29 +212,42 @@ static void pollMlControl(CloudHandler& cloud, DataLogger& logger) {
 }
 #endif
 
-// Core1 Task (Main Loop)
 void loop() {
+  // Marks OTA image VALID after stable run window
+  BootGuard::loop();
+
   net.update();
   ota.loop();
   timeSync.update();
+
+  // SAFE MODE: OTA-only (so you can always recover)
+  if (gSafeMode) {
+    static uint32_t lastCloudUpdate = 0;
+    if (millis() - lastCloudUpdate > 5000) {
+      lastCloudUpdate = millis();
+      cloud.update(0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, String("SAFE_MODE"), &timeSync);
+    }
+    delay(10);
+    return;
+  }
+
 #if ENABLE_ML_LOGGER
   pollMlControl(cloud, logger);
 #endif
 
-  // Reset Button Logic
   if (actuators.resetLongPressed()) {
     faultLogic.resetLatch();
     oled.showStatus("RESET", "Latch cleared");
     delay(250);
   }
 
-  // Slow Sensors (Non-blocking)
+  // Slow sensors
   static float vRms = 0.0f;
   static float tC = 0.0f;
   static uint32_t tT = 0;
 
-  constexpr float V_EMA_ALPHA = 1.00f; 
-  constexpr float T_EMA_ALPHA = 0.10f; 
+  constexpr float V_EMA_ALPHA = 1.00f;
+  constexpr float T_EMA_ALPHA = 0.10f;
 
   float newV = voltSensor.update();
   if (newV >= 0.0f) {
@@ -234,72 +258,62 @@ void loop() {
   if (millis() - tT > 500) {
     tT = millis();
     float newT = tempSensor.readTempC();
-    if (newT > -50.0f && newT < 120.0f) { 
+    if (newT > -50.0f && newT < 120.0f) {
       if (tC <= -50.0f || tC >= 120.0f) tC = newT;
       else tC = (1.0f - T_EMA_ALPHA) * tC + T_EMA_ALPHA * newT;
     }
   }
 
-  // Get latest features from Core 0 
+  // Get latest features from Core 0
   static FeatureFrame lastF = {};
   static bool hasLast = false;
 
   FeatureFrame f;
   bool gotData = false;
 
-  if (qFeat != nullptr) {
-    gotData = (xQueueReceive(qFeat, &f, 0) == pdTRUE);
-  }
+  if (qFeat != nullptr) gotData = (xQueueReceive(qFeat, &f, 0) == pdTRUE);
 
-  if (gotData) {
-    lastF = f;
-    hasLast = true;
-  } else if (hasLast) {
-    f = lastF; 
-  } else {
-    f.irms = 0.0f;
-    f.zcv_ms = 0.0f;
-    f.thd_pct = 0.0f;
-    f.entropy = 0.0f;
-  }
+  if (gotData) { lastF = f; hasLast = true; }
+  else if (hasLast) f = lastF;
+  else { f.irms = 0; f.zcv_ms = 0; f.thd_pct = 0; f.entropy = 0; }
 
-  // Fill core-1 values
   f.vrms   = vRms;
   f.temp_c = tC;
 
-  // Transient Detection 
+  // Transient detection
   static float prevIrms = 0.0f;
   const float dI = fabsf(f.irms - prevIrms);
   prevIrms = f.irms;
 
   static uint32_t transientUntil = 0;
-  if (dI > 0.6f) transientUntil = millis() + 600;   // tune if needed
+  if (dI > 0.6f) transientUntil = millis() + 600;
   const bool isTransient = (millis() < transientUntil);
 
-  // Predict
   int pred = ArcPredict(f.entropy, f.thd_pct, f.zcv_ms, f.vrms, f.irms, f.temp_c);
-  if (isTransient) pred = 0; // suppress arc vote during transient
+  if (isTransient) pred = 0;
   f.model_pred = (uint8_t)pred;
 
   FaultState state = faultLogic.update(tC, f.irms, f.model_pred);
 
-  // Apply outputs
   FaultState stateOut = state;
 #ifdef DATA_COLLECTION_MODE
-  stateOut = STATE_NORMAL;  // never trip relay while collecting data
+  stateOut = STATE_NORMAL;
 #endif
   actuators.apply(stateOut, vRms, f.irms, tC);
 
 #if ENABLE_ML_LOGGER
-  if (gotData) {
+  static uint32_t lastMlLogMs = 0;
+  const uint32_t logPeriodMs = 1000UL / ML_LOG_RATE_HZ;
+
+  if (millis() - lastMlLogMs >= logPeriodMs) {
+    lastMlLogMs = millis();
+    f.uptime_ms = millis();
+    f.epoch_ms  = timeSync.isSynced() ? timeSync.nowEpochMs() : 0;
     logger.ingest(f, stateOut, faultLogic.arcCounter());
   }
-
-  // REQUIRED: actually uploads buffered chunks when duration/full triggers
   logger.loop();
 #endif
 
-  // Live Dashboard
   static uint32_t lastCloudUpdate = 0;
   if (millis() - lastCloudUpdate > 5000) {
     lastCloudUpdate = millis();

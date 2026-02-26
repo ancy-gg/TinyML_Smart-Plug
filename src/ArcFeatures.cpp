@@ -12,6 +12,13 @@ static inline float codeToCurrentA(uint16_t code, const CurrentCalib& cal) {
   return (v_sensor - cal.offsetV) / cal.voltsPerAmp;
 }
 
+static inline float median3(float a, float b, float c) {
+  if (a > b) { float t = a; a = b; b = t; }
+  if (b > c) { float t = b; b = c; c = t; }
+  if (a > b) { float t = a; a = b; b = t; }
+  return b;
+}
+
 bool ArcFeatures::compute(const uint16_t* raw, size_t n, float fs_hz,
                           const CurrentCalib& cal, float mainsHz,
                           ArcFeatOut& out) {
@@ -28,10 +35,8 @@ bool ArcFeatures::compute(const uint16_t* raw, size_t n, float fs_hz,
   int glitch = 0;
   for (size_t i = 0; i < n; i++) {
     const uint16_t c = raw[i];
-
-    // Reject obvious garbage / saturation codes (tune thresholds if needed)
     if (c < 32 || c > 65503) glitch++;
-    if (glitch > 8) return false;   // frame invalid → Core0 won't overwrite queue
+    if (glitch > 8) return false;
 
     const float a = codeToCurrentA(c, cal);
     iSig[i] = a;
@@ -49,30 +54,61 @@ bool ArcFeatures::compute(const uint16_t* raw, size_t n, float fs_hz,
   }
   const float irms_raw = (float)sqrt(acc / (double)n);
 
-  // 2a) Learn idle floor (EMA)
+  // Median-of-3 across frames removes single-frame spikes
+  static bool  histInit = false;
+  static float irms_h0 = 0.0f, irms_h1 = 0.0f, irms_h2 = 0.0f;
+  if (!histInit) {
+    histInit = true;
+    irms_h0 = irms_h1 = irms_h2 = irms_raw;
+  } else {
+    irms_h0 = irms_h1;
+    irms_h1 = irms_h2;
+    irms_h2 = irms_raw;
+  }
+  const float irms_med = median3(irms_h0, irms_h1, irms_h2);
+
+  // 2a) Idle floor tracking (rise slowly, fall faster)
   static bool  idleInit = false;
   static float idleEma  = 0.0f;
-  if (!idleInit) { idleInit = true; idleEma = irms_raw; }
-  if (irms_raw < (idleEma * 2.0f + 1e-6f)) {
-    idleEma = 0.98f * idleEma + 0.02f * irms_raw;
+  if (!idleInit) { idleInit = true; idleEma = irms_med; }
+
+  // Track only when in low-current region (so we don't eat real loads)
+  if (irms_med < 0.8f) {
+    const float alpha = (irms_med > idleEma) ? 0.005f : 0.02f;
+    idleEma = (1.0f - alpha) * idleEma + alpha * irms_med;
   }
 
-  // 2b) Quadrature subtract noise so idle shows ~0A
-  const float irms_clean = sqrtf(fmaxf(0.0f, irms_raw*irms_raw - idleEma*idleEma));
-  out.irms_a = irms_clean;
+  // 2b) Noise subtraction
+  const float irms_clean = sqrtf(fmaxf(0.0f, irms_med*irms_med - idleEma*idleEma));
 
+  // Require 2 consecutive frames above gate to accept non-idle
+  static uint8_t aboveGate = 0;
   const float idleGate = fmaxf(IDLE_IRMS_A, idleEma * 2.5f);
+
   if (irms_clean < idleGate) {
+    aboveGate = 0;
+    out.irms_a = 0.0f;
     out.thd_pct = 0.0f;
     out.entropy = 0.0f;
     out.zcv_ms  = 0.0f;
     return true;
+  } else {
+    if (aboveGate < 3) aboveGate++;
+    if (aboveGate < 2) {
+      out.irms_a = 0.0f;
+      out.thd_pct = 0.0f;
+      out.entropy = 0.0f;
+      out.zcv_ms  = 0.0f;
+      return true;
+    }
   }
 
-  // 3) ZCV with hysteresis to prevent noise jitter
+  out.irms_a = irms_clean;
+
+  // 3) ZCV (same as your original)
   int crossings[80];
   int cCount = 0;
-  const float hys = fmaxf(ZC_HYS_MIN_A, ZC_HYS_FRAC * irms_raw);
+  const float hys = fmaxf(ZC_HYS_MIN_A, ZC_HYS_FRAC * irms_med);
 
   int state = 0;
   if (vReal[0] >  hys) state =  1;
@@ -101,7 +137,7 @@ bool ArcFeatures::compute(const uint16_t* raw, size_t n, float fs_hz,
     out.zcv_ms = 0.0f;
   }
 
-  // 4) FFT
+  // 4) FFT (same as your original below)
   ArduinoFFT<float> FFT(vReal, vImag, n, fs_hz);
   FFT.windowing(FFTWindow::Hann, FFTDirection::Forward);
   FFT.compute(FFTDirection::Forward);
@@ -112,7 +148,6 @@ bool ArcFeatures::compute(const uint16_t* raw, size_t n, float fs_hz,
   if (kNom < 1) kNom = 1;
   if (kNom > (int)(n/2 - 2)) kNom = (int)(n/2 - 2);
 
-  // Search best fundamental near expected bin
   int k1 = kNom;
   float fund = 0.0f;
   for (int dk = -2; dk <= 2; dk++) {
@@ -122,7 +157,6 @@ bool ArcFeatures::compute(const uint16_t* raw, size_t n, float fs_hz,
     }
   }
 
-  // Estimate noise mag 500..3000Hz excluding harmonics
   const int b0 = max(1, (int)ceil(500.0f / binHz));
   const int b1 = min((int)(n/2 - 1), (int)floor(3000.0f / binHz));
   double noiseSum = 0.0;
@@ -147,7 +181,6 @@ bool ArcFeatures::compute(const uint16_t* raw, size_t n, float fs_hz,
     return true;
   }
 
-  // THD 2..10
   double harm2 = 0.0;
   for (int h = 2; h <= 10; h++) {
     int khNom = h * k1;
@@ -161,7 +194,6 @@ bool ArcFeatures::compute(const uint16_t* raw, size_t n, float fs_hz,
   }
   out.thd_pct = (float)(sqrt(harm2) / (double)fund * 100.0);
 
-  // Entropy band-limited
   const int maxBin = (int)min((double)(n/2), floor((double)ENTROPY_MAX_HZ / (double)binHz));
   double psum = 0.0;
 
