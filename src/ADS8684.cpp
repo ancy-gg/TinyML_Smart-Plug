@@ -2,33 +2,14 @@
 #include <Arduino.h>
 #include <esp_timer.h>
 
-// =================== USER TUNABLES ===================
-// TI forum indicates SPI Mode 1 (CPOL=0, CPHA=1). :contentReference[oaicite:2]{index=2}
-// If you still see a consistent "x2" code, keep MODE=1 and enable SHIFT_RIGHT_1 below.
-#ifndef ADS8684_SPI_MODE
-#define ADS8684_SPI_MODE 1
-#endif
-
-// If your code looks ~2x expected (e.g., 1.85V reads ~60000), enable this.
-// This compensates a 1-bit left-shift capture (drops the lost LSB).
 #ifndef ADS8684_SHIFT_RIGHT_1
-#define ADS8684_SHIFT_RIGHT_1 1
+#define ADS8684_SHIFT_RIGHT_1 1   // set to 0 if amplitude becomes too low
 #endif
 
-// Debug: prints one line every N transfers (no flooding)
-#ifndef ADS8684_DEBUG_BYTES
-#define ADS8684_DEBUG_BYTES 0
-#endif
-#ifndef ADS8684_DEBUG_EVERY_N
-#define ADS8684_DEBUG_EVERY_N 2000
-#endif
-// =====================================================
-
-static inline uint16_t unpack_conv_word(const uint8_t rx[4]) {
-  // Conversion result appears after the first 16 SCLKs; we capture it in rx[2], rx[3]. :contentReference[oaicite:3]{index=3}
-  uint16_t w = (uint16_t(rx[2]) << 8) | uint16_t(rx[3]);
+static inline uint16_t unpack_word(const uint8_t rx[4]) {
+  uint16_t w = (uint16_t(rx[2]) << 8) | uint16_t(rx[3]); // conversion is here
 #if ADS8684_SHIFT_RIGHT_1
-  w >>= 1;
+  w >>= 1;  // if you observe the “x2” symptom, keep this
 #endif
   return w;
 }
@@ -36,7 +17,6 @@ static inline uint16_t unpack_conv_word(const uint8_t rx[4]) {
 bool ADS8684::begin() {
   if (_cfg.pin_cs < 0 || _cfg.pin_sck < 0 || _cfg.pin_miso < 0 || _cfg.pin_mosi < 0) return false;
 
-  // CS idle HIGH
   pinMode(_cfg.pin_cs, OUTPUT);
   digitalWrite(_cfg.pin_cs, HIGH);
 
@@ -46,14 +26,14 @@ bool ADS8684::begin() {
   buscfg.sclk_io_num = _cfg.pin_sck;
   buscfg.quadwp_io_num = -1;
   buscfg.quadhd_io_num = -1;
-  buscfg.max_transfer_sz = 32; // bytes (we only use 4)
+  buscfg.max_transfer_sz = 32;
 
   esp_err_t err = spi_bus_initialize(_cfg.host, &buscfg, SPI_DMA_CH_AUTO);
   if (err != ESP_OK && err != ESP_ERR_INVALID_STATE) return false;
 
   spi_device_interface_config_t devcfg = {};
   devcfg.clock_speed_hz = _cfg.spi_clock_hz;
-  devcfg.mode = ADS8684_SPI_MODE;
+  devcfg.mode = 1;               // ADS8684 expects SPI mode 1
   devcfg.spics_io_num = _cfg.pin_cs;
   devcfg.queue_size = 1;
 
@@ -61,8 +41,6 @@ bool ADS8684::begin() {
   if (err != ESP_OK) return false;
 
   delay(50);
-
-  // Enter MAN_AUX once. :contentReference[oaicite:4]{index=4}
   return selectAux();
 }
 
@@ -73,36 +51,24 @@ esp_err_t ADS8684::xfer32(uint16_t cmd, uint16_t* out_data) {
   uint8_t rx[4] = { 0, 0, 0, 0 };
 
   spi_transaction_t t = {};
-  t.length = 32; // bits
+  t.length = 32;
   t.tx_buffer = tx;
   t.rx_buffer = rx;
 
   esp_err_t err = spi_device_polling_transmit(_dev, &t);
   if (err != ESP_OK) return err;
 
-#if ADS8684_DEBUG_BYTES
-  static uint32_t n = 0;
-  n++;
-  if ((n % ADS8684_DEBUG_EVERY_N) == 0) {
-    Serial.printf("[ADS SPI] TX:%02X %02X %02X %02X | RX:%02X %02X %02X %02X | WORD:0x%04X\n",
-                  tx[0], tx[1], tx[2], tx[3],
-                  rx[0], rx[1], rx[2], rx[3],
-                  unpack_conv_word(rx));
-  }
-#endif
-
-  if (out_data) *out_data = unpack_conv_word(rx);
+  if (out_data) *out_data = unpack_word(rx);
   return ESP_OK;
 }
 
 bool ADS8684::selectAux() {
   uint16_t dummy = 0;
 
-  // Select AUX mode (MAN_AUX = 0xE000). :contentReference[oaicite:5]{index=5}
+  // Enter MAN_AUX once
   if (xfer32(0xE000, &dummy) != ESP_OK) return false;
 
-  // After mode select, keep SDI low (NO_OP = 0x0000) to continue in selected mode. :contentReference[oaicite:6]{index=6}
-  // Also primes the pipeline.
+  // Prime pipeline with NO_OP
   (void)xfer32(0x0000, &dummy);
 
   _auxSelected = true;
@@ -111,12 +77,9 @@ bool ADS8684::selectAux() {
 
 uint16_t ADS8684::readRaw() {
   uint16_t data = 0;
-
-  // In MAN_AUX, use NO_OP frames for continuous conversions. :contentReference[oaicite:7]{index=7}
-  // First NO_OP returns previous conversion; second returns current.
+  // pipeline: first NO_OP updates, second returns
   (void)xfer32(0x0000, &data);
   (void)xfer32(0x0000, &data);
-
   return data;
 }
 
@@ -125,7 +88,7 @@ size_t ADS8684::readRawBurst(uint16_t* dst, size_t n, float* measured_fs_hz) {
 
   uint16_t data = 0;
 
-  // Prime pipeline (discard)
+  // Prime pipeline
   (void)xfer32(0x0000, &data);
 
   const int64_t t0 = esp_timer_get_time();
@@ -137,8 +100,8 @@ size_t ADS8684::readRawBurst(uint16_t* dst, size_t n, float* measured_fs_hz) {
 
   const int64_t t1 = esp_timer_get_time();
   const float dt_s = float(t1 - t0) / 1e6f;
-
   if (measured_fs_hz && dt_s > 0.0f) *measured_fs_hz = float(n) / dt_s;
+
   return n;
 }
 

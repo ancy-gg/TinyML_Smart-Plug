@@ -63,24 +63,18 @@ static constexpr int PIN_BUZZER_PWM = D3;
 static constexpr float ADS_VREF_V = 4.096f;
 static constexpr int   ADS_SPI_HZ = 4000000;  // ~125kSPS theoretical (SPI/32 clocks)
 
-// ========= Current calibration (you will tune later) =========
+// Current Calibration
 struct CurrentCalib {
-  // You stated: 5V scaled to 4.096V at AUX => ratio = 4.096/5
-  float dividerRatio = 4.096f / 5.0f;
-
-  // Sensor output at 0A (measure this!)
-  float offsetV = 2.5f;
-
-  // Sensor sensitivity (V/A) (replace for your ACS37035 variant!)
+  float dividerRatio = 4.096f / 5.0f; //divider
+  float offsetV = 2.5f; //0A offset voltage
   float voltsPerAmp = 0.100f; //100mV/A
 };
 
-// ========= Voltage calibration =========
+// Voltage Calibration
 struct VoltageCalib {
-  // Your current VoltageSensor uses a multiplier “sensitivity”
   float sensitivity = 580.0f; // tune this with a multimeter
 };
 
-// ========= Logger =========
+// Logging Timestamps
 static constexpr uint16_t ML_LOG_RATE_HZ      = 30;
-static constexpr uint16_t ML_LOG_DURATION_S  = 10; // 5–10 typical
+static constexpr uint16_t ML_LOG_DURATION_S  = 10; 

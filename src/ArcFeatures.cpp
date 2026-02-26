@@ -25,8 +25,15 @@ bool ArcFeatures::compute(const uint16_t* raw, size_t n, float fs_hz,
 
   // 1) Convert + mean
   double mean = 0.0;
+  int glitch = 0;
   for (size_t i = 0; i < n; i++) {
-    float a = codeToCurrentA(raw[i], cal);
+    const uint16_t c = raw[i];
+
+    // Reject obvious garbage / saturation codes (tune thresholds if needed)
+    if (c < 32 || c > 65503) glitch++;
+    if (glitch > 8) return false;   // frame invalid → Core0 won't overwrite queue
+
+    const float a = codeToCurrentA(c, cal);
     iSig[i] = a;
     mean += a;
   }
