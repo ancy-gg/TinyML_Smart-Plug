@@ -267,6 +267,11 @@ html, body{
   display:flex;
   gap:10px;
   align-items:center;
+  flex-wrap: wrap;
+}
+
+.history-actions > *{
+  flex: 0 0 auto;
 }
 
 /* Select */
@@ -511,4 +516,33 @@ html, body{
 
 @media (max-width: 860px){
   .ota-grid{ grid-template-columns: 1fr; }
+}
+
+@media (max-width: 720px){
+  .history-head{
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .history-actions{
+    justify-content: flex-start;
+    align-items: stretch;
+  }
+
+  .history-actions .btn,
+  .history-actions .select{
+    flex: 1 1 140px;
+  }
+
+  .history-actions input.ota-input{
+    flex: 1 1 260px;
+    min-width: 220px;
+  }
+
+  .history-actions label{
+    flex: 1 1 140px;
+    display:flex;
+    gap:8px;
+    align-items:center;
+  }
 }

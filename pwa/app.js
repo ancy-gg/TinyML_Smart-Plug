@@ -38,6 +38,8 @@ const entVal = el("entVal");
 
 const hfRatioVal = el("hfRatioVal");
 const hfVarVal   = el("hfVarVal");
+const sfVal      = el("sfVal");
+const cycVarVal  = el("cycVarVal");
 
 const alertEnable = el("alertEnable");
 const soundEnable = el("soundEnable");
@@ -371,6 +373,8 @@ db.ref("live_data").on("value", (snap) => {
   const en = toFixedOrDash(data.entropy, 3);
   const hfr = toFixedOrDash(data.hf_ratio, 3);
   const hfv = toFixedOrDash(data.hf_var, 4);
+  const sf  = toFixedOrDash(data.sf, 3);
+  const cv  = toFixedOrDash(data.cyc_var, 5);
 
   if (vVal && vVal.textContent !== v) { vVal.textContent = v; animateNumber(vVal); }
   if (iVal && iVal.textContent !== i) { iVal.textContent = i; animateNumber(iVal); }
@@ -379,7 +383,9 @@ db.ref("live_data").on("value", (snap) => {
   if (thdVal && thdVal.textContent !== th) { thdVal.textContent = th; animateNumber(thdVal); }
   if (entVal && entVal.textContent !== en) { entVal.textContent = en; animateNumber(entVal); }
   if (hfRatioVal && hfRatioVal.textContent !== hfr) { hfRatioVal.textContent = hfr; animateNumber(hfRatioVal); }
-  if (hfVarVal   && hfVarVal.textContent !== hfv)  { hfVarVal.textContent   = hfv; animateNumber(hfVarVal); }
+  if (hfVarVal   && hfVarVal.textContent !== hfv) { hfVarVal.textContent = hfv; animateNumber(hfVarVal); }
+  if (sfVal      && sfVal.textContent !== sf)  { sfVal.textContent = sf;  animateNumber(sfVal); }
+  if (cycVarVal  && cycVarVal.textContent !== cv) { cycVarVal.textContent = cv; animateNumber(cycVarVal); }
 
   // NO LAG: only update top status if this live update is newer than what we've shown
   if (liveEpoch >= topStatusSourceEpoch) {
