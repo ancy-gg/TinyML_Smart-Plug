@@ -26,6 +26,10 @@ static constexpr float HF_RATIO_ARC_H  = 0.18f;
 static constexpr float HF_VAR_ARC_H    = 0.0025f;
 static constexpr float ARC_MIN_IRMS_A  = 0.03f;
 
+static constexpr float HF_BAND_LO_HZ = 2000.0f;
+static constexpr float HF_BAND_HI_HZ = 20000.0f;
+static constexpr float LF_BAND_HI_HZ = 1000.0f;
+
 // ========= Feature gating / transient control =========
 static constexpr float IDLE_IRMS_A      = 0.02f;   // idle gate just above your ~0.02A noise
 static constexpr float FUND_SNR_MIN     = 6.0f;    // fundamental must be >= 6x avg noise mag

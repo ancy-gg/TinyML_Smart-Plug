@@ -195,9 +195,9 @@ bool ArcFeatures::compute(const uint16_t* raw, size_t n, float fs_hz,
   const float noiseMag = (noiseN > 0) ? (float)(noiseSum / (double)noiseN) : 0.0f;
 
   // HF ratio
-  const float hfLoHz = 2000.0f;
-  const float hfHiHz = 20000.0f;
-  const float lfHiHz = 1000.0f;
+  const float hfLoHz = HF_BAND_LO_HZ;
+  const float hfHiHz = HF_BAND_HI_HZ;
+  const float lfHiHz = LF_BAND_HI_HZ;
 
   const int lf0 = 1;
   const int lf1 = min((int)(n/2 - 1), (int)floor(lfHiHz / binHz));
