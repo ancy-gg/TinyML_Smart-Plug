@@ -12,7 +12,7 @@
 #include "OLED_NOTIF.h"
 #include "TimeSync.h"
 #include "PullOTA.h"
-#include "BootGuard.h"  
+#include "BootGuard.h"
 
 #include "CurrentSensor.h"
 #include "VoltageSensor.h"
@@ -26,17 +26,14 @@
   #include "DataLogger.h"
 #endif
 
-// Firebase Credentials
 #define API_KEY "AIzaSyAmJlZZszyWPJFgIkTAAl_TbIySys1nvEw"
 #define DATABASE_URL "tinyml-smart-plug-default-rtdb.asia-southeast1.firebasedatabase.app"
-static const char* FW_VERSION = "TSP-v0.2.7";
+static const char* FW_VERSION = "TSP-v0.2.8";
 
-// Firmware Updates
 static const char* OTA_DESIRED_VERSION_PATH = "/ota/desired_version";
 static const char* OTA_FIRMWARE_URL_PATH    = "/ota/firmware_url";
 static const uint32_t OTA_CHECK_INTERVAL_MS = 60000;
 
-// Global Objects
 OLED_NOTIF      oled(0x3C);
 NetworkManager  net;
 CloudHandler    cloud;
@@ -61,38 +58,57 @@ QueueHandle_t   qFeat = nullptr;
 
 static bool gSafeMode = false;
 
-// Core 0 Task (Current Features)
+// ---- Sound hooks (non-capturing; safer/leaner for stability) ----
+static void onOtaEventSound(OtaEvent ev) {
+  switch (ev) {
+    case OtaEvent::START:   actuators.notify(SND_OTA_START); break;
+    case OtaEvent::SUCCESS: actuators.notify(SND_OTA_OK);    break;
+    case OtaEvent::FAIL:    actuators.notify(SND_OTA_FAIL);  break;
+    default: break;
+  }
+}
+
+// ---------------- Core0 Task ----------------
 void Core0Task(void* pvParameters) {
+  (void)pvParameters;
+
   ArcFeatOut out;
 
   while (true) {
     FeatureFrame f;
     f.uptime_ms = millis();
-    f.epoch_ms  = timeSync.isSynced() ? timeSync.nowEpochMs() : 0;
+    f.feat_valid = 0;
 
-    float fs = 0.0f;
-    const size_t got = curSensor.capture(s_raw, N_SAMP, &fs);
+    float fs_hz = 0.0f;
+    const size_t got = curSensor.capture(s_raw, N_SAMP, &fs_hz);
 
-    if (got == N_SAMP && fs > 20000.0f) {
-      bool success = arcFeat.compute(s_raw, N_SAMP, fs, curCalib, MAINS_F0_HZ, out);
-
-      if (success) {
-        f.irms    = out.irms_a;
-        f.thd_pct = out.thd_pct;
-        f.entropy = out.entropy;
-        f.zcv_ms  = out.zcv_ms;
-        f.hf_ratio = out.hf_ratio;
-        f.hf_var   = out.hf_var;
-        if (qFeat != nullptr) xQueueOverwrite(qFeat, &f);
-      }
+    bool ok = false;
+    if (got == N_SAMP && fs_hz > 20000.0f) {
+      ok = arcFeat.compute(s_raw, N_SAMP, fs_hz, curCalib, MAINS_F0_HZ, out);
     }
 
+    if (ok) {
+      f.feat_valid = 1;
+      f.irms     = out.irms_a;
+      f.thd_pct  = out.thd_pct;
+      f.entropy  = out.entropy;
+      f.zcv_ms   = out.zcv_ms;
+      f.hf_ratio = out.hf_ratio;
+      f.hf_var   = out.hf_var;
+      f.sf       = out.sf;
+      f.cyc_var  = out.cyc_var;
+    } else {
+      // publish zeros so main never “reuses a stale spike”
+      f.irms = 0; f.thd_pct = 0; f.entropy = 0; f.zcv_ms = 0;
+      f.hf_ratio = 0; f.hf_var = 0; f.sf = 0; f.cyc_var = 0;
+    }
+
+    if (qFeat != nullptr) xQueueOverwrite(qFeat, &f);
     vTaskDelay(1);
   }
 }
 
 static bool bootHoldForSafeModeMs(uint32_t holdMs = 1500) {
-  // Manual recovery: hold reset button during boot to force SAFE MODE
   pinMode(PIN_RESET_BTN, INPUT_PULLUP);
   if (digitalRead(PIN_RESET_BTN) != LOW) return false;
 
@@ -108,26 +124,17 @@ void setup() {
   Serial.begin(115200);
   delay(200);
 
-  // BootGuard first
   BootGuard::begin(/*stableWindowMs=*/45000, /*maxCrashBoots=*/3);
   gSafeMode = BootGuard::safeMode();
-
-  // Manual override (VERY useful when USB is blocked)
   if (bootHoldForSafeModeMs(1500)) gSafeMode = true;
 
   oled.begin();
-  if (gSafeMode) {
-    oled.showStatus("SAFE MODE", "OTA only");
-  } else if (BootGuard::pendingVerify()) {
-    oled.showStatus("OTA", "Verifying...");
-  } else {
-    oled.showStatus("System", "Starting...");
-  }
+  if (gSafeMode) oled.showStatus("SAFE MODE", "OTA only");
+  else if (BootGuard::pendingVerify()) oled.showStatus("OTA", "Verifying...");
+  else oled.showStatus("System", "Starting...");
 
-  // Actuators (safe default)
   actuators.begin(PIN_RELAY, PIN_BUZZER_PWM, PIN_RESET_BTN, &oled);
 
-  // If NOT safe mode, bring up sensors + core0 sampling
   if (!gSafeMode) {
     voltSensor.begin();
     voltSensor.setWindowMs(200);
@@ -145,10 +152,11 @@ void setup() {
     }
   }
 
-  // WiFi + Cloud + Time (needed for Pull OTA)
   oled.showStatus("WiFi", "Connecting...");
   net.begin([](WiFiManager* wm) {
+    (void)wm;
     oled.showStatus("Setup Mode", "Connect to AP");
+    actuators.notify(SND_WIFI_PORTAL);
   });
 
   oled.showStatus("Cloud", "Connecting...");
@@ -165,13 +173,13 @@ void setup() {
   }
 #endif
 
-  // Pull OTA
   ota.begin(FW_VERSION, &cloud);
+  ota.setEventCallback(onOtaEventSound);
   ota.setPaths(OTA_DESIRED_VERSION_PATH, OTA_FIRMWARE_URL_PATH);
   ota.setCheckInterval(OTA_CHECK_INTERVAL_MS);
 
   if (gSafeMode) oled.showStatus("SAFE MODE", "Waiting OTA");
-  else          oled.showStatus("System", "Ready");
+  else oled.showStatus("System", "Ready");
 }
 
 #if ENABLE_ML_LOGGER
@@ -207,6 +215,9 @@ static void pollMlControl(CloudHandler& cloud, DataLogger& logger) {
   logger.setSession(sid, load, labelOv);
 
   if (enabled != lastEnabled || sid != lastSession) {
+    // Sound cue only when logging actually starts (OFF -> ON).
+    if (enabled && !lastEnabled) actuators.notify(SND_LOGGER_ON);
+
     logger.setEnabled(enabled);
     lastEnabled = enabled;
     lastSession = sid;
@@ -215,23 +226,26 @@ static void pollMlControl(CloudHandler& cloud, DataLogger& logger) {
 #endif
 
 void loop() {
-  // Validate pending OTA only after surviving the stable window.
   BootGuard::loop();
 
   net.update();
+
+  // WiFi connected 
+  static wl_status_t lastWifi = WL_DISCONNECTED;
+  const wl_status_t wifiNow = WiFi.status();
+  if (wifiNow == WL_CONNECTED && lastWifi != WL_CONNECTED) {
+    actuators.notify(SND_WIFI_OK);
+  }
+  lastWifi = wifiNow;
+
   ota.loop();
   timeSync.update();
 
-  // SAFE MODE: OTA + WiFi + minimal cloud heartbeat.
   if (gSafeMode) {
     static uint32_t lastCloudUpdate = 0;
     if (millis() - lastCloudUpdate > 5000) {
       lastCloudUpdate = millis();
-      cloud.update(0.0f, 0.0f, 0.0f,
-                   0.0f, 0.0f, 0.0f,
-                   0.0f, 0.0f,
-                   0,
-                   String("SAFE_MODE"), &timeSync);
+      cloud.update(0,0,0, 0,0,0, 0,0, 0,0, 0, String("SAFE_MODE"), &timeSync);
     }
     delay(10);
     return;
@@ -247,34 +261,33 @@ void loop() {
     delay(250);
   }
 
-  // --- Get latest features first (so Vrms invalid suppression can use Irms hint)
   static FeatureFrame lastF = {};
   static bool hasLast = false;
-  static float iHintForV = 0.0f;
 
   FeatureFrame f;
   bool gotData = false;
-
   if (qFeat != nullptr) gotData = (xQueueReceive(qFeat, &f, 0) == pdTRUE);
 
-  if (gotData) {
-    lastF = f;
-    hasLast = true;
-    iHintForV = f.irms;
-  } else if (hasLast) {
-    f = lastF;
-    iHintForV = lastF.irms;
-  } else {
-    f.irms = 0.0f;
-    f.zcv_ms = 0.0f;
-    f.thd_pct = 0.0f;
-    f.entropy = 0.0f;
-    f.hf_ratio = 0.0f;
-    f.hf_var   = 0.0f;
-    iHintForV  = 0.0f;
+  if (gotData) { lastF = f; hasLast = true; }
+  else if (hasLast) f = lastF;
+  else {
+    f.irms = 0; f.zcv_ms = 0; f.thd_pct = 0; f.entropy = 0;
+    f.hf_ratio = 0; f.hf_var = 0; f.sf = 0; f.cyc_var = 0;
+    f.feat_valid = 0;
+    f.uptime_ms = millis();
   }
 
-  // --- Slow sensors
+  if (hasLast) {
+    const bool stale = (millis() - f.uptime_ms) > FEAT_STALE_MS;
+    if (stale || f.feat_valid == 0) {
+      f.irms = 0; f.zcv_ms = 0; f.thd_pct = 0; f.entropy = 0;
+      f.hf_ratio = 0; f.hf_var = 0; f.sf = 0; f.cyc_var = 0;
+    }
+  }
+
+  const float iHint = f.irms;
+
+  // -------- Slow sensors --------
   static float vRms = 0.0f;
   static float tC = 0.0f;
   static uint32_t tT = 0;
@@ -283,15 +296,12 @@ void loop() {
   constexpr float T_EMA_ALPHA = 0.10f;
 
   float newV = voltSensor.update();
-
-  // ✅ Treat Vrms=0 as invalid ONLY when current indicates a real load is on.
-  const bool vrmsLooksInvalid = (newV <= 1.0f && iHintForV > 0.05f);
+  const bool vrmsLooksInvalid = (newV <= 1.0f && iHint > 0.05f);
 
   if (newV >= 0.0f && !vrmsLooksInvalid) {
     if (vRms <= 0.0f) vRms = newV;
     else vRms = (1.0f - V_EMA_ALPHA) * vRms + V_EMA_ALPHA * newV;
   }
-  // else: keep previous vRms (don’t write 0 into your dataset)
 
   if (millis() - tT > 500) {
     tT = millis();
@@ -305,7 +315,7 @@ void loop() {
   f.vrms   = vRms;
   f.temp_c = tC;
 
-  // --- Transient detection
+  // -------- Transient suppress --------
   static float prevIrms = 0.0f;
   const float dI = fabsf(f.irms - prevIrms);
   prevIrms = f.irms;
@@ -314,19 +324,16 @@ void loop() {
   if (dI > 0.6f) transientUntil = millis() + 600;
   const bool isTransient = (millis() < transientUntil);
 
-  // --- Predict (new signature with HF features)
   int pred = ArcPredict(f.entropy, f.thd_pct, f.zcv_ms,
                         f.hf_ratio, f.hf_var,
+                        f.sf, f.cyc_var,
                         f.vrms, f.irms, f.temp_c);
   if (isTransient) pred = 0;
   f.model_pred = (uint8_t)pred;
 
   FaultState state = faultLogic.update(tC, f.irms, f.model_pred);
-
   FaultState stateOut = state;
-#ifdef DATA_COLLECTION_MODE
-  stateOut = STATE_NORMAL;
-#endif
+
   actuators.apply(stateOut, vRms, f.irms, tC);
 
 #if ENABLE_ML_LOGGER
@@ -335,20 +342,19 @@ void loop() {
 
   if (millis() - lastMlLogMs >= logPeriodMs) {
     lastMlLogMs = millis();
-    f.uptime_ms = millis();
     f.epoch_ms  = timeSync.isSynced() ? timeSync.nowEpochMs() : 0;
     logger.ingest(f, stateOut, faultLogic.arcCounter());
   }
   logger.loop();
 #endif
 
-  // Live Dashboard (every ~5s)
   static uint32_t lastCloudUpdate = 0;
   if (millis() - lastCloudUpdate > 5000) {
     lastCloudUpdate = millis();
     cloud.update(vRms, f.irms, tC,
                  f.zcv_ms, f.thd_pct, f.entropy,
                  f.hf_ratio, f.hf_var,
+                 f.sf, f.cyc_var,
                  f.model_pred,
                  String(stateToCstr(stateOut)), &timeSync);
   }

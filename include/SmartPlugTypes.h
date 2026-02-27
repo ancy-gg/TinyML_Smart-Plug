@@ -17,9 +17,10 @@ static inline const char* stateToCstr(FaultState s) {
   }
 }
 
+// One unified “feature frame” that core0/core1 can fill progressively.
 struct FeatureFrame {
-  uint64_t epoch_ms  = 0;
-  uint32_t uptime_ms = 0;
+  uint64_t epoch_ms  = 0;   // set in core1 logger tick
+  uint32_t uptime_ms = 0;   // set in Core0Task when FFT frame computed
 
   float vrms   = 0;
   float irms   = 0;
@@ -29,9 +30,14 @@ struct FeatureFrame {
   float thd_pct  = 0;
   float entropy  = 0;
 
-  // High-frequency arc discrimination
-  float hf_ratio = 0; // bandpower(2k..20k) / bandpower(0..1k)
-  float hf_var   = 0; // variance of hf_ratio over recent frames
+  // HF & robustness
+  float hf_ratio = 0;       // 0..1
+  float hf_var   = 0;
 
+  // NEW
+  float sf       = 0;       // spectral flatness 0..1
+  float cyc_var  = 0;       // normalized cycle-to-cycle Irms variance
+
+  uint8_t feat_valid = 0;   // 1 if this FFT frame is valid
   uint8_t model_pred = 0;
 };

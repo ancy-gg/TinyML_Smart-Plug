@@ -11,7 +11,7 @@ String DataLogger::sanitizeToken(const String& s) {
   o.replace(" ", "_");
   o.replace("/", "_");
   o.replace("\\", "_");
-  if (o.length() > 32) o = o.substring(0, 32);
+  if (o.length() > 48) o = o.substring(0, 48);
   return o;
 }
 
@@ -35,6 +35,7 @@ void DataLogger::setDurationSeconds(uint16_t sec) {
 
 void DataLogger::ingest(const FeatureFrame& f, FaultState st, int arcCounter) {
 #if ENABLE_ML_LOGGER
+  (void)arcCounter; // we keep signature but don’t store (you said arc counter is distracting)
   if (!_enabled) return;
   if (_sessionId.length() < 3) return;
   if (_count >= MAX_REC) return;
@@ -44,25 +45,23 @@ void DataLogger::ingest(const FeatureFrame& f, FaultState st, int arcCounter) {
   Rec& r = _buf[_count++];
   r.epoch_ms = f.epoch_ms;
 
-  r.spectral_entropy = f.entropy;
-  r.thd_pct          = f.thd_pct;
-  r.zcv              = f.zcv_ms;
-  r.hf_ratio         = f.hf_ratio;
-  r.hf_var           = f.hf_var;
-  r.v_rms            = f.vrms;
-  r.i_rms            = f.irms;
-  r.temp_c           = f.temp_c;
+  r.spectral_entropy  = f.entropy;
+  r.spectral_flatness = f.sf;
+  r.thd_pct           = f.thd_pct;
+  r.zcv               = f.zcv_ms;
+  r.hf_ratio          = f.hf_ratio;
+  r.hf_var            = f.hf_var;
+  r.cyc_var           = f.cyc_var;
 
-  // labeling: allow website override for clean datasets
+  r.v_rms  = f.vrms;
+  r.i_rms  = f.irms;
+  r.temp_c = f.temp_c;
+
   uint8_t lab = 0;
   if (_labelOverride == 0) lab = 0;
   else if (_labelOverride == 1) lab = 1;
   else lab = (st == STATE_ARCING) ? 1 : 0;
   r.label_arc = lab;
-
-  r.model_pred = f.model_pred;
-  r.state      = (uint8_t)st;
-  r.arc_cnt    = (uint8_t)arcCounter;
 #else
   (void)f; (void)st; (void)arcCounter;
 #endif
@@ -72,7 +71,6 @@ void DataLogger::loop() {
 #if ENABLE_ML_LOGGER
   if (!_cloud || !_cloud->isReady()) return;
 
-  // flush remaining on disable
   if (_wasEnabled && !_enabled) {
     if (_count > 0) {
       flushToFirebase(true);
@@ -110,18 +108,19 @@ bool DataLogger::flushToFirebase(bool finalFlush) {
   if (!_cloud || !_cloud->isReady()) return false;
   if (_sessionId.length() < 3) return false;
 
-  // CSV matches python + adds load_type/session_id/epoch_ms
   String csv;
-  csv.reserve(_count * 90 + 200);
-  csv += "spectral_entropy,thd_pct,zcv,hf_ratio,hf_var,v_rms,i_rms,temp_c,label_arc,load_type,session_id,epoch_ms\n";
+  csv.reserve(_count * 140 + 220);
+  csv += "spectral_entropy,spectral_flatness,thd_pct,zcv,hf_ratio,hf_var,cyc_var,v_rms,i_rms,temp_c,label_arc,load_type,session_id,epoch_ms\n";
 
   for (uint16_t i = 0; i < _count; i++) {
     const Rec& r = _buf[i];
-    csv += String(r.spectral_entropy, 6); csv += ",";
+    csv += String(r.spectral_entropy, 6);  csv += ",";
+    csv += String(r.spectral_flatness, 6); csv += ",";
     csv += String(r.thd_pct, 3);          csv += ",";
     csv += String(r.zcv, 6);              csv += ",";
-    csv += String(r.hf_ratio, 3);         csv += ",";
-    csv += String(r.hf_var, 6);           csv += ",";
+    csv += String(r.hf_ratio, 6);         csv += ",";
+    csv += String(r.hf_var, 8);           csv += ",";
+    csv += String(r.cyc_var, 8);          csv += ",";
     csv += String(r.v_rms, 3);            csv += ",";
     csv += String(r.i_rms, 6);            csv += ",";
     csv += String(r.temp_c, 3);           csv += ",";
@@ -143,13 +142,12 @@ bool DataLogger::flushToFirebase(bool finalFlush) {
   json.set("meta/label_override", (int)_labelOverride);
   json.set("meta/duration_s", (int)_durationS);
 
-  // IMPORTANT: write under the session node
-  String path = "/ml_logs/"; 
+  String path = "/ml_logs/";
   path += _sessionId;
-  const bool ok = _cloud->pushJSON(path.c_str(), json);
 
-  if (!ok) Serial.println("[ML_LOG] pushJSON failed");
-  else     Serial.printf("[ML_LOG] Uploaded %u rows to %s\n", _count, path.c_str());
+  const bool ok = _cloud->pushJSON(path.c_str(), json);
+  if (ok) Serial.printf("[ML_LOG] Uploaded %u rows to %s\n", _count, path.c_str());
+  else    Serial.println("[ML_LOG] pushJSON failed");
 
   return ok;
 }

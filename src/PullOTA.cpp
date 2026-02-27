@@ -61,11 +61,14 @@ void PullOTA::loop() {
   Serial.printf("[PullOTA] Update available: %s -> %s\n", _currentVersion, desiredVer.c_str());
   Serial.printf("[PullOTA] URL: %s\n", fwUrl.c_str());
 
+  if (_cb) _cb(OtaEvent::START);
   if (performUpdateFromUrl(fwUrl)) {
+    if (_cb) _cb(OtaEvent::SUCCESS);
     Serial.println("[PullOTA] Update success. Rebooting...");
     delay(300);
     ESP.restart();
   } else {
+    if (_cb) _cb(OtaEvent::FAIL);
     Serial.println("[PullOTA] Update failed.");
   }
 }
@@ -154,7 +157,6 @@ bool PullOTA::performUpdateFromUrl(const String& url) {
     http.end();
     return false;
   }
-
   Serial.printf("[PullOTA] Update finished OK. Bytes=%u\n", (unsigned)written);
   http.end();
   return true;

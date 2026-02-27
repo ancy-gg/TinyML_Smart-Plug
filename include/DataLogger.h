@@ -15,7 +15,7 @@ public:
   void setDurationSeconds(uint16_t sec);   // 5..60
   void setSession(const String& sessionId, const String& loadType, int labelOverride);
 
-  void ingest(const FeatureFrame& f, FaultState st, int arcCounter);
+  void ingest(const FeatureFrame& f, FaultState st, int arcCounter); // keep signature
   void loop();
 
 private:
@@ -23,21 +23,18 @@ private:
   struct Rec {
     uint64_t epoch_ms;
 
-    // Training fields
     float spectral_entropy;
+    float spectral_flatness;
     float thd_pct;
     float zcv;
     float hf_ratio;
     float hf_var;
+    float cyc_var;
+
     float v_rms;
     float i_rms;
     float temp_c;
     uint8_t label_arc;
-
-    // Debug
-    uint8_t model_pred;
-    uint8_t state;
-    uint8_t arc_cnt;
   };
 
   CloudHandler* _cloud = nullptr;
@@ -47,7 +44,7 @@ private:
 
   String _sessionId = "";
   String _loadType = "unknown";
-  int8_t _labelOverride = -1; // -1 auto, 0 normal, 1 arc
+  int8_t _labelOverride = -1;
 
   uint16_t _durationS = ML_LOG_DURATION_S;
 
@@ -55,7 +52,7 @@ private:
   uint32_t _lastFlushAttemptMs = 0;
 
   uint16_t _count = 0;
-  static constexpr uint16_t MAX_REC = 600; // safe upper cap
+  static constexpr uint16_t MAX_REC = 600;
   Rec _buf[MAX_REC];
 
   bool flushToFirebase(bool finalFlush);

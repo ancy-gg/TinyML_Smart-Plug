@@ -8,8 +8,12 @@ struct ArcFeatOut {
   float thd_pct = 0.0f;
   float entropy = 0.0f;
   float zcv_ms  = 0.0f;
-  float hf_ratio = 0.0f;
+
+  float hf_ratio = 0.0f;  // 0..1
   float hf_var   = 0.0f;
+
+  float sf      = 0.0f;   // 0..1
+  float cyc_var = 0.0f;   // normalized variance
 };
 
 class ArcFeatures {

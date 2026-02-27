@@ -37,7 +37,8 @@ static constexpr float FUND_MAG_MIN     = 1e-4f;   // absolute magnitude guard
 static constexpr float ZC_HYS_FRAC      = 0.30f;   // hysteresis = 30% of Irms
 static constexpr float ZC_HYS_MIN_A     = 0.01f;   // minimum hysteresis
 static constexpr float ENTROPY_MAX_HZ   = 50000.0f; // entropy band limit
-
+static constexpr float SF_EPS           = 1e-12f;
+static constexpr uint32_t FEAT_STALE_MS   = 350;
 static constexpr uint32_t ML_CTRL_POLL_MS = 10000; // ESP polls /ml_log every 10s
 
 // ========= Leaky integrator =========

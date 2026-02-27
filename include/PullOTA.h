@@ -5,6 +5,9 @@
 
 class CloudHandler;
 
+enum class OtaEvent : uint8_t { START, SUCCESS, FAIL };
+using OtaEventCb = void (*)(OtaEvent);
+
 class PullOTA {
 public:
   void begin(const char* currentVersion, CloudHandler* cloud);
@@ -15,6 +18,9 @@ public:
   void setCheckInterval(uint32_t ms);
   void requestCheckNow();
   void setInsecureTLS(bool en);
+
+  // NEW
+  void setEventCallback(OtaEventCb cb) { _cb = cb; }
 
 private:
   bool fetchOtaTargets(String& desiredVersion, String& firmwareUrl);
@@ -31,6 +37,8 @@ private:
   bool _checkNow = true;
 
   bool _insecureTLS = true;
+
+  OtaEventCb _cb = nullptr;
 };
 
 #endif
