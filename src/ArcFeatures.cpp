@@ -7,8 +7,8 @@ static inline float clampf(float x, float lo, float hi) {
 }
 
 static inline float codeToCurrentA(uint16_t code, const CurrentCalib& cal) {
-  const float v_aux = (float(code) * ADS_VREF_V) / 65535.0f;      // 0..Vref
-  const float v_sensor = v_aux / cal.dividerRatio;               // undo divider
+  const float v_aux = (float(code) * ADS_VREF_V) / 65535.0f; // 0..Vref
+  const float v_sensor = v_aux / cal.dividerRatio;          // undo divider
   return (v_sensor - cal.offsetV) / cal.voltsPerAmp;
 }
 
@@ -26,11 +26,12 @@ bool ArcFeatures::compute(const uint16_t* raw, size_t n, float fs_hz,
 
   out.fs_hz = fs_hz;
 
-  static float iSig[N_SAMP];
   static float vReal[N_SAMP];
   static float vImag[N_SAMP];
 
+  // --------------------
   // 1) Convert + mean
+  // --------------------
   double mean = 0.0;
   int glitch = 0;
   for (size_t i = 0; i < n; i++) {
@@ -39,15 +40,17 @@ bool ArcFeatures::compute(const uint16_t* raw, size_t n, float fs_hz,
     if (glitch > 8) return false;
 
     const float a = codeToCurrentA(c, cal);
-    iSig[i] = a;
+    vReal[i] = a;     // temp store raw current
     mean += a;
   }
   mean /= (double)n;
 
-  // 2) RMS raw + center
+  // --------------------
+  // 2) RMS of centered signal
+  // --------------------
   double acc = 0.0;
   for (size_t i = 0; i < n; i++) {
-    const float s = iSig[i] - (float)mean;
+    const float s = vReal[i] - (float)mean;
     vReal[i] = s;
     vImag[i] = 0.0f;
     acc += (double)s * (double)s;
@@ -67,45 +70,72 @@ bool ArcFeatures::compute(const uint16_t* raw, size_t n, float fs_hz,
   }
   const float irms_med = median3(irms_h0, irms_h1, irms_h2);
 
-  // 2a) Idle floor tracking (rise slowly, fall faster)
-  static bool  idleInit = false;
-  static float idleEma  = 0.0f;
-  if (!idleInit) { idleInit = true; idleEma = irms_med; }
+  // --------------------
+  // 2a) Noise floor tracking (FIX)
+  // --------------------
+  // Floor must NOT chase small loads upward.
+  // We use a slow-leaking minimum tracker.
 
-  // Track only when in low-current region (so we don't eat real loads)
-  if (irms_med < 0.8f) {
-    const float alpha = (irms_med > idleEma) ? 0.005f : 0.02f;
-    idleEma = (1.0f - alpha) * idleEma + alpha * irms_med;
+  static bool  floorInit = false;
+  static float idleFloor = 0.0f;
+
+  // Tunables (safe defaults)
+  static constexpr float IDLE_FLOOR_INIT_MAX_A = 0.03f;      // cap initial floor
+  static constexpr float IDLE_FLOOR_MAX_A      = 0.10f;      // hard cap
+  static constexpr float IDLE_FLOOR_LEAK_A_PER_SEC = 0.0008f; // 0.8 mA/s upward leak
+  static constexpr float IDLE_GATE_MARGIN_A    = 0.006f;     // 6 mA above floor
+  static constexpr uint32_t NONIDLE_HOLD_MS    = 600;        // avoid dropouts
+
+  // Estimate feature frame rate
+  const float frameHz = (fs_hz > 1000.0f) ? (fs_hz / (float)n) : 30.0f;
+  const float leakPerFrame = IDLE_FLOOR_LEAK_A_PER_SEC / frameHz;
+
+  if (!floorInit) {
+    floorInit = true;
+    idleFloor = fminf(irms_med, IDLE_FLOOR_INIT_MAX_A);
+  } else {
+    if (irms_med < idleFloor) {
+      idleFloor = irms_med; // follow down immediately
+    } else {
+      idleFloor = fminf(idleFloor + leakPerFrame, IDLE_FLOOR_MAX_A);
+    }
   }
 
-  // 2b) Noise subtraction
-  const float irms_clean = sqrtf(fmaxf(0.0f, irms_med*irms_med - idleEma*idleEma));
+  // Clean current (additive subtract is safer for small loads)
+  const float irms_clean = fmaxf(0.0f, irms_med - idleFloor);
 
-  // Require 2 consecutive frames above gate to accept non-idle
-  static uint8_t aboveGate = 0;
-  const float idleGate = fmaxf(IDLE_IRMS_A, idleEma * 2.5f);
+  // --------------------
+  // 2b) Idle/non-idle gate (hysteresis + hold)
+  // --------------------
+  static uint8_t  aboveGate = 0;
+  static uint32_t holdUntil = 0;
 
-  if (irms_clean < idleGate) {
-    aboveGate = 0;
+  const float gateOn  = fmaxf(IDLE_IRMS_A, idleFloor + IDLE_GATE_MARGIN_A);
+  const float gateOff = gateOn * 0.60f; // hysteresis
+  const uint32_t nowMs = millis();
+
+  if (irms_clean >= gateOn) {
+    if (aboveGate < 3) aboveGate++;
+    if (aboveGate >= 2) holdUntil = nowMs + NONIDLE_HOLD_MS;
+  } else {
+    if (aboveGate > 0) aboveGate--;
+  }
+
+  const bool heldNonIdle = (nowMs < holdUntil);
+
+  if (!heldNonIdle && irms_clean < gateOff) {
     out.irms_a = 0.0f;
     out.thd_pct = 0.0f;
     out.entropy = 0.0f;
     out.zcv_ms  = 0.0f;
     return true;
-  } else {
-    if (aboveGate < 3) aboveGate++;
-    if (aboveGate < 2) {
-      out.irms_a = 0.0f;
-      out.thd_pct = 0.0f;
-      out.entropy = 0.0f;
-      out.zcv_ms  = 0.0f;
-      return true;
-    }
   }
 
   out.irms_a = irms_clean;
 
-  // 3) ZCV (same as your original)
+  // --------------------
+  // 3) ZCV
+  // --------------------
   int crossings[80];
   int cCount = 0;
   const float hys = fmaxf(ZC_HYS_MIN_A, ZC_HYS_FRAC * irms_med);
@@ -137,7 +167,9 @@ bool ArcFeatures::compute(const uint16_t* raw, size_t n, float fs_hz,
     out.zcv_ms = 0.0f;
   }
 
-  // 4) FFT (same as your original below)
+  // --------------------
+  // 4) FFT + THD + Entropy
+  // --------------------
   ArduinoFFT<float> FFT(vReal, vImag, n, fs_hz);
   FFT.windowing(FFTWindow::Hann, FFTDirection::Forward);
   FFT.compute(FFTDirection::Forward);
