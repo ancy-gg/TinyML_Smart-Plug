@@ -28,7 +28,7 @@
 
 #define API_KEY "AIzaSyAmJlZZszyWPJFgIkTAAl_TbIySys1nvEw"
 #define DATABASE_URL "tinyml-smart-plug-default-rtdb.asia-southeast1.firebasedatabase.app"
-static const char* FW_VERSION = "TSP-v0.2.9";
+static const char* FW_VERSION = "TSP-v0.2.10";
 
 static const char* OTA_DESIRED_VERSION_PATH = "/ota/desired_version";
 static const char* OTA_FIRMWARE_URL_PATH    = "/ota/firmware_url";
@@ -74,16 +74,33 @@ void Core0Task(void* pvParameters) {
 
   ArcFeatOut out;
 
+  // last-good cache (so we can keep the queue populated)
+  FeatureFrame lastGood = {};
+  bool hasGood = false;
+
   while (true) {
     FeatureFrame f;
     f.uptime_ms = millis();
     f.feat_valid = 0;
 
-    float fs_hz = 0.0f;
-    const size_t got = curSensor.capture(s_raw, N_SAMP, &fs_hz);
+    // IMPORTANT: start with a known Fs (your config)
+    float measuredFs = FS_TARGET_HZ;
+
+    size_t got = curSensor.capture(s_raw, N_SAMP, &measuredFs);
+
+    // If driver doesn't populate Fs (or writes 0), fall back safely.
+    float fs_hz = (measuredFs > 1000.0f) ? measuredFs : FS_TARGET_HZ;
+
+    // Quick retry if burst was short (common with WiFi/SPI contention)
+    if (got != N_SAMP) {
+      vTaskDelay(1);
+      measuredFs = FS_TARGET_HZ;
+      got = curSensor.capture(s_raw, N_SAMP, &measuredFs);
+      fs_hz = (measuredFs > 1000.0f) ? measuredFs : FS_TARGET_HZ;
+    }
 
     bool ok = false;
-    if (got == N_SAMP && fs_hz > 20000.0f) {
+    if (got == N_SAMP) {
       ok = arcFeat.compute(s_raw, N_SAMP, fs_hz, curCalib, MAINS_F0_HZ, out);
     }
 
@@ -97,13 +114,17 @@ void Core0Task(void* pvParameters) {
       f.hf_var   = out.hf_var;
       f.sf       = out.sf;
       f.cyc_var  = out.cyc_var;
+
+      lastGood = f;
+      hasGood = true;
+
+      if (qFeat != nullptr) xQueueOverwrite(qFeat, &f);
     } else {
-      // publish zeros so main never “reuses a stale spike”
-      f.irms = 0; f.thd_pct = 0; f.entropy = 0; f.zcv_ms = 0;
-      f.hf_ratio = 0; f.hf_var = 0; f.sf = 0; f.cyc_var = 0;
+      // DO NOT publish zeros.
+      // Just keep last good value in the queue so CSV stays clean.
+      if (hasGood && qFeat != nullptr) xQueueOverwrite(qFeat, &lastGood);
     }
 
-    if (qFeat != nullptr) xQueueOverwrite(qFeat, &f);
     vTaskDelay(1);
   }
 }
@@ -261,29 +282,39 @@ void loop() {
     delay(250);
   }
 
-  static FeatureFrame lastF = {};
-  static bool hasLast = false;
+static FeatureFrame lastGood = {};
+static bool hasGood = false;
+static uint32_t lastGoodMs = 0;
 
-  FeatureFrame f;
-  bool gotData = false;
-  if (qFeat != nullptr) gotData = (xQueueReceive(qFeat, &f, 0) == pdTRUE);
+FeatureFrame f;
+bool got = (qFeat != nullptr) && (xQueueReceive(qFeat, &f, 0) == pdTRUE);
 
-  if (gotData) { lastF = f; hasLast = true; }
-  else if (hasLast) f = lastF;
-  else {
-    f.irms = 0; f.zcv_ms = 0; f.thd_pct = 0; f.entropy = 0;
-    f.hf_ratio = 0; f.hf_var = 0; f.sf = 0; f.cyc_var = 0;
-    f.feat_valid = 0;
-    f.uptime_ms = millis();
-  }
+if (got) {
+  // With Core0Task patch, queue is always last-good.
+  lastGood = f;
+  hasGood = true;
+  lastGoodMs = millis();
+}
 
-  if (hasLast) {
-    const bool stale = (millis() - f.uptime_ms) > FEAT_STALE_MS;
-    if (stale || f.feat_valid == 0) {
-      f.irms = 0; f.zcv_ms = 0; f.thd_pct = 0; f.entropy = 0;
-      f.hf_ratio = 0; f.hf_var = 0; f.sf = 0; f.cyc_var = 0;
-    }
-  }
+if (hasGood) {
+  f = lastGood;
+} else {
+  memset(&f, 0, sizeof(f));
+  f.uptime_ms = millis();
+}
+
+// Only zero out if truly stale (e.g., Core task died)
+const bool trulyStale = hasGood && (millis() - lastGoodMs > 1200);
+if (trulyStale) {
+  f.irms = 0;
+  f.entropy = 0;
+  f.thd_pct = 0;
+  f.zcv_ms = 0;
+  f.hf_ratio = 0;
+  f.hf_var = 0;
+  f.sf = 0;
+  f.cyc_var = 0;
+}
 
   const float iHint = f.irms;
 
