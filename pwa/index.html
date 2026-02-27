@@ -32,6 +32,17 @@
           <span class="label">Device IP:</span>
           <span id="deviceIpText" class="mono">—</span>
         </div>
+
+        <div class="alertbar">
+          <label class="toggle">
+            <input type="checkbox" id="alertEnable" />
+            Receive Fault Alerts
+          </label>
+          <label class="toggle">
+            <input type="checkbox" id="soundEnable" />
+            Enable Sound
+          </label>
+        </div>
       </div>
     </header>
 
@@ -65,8 +76,23 @@
         <div class="card-label">Entropy</div>
         <div class="card-value"><span id="entVal">—</span><span class="unit">H</span></div>
       </div>
-    </section>
 
+      <div class="card">
+        <div class="card-label">HF Ratio</div>
+        <div class="card-value"><span id="hfRatioVal">—</span></div>
+      </div>
+
+      <div class="card">
+        <div class="card-label">HF Variance</div>
+        <div class="card-value"><span id="hfVarVal">—</span></div>
+      </div>
+
+      <div class="card">
+        <div class="card-label">Arc Counter</div>
+        <div class="card-value"><span id="arcCntVal">—</span></div>
+      </div>
+    </section>
+    
     <section class="history">
       <div class="history-head">
         <div>

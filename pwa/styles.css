@@ -86,6 +86,34 @@ html, body{
   backdrop-filter: blur(6px);
 }
 
+.alertbar{
+  display:flex;
+  gap:14px;
+  flex-wrap:wrap;
+  justify-content:center;
+  align-items:center;
+  padding:10px 12px;
+  border: 1px solid rgba(255,255,255,0.10);
+  border-radius: 14px;
+  background: rgba(255,255,255,0.035);
+  box-shadow: 0 10px 22px rgba(0,0,0,0.25);
+}
+
+.toggle{
+  display:flex;
+  align-items:center;
+  gap:8px;
+  font-size: 13px;
+  color: rgba(255,255,255,0.78);
+  user-select:none;
+}
+
+.toggle input{
+  width:16px;
+  height:16px;
+  accent-color: #2ecc71;
+}
+
 .subline{
   font-size: 13px;
   color: var(--muted);

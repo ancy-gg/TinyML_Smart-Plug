@@ -36,6 +36,13 @@ const zcvVal = el("zcvVal");
 const thdVal = el("thdVal");
 const entVal = el("entVal");
 
+const hfRatioVal = el("hfRatioVal");
+const hfVarVal   = el("hfVarVal");
+const arcCntVal  = el("arcCntVal");
+
+const alertEnable = el("alertEnable");
+const soundEnable = el("soundEnable");
+
 const historyBody = el("historyBody");
 const rangeSelect = el("rangeSelect");
 const historyHint = el("historyHint");
@@ -270,6 +277,64 @@ function applyHistoryFilter() {
 }
 if (rangeSelect) rangeSelect.addEventListener("change", applyHistoryFilter);
 
+let lastAlertStatus = null;
+
+const LS_ALERT = "tsp_alert_enabled";
+const LS_SOUND = "tsp_sound_enabled";
+
+function loadBool(k, def=false){
+  const v = localStorage.getItem(k);
+  if (v === null) return def;
+  return v === "1";
+}
+function saveBool(k, v){ localStorage.setItem(k, v ? "1" : "0"); }
+
+if (alertEnable) alertEnable.checked = loadBool(LS_ALERT, true);
+if (soundEnable) soundEnable.checked = loadBool(LS_SOUND, false);
+
+alertEnable?.addEventListener("change", () => saveBool(LS_ALERT, alertEnable.checked));
+soundEnable?.addEventListener("change", () => saveBool(LS_SOUND, soundEnable.checked));
+
+// Foreground sound (browser restriction: needs a user gesture at least once)
+function playBeep(){
+  try{
+    const ctx = new (window.AudioContext || window.webkitAudioContext)();
+    const o = ctx.createOscillator();
+    const g = ctx.createGain();
+    o.type = "sine";
+    o.frequency.value = 880;
+    g.gain.value = 0.08;
+    o.connect(g);
+    g.connect(ctx.destination);
+    o.start();
+    setTimeout(() => { o.stop(); ctx.close(); }, 180);
+  }catch(e){}
+}
+
+async function showFaultNotification(title, body){
+  if (!("Notification" in window)) return;
+  if (Notification.permission === "default") {
+    try { await Notification.requestPermission(); } catch {}
+  }
+  if (Notification.permission !== "granted") return;
+
+  // Prefer service worker notification if available
+  if ("serviceWorker" in navigator) {
+    const reg = await navigator.serviceWorker.ready.catch(()=>null);
+    if (reg) {
+      reg.showNotification(title, {
+        body,
+        icon: "icons/icon-192.png",
+        badge: "icons/icon-192.png",
+        tag: "tsp-fault",
+        renotify: true
+      });
+      return;
+    }
+  }
+  new Notification(title, { body, icon: "icons/icon-192.png" });
+}
+
 // ---------- LIVE DATA ----------
 db.ref("live_data").on("value", (snap) => {
   const data = snap.val();
@@ -305,6 +370,9 @@ db.ref("live_data").on("value", (snap) => {
   const z  = toFixedOrDash(data.zcv, 2);
   const th = toFixedOrDash(data.thd, 1);
   const en = toFixedOrDash(data.entropy, 3);
+  const hfr = toFixedOrDash(data.hf_ratio, 3);
+  const hfv = toFixedOrDash(data.hf_var, 4);
+  const arc = (typeof data.arc_cnt === "number") ? String(data.arc_cnt) : "—";
 
   if (vVal && vVal.textContent !== v) { vVal.textContent = v; animateNumber(vVal); }
   if (iVal && iVal.textContent !== i) { iVal.textContent = i; animateNumber(iVal); }
@@ -312,6 +380,9 @@ db.ref("live_data").on("value", (snap) => {
   if (zcvVal && zcvVal.textContent !== z) { zcvVal.textContent = z; animateNumber(zcvVal); }
   if (thdVal && thdVal.textContent !== th) { thdVal.textContent = th; animateNumber(thdVal); }
   if (entVal && entVal.textContent !== en) { entVal.textContent = en; animateNumber(entVal); }
+  if (hfRatioVal && hfRatioVal.textContent !== hfr) { hfRatioVal.textContent = hfr; animateNumber(hfRatioVal); }
+  if (hfVarVal   && hfVarVal.textContent !== hfv)  { hfVarVal.textContent   = hfv; animateNumber(hfVarVal); }
+  if (arcCntVal  && arcCntVal.textContent !== arc) { arcCntVal.textContent  = arc; animateNumber(arcCntVal); }
 
   // NO LAG: only update top status if this live update is newer than what we've shown
   if (liveEpoch >= topStatusSourceEpoch) {
@@ -321,6 +392,19 @@ db.ref("live_data").on("value", (snap) => {
   } else {
     if (lastUpdateText && topStatusSourceEpoch > 0) lastUpdateText.textContent = formatEpochMsTZ(topStatusSourceEpoch);
   }
+
+  const statusStr = (data.status ?? "NORMAL").toString();
+  const wantAlert = alertEnable?.checked ?? true;
+
+  const isFault = (statusStr === "ARCING" || statusStr === "HEATING");
+  const wasFault = (lastAlertStatus === "ARCING" || lastAlertStatus === "HEATING");
+
+  if (wantAlert && isFault && !wasFault) {
+    const body = `Status: ${statusStr}\nV=${toFixedOrDash(data.voltage,1)}V  I=${toFixedOrDash(data.current,2)}A  T=${toFixedOrDash(data.temp,1)}°C`;
+    showFaultNotification("TinyML Smart Plug Fault", body);
+    if ((soundEnable?.checked ?? false)) playBeep();
+  }
+  lastAlertStatus = statusStr;
 
 }, (err) => {
   console.error(err);

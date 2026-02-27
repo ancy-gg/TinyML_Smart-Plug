@@ -1,5 +1,5 @@
 // Change this on each deploy:
-const BUILD_VERSION = "TSPweb-v0.2.11";
+const BUILD_VERSION = "TSPweb-v0.2.12";
 
 const CACHE_NAME = BUILD_VERSION;
 
@@ -55,4 +55,15 @@ self.addEventListener("fetch", (event) => {
 
   // For external Firebase scripts, cache-first fallback
   event.respondWith(caches.match(req).then((cached) => cached || fetch(req)));
+});
+
+self.addEventListener("notificationclick", (event) => {
+  event.notification.close();
+  event.waitUntil((async () => {
+    const all = await clients.matchAll({ type: "window", includeUncontrolled: true });
+    for (const c of all) {
+      if ("focus" in c) return c.focus();
+    }
+    if (clients.openWindow) return clients.openWindow("/");
+  })());
 });
