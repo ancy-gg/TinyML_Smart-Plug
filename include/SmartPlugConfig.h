@@ -1,13 +1,13 @@
 #pragma once
 #include <Arduino.h>
 
+// TinyML Mode
+// #define USE_M2CGEN_RF
+
 // Data Collection Mode
 #define DATA_COLLECTION_MODE //recomment when done
-
-// TinyML Mode
-//#define USE_M2CGEN_RF
-
 #define ENABLE_ML_LOGGER 1
+#define USE_SOFT_LATCH 0
 
 // Sampling and FFT
 static constexpr float   FS_TARGET_HZ = 125000.0f;
@@ -22,6 +22,9 @@ static constexpr float OVERLOAD_TRIP_A = 10.0f;
 static constexpr float ENTROPY_ARC_H   = 0.75f;  // 0..1
 static constexpr float THD_ARC_H_PCT   = 100.0f;  // %
 static constexpr float ZCV_ARC_H_MS    = 2.0f;  // ms
+static constexpr float HF_RATIO_ARC_H  = 0.18f;
+static constexpr float HF_VAR_ARC_H    = 0.0025f;
+static constexpr float ARC_MIN_IRMS_A  = 0.03f;
 
 // ========= Feature gating / transient control =========
 static constexpr float IDLE_IRMS_A      = 0.02f;   // idle gate just above your ~0.02A noise

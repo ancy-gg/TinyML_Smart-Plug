@@ -12,6 +12,20 @@ void CloudHandler::begin(const char* apiKey, const char* dbUrl) {
   Serial.println("[Cloud] Firebase Initialized.");
 }
 
+void CloudHandler::setFirmwareVersion(const char* fw) {
+  if (fw && *fw) _fwVersion = fw;
+}
+
+void CloudHandler::setNormalIntervalMs(uint32_t ms) {
+  if (ms < 1000) ms = 1000;
+  _normalIntervalMs = ms;
+}
+
+void CloudHandler::setFaultIntervalMs(uint32_t ms) {
+  if (ms < 200) ms = 200;
+  _faultIntervalMs = ms;
+}
+
 bool CloudHandler::isReady() const {
   return Firebase.ready();
 }
@@ -42,7 +56,10 @@ bool CloudHandler::pushJSON(const char* path, FirebaseJson& json) {
   return Firebase.RTDB.pushJSON(&fbdo, path, &json);
 }
 
-void CloudHandler::update(float v, float c, float t, float zcv, float thd, float entropy,
+void CloudHandler::update(float v, float c, float t,
+                          float zcv, float thd, float entropy,
+                          float hf_ratio, float hf_var,
+                          uint8_t model_pred, int arc_cnt,
                           const String& state, TimeSync* time) {
   if (!Firebase.ready()) return;
 
@@ -50,14 +67,11 @@ void CloudHandler::update(float v, float c, float t, float zcv, float thd, float
   const bool stateChanged = (state != _lastSentLiveState);
 
   const unsigned long now = millis();
-  bool shouldSendLive = false;
+  const uint32_t interval = isNormal ? _normalIntervalMs : _faultIntervalMs;
 
-  if (isNormal) {
-    if (stateChanged) shouldSendLive = true;
-    else if (now - _lastLiveSend >= _normalIntervalMs) shouldSendLive = true;
-  } else {
-    if (stateChanged) shouldSendLive = true;
-  }
+  bool shouldSendLive = false;
+  if (stateChanged) shouldSendLive = true;
+  else if (now - _lastLiveSend >= interval) shouldSendLive = true;
 
   if (!shouldSendLive) return;
 
@@ -77,12 +91,22 @@ void CloudHandler::update(float v, float c, float t, float zcv, float thd, float
   json.set("mdns", "tinyml-smart-plug.local");
   json.set("ota_ready", WiFi.status() == WL_CONNECTED);
 
+  json.set("fw_version", _fwVersion);
+
   json.set("voltage", v);
   json.set("current", c);
   json.set("temp", t);
+
   json.set("zcv", zcv);
   json.set("thd", thd);
   json.set("entropy", entropy);
+
+  json.set("hf_ratio", hf_ratio);
+  json.set("hf_var", hf_var);
+
+  json.set("model_pred", (int)model_pred);
+  json.set("arc_cnt", arc_cnt);
+
   json.set("status", state);
 
   json.set("ts_epoch_ms", (double)epochMs);
@@ -92,6 +116,7 @@ void CloudHandler::update(float v, float c, float t, float zcv, float thd, float
 
   if (!Firebase.RTDB.updateNode(&fbdo, "/live_data", &json)) return;
 
+  // Push to /history only when entering a fault state or changing fault type
   if (!isNormal) {
     if (state != _lastLoggedFaultState) {
       _lastLoggedFaultState = state;

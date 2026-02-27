@@ -29,7 +29,7 @@
 // Firebase Credentials
 #define API_KEY "AIzaSyAmJlZZszyWPJFgIkTAAl_TbIySys1nvEw"
 #define DATABASE_URL "tinyml-smart-plug-default-rtdb.asia-southeast1.firebasedatabase.app"
-static const char* FW_VERSION = "TSP-v0.2.5";
+static const char* FW_VERSION = "TSP-v0.2.6";
 
 // Firmware Updates
 static const char* OTA_DESIRED_VERSION_PATH = "/ota/desired_version";
@@ -59,7 +59,6 @@ CurrentCalib    curCalib;
 static uint16_t s_raw[N_SAMP];
 QueueHandle_t   qFeat = nullptr;
 
-// ✅ NEW
 static bool gSafeMode = false;
 
 // Core 0 Task (Current Features)
@@ -82,7 +81,8 @@ void Core0Task(void* pvParameters) {
         f.thd_pct = out.thd_pct;
         f.entropy = out.entropy;
         f.zcv_ms  = out.zcv_ms;
-
+        f.hf_ratio = out.hf_ratio;
+        f.hf_var   = out.hf_var;
         if (qFeat != nullptr) xQueueOverwrite(qFeat, &f);
       }
     }
@@ -153,6 +153,8 @@ void setup() {
 
   oled.showStatus("Cloud", "Connecting...");
   cloud.begin(API_KEY, DATABASE_URL);
+  cloud.setFirmwareVersion(FW_VERSION);
+  cloud.setNormalIntervalMs(6000);
   timeSync.begin();
 
 #if ENABLE_ML_LOGGER
@@ -213,19 +215,23 @@ static void pollMlControl(CloudHandler& cloud, DataLogger& logger) {
 #endif
 
 void loop() {
-  // Marks OTA image VALID after stable run window
+  // Validate pending OTA only after surviving the stable window.
   BootGuard::loop();
 
   net.update();
   ota.loop();
   timeSync.update();
 
-  // SAFE MODE: OTA-only (so you can always recover)
+  // SAFE MODE: OTA + WiFi + minimal cloud heartbeat.
   if (gSafeMode) {
     static uint32_t lastCloudUpdate = 0;
     if (millis() - lastCloudUpdate > 5000) {
       lastCloudUpdate = millis();
-      cloud.update(0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, String("SAFE_MODE"), &timeSync);
+      cloud.update(0.0f, 0.0f, 0.0f,
+                   0.0f, 0.0f, 0.0f,
+                   0.0f, 0.0f,
+                   0, 0,
+                   String("SAFE_MODE"), &timeSync);
     }
     delay(10);
     return;
@@ -241,7 +247,34 @@ void loop() {
     delay(250);
   }
 
-  // Slow sensors
+  // --- Get latest features first (so Vrms invalid suppression can use Irms hint)
+  static FeatureFrame lastF = {};
+  static bool hasLast = false;
+  static float iHintForV = 0.0f;
+
+  FeatureFrame f;
+  bool gotData = false;
+
+  if (qFeat != nullptr) gotData = (xQueueReceive(qFeat, &f, 0) == pdTRUE);
+
+  if (gotData) {
+    lastF = f;
+    hasLast = true;
+    iHintForV = f.irms;
+  } else if (hasLast) {
+    f = lastF;
+    iHintForV = lastF.irms;
+  } else {
+    f.irms = 0.0f;
+    f.zcv_ms = 0.0f;
+    f.thd_pct = 0.0f;
+    f.entropy = 0.0f;
+    f.hf_ratio = 0.0f;
+    f.hf_var   = 0.0f;
+    iHintForV  = 0.0f;
+  }
+
+  // --- Slow sensors
   static float vRms = 0.0f;
   static float tC = 0.0f;
   static uint32_t tT = 0;
@@ -250,10 +283,15 @@ void loop() {
   constexpr float T_EMA_ALPHA = 0.10f;
 
   float newV = voltSensor.update();
-  if (newV >= 0.0f) {
+
+  // ✅ Treat Vrms=0 as invalid ONLY when current indicates a real load is on.
+  const bool vrmsLooksInvalid = (newV <= 1.0f && iHintForV > 0.05f);
+
+  if (newV >= 0.0f && !vrmsLooksInvalid) {
     if (vRms <= 0.0f) vRms = newV;
     else vRms = (1.0f - V_EMA_ALPHA) * vRms + V_EMA_ALPHA * newV;
   }
+  // else: keep previous vRms (don’t write 0 into your dataset)
 
   if (millis() - tT > 500) {
     tT = millis();
@@ -264,23 +302,10 @@ void loop() {
     }
   }
 
-  // Get latest features from Core 0
-  static FeatureFrame lastF = {};
-  static bool hasLast = false;
-
-  FeatureFrame f;
-  bool gotData = false;
-
-  if (qFeat != nullptr) gotData = (xQueueReceive(qFeat, &f, 0) == pdTRUE);
-
-  if (gotData) { lastF = f; hasLast = true; }
-  else if (hasLast) f = lastF;
-  else { f.irms = 0; f.zcv_ms = 0; f.thd_pct = 0; f.entropy = 0; }
-
   f.vrms   = vRms;
   f.temp_c = tC;
 
-  // Transient detection
+  // --- Transient detection
   static float prevIrms = 0.0f;
   const float dI = fabsf(f.irms - prevIrms);
   prevIrms = f.irms;
@@ -289,7 +314,10 @@ void loop() {
   if (dI > 0.6f) transientUntil = millis() + 600;
   const bool isTransient = (millis() < transientUntil);
 
-  int pred = ArcPredict(f.entropy, f.thd_pct, f.zcv_ms, f.vrms, f.irms, f.temp_c);
+  // --- Predict (new signature with HF features)
+  int pred = ArcPredict(f.entropy, f.thd_pct, f.zcv_ms,
+                        f.hf_ratio, f.hf_var,
+                        f.vrms, f.irms, f.temp_c);
   if (isTransient) pred = 0;
   f.model_pred = (uint8_t)pred;
 
@@ -314,10 +342,14 @@ void loop() {
   logger.loop();
 #endif
 
+  // Live Dashboard (every ~5s)
   static uint32_t lastCloudUpdate = 0;
   if (millis() - lastCloudUpdate > 5000) {
     lastCloudUpdate = millis();
-    cloud.update(vRms, f.irms, tC, f.zcv_ms, f.thd_pct, f.entropy,
+    cloud.update(vRms, f.irms, tC,
+                 f.zcv_ms, f.thd_pct, f.entropy,
+                 f.hf_ratio, f.hf_var,
+                 f.model_pred, faultLogic.arcCounter(),
                  String(stateToCstr(stateOut)), &timeSync);
   }
 }

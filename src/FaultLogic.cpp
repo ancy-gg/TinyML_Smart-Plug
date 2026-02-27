@@ -12,31 +12,25 @@ void FaultLogic::resetLatch() {
 }
 
 FaultState FaultLogic::update(float tempC, float irmsA, int arcModelOut) {
-  if (_latched) return _latchedState;
-
-  // Leaky integrator for arc
   if (arcModelOut == 1) _arcCnt += ARC_CNT_INC;
   else _arcCnt -= ARC_CNT_DEC;
   _arcCnt = clampi(_arcCnt, 0, ARC_CNT_MAX);
 
-  if (_arcCnt >= ARC_CNT_TRIP) {
-    _latched = true;
-    _latchedState = STATE_ARCING;
-    return _latchedState;
-  }
+  const bool arcTrip = (_arcCnt >= ARC_CNT_TRIP);
 
-  // Heating debounce then latch
   if (tempC > TEMP_TRIP_C) _heatFrames++;
   else _heatFrames = clampi(_heatFrames - HEAT_FRAMES_DEC, 0, HEAT_FRAMES_TRIP);
 
-  if (_heatFrames >= HEAT_FRAMES_TRIP) {
-    _latched = true;
-    _latchedState = STATE_HEATING;
-    return _latchedState;
-  }
+  const bool heatTrip = (_heatFrames >= HEAT_FRAMES_TRIP);
 
-  // Overload (not latched)
+#if USE_SOFT_LATCH
+  if (_latched) return _latchedState;
+  if (arcTrip)  { _latched = true; _latchedState = STATE_ARCING;  return _latchedState; }
+  if (heatTrip) { _latched = true; _latchedState = STATE_HEATING; return _latchedState; }
+#endif
+
+  if (heatTrip) return STATE_HEATING;
+  if (arcTrip)  return STATE_ARCING;
   if (irmsA > OVERLOAD_TRIP_A) return STATE_OVERLOAD;
-
   return STATE_NORMAL;
 }

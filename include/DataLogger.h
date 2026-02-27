@@ -27,6 +27,8 @@ private:
     float spectral_entropy;
     float thd_pct;
     float zcv;
+    float hf_ratio;
+    float hf_var;
     float v_rms;
     float i_rms;
     float temp_c;

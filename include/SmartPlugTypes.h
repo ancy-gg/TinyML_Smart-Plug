@@ -17,9 +17,8 @@ static inline const char* stateToCstr(FaultState s) {
   }
 }
 
-// One unified “feature frame” that core0/core1 can fill progressively.
 struct FeatureFrame {
-  uint64_t epoch_ms  = 0;   // 0 if not synced
+  uint64_t epoch_ms  = 0;
   uint32_t uptime_ms = 0;
 
   float vrms   = 0;
@@ -28,7 +27,11 @@ struct FeatureFrame {
 
   float zcv_ms   = 0;
   float thd_pct  = 0;
-  float entropy  = 0;      // 0..1 normalized
+  float entropy  = 0;
 
-  uint8_t model_pred = 0;  // TinyML output (0/1)
+  // High-frequency arc discrimination
+  float hf_ratio = 0; // bandpower(2k..20k) / bandpower(0..1k)
+  float hf_var   = 0; // variance of hf_ratio over recent frames
+
+  uint8_t model_pred = 0;
 };

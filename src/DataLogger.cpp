@@ -47,6 +47,8 @@ void DataLogger::ingest(const FeatureFrame& f, FaultState st, int arcCounter) {
   r.spectral_entropy = f.entropy;
   r.thd_pct          = f.thd_pct;
   r.zcv              = f.zcv_ms;
+  r.hf_ratio         = f.hf_ratio;
+  r.hf_var           = f.hf_var;
   r.v_rms            = f.vrms;
   r.i_rms            = f.irms;
   r.temp_c           = f.temp_c;
@@ -111,13 +113,15 @@ bool DataLogger::flushToFirebase(bool finalFlush) {
   // CSV matches python + adds load_type/session_id/epoch_ms
   String csv;
   csv.reserve(_count * 90 + 200);
-  csv += "spectral_entropy,thd_pct,zcv,v_rms,i_rms,temp_c,label_arc,load_type,session_id,epoch_ms\n";
+  csv += "spectral_entropy,thd_pct,zcv,hf_ratio,hf_var,v_rms,i_rms,temp_c,label_arc,load_type,session_id,epoch_ms\n";
 
   for (uint16_t i = 0; i < _count; i++) {
     const Rec& r = _buf[i];
     csv += String(r.spectral_entropy, 6); csv += ",";
     csv += String(r.thd_pct, 3);          csv += ",";
     csv += String(r.zcv, 6);              csv += ",";
+    csv += String(r.hf_ratio, 3);         csv += ",";
+    csv += String(r.hf_var, 6);           csv += ",";
     csv += String(r.v_rms, 3);            csv += ",";
     csv += String(r.i_rms, 6);            csv += ",";
     csv += String(r.temp_c, 3);           csv += ",";
