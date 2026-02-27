@@ -195,9 +195,9 @@ bool ArcFeatures::compute(const uint16_t* raw, size_t n, float fs_hz,
   const float noiseMag = (noiseN > 0) ? (float)(noiseSum / (double)noiseN) : 0.0f;
 
   // HF ratio
-  const float hfLoHz = HF_BAND_LO_HZ;
-  const float hfHiHz = HF_BAND_HI_HZ;
-  const float lfHiHz = LF_BAND_HI_HZ;
+  const float hfLoHz = 2000.0f;
+  const float hfHiHz = 20000.0f;
+  const float lfHiHz = 1000.0f;
 
   const int lf0 = 1;
   const int lf1 = min((int)(n/2 - 1), (int)floor(lfHiHz / binHz));
@@ -207,18 +207,31 @@ bool ArcFeatures::compute(const uint16_t* raw, size_t n, float fs_hz,
   double pLF = 0.0, pHF = 0.0;
   for (int b = lf0; b <= lf1; b++) pLF += (double)vReal[b] * (double)vReal[b];
   for (int b = hf0; b <= hf1; b++) pHF += (double)vReal[b] * (double)vReal[b];
-  out.hf_ratio = (float)(pHF / (pLF + 1e-12));
 
-  // HF variance window
+  const double pTot = pLF + pHF;
+
+  // Gate HF features when there is no meaningful signal (prevents “off the charts” at no-load)
+  const bool signalTooSmall = (out.irms_a < 0.02f) || (pTot < 1e-9);
+
+  if (signalTooSmall) {
+    out.hf_ratio = 0.0f;
+  } else {
+    // bounded 0..1
+    out.hf_ratio = (float)(pHF / (pTot + 1e-12));
+  }
+
+  // HF variance window (use gated hf_ratio)
   static constexpr int HF_VAR_WIN = 12;
   static float hfHist[HF_VAR_WIN];
   static int hfIdx = 0;
   static bool hfInit = false;
+
   if (!hfInit) {
     for (int i = 0; i < HF_VAR_WIN; i++) hfHist[i] = out.hf_ratio;
     hfInit = true;
     hfIdx = 0;
   }
+
   hfHist[hfIdx] = out.hf_ratio;
   hfIdx = (hfIdx + 1) % HF_VAR_WIN;
 

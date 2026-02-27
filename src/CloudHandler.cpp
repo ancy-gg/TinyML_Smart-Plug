@@ -59,7 +59,7 @@ bool CloudHandler::pushJSON(const char* path, FirebaseJson& json) {
 void CloudHandler::update(float v, float c, float t,
                           float zcv, float thd, float entropy,
                           float hf_ratio, float hf_var,
-                          uint8_t model_pred, int arc_cnt,
+                          uint8_t model_pred,
                           const String& state, TimeSync* time) {
   if (!Firebase.ready()) return;
 
@@ -105,7 +105,6 @@ void CloudHandler::update(float v, float c, float t,
   json.set("hf_var", hf_var);
 
   json.set("model_pred", (int)model_pred);
-  json.set("arc_cnt", arc_cnt);
 
   json.set("status", state);
 

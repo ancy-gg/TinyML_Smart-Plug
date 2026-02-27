@@ -18,10 +18,10 @@ public:
 
   // Live update payload
   void update(float v, float c, float t,
-              float zcv, float thd, float entropy,
-              float hf_ratio, float hf_var,
-              uint8_t model_pred, int arc_cnt,
-              const String& state, TimeSync* time);
+            float zcv, float thd, float entropy,
+            float hf_ratio, float hf_var,
+            uint8_t model_pred,
+            const String& state, TimeSync* time);
 
   // For OTA + configs
   bool isReady() const;

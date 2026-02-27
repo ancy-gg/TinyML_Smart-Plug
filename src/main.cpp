@@ -29,7 +29,7 @@
 // Firebase Credentials
 #define API_KEY "AIzaSyAmJlZZszyWPJFgIkTAAl_TbIySys1nvEw"
 #define DATABASE_URL "tinyml-smart-plug-default-rtdb.asia-southeast1.firebasedatabase.app"
-static const char* FW_VERSION = "TSP-v0.2.6";
+static const char* FW_VERSION = "TSP-v0.2.7";
 
 // Firmware Updates
 static const char* OTA_DESIRED_VERSION_PATH = "/ota/desired_version";
@@ -230,7 +230,7 @@ void loop() {
       cloud.update(0.0f, 0.0f, 0.0f,
                    0.0f, 0.0f, 0.0f,
                    0.0f, 0.0f,
-                   0, 0,
+                   0,
                    String("SAFE_MODE"), &timeSync);
     }
     delay(10);
@@ -349,7 +349,7 @@ void loop() {
     cloud.update(vRms, f.irms, tC,
                  f.zcv_ms, f.thd_pct, f.entropy,
                  f.hf_ratio, f.hf_var,
-                 f.model_pred, faultLogic.arcCounter(),
+                 f.model_pred,
                  String(stateToCstr(stateOut)), &timeSync);
   }
 }
