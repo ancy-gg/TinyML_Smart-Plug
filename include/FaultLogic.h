@@ -19,4 +19,8 @@ private:
 
   int _arcCnt = 0;
   int _heatFrames = 0;
+
+  // NEW: state hold timers to prevent rapid NORMAL<->ARCING flicker
+  uint32_t _arcHoldUntil  = 0;
+  uint32_t _heatHoldUntil = 0;
 };

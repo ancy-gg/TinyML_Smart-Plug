@@ -8,6 +8,8 @@
 #define DATA_COLLECTION_MODE //recomment when done
 #define ENABLE_ML_LOGGER 1
 #define USE_SOFT_LATCH 0
+#define BUZZER_IS_ACTIVE 1
+#define BUZZER_ACTIVE_HIGH 1
 
 // Sampling and FFT
 static constexpr float   FS_TARGET_HZ = 125000.0f;
@@ -19,12 +21,14 @@ static constexpr float TEMP_TRIP_C     = 70.0f;
 static constexpr float OVERLOAD_TRIP_A = 10.0f;
 
 // ========= Arc decision thresholds (baseline) =========
-static constexpr float ENTROPY_ARC_H   = 0.75f;  // 0..1
+static constexpr float ENTROPY_ARC_H   = 0.82f;  // 0..1
 static constexpr float THD_ARC_H_PCT   = 100.0f;  // %
 static constexpr float ZCV_ARC_H_MS    = 2.0f;  // ms
-static constexpr float HF_RATIO_ARC_H  = 0.18f;
-static constexpr float HF_VAR_ARC_H    = 0.0025f;
+static constexpr float HF_RATIO_ARC_H  = 0.24f;
+static constexpr float HF_VAR_ARC_H    = 0.0060f;
 static constexpr float ARC_MIN_IRMS_A  = 0.03f;
+static constexpr float SF_ARC_H        = 0.62f;
+static constexpr float CYC_VAR_ARC_H   = 0.030f;
 
 static constexpr float HF_BAND_LO_HZ = 2000.0f;
 static constexpr float HF_BAND_HI_HZ = 20000.0f;
@@ -38,14 +42,19 @@ static constexpr float ZC_HYS_FRAC      = 0.30f;   // hysteresis = 30% of Irms
 static constexpr float ZC_HYS_MIN_A     = 0.01f;   // minimum hysteresis
 static constexpr float ENTROPY_MAX_HZ   = 50000.0f; // entropy band limit
 static constexpr float SF_EPS           = 1e-12f;
+static constexpr float THD_GUARD_PCT     = 180.0f;
+static constexpr float HF_VAR_GUARD_LO   = 0.0020f;
+static constexpr float CYC_VAR_GUARD_LO  = 0.015f;
 static constexpr uint32_t FEAT_STALE_MS   = 350;
 static constexpr uint32_t ML_CTRL_POLL_MS = 10000; // ESP polls /ml_log every 10s
 
 // ========= Leaky integrator =========
-static constexpr int ARC_CNT_INC  = 2;
-static constexpr int ARC_CNT_DEC  = 1;
-static constexpr int ARC_CNT_TRIP = 6;  // “>5” means trip at 6
-static constexpr int ARC_CNT_MAX  = 12;
+static constexpr int ARC_CNT_INC  = 1;
+static constexpr int ARC_CNT_DEC  = 2;
+static constexpr int ARC_CNT_TRIP = 10;
+static constexpr int ARC_CNT_MAX  = 20;
+static constexpr uint32_t ARC_HOLD_MS  = 800;
+static constexpr uint32_t HEAT_HOLD_MS = 1200;
 
 // ========= Heating latch debounce =========
 static constexpr int HEAT_FRAMES_TRIP = 6;

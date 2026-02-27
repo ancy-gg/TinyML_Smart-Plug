@@ -16,9 +16,9 @@ static inline int ArcPredict(float entropy, float thd_pct, float zcv,
                             float v_rms, float i_rms, float temp_c) {
 
 #ifdef USE_M2CGEN_RF
-  // NOTE: you must regenerate TinyML_RF.h to match this 10-feature order.
+  // NOTE: regenerate TinyML_RF.h to match this 10-feature order.
   double input_features[10] = {
-    (double)entropy, (double)sf, (double)thd_pct, 
+    (double)entropy, (double)sf, (double)thd_pct,
     (double)zcv, (double)hf_ratio, (double)hf_var,
     (double)cyc_var,
     (double)v_rms, (double)i_rms, (double)temp_c
@@ -28,17 +28,29 @@ static inline int ArcPredict(float entropy, float thd_pct, float zcv,
   return (output_probs[1] >= ARC_THRESHOLD) ? 1 : 0;
 
 #else
-  (void)thd_pct; (void)zcv; (void)v_rms; (void)temp_c;
+  (void)temp_c;
 
-  // Baseline (pre-trained): require HF burstiness + broadband-ness
-  if (i_rms < 0.03f) return 0;
+  // Basic sanity gates
+  if (v_rms < 60.0f) return 0;                 // no mains / invalid Vrms
+  if (i_rms < ARC_MIN_IRMS_A) return 0;        // too small to trust
 
-  const bool a = (entropy > ENTROPY_ARC_H);
-  const bool b = (hf_ratio > 0.18f);
-  const bool c = (hf_var   > 0.0025f);
-  const bool d = (sf       > 0.45f);
-  const bool e = (cyc_var  > 0.015f);
+  // SMPS/charger guard:
+  // "Very distorted BUT steady" (low hf_var + low cyc_var) => not an arc
+  if ((thd_pct > THD_GUARD_PCT) &&
+      (hf_var  < HF_VAR_GUARD_LO) &&
+      (cyc_var < CYC_VAR_GUARD_LO)) {
+    return 0;
+  }
 
-  return (a && b && c) || (d && e && b);
+  const bool hfBurst = (hf_ratio > HF_RATIO_ARC_H) &&
+                       (hf_var   > HF_VAR_ARC_H);
+
+  const bool irregular = (cyc_var > CYC_VAR_ARC_H) || (zcv > ZCV_ARC_H_MS);
+
+  const bool broadband = (entropy > ENTROPY_ARC_H) &&
+                         (sf      > SF_ARC_H);
+
+  // Require HF burstiness + broadband-ness + some irregularity
+  return (hfBurst && broadband && irregular) ? 1 : 0;
 #endif
 }
