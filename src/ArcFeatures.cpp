@@ -122,7 +122,16 @@ bool ArcFeatures::compute(const uint16_t* raw, size_t n, float fs_hz,
   out.irms_a = irmsGateOn ? irms_med : 0.0f;
 
   const bool lowSignal = (out.irms_a < IDLE_IRMS_A);
-
+  if (lowSignal) {
+    out.zcv_ms = 0.0f;
+    out.cyc_var = 0.0f;
+    out.thd_pct = 0.0f;
+    out.entropy = 0.0f;
+    out.hf_ratio = 0.0f;
+    out.hf_var = 0.0f;
+    out.sf = 0.0f;
+    return true;
+  }
   // ---- ZCV + cycle variance using LOW-PASSED signal ----
   int crossings[100];
   int cCount = 0;
@@ -189,15 +198,6 @@ bool ArcFeatures::compute(const uint16_t* raw, size_t n, float fs_hz,
 
       out.cyc_var = (float)(var / (mu*mu + 1e-12));
     }
-  }
-
-  if (lowSignal) {
-    out.thd_pct = 0.0f;
-    out.entropy = 0.0f;
-    out.hf_ratio = 0.0f;
-    out.hf_var = 0.0f;
-    out.sf = 0.0f;
-    return true;
   }
 
   // ---- FFT uses FULL-BAND centered signal for arc features ----
