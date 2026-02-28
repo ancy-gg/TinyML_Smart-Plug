@@ -53,20 +53,21 @@ bool ADS8684::begin() {
 esp_err_t ADS8684::xfer32(uint16_t cmd, uint16_t* out_data) {
   if (_dev == nullptr) return ESP_ERR_INVALID_STATE;
 
-  uint8_t tx[4] = { uint8_t(cmd >> 8), uint8_t(cmd & 0xFF), 0x00, 0x00 };
-  uint8_t rx[4] = { 0, 0, 0, 0 };
-
+  // Use inline tx/rx to avoid heap/stack buffers.
   spi_transaction_t t = {};
   t.length = 32;
-  t.tx_buffer = tx;
-  t.rx_buffer = rx;
+  t.flags = SPI_TRANS_USE_TXDATA | SPI_TRANS_USE_RXDATA;
+  t.tx_data[0] = uint8_t(cmd >> 8);
+  t.tx_data[1] = uint8_t(cmd & 0xFF);
+  t.tx_data[2] = 0x00;
+  t.tx_data[3] = 0x00;
 
   cs_low(_cfg.pin_cs);
   esp_err_t err = spi_device_polling_transmit(_dev, &t);
   cs_high(_cfg.pin_cs);
   if (err != ESP_OK) return err;
 
-  if (out_data) *out_data = unpack_word(rx);
+  if (out_data) *out_data = unpack_word(t.rx_data);
   return ESP_OK;
 }
 
@@ -91,36 +92,37 @@ size_t ADS8684::readRawBurst(uint16_t* dst, size_t n, float* measured_fs_hz) {
 
   (void)spi_device_acquire_bus(_dev, portMAX_DELAY);
 
-  // Constant tx (NOP)
-  static const uint8_t tx0[4] = {0x00, 0x00, 0x00, 0x00};
-  uint8_t rx[4] = {0,0,0,0};
+  // IMPORTANT (ADS868x): conversion is triggered on CS falling edge; each frame begins with CS falling edge.
+  // So CS MUST toggle high between frames. Holding CS low continuously can stop conversions. :contentReference[oaicite:1]{index=1}
 
   spi_transaction_t t = {};
   t.length = 32;
-  t.tx_buffer = tx0;
-  t.rx_buffer = rx;
+  t.flags = SPI_TRANS_USE_TXDATA | SPI_TRANS_USE_RXDATA;
+  t.tx_data[0] = 0x00;
+  t.tx_data[1] = 0x00;
+  t.tx_data[2] = 0x00;
+  t.tx_data[3] = 0x00;
 
-  // IMPORTANT: keep CS LOW for the entire burst (more reliable on RX pin)
+  // Prime (discard 1 frame)
   cs_low(_cfg.pin_cs);
-
-  // Prime (discard)
   (void)spi_device_polling_transmit(_dev, &t);
+  cs_high(_cfg.pin_cs);
 
   const int64_t t0 = esp_timer_get_time();
 
   for (size_t i = 0; i < n; i++) {
+    cs_low(_cfg.pin_cs);
     esp_err_t err = spi_device_polling_transmit(_dev, &t);
+    cs_high(_cfg.pin_cs);
     if (err != ESP_OK) {
-      cs_high(_cfg.pin_cs);
       spi_device_release_bus(_dev);
       return i;
     }
-    dst[i] = unpack_word(rx);
+    dst[i] = unpack_word(t.rx_data);
   }
 
   const int64_t t1 = esp_timer_get_time();
 
-  cs_high(_cfg.pin_cs);
   spi_device_release_bus(_dev);
 
   const float dt_s = float(t1 - t0) / 1e6f;
