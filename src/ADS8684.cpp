@@ -21,7 +21,7 @@ static inline void cs_low(int pin)  { if (pin >= 0) gpio_set_level((gpio_num_t)p
 bool ADS8684::begin() {
   if (_cfg.pin_cs < 0 || _cfg.pin_sck < 0 || _cfg.pin_miso < 0 || _cfg.pin_mosi < 0) return false;
 
-  // Force CS as GPIO with pull-up (important if CS is on RX)
+  // Force CS as GPIO output + pull-up (important for RX-as-CS)
   pinMode(_cfg.pin_cs, OUTPUT);
   digitalWrite(_cfg.pin_cs, HIGH);
   gpio_set_pull_mode((gpio_num_t)_cfg.pin_cs, GPIO_PULLUP_ONLY);
@@ -40,13 +40,13 @@ bool ADS8684::begin() {
   spi_device_interface_config_t devcfg = {};
   devcfg.clock_speed_hz = _cfg.spi_clock_hz;
   devcfg.mode = 1;
-  devcfg.spics_io_num = -1;   // MANUAL CS (prevents peripheral claiming RX pin)
+  devcfg.spics_io_num = -1;  // MANUAL CS (we own CS pin)
   devcfg.queue_size = 1;
 
   err = spi_bus_add_device(_cfg.host, &devcfg, &_dev);
   if (err != ESP_OK) return false;
 
-  delay(50);
+  delay(20);
   return selectAux();
 }
 
@@ -91,19 +91,36 @@ size_t ADS8684::readRawBurst(uint16_t* dst, size_t n, float* measured_fs_hz) {
 
   (void)spi_device_acquire_bus(_dev, portMAX_DELAY);
 
-  uint16_t data = 0;
-  (void)xfer32(0x0000, &data); // prime
+  // Constant tx (NOP)
+  static const uint8_t tx0[4] = {0x00, 0x00, 0x00, 0x00};
+  uint8_t rx[4] = {0,0,0,0};
+
+  spi_transaction_t t = {};
+  t.length = 32;
+  t.tx_buffer = tx0;
+  t.rx_buffer = rx;
+
+  // IMPORTANT: keep CS LOW for the entire burst (more reliable on RX pin)
+  cs_low(_cfg.pin_cs);
+
+  // Prime (discard)
+  (void)spi_device_polling_transmit(_dev, &t);
 
   const int64_t t0 = esp_timer_get_time();
+
   for (size_t i = 0; i < n; i++) {
-    if (xfer32(0x0000, &data) != ESP_OK) {
+    esp_err_t err = spi_device_polling_transmit(_dev, &t);
+    if (err != ESP_OK) {
+      cs_high(_cfg.pin_cs);
       spi_device_release_bus(_dev);
       return i;
     }
-    dst[i] = data;
+    dst[i] = unpack_word(rx);
   }
+
   const int64_t t1 = esp_timer_get_time();
 
+  cs_high(_cfg.pin_cs);
   spi_device_release_bus(_dev);
 
   const float dt_s = float(t1 - t0) / 1e6f;

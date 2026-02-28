@@ -4,19 +4,8 @@
 
 static constexpr uint32_t OLED_MS = 250;
 
-// -------- Sound engine (non-blocking) --------
-// ACTIVE buzzer: hz!=0 means ON, hz==0 means OFF.
-struct ToneStep {
-  uint16_t hz;
-  uint16_t dur_ms;
-};
-
-struct TonePattern {
-  const ToneStep* steps;
-  uint8_t count;
-  bool repeat;
-  uint8_t priority;
-};
+struct ToneStep { uint16_t hz; uint16_t dur_ms; };
+struct TonePattern { const ToneStep* steps; uint8_t count; bool repeat; uint8_t priority; };
 
 static constexpr ToneStep P_BOOT[]        = { {880,80},{0,40},{1320,80},{0,40},{1760,120} };
 static constexpr ToneStep P_WIFI_PORTAL[] = { {660,120},{0,120},{660,120},{0,900} };
@@ -69,49 +58,33 @@ static inline void buzzWrite(bool on) {
   }
 }
 
-static void soundBegin(int pinBuzzer) {
-  s_buzzPin = pinBuzzer;
-  buzzWrite(false);
-}
+static void soundBegin(int pinBuzzer) { s_buzzPin = pinBuzzer; buzzWrite(false); }
 
 static void soundStop() {
   buzzWrite(false);
-  s_activeId = 255;
-  s_step = 0;
-  s_t0 = 0;
-  s_activePrio = 0;
+  s_activeId = 255; s_step = 0; s_t0 = 0; s_activePrio = 0;
 }
 
 static void soundStart(uint8_t id) {
   if (id >= (sizeof(PATTERNS)/sizeof(PATTERNS[0]))) return;
-
-  // Don't endlessly restart the same repeating pattern
-  if (s_activeId == id) return;
-
+  if (s_activeId == id) return; // don't restart same repeat
   const TonePattern& p = PATTERNS[id];
   if (s_activeId != 255 && p.priority < s_activePrio) return;
-
-  s_activeId = id;
-  s_activePrio = p.priority;
-  s_step = 0;
-  s_t0 = 0;
+  s_activeId = id; s_activePrio = p.priority; s_step = 0; s_t0 = 0;
 }
 
 static void soundLoop() {
   if (s_activeId == 255) return;
-
   const TonePattern& p = PATTERNS[s_activeId];
   const uint32_t now = millis();
 
   if (s_t0 == 0) {
     s_t0 = now;
-    const ToneStep& st = p.steps[s_step];
-    buzzWrite(st.hz != 0);
+    buzzWrite(p.steps[s_step].hz != 0);
     return;
   }
 
-  const ToneStep& st = p.steps[s_step];
-  if ((uint32_t)(now - s_t0) >= st.dur_ms) {
+  if ((uint32_t)(now - s_t0) >= p.steps[s_step].dur_ms) {
     s_step++;
     if (s_step >= p.count) {
       if (p.repeat) s_step = 0;
@@ -121,7 +94,6 @@ static void soundLoop() {
   }
 }
 
-// -------- Actuators --------
 void Actuators::begin(int pinRelay, int pinBuzzer, int pinResetBtn, OLED_NOTIF* oled) {
   _pinRelay = pinRelay;
   _pinBuzzer = pinBuzzer;
@@ -129,7 +101,7 @@ void Actuators::begin(int pinRelay, int pinBuzzer, int pinResetBtn, OLED_NOTIF* 
   _oled = oled;
 
   pinMode(_pinRelay, OUTPUT);
-  digitalWrite(_pinRelay, HIGH); // relay ON at boot
+  digitalWrite(_pinRelay, HIGH);
 
   pinMode(_pinBuzzer, OUTPUT);
 #if BUZZER_ACTIVE_HIGH
@@ -144,42 +116,22 @@ void Actuators::begin(int pinRelay, int pinBuzzer, int pinResetBtn, OLED_NOTIF* 
   soundStart(SND_BOOT);
 }
 
-void Actuators::setRelay(bool on) {
-  digitalWrite(_pinRelay, on ? HIGH : LOW);
-}
-
-void Actuators::buzzerUpdate(bool enabled) {
-  // kept for compatibility; not used (non-blocking engine runs in apply)
-  (void)enabled;
-}
-
-void Actuators::buzzerTone(bool on, uint16_t freqHz) {
-  (void)freqHz;
-  buzzWrite(on);
-}
-
-void Actuators::notify(SoundEvent ev) {
-  soundBegin(_pinBuzzer);
-  soundStart((uint8_t)ev);
-}
+void Actuators::setRelay(bool on) { digitalWrite(_pinRelay, on ? HIGH : LOW); }
+void Actuators::notify(SoundEvent ev) { soundBegin(_pinBuzzer); soundStart((uint8_t)ev); }
 
 void Actuators::apply(FaultState st, float v, float i, float t) {
 #ifndef DATA_COLLECTION_MODE
-  const bool relayOn = (st == STATE_NORMAL || st == STATE_OVERLOAD);
-  setRelay(relayOn);
+  setRelay(st == STATE_NORMAL || st == STATE_OVERLOAD);
 #else
-  // Data collection mode: keep relay ON except hard temp cutoff
+  // Data collection: relay ON even in faults, only hard-off at TEMP_TRIP+5C
   static bool hardOff = false;
   static constexpr float HARD_OFF_C = TEMP_TRIP_C + 5.0f;
   static constexpr float HARD_ON_C  = HARD_OFF_C - 2.0f;
-
   if (!hardOff && t >= HARD_OFF_C) hardOff = true;
   else if (hardOff && t <= HARD_ON_C) hardOff = false;
-
   setRelay(!hardOff);
 #endif
 
-  // Sound on state transitions
   static FaultState lastSt = STATE_NORMAL;
   if (st != lastSt) {
     if      (st == STATE_ARCING)   notify(SND_FAULT_ARC);
@@ -189,66 +141,28 @@ void Actuators::apply(FaultState st, float v, float i, float t) {
     lastSt = st;
   }
 
-  // Mains lost
   static bool mainsWasOn = false;
   const bool mainsOn = (v > 60.0f);
   if (mainsWasOn && !mainsOn) notify(SND_MAINS_LOST);
   mainsWasOn = mainsOn;
 
-  // Load plugged (debounced + cooldown)
-  static bool loadWasOn = false;
-  static uint32_t loadSince = 0;
-  static uint32_t lastPlugBeep = 0;
-
-  const float ON_A  = 0.12f;
-  const float OFF_A = 0.06f;
-  const bool rawOn  = (i > ON_A);
-  const bool rawOff = (i < OFF_A);
-
-  if (!loadWasOn) {
-    if (rawOn) {
-      if (loadSince == 0) loadSince = millis();
-      if (millis() - loadSince > 250) {
-        loadWasOn = true;
-        loadSince = 0;
-        if (millis() - lastPlugBeep > 5000) {
-          notify(SND_DEVICE_PLUG);
-          lastPlugBeep = millis();
-        }
-      }
-    } else {
-      loadSince = 0;
-    }
-  } else {
-    if (rawOff) loadWasOn = false;
-  }
-
-  // Run sound engine
   soundLoop();
 
-  // OLED refresh: mute buzzer during I2C WITHOUT restarting tone timing
   if (_oled && (millis() - _lastOled) >= OLED_MS) {
     _lastOled = millis();
 
-    // Capture current tone ON/OFF state
-    bool toneShouldBeOn = false;
-    if (s_activeId != 255) {
-      const TonePattern& p = PATTERNS[s_activeId];
-      const ToneStep& stp = p.steps[s_step];
-      toneShouldBeOn = (stp.hz != 0);
-    }
+    bool toneOn = false;
+    if (s_activeId != 255) toneOn = (PATTERNS[s_activeId].steps[s_step].hz != 0);
 
     buzzWrite(false);
     _oled->updateDashboard(v, i, t, st);
-
-    if (s_activeId != 255) buzzWrite(toneShouldBeOn);
+    if (s_activeId != 255) buzzWrite(toneOn);
   }
 }
 
 bool Actuators::resetLongPressed() {
   const bool down = (digitalRead(_pinReset) == LOW);
   const uint32_t now = millis();
-
   if (down) {
     if (_btnDown == 0) _btnDown = now;
     if (!_btnHeld && (now - _btnDown) > 1200) {

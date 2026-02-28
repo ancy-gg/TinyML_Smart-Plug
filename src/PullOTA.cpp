@@ -46,7 +46,7 @@ void PullOTA::loop() {
   if (_cb) _cb(OtaEvent::START);
   if (performUpdateFromUrl(fwUrl)) {
     if (_cb) _cb(OtaEvent::SUCCESS);
-    delay(250);
+    delay(300);
     ESP.restart();
   } else {
     if (_cb) _cb(OtaEvent::FAIL);

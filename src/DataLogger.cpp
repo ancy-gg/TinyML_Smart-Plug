@@ -146,9 +146,6 @@ bool DataLogger::flushToFirebase(bool finalFlush) {
   path += _sessionId;
 
   const bool ok = _cloud->pushJSON(path.c_str(), json);
-  if (ok) Serial.printf("[ML_LOG] Uploaded %u rows to %s\n", _count, path.c_str());
-  else    Serial.println("[ML_LOG] pushJSON failed");
-
   return ok;
 }
 #endif

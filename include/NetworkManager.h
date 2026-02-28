@@ -14,8 +14,8 @@ public:
 
 private:
     WiFiManager wm;
-
     volatile bool _portalActive = false;
+
     void (*_userApCb)(WiFiManager*) = nullptr;
 
     static NetworkManager* s_inst;
