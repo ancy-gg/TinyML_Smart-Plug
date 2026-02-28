@@ -21,7 +21,7 @@ static inline void cs_low(int pin)  { if (pin >= 0) gpio_set_level((gpio_num_t)p
 bool ADS8684::begin() {
   if (_cfg.pin_cs < 0 || _cfg.pin_sck < 0 || _cfg.pin_miso < 0 || _cfg.pin_mosi < 0) return false;
 
-  // Force CS as GPIO output + pull-up (important for RX-as-CS)
+  // CS as GPIO output + strong-ish pullup (important when CS is on a "RX-ish" pin)
   pinMode(_cfg.pin_cs, OUTPUT);
   digitalWrite(_cfg.pin_cs, HIGH);
   gpio_set_pull_mode((gpio_num_t)_cfg.pin_cs, GPIO_PULLUP_ONLY);
@@ -40,7 +40,7 @@ bool ADS8684::begin() {
   spi_device_interface_config_t devcfg = {};
   devcfg.clock_speed_hz = _cfg.spi_clock_hz;
   devcfg.mode = 1;
-  devcfg.spics_io_num = -1;  // MANUAL CS (we own CS pin)
+  devcfg.spics_io_num = -1; // manual CS
   devcfg.queue_size = 1;
 
   err = spi_bus_add_device(_cfg.host, &devcfg, &_dev);
@@ -53,7 +53,6 @@ bool ADS8684::begin() {
 esp_err_t ADS8684::xfer32(uint16_t cmd, uint16_t* out_data) {
   if (_dev == nullptr) return ESP_ERR_INVALID_STATE;
 
-  // Use inline tx/rx to avoid heap/stack buffers.
   spi_transaction_t t = {};
   t.length = 32;
   t.flags = SPI_TRANS_USE_TXDATA | SPI_TRANS_USE_RXDATA;
@@ -92,9 +91,6 @@ size_t ADS8684::readRawBurst(uint16_t* dst, size_t n, float* measured_fs_hz) {
 
   (void)spi_device_acquire_bus(_dev, portMAX_DELAY);
 
-  // IMPORTANT (ADS868x): conversion is triggered on CS falling edge; each frame begins with CS falling edge.
-  // So CS MUST toggle high between frames. Holding CS low continuously can stop conversions. :contentReference[oaicite:1]{index=1}
-
   spi_transaction_t t = {};
   t.length = 32;
   t.flags = SPI_TRANS_USE_TXDATA | SPI_TRANS_USE_RXDATA;
@@ -103,10 +99,9 @@ size_t ADS8684::readRawBurst(uint16_t* dst, size_t n, float* measured_fs_hz) {
   t.tx_data[2] = 0x00;
   t.tx_data[3] = 0x00;
 
-  // Prime (discard 1 frame)
-  cs_low(_cfg.pin_cs);
-  (void)spi_device_polling_transmit(_dev, &t);
-  cs_high(_cfg.pin_cs);
+  // Prime / pipeline (discard 2 frames)
+  cs_low(_cfg.pin_cs); (void)spi_device_polling_transmit(_dev, &t); cs_high(_cfg.pin_cs);
+  cs_low(_cfg.pin_cs); (void)spi_device_polling_transmit(_dev, &t); cs_high(_cfg.pin_cs);
 
   const int64_t t0 = esp_timer_get_time();
 

@@ -1,8 +1,16 @@
 #include "ArcFeatures.h"
 #include <math.h>
+#include <esp_err.h>
 
 #include "esp_dsp.h"
-#include "esp_err.h"
+#include "dsps_fft2r.h"
+#include "dsps_wind_hann.h"
+#include "dsp_common.h"
+
+#ifndef CONFIG_DSP_MAX_FFT_SIZE
+// If you don't define it in platformio.ini, default here (but do define it!)
+#define CONFIG_DSP_MAX_FFT_SIZE 4096
+#endif
 
 static inline float clampf(float x, float lo, float hi) {
   return (x < lo) ? lo : (x > hi) ? hi : x;
@@ -25,30 +33,33 @@ bool ArcFeatures::compute(const uint16_t* raw, size_t n, float fs_hz,
                           const CurrentCalib& cal, float mainsHz,
                           ArcFeatOut& out) {
   if (!raw || n != N_SAMP) return false;
+  if (fs_hz <= 1000.0f) return false;
+  if (!dsp_is_power_of_two((int)n)) return false;
+  if ((int)n > CONFIG_DSP_MAX_FFT_SIZE) return false;
 
   out.fs_hz = fs_hz;
 
-  // Time-domain buffer (centered). We will reuse its first half for FFT magnitudes.
+  // Time-domain centered signal
   static float sig[N_SAMP];
 
-  // FFT complex working buffer: Re/Im interleaved
+  // Complex FFT buffer (Re/Im interleaved)
   static float fft_cf[2 * N_SAMP];
 
-  // Hann window
+  // Window
   static float win[N_SAMP];
 
   static bool dspReady = false;
   static bool winReady = false;
 
   if (!dspReady) {
-    // If LUT pointer is NULL, esp-dsp allocates internally when table_size > 0. :contentReference[oaicite:1]{index=1}
-    const esp_err_t ret = dsps_fft2r_init_fc32(NULL, (int)n);
+    // IMPORTANT: init with MAX FFT size you will use
+    esp_err_t ret = dsps_fft2r_init_fc32(NULL, CONFIG_DSP_MAX_FFT_SIZE);
     if (ret != ESP_OK) return false;
     dspReady = true;
   }
 
   if (!winReady) {
-    dsps_wind_hann_f32(win, (int)n); // Hann window generator :contentReference[oaicite:2]{index=2}
+    dsps_wind_hann_f32(win, (int)n);
     winReady = true;
   }
 
@@ -63,6 +74,8 @@ bool ArcFeatures::compute(const uint16_t* raw, size_t n, float fs_hz,
     mean += a;
   }
   mean /= (double)n;
+
+  // Too many rail hits = bad frame
   if (sat > 32) return false;
 
   // 2) Center + RMS
@@ -72,7 +85,7 @@ bool ArcFeatures::compute(const uint16_t* raw, size_t n, float fs_hz,
     sig[i] = s;
     acc += (double)s * (double)s;
   }
-  const float irms_raw = (float)sqrt(acc / (double)n);
+  const float irms_raw = sqrtf((float)(acc / (double)n));
 
   // Median-of-3 (frame-to-frame)
   static bool init=false;
@@ -81,17 +94,18 @@ bool ArcFeatures::compute(const uint16_t* raw, size_t n, float fs_hz,
   else { r0=r1; r1=r2; r2=irms_raw; }
   const float irms_med = median3(r0,r1,r2);
 
-  // 2a) Idle floor (don’t chase real loads)
+  // 2a) Idle floor learner (your old caps were 0.03A; that cannot learn a 0.12A idle)
   static bool floorInit=false;
   static float idleFloor=0.0f;
   static uint16_t learnFrames=0;
 
-  const float frameHz = (fs_hz > 1000.0f) ? (fs_hz / (float)n) : 30.0f;
-  const uint16_t learnMinFrames = (uint16_t)fmaxf(8.0f, frameHz * 1.2f);
+  const float frameHz = fs_hz / (float)n; // ~30Hz for 125k/4096
+  const uint16_t learnMinFrames = (uint16_t)fmaxf(10.0f, frameHz * 1.5f);
 
-  static constexpr float FLOOR_LEARN_MAX_A = 0.03f;
-  static constexpr float FLOOR_MAX_A       = 0.03f;
-  static constexpr float FLOOR_INIT_MAX_A  = 0.02f;
+  // Tune these to your real idle baseline
+  static constexpr float FLOOR_LEARN_MAX_A = 0.18f; // only learn if below this
+  static constexpr float FLOOR_MAX_A       = 0.16f; // cap learned floor
+  static constexpr float FLOOR_INIT_MAX_A  = 0.16f;
 
   if (!floorInit) {
     floorInit=true;
@@ -118,7 +132,7 @@ bool ArcFeatures::compute(const uint16_t* raw, size_t n, float fs_hz,
 
   const bool lowSignal = (irms_clean < IDLE_IRMS_A);
 
-  // 3) ZCV + cycle variance (same as your original)
+  // 3) ZCV + cycle variance
   int crossings[100];
   int cCount = 0;
   const float hys = fmaxf(ZC_HYS_MIN_A, ZC_HYS_FRAC * irms_med);
@@ -195,62 +209,61 @@ bool ArcFeatures::compute(const uint16_t* raw, size_t n, float fs_hz,
     return true;
   }
 
-  // 4) FFT using ESP-DSP (windowed)
+  // 4) FFT (windowed). IMPORTANT: do NOT call dsps_cplx2reC_fc32 for a single real signal.
   for (size_t i=0; i<n; i++) {
     fft_cf[2*i + 0] = sig[i] * win[i];
     fft_cf[2*i + 1] = 0.0f;
   }
 
-  dsps_fft2r_fc32(fft_cf, (int)n);
-  dsps_bit_rev_fc32(fft_cf, (int)n);
-  dsps_cplx2reC_fc32(fft_cf, (int)n); // standard sequence :contentReference[oaicite:3]{index=3}
+  if (dsps_fft2r_fc32(fft_cf, (int)n) != ESP_OK) return false;
+  if (dsps_bit_rev_fc32(fft_cf, (int)n) != ESP_OK) return false;
 
-  // Magnitude into sig[0..n/2-1]
+  // Power spectrum into sig[0..n/2-1]  (faster than magnitude; no sqrt per bin)
   const int half = (int)(n/2);
   for (int k=0; k<half; k++) {
     const float re = fft_cf[2*k + 0];
     const float im = fft_cf[2*k + 1];
-    sig[k] = sqrtf(re*re + im*im);
+    sig[k] = re*re + im*im;
   }
 
   const float binHz = fs_hz / (float)n;
 
-  // Fundamental near expected bin
+  // Fundamental near expected bin (use power)
   int kNom = (int)lround(mainsHz / binHz);
   if (kNom < 1) kNom = 1;
   if (kNom > (half - 2)) kNom = (half - 2);
 
   int k1 = kNom;
-  float fund = 0.0f;
+  float fundP = 0.0f;
   for (int dk=-2; dk<=2; dk++) {
     int k = kNom + dk;
     if (k>=1 && k<half) {
-      if (sig[k] > fund) { fund = sig[k]; k1 = k; }
+      if (sig[k] > fundP) { fundP = sig[k]; k1 = k; }
     }
   }
 
-  // THD 2..10
-  double harm2 = 0.0;
+  // THD 2..10 using power
+  double harmP = 0.0;
   for (int h=2; h<=10; h++) {
     int khNom = h*k1;
     if (khNom >= half) break;
-    float hm = 0.0f;
+    float hmP = 0.0f;
     for (int dk=-1; dk<=1; dk++) {
       int kh = khNom + dk;
-      if (kh>=1 && kh<half) hm = fmaxf(hm, sig[kh]);
+      if (kh>=1 && kh<half) hmP = fmaxf(hmP, sig[kh]);
     }
-    harm2 += (double)hm*(double)hm;
+    harmP += (double)hmP;
   }
-  out.thd_pct = (fund > 1e-9f) ? (float)(sqrt(harm2)/(double)fund*100.0) : 0.0f;
+  out.thd_pct = (fundP > 1e-18f) ? (float)(sqrt(harmP / (double)fundP) * 100.0) : 0.0f;
 
-  // Entropy + Spectral Flatness up to ENTROPY_MAX_HZ
+  // Entropy + Spectral Flatness up to ENTROPY_MAX_HZ (sig[] already power)
   const int maxBin = (int)fminf((float)half, floorf(ENTROPY_MAX_HZ / binHz));
   double psum=0.0;
   double logSum=0.0;
   int K=0;
 
   for (int b=1; b<maxBin; b++) {
-    const double pw = (double)sig[b]*(double)sig[b];
+    const double pw = (double)sig[b];
     psum += pw;
     logSum += log(pw + SF_EPS);
     K++;
@@ -262,7 +275,7 @@ bool ArcFeatures::compute(const uint16_t* raw, size_t n, float fs_hz,
   } else {
     double H=0.0;
     for (int b=1; b<maxBin; b++) {
-      const double pw = (double)sig[b]*(double)sig[b];
+      const double pw = (double)sig[b];
       const double p = pw/psum;
       if (p > 1e-18) H += -p*log(p);
     }
@@ -274,17 +287,17 @@ bool ArcFeatures::compute(const uint16_t* raw, size_t n, float fs_hz,
     out.sf = clampf((float)(geo/(ari + SF_EPS)), 0.0f, 1.0f);
   }
 
-  // HF ratio + variance
+  // HF ratio + variance (power-domain)
   const int lf1 = (int)fminf((float)(half - 1), floorf(LF_BAND_HI_HZ / binHz));
   const int hf0 = (int)fminf((float)(half - 1), ceilf (HF_BAND_LO_HZ / binHz));
   const int hf1 = (int)fminf((float)(half - 1), floorf(HF_BAND_HI_HZ / binHz));
 
   double pLF=0.0, pHF=0.0;
-  for (int b=1;b<=lf1;b++) pLF += (double)sig[b]*(double)sig[b];
-  for (int b=hf0;b<=hf1;b++) pHF += (double)sig[b]*(double)sig[b];
+  for (int b=1;b<=lf1;b++) pLF += (double)sig[b];
+  for (int b=hf0;b<=hf1;b++) pHF += (double)sig[b];
 
   const double pTot = pLF + pHF;
-  if (out.irms_a < 0.02f || pTot < 1e-9) out.hf_ratio = 0.0f;
+  if (out.irms_a < 0.02f || pTot < 1e-12) out.hf_ratio = 0.0f;
   else out.hf_ratio = (float)(pHF / (pTot + 1e-12));
 
   static constexpr int HF_WIN = 12;
