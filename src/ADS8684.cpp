@@ -18,13 +18,26 @@ static inline uint16_t unpack_word(const uint8_t rx[4]) {
 static inline void cs_high(int pin) { if (pin >= 0) gpio_set_level((gpio_num_t)pin, 1); }
 static inline void cs_low(int pin)  { if (pin >= 0) gpio_set_level((gpio_num_t)pin, 0); }
 
+static inline void cs_hold_enable(int pin) {
+  if (pin >= 0) gpio_hold_en((gpio_num_t)pin);
+}
+
+static inline void cs_hold_disable(int pin) {
+  if (pin >= 0) gpio_hold_dis((gpio_num_t)pin);
+}
+
 bool ADS8684::begin() {
   if (_cfg.pin_cs < 0 || _cfg.pin_sck < 0 || _cfg.pin_miso < 0 || _cfg.pin_mosi < 0) return false;
 
-  // CS as GPIO output + strong-ish pullup (important when CS is on a "RX-ish" pin)
   pinMode(_cfg.pin_cs, OUTPUT);
   digitalWrite(_cfg.pin_cs, HIGH);
   gpio_set_pull_mode((gpio_num_t)_cfg.pin_cs, GPIO_PULLUP_ONLY);
+  gpio_set_drive_capability((gpio_num_t)_cfg.pin_cs, GPIO_DRIVE_CAP_3);
+
+  // Hold CS HIGH when idle (helps if this pin is shared / noisy during portal)
+  cs_hold_disable(_cfg.pin_cs);
+  cs_high(_cfg.pin_cs);
+  cs_hold_enable(_cfg.pin_cs);
 
   spi_bus_config_t buscfg = {};
   buscfg.mosi_io_num = _cfg.pin_mosi;
@@ -61,11 +74,13 @@ esp_err_t ADS8684::xfer32(uint16_t cmd, uint16_t* out_data) {
   t.tx_data[2] = 0x00;
   t.tx_data[3] = 0x00;
 
+  cs_hold_disable(_cfg.pin_cs);
   cs_low(_cfg.pin_cs);
   esp_err_t err = spi_device_polling_transmit(_dev, &t);
   cs_high(_cfg.pin_cs);
-  if (err != ESP_OK) return err;
+  cs_hold_enable(_cfg.pin_cs);
 
+  if (err != ESP_OK) return err;
   if (out_data) *out_data = unpack_word(t.rx_data);
   return ESP_OK;
 }
@@ -99,7 +114,12 @@ size_t ADS8684::readRawBurst(uint16_t* dst, size_t n, float* measured_fs_hz) {
   t.tx_data[2] = 0x00;
   t.tx_data[3] = 0x00;
 
-  // Prime / pipeline (discard 2 frames)
+  // ADS868x: each conversion/frame starts on CS falling edge, ends when CS high. :contentReference[oaicite:1]{index=1}
+  // So we MUST pulse CS per frame.
+
+  cs_hold_disable(_cfg.pin_cs);
+
+  // Prime 2 frames (pipeline)
   cs_low(_cfg.pin_cs); (void)spi_device_polling_transmit(_dev, &t); cs_high(_cfg.pin_cs);
   cs_low(_cfg.pin_cs); (void)spi_device_polling_transmit(_dev, &t); cs_high(_cfg.pin_cs);
 
@@ -110,6 +130,8 @@ size_t ADS8684::readRawBurst(uint16_t* dst, size_t n, float* measured_fs_hz) {
     esp_err_t err = spi_device_polling_transmit(_dev, &t);
     cs_high(_cfg.pin_cs);
     if (err != ESP_OK) {
+      cs_high(_cfg.pin_cs);
+      cs_hold_enable(_cfg.pin_cs);
       spi_device_release_bus(_dev);
       return i;
     }
@@ -118,6 +140,8 @@ size_t ADS8684::readRawBurst(uint16_t* dst, size_t n, float* measured_fs_hz) {
 
   const int64_t t1 = esp_timer_get_time();
 
+  cs_high(_cfg.pin_cs);
+  cs_hold_enable(_cfg.pin_cs);
   spi_device_release_bus(_dev);
 
   const float dt_s = float(t1 - t0) / 1e6f;
