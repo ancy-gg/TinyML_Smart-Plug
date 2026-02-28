@@ -6,7 +6,6 @@ void CloudHandler::begin(const char* apiKey, const char* dbUrl) {
   config.signer.test_mode = true;
   Firebase.begin(&config, &auth);
   Firebase.reconnectWiFi(true);
-  Serial.println("[Cloud] Firebase Initialized.");
 }
 
 void CloudHandler::setFirmwareVersion(const char* fw) {

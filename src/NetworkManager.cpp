@@ -1,27 +1,40 @@
 #include "NetworkManager.h"
 #include <WiFi.h>
 
-void NetworkManager::begin(void (*apCallback)(WiFiManager*)) {
-    wm.setDebugOutput(true);
+NetworkManager* NetworkManager::s_inst = nullptr;
 
-    if (apCallback != nullptr) {
-        wm.setAPCallback(apCallback);
+void NetworkManager::apTrampoline(WiFiManager* wmgr) {
+    if (s_inst) {
+        s_inst->_portalActive = true;
+        if (s_inst->_userApCb) s_inst->_userApCb(wmgr);
     }
+}
 
-    // IMPORTANT: Do NOT restart on failure.
-    // Also make it NON-BLOCKING so your device can continue running offline.
+void NetworkManager::begin(void (*apCallback)(WiFiManager*)) {
+    s_inst = this;
+    _userApCb = apCallback;
+
+    // CRITICAL (your CS is on RX): do not enable serial debug output.
+    wm.setDebugOutput(false);
+
+    // Keep device running while portal is up
     wm.setConfigPortalBlocking(false);
 
-    // Try to connect or start portal. In non-blocking mode this often returns quickly.
-    wm.autoConnect("TinyML_Setup");
+    // Track portal state
+    wm.setAPCallback(NetworkManager::apTrampoline);
 
-    // Optional: reduce random disconnect issues
+    wm.autoConnect("TinyML Smart Plug");
+
     WiFi.setSleep(false);
 }
 
 void NetworkManager::update() {
-    // REQUIRED when config portal is non-blocking
     wm.process();
+
+    // Clear portal flag once connected
+    if (_portalActive && WiFi.status() == WL_CONNECTED) {
+        _portalActive = false;
+    }
 }
 
 bool NetworkManager::isConnected() {

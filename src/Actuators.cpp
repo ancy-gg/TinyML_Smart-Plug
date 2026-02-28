@@ -5,8 +5,9 @@
 static constexpr uint32_t OLED_MS = 250;
 
 // -------- Sound engine (non-blocking) --------
+// ACTIVE buzzer: hz!=0 means ON, hz==0 means OFF.
 struct ToneStep {
-  uint16_t hz;       // ignored for active buzzer; nonzero means "ON"
+  uint16_t hz;
   uint16_t dur_ms;
 };
 
@@ -14,10 +15,9 @@ struct TonePattern {
   const ToneStep* steps;
   uint8_t count;
   bool repeat;
-  uint8_t priority; // higher wins
+  uint8_t priority;
 };
 
-// Patterns (same as before)
 static constexpr ToneStep P_BOOT[]        = { {880,80},{0,40},{1320,80},{0,40},{1760,120} };
 static constexpr ToneStep P_WIFI_PORTAL[] = { {660,120},{0,120},{660,120},{0,900} };
 static constexpr ToneStep P_WIFI_OK[]     = { {1200,120},{0,60},{1600,120} };
@@ -32,7 +32,6 @@ static constexpr ToneStep P_FAULT_HEAT[]  = { {800,220},{0,180},{800,220},{0,900
 static constexpr ToneStep P_FAULT_OVER[]  = { {600,120},{0,120},{600,120},{0,600} };
 static constexpr ToneStep P_RESET_ACK[]   = { {1200,80},{0,40},{1200,80} };
 
-// priority: FAULT=3, OTA=2, PORTAL=1, misc=0
 static constexpr TonePattern PATTERNS[] = {
   { P_BOOT,        (uint8_t)(sizeof(P_BOOT)/sizeof(P_BOOT[0])),        false, 0 },
   { P_WIFI_PORTAL, (uint8_t)(sizeof(P_WIFI_PORTAL)/sizeof(P_WIFI_PORTAL[0])), true,  1 },
@@ -49,13 +48,13 @@ static constexpr TonePattern PATTERNS[] = {
   { P_RESET_ACK,   (uint8_t)(sizeof(P_RESET_ACK)/sizeof(P_RESET_ACK[0])),false,0 },
 };
 
+static int s_buzzPin = -1;
+static bool s_buzzLevel = false;
+
 static uint8_t s_activeId = 255;
 static uint8_t s_step = 0;
 static uint32_t s_t0 = 0;
 static uint8_t s_activePrio = 0;
-
-static int s_buzzPin = -1;
-static bool s_level = false;
 
 static inline void buzzWrite(bool on) {
 #if BUZZER_ACTIVE_HIGH
@@ -64,9 +63,9 @@ static inline void buzzWrite(bool on) {
   const bool level = !on;
 #endif
   if (s_buzzPin < 0) return;
-  if (level != s_level) {
+  if (level != s_buzzLevel) {
     digitalWrite(s_buzzPin, level ? HIGH : LOW);
-    s_level = level;
+    s_buzzLevel = level;
   }
 }
 
@@ -86,7 +85,7 @@ static void soundStop() {
 static void soundStart(uint8_t id) {
   if (id >= (sizeof(PATTERNS)/sizeof(PATTERNS[0]))) return;
 
-  // Don’t restart the same repeating sound endlessly
+  // Don't endlessly restart the same repeating pattern
   if (s_activeId == id) return;
 
   const TonePattern& p = PATTERNS[id];
@@ -107,14 +106,7 @@ static void soundLoop() {
   if (s_t0 == 0) {
     s_t0 = now;
     const ToneStep& st = p.steps[s_step];
-
-#if BUZZER_IS_ACTIVE
-    // Active buzzer: ON/OFF only
     buzzWrite(st.hz != 0);
-#else
-    // Passive buzzer: you can reintroduce LEDC here if you ever switch hardware
-    buzzWrite(st.hz != 0);
-#endif
     return;
   }
 
@@ -137,7 +129,7 @@ void Actuators::begin(int pinRelay, int pinBuzzer, int pinResetBtn, OLED_NOTIF* 
   _oled = oled;
 
   pinMode(_pinRelay, OUTPUT);
-  digitalWrite(_pinRelay, HIGH);   // relay ON at boot
+  digitalWrite(_pinRelay, HIGH); // relay ON at boot
 
   pinMode(_pinBuzzer, OUTPUT);
 #if BUZZER_ACTIVE_HIGH
@@ -156,17 +148,27 @@ void Actuators::setRelay(bool on) {
   digitalWrite(_pinRelay, on ? HIGH : LOW);
 }
 
+void Actuators::buzzerUpdate(bool enabled) {
+  // kept for compatibility; not used (non-blocking engine runs in apply)
+  (void)enabled;
+}
+
+void Actuators::buzzerTone(bool on, uint16_t freqHz) {
+  (void)freqHz;
+  buzzWrite(on);
+}
+
 void Actuators::notify(SoundEvent ev) {
   soundBegin(_pinBuzzer);
   soundStart((uint8_t)ev);
 }
 
 void Actuators::apply(FaultState st, float v, float i, float t) {
-  // Relay policy
 #ifndef DATA_COLLECTION_MODE
   const bool relayOn = (st == STATE_NORMAL || st == STATE_OVERLOAD);
   setRelay(relayOn);
 #else
+  // Data collection mode: keep relay ON except hard temp cutoff
   static bool hardOff = false;
   static constexpr float HARD_OFF_C = TEMP_TRIP_C + 5.0f;
   static constexpr float HARD_ON_C  = HARD_OFF_C - 2.0f;
@@ -177,7 +179,7 @@ void Actuators::apply(FaultState st, float v, float i, float t) {
   setRelay(!hardOff);
 #endif
 
-  // Fault sounds (only on stable state transitions)
+  // Sound on state transitions
   static FaultState lastSt = STATE_NORMAL;
   if (st != lastSt) {
     if      (st == STATE_ARCING)   notify(SND_FAULT_ARC);
@@ -193,21 +195,20 @@ void Actuators::apply(FaultState st, float v, float i, float t) {
   if (mainsWasOn && !mainsOn) notify(SND_MAINS_LOST);
   mainsWasOn = mainsOn;
 
-  // Load plug detection (debounced + hysteresis + cooldown)
+  // Load plugged (debounced + cooldown)
   static bool loadWasOn = false;
   static uint32_t loadSince = 0;
   static uint32_t lastPlugBeep = 0;
 
   const float ON_A  = 0.12f;
   const float OFF_A = 0.06f;
-
-  const bool rawLoadOn = (i > ON_A);
-  const bool rawLoadOff = (i < OFF_A);
+  const bool rawOn  = (i > ON_A);
+  const bool rawOff = (i < OFF_A);
 
   if (!loadWasOn) {
-    if (rawLoadOn) {
+    if (rawOn) {
       if (loadSince == 0) loadSince = millis();
-      if (millis() - loadSince > 250) { // must be on for 250ms
+      if (millis() - loadSince > 250) {
         loadWasOn = true;
         loadSince = 0;
         if (millis() - lastPlugBeep > 5000) {
@@ -215,26 +216,32 @@ void Actuators::apply(FaultState st, float v, float i, float t) {
           lastPlugBeep = millis();
         }
       }
-    } else loadSince = 0;
+    } else {
+      loadSince = 0;
+    }
   } else {
-    if (rawLoadOff) loadWasOn = false;
+    if (rawOff) loadWasOn = false;
   }
 
   // Run sound engine
   soundLoop();
 
-  // OLED refresh (turn buzzer OFF during I2C to reduce glitches)
+  // OLED refresh: mute buzzer during I2C WITHOUT restarting tone timing
   if (_oled && (millis() - _lastOled) >= OLED_MS) {
     _lastOled = millis();
 
-    // Quiet during I2C update (helps if buzzer causes rail noise)
-    const uint8_t curId = s_activeId;
-    buzzWrite(false);
+    // Capture current tone ON/OFF state
+    bool toneShouldBeOn = false;
+    if (s_activeId != 255) {
+      const TonePattern& p = PATTERNS[s_activeId];
+      const ToneStep& stp = p.steps[s_step];
+      toneShouldBeOn = (stp.hz != 0);
+    }
 
+    buzzWrite(false);
     _oled->updateDashboard(v, i, t, st);
 
-    // Resume sound immediately if there was an active pattern
-    if (curId != 255) s_t0 = 0;
+    if (s_activeId != 255) buzzWrite(toneShouldBeOn);
   }
 }
 

@@ -4,6 +4,8 @@
 #include <freertos/FreeRTOS.h>
 #include <freertos/task.h>
 #include <freertos/queue.h>
+#include <esp_log.h>
+#include <driver/gpio.h>
 
 #include "SmartPlugConfig.h"
 #include "SmartPlugTypes.h"
@@ -28,7 +30,7 @@
 
 #define API_KEY "AIzaSyAmJlZZszyWPJFgIkTAAl_TbIySys1nvEw"
 #define DATABASE_URL "tinyml-smart-plug-default-rtdb.asia-southeast1.firebasedatabase.app"
-static const char* FW_VERSION = "TSP-v0.2.10";
+static const char* FW_VERSION = "TSP-v0.2.11";
 
 static const char* OTA_DESIRED_VERSION_PATH = "/ota/desired_version";
 static const char* OTA_FIRMWARE_URL_PATH    = "/ota/firmware_url";
@@ -53,54 +55,79 @@ DataLogger      logger;
 CurrentSensor   curSensor;
 ArcFeatures     arcFeat;
 CurrentCalib    curCalib;
+
 static uint16_t s_raw[N_SAMP];
-QueueHandle_t   qFeat = nullptr;
+static QueueHandle_t qFeat = nullptr;
 
 static bool gSafeMode = false;
 
-// ---- Sound hooks (non-capturing; safer/leaner for stability) ----
+// Pause reasons (portal + OTA)
+static volatile bool gPauseByPortal = false;
+static volatile bool gPauseByOta    = false;
+static volatile bool gPauseCapture  = false;
+
+static inline void reassertCsRxPin() {
+  // CS is on RX (D7). Reassert it as a normal GPIO every time before capture.
+  pinMode(PIN_ADC_CS, OUTPUT);
+  digitalWrite(PIN_ADC_CS, HIGH);
+  gpio_set_pull_mode((gpio_num_t)PIN_ADC_CS, GPIO_PULLUP_ONLY);
+}
+
+// ---- OTA sound + pause hook ----
 static void onOtaEventSound(OtaEvent ev) {
   switch (ev) {
-    case OtaEvent::START:   actuators.notify(SND_OTA_START); break;
-    case OtaEvent::SUCCESS: actuators.notify(SND_OTA_OK);    break;
-    case OtaEvent::FAIL:    actuators.notify(SND_OTA_FAIL);  break;
+    case OtaEvent::START:
+      gPauseByOta = true;                // freeze ADC + ML during OTA
+      actuators.notify(SND_OTA_START);
+      break;
+    case OtaEvent::SUCCESS:
+      actuators.notify(SND_OTA_OK);
+      // device restarts right after success; keep paused
+      break;
+    case OtaEvent::FAIL:
+      gPauseByOta = false;
+      actuators.notify(SND_OTA_FAIL);
+      break;
     default: break;
   }
 }
 
-// ---------------- Core0 Task ----------------
-void Core0Task(void* pvParameters) {
+// ---------------- Core0 Task (ADC + FFT features) ----------------
+static void Core0Task(void* pvParameters) {
   (void)pvParameters;
 
   ArcFeatOut out;
-
-  // last-good cache (so we can keep the queue populated)
   FeatureFrame lastGood = {};
   bool hasGood = false;
 
   while (true) {
+    if (gPauseCapture) {
+      if (hasGood && qFeat) xQueueOverwrite(qFeat, &lastGood);
+      vTaskDelay(20);
+      continue;
+    }
+
+    reassertCsRxPin();
+
     FeatureFrame f;
     f.uptime_ms = millis();
     f.feat_valid = 0;
 
-    // IMPORTANT: start with a known Fs (your config)
     float measuredFs = FS_TARGET_HZ;
-
     size_t got = curSensor.capture(s_raw, N_SAMP, &measuredFs);
-
-    // If driver doesn't populate Fs (or writes 0), fall back safely.
     float fs_hz = (measuredFs > 1000.0f) ? measuredFs : FS_TARGET_HZ;
 
-    // Quick retry if burst was short (common with WiFi/SPI contention)
+    // Quick retry if short burst (WiFi/RTOS contention)
     if (got != N_SAMP) {
       vTaskDelay(1);
+      reassertCsRxPin();
       measuredFs = FS_TARGET_HZ;
       got = curSensor.capture(s_raw, N_SAMP, &measuredFs);
       fs_hz = (measuredFs > 1000.0f) ? measuredFs : FS_TARGET_HZ;
     }
 
     bool ok = false;
-    if (got == N_SAMP) {
+    if (got == N_SAMP && fs_hz > 20000.0f) {
       ok = arcFeat.compute(s_raw, N_SAMP, fs_hz, curCalib, MAINS_F0_HZ, out);
     }
 
@@ -117,12 +144,10 @@ void Core0Task(void* pvParameters) {
 
       lastGood = f;
       hasGood = true;
-
-      if (qFeat != nullptr) xQueueOverwrite(qFeat, &f);
+      if (qFeat) xQueueOverwrite(qFeat, &f);
     } else {
-      // DO NOT publish zeros.
-      // Just keep last good value in the queue so CSV stays clean.
-      if (hasGood && qFeat != nullptr) xQueueOverwrite(qFeat, &lastGood);
+      // Keep last-good (no zero spam)
+      if (hasGood && qFeat) xQueueOverwrite(qFeat, &lastGood);
     }
 
     vTaskDelay(1);
@@ -142,8 +167,7 @@ static bool bootHoldForSafeModeMs(uint32_t holdMs = 1500) {
 }
 
 void setup() {
-  Serial.begin(115200);
-  delay(200);
+  esp_log_level_set("*", ESP_LOG_NONE);
 
   BootGuard::begin(/*stableWindowMs=*/45000, /*maxCrashBoots=*/3);
   gSafeMode = BootGuard::safeMode();
@@ -156,16 +180,19 @@ void setup() {
 
   actuators.begin(PIN_RELAY, PIN_BUZZER_PWM, PIN_RESET_BTN, &oled);
 
+  // Reassert CS early
+  reassertCsRxPin();
+
   if (!gSafeMode) {
     voltSensor.begin();
     voltSensor.setWindowMs(200);
     voltSensor.setClampHysteresis(25.0f, 35.0f);
     tempSensor.begin();
 
-    bool hwReady = curSensor.begin();
+    const bool hwReady = curSensor.begin();
     if (!hwReady) {
       oled.showStatus("WARN", "No ADS8684");
-      delay(800);
+      delay(600);
     } else {
       qFeat = xQueueCreate(1, sizeof(FeatureFrame));
       xTaskCreatePinnedToCore(Core0Task, "Core0Sense", 12288, nullptr, 3, nullptr, 0);
@@ -236,9 +263,7 @@ static void pollMlControl(CloudHandler& cloud, DataLogger& logger) {
   logger.setSession(sid, load, labelOv);
 
   if (enabled != lastEnabled || sid != lastSession) {
-    // Sound cue only when logging actually starts (OFF -> ON).
     if (enabled && !lastEnabled) actuators.notify(SND_LOGGER_ON);
-
     logger.setEnabled(enabled);
     lastEnabled = enabled;
     lastSession = sid;
@@ -250,8 +275,17 @@ void loop() {
   BootGuard::loop();
 
   net.update();
+  ota.loop();
+  timeSync.update();
 
-  // WiFi connected 
+  // Portal pause + OTA pause
+  gPauseByPortal = net.inConfigPortal();
+  gPauseCapture  = gPauseByPortal || gPauseByOta;
+
+  // Reassert CS frequently (defensive; RX can get remuxed)
+  reassertCsRxPin();
+
+  // WiFi connected chirp
   static wl_status_t lastWifi = WL_DISCONNECTED;
   const wl_status_t wifiNow = WiFi.status();
   if (wifiNow == WL_CONNECTED && lastWifi != WL_CONNECTED) {
@@ -259,21 +293,22 @@ void loop() {
   }
   lastWifi = wifiNow;
 
-  ota.loop();
-  timeSync.update();
-
+  // SAFE MODE: only cloud heartbeat + OTA
   if (gSafeMode) {
     static uint32_t lastCloudUpdate = 0;
+    static String safeState = "SAFE_MODE";
     if (millis() - lastCloudUpdate > 5000) {
       lastCloudUpdate = millis();
-      cloud.update(0,0,0, 0,0,0, 0,0, 0,0, 0, String("SAFE_MODE"), &timeSync);
+      cloud.update(0,0,0, 0,0,0, 0,0, 0,0, 0, safeState, &timeSync);
     }
     delay(10);
     return;
   }
 
 #if ENABLE_ML_LOGGER
-  pollMlControl(cloud, logger);
+  // Avoid enabling logger during portal/OTA pauses (keeps CSV clean)
+  if (!gPauseCapture) pollMlControl(cloud, logger);
+  else logger.setEnabled(false);
 #endif
 
   if (actuators.resetLongPressed()) {
@@ -282,49 +317,39 @@ void loop() {
     delay(250);
   }
 
-static FeatureFrame lastGood = {};
-static bool hasGood = false;
-static uint32_t lastGoodMs = 0;
+  // ---- Get latest features (held last-good by Core0Task) ----
+  static FeatureFrame lastF = {};
+  static bool hasLast = false;
 
-FeatureFrame f;
-bool got = (qFeat != nullptr) && (xQueueReceive(qFeat, &f, 0) == pdTRUE);
+  FeatureFrame f;
+  bool gotData = false;
+  if (qFeat) gotData = (xQueueReceive(qFeat, &f, 0) == pdTRUE);
 
-if (got) {
-  // With Core0Task patch, queue is always last-good.
-  lastGood = f;
-  hasGood = true;
-  lastGoodMs = millis();
-}
+  if (gotData) { lastF = f; hasLast = true; }
+  else if (hasLast) f = lastF;
+  else {
+    memset(&f, 0, sizeof(f));
+    f.uptime_ms = millis();
+  }
 
-if (hasGood) {
-  f = lastGood;
-} else {
-  memset(&f, 0, sizeof(f));
-  f.uptime_ms = millis();
-}
+  // Only hard-zero if truly stale and NOT in a paused mode
+  if (hasLast && !gPauseCapture) {
+    const bool stale = (millis() - f.uptime_ms) > FEAT_STALE_MS;
+    if (stale) {
+      f.irms = 0; f.zcv_ms = 0; f.thd_pct = 0; f.entropy = 0;
+      f.hf_ratio = 0; f.hf_var = 0; f.sf = 0; f.cyc_var = 0;
+    }
+  }
 
-// Only zero out if truly stale (e.g., Core task died)
-const bool trulyStale = hasGood && (millis() - lastGoodMs > 1200);
-if (trulyStale) {
-  f.irms = 0;
-  f.entropy = 0;
-  f.thd_pct = 0;
-  f.zcv_ms = 0;
-  f.hf_ratio = 0;
-  f.hf_var = 0;
-  f.sf = 0;
-  f.cyc_var = 0;
-}
-
-  const float iHint = f.irms;
-
-  // -------- Slow sensors --------
+  // ---- Slow sensors ----
   static float vRms = 0.0f;
   static float tC = 0.0f;
   static uint32_t tT = 0;
 
   constexpr float V_EMA_ALPHA = 1.00f;
   constexpr float T_EMA_ALPHA = 0.10f;
+
+  const float iHint = f.irms;
 
   float newV = voltSensor.update();
   const bool vrmsLooksInvalid = (newV <= 1.0f && iHint > 0.05f);
@@ -346,37 +371,56 @@ if (trulyStale) {
   f.vrms   = vRms;
   f.temp_c = tC;
 
-  // -------- Transient suppress --------
-  static float prevIrms = 0.0f;
-  const float dI = fabsf(f.irms - prevIrms);
-  prevIrms = f.irms;
+  // ---- Model predict (disabled during portal/OTA pauses) ----
+  int pred = 0;
+  if (!gPauseCapture) {
+    static float prevIrms = 0.0f;
+    const float dI = fabsf(f.irms - prevIrms);
+    prevIrms = f.irms;
 
-  static uint32_t transientUntil = 0;
-  if (dI > 0.6f) transientUntil = millis() + 600;
-  const bool isTransient = (millis() < transientUntil);
+    static uint32_t transientUntil = 0;
+    if (dI > 0.6f) transientUntil = millis() + 600;
+    const bool isTransient = (millis() < transientUntil);
 
-  int pred = ArcPredict(f.entropy, f.thd_pct, f.zcv_ms,
-                        f.hf_ratio, f.hf_var,
-                        f.sf, f.cyc_var,
-                        f.vrms, f.irms, f.temp_c);
-  if (isTransient) pred = 0;
+    pred = ArcPredict(f.entropy, f.thd_pct, f.zcv_ms,
+                      f.hf_ratio, f.hf_var,
+                      f.sf, f.cyc_var,
+                      f.vrms, f.irms, f.temp_c);
+    if (isTransient) pred = 0;
+  }
   f.model_pred = (uint8_t)pred;
 
   FaultState state = faultLogic.update(tC, f.irms, f.model_pred);
   FaultState stateOut = state;
 
+  // Always reflect real state; relay policy handled in Actuators::apply()
   actuators.apply(stateOut, vRms, f.irms, tC);
 
-#if ENABLE_ML_LOGGER
-  static uint32_t lastMlLogMs = 0;
-  const uint32_t logPeriodMs = 1000UL / ML_LOG_RATE_HZ;
+  // State string caching (avoid frequent heap churn)
+  static FaultState lastState = STATE_NORMAL;
+  static String stateStr = "NORMAL";
 
-  if (millis() - lastMlLogMs >= logPeriodMs) {
-    lastMlLogMs = millis();
-    f.epoch_ms  = timeSync.isSynced() ? timeSync.nowEpochMs() : 0;
-    logger.ingest(f, stateOut, faultLogic.arcCounter());
+  if (gPauseByPortal) {
+    stateStr = "CONFIG_PORTAL";
+  } else if (gPauseByOta) {
+    stateStr = "OTA_UPDATING";
+  } else if (stateOut != lastState) {
+    stateStr = stateToCstr(stateOut);
+    lastState = stateOut;
   }
-  logger.loop();
+
+#if ENABLE_ML_LOGGER
+  if (!gPauseCapture) {
+    static uint32_t lastMlLogMs = 0;
+    const uint32_t logPeriodMs = 1000UL / ML_LOG_RATE_HZ;
+
+    if (millis() - lastMlLogMs >= logPeriodMs) {
+      lastMlLogMs = millis();
+      f.epoch_ms  = timeSync.isSynced() ? timeSync.nowEpochMs() : 0;
+      logger.ingest(f, stateOut, faultLogic.arcCounter());
+    }
+    logger.loop();
+  }
 #endif
 
   static uint32_t lastCloudUpdate = 0;
@@ -387,6 +431,6 @@ if (trulyStale) {
                  f.hf_ratio, f.hf_var,
                  f.sf, f.cyc_var,
                  f.model_pred,
-                 String(stateToCstr(stateOut)), &timeSync);
+                 stateStr, &timeSync);
   }
 }
