@@ -38,7 +38,8 @@ bool ArcFeatures::compute(const uint16_t* raw, size_t n, float fs_hz,
 
   out.fs_hz = fs_hz;
 
-  static float sig[N_SAMP];        // time-domain (then reused for power spectrum)
+  static float sig[N_SAMP];        // centered, full-band
+  static float sig_lp[N_SAMP];     // centered, low-passed (for Irms/ZC)
   static float fft_cf[2 * N_SAMP]; // complex interleaved
   static float win[N_SAMP];
 
@@ -46,7 +47,6 @@ bool ArcFeatures::compute(const uint16_t* raw, size_t n, float fs_hz,
   static bool winReady = false;
 
   if (!dspReady) {
-    // Init FFT tables for max size (not n). :contentReference[oaicite:3]{index=3}
     if (dsps_fft2r_init_fc32(NULL, CONFIG_DSP_MAX_FFT_SIZE) != ESP_OK) return false;
     dspReady = true;
   }
@@ -55,7 +55,7 @@ bool ArcFeatures::compute(const uint16_t* raw, size_t n, float fs_hz,
     winReady = true;
   }
 
-  // ---- Convert + basic integrity checks ----
+  // ---- Convert + integrity checks ----
   double mean = 0.0;
   int sat = 0;
   int changes = 0;
@@ -73,18 +73,32 @@ bool ArcFeatures::compute(const uint16_t* raw, size_t n, float fs_hz,
   }
   mean /= (double)n;
 
-  // If you're railed or basically flatlined -> ADC frame is bad
+  // bad frames
   if (sat > 32) return false;
-  if (changes < 8) return false;  // catches “stale / not converting” frames (your CSV shows these)
+  if (changes < 8) return false;
 
-  // ---- Center + RMS ----
-  double acc = 0.0;
+  // ---- Center ----
   for (size_t i = 0; i < n; i++) {
-    const float s = sig[i] - (float)mean;
-    sig[i] = s;
-    acc += (double)s * (double)s;
+    sig[i] = sig[i] - (float)mean;
   }
-  const float irms_raw = sqrtf((float)(acc / (double)n));
+
+  // ---- Low-pass for "load Irms" and ZC features (kills WiFi/HF junk) ----
+  // 1-pole LPF cutoff
+  const float fc = 500.0f;
+  const float dt = 1.0f / fs_hz;
+  const float two_pi = 6.283185307179586f;
+  const float rc = 1.0f / (two_pi * fc);
+  const float alpha = dt / (rc + dt);
+
+  float y = sig[0];
+  double acc_lp = 0.0;
+  for (size_t i = 0; i < n; i++) {
+    y += alpha * (sig[i] - y);
+    sig_lp[i] = y;
+    acc_lp += (double)y * (double)y;
+  }
+
+  const float irms_raw = sqrtf((float)(acc_lp / (double)n));
 
   // Median-of-3 smoothing
   static bool init=false;
@@ -93,7 +107,7 @@ bool ArcFeatures::compute(const uint16_t* raw, size_t n, float fs_hz,
   else { r0=r1; r1=r2; r2=irms_raw; }
   const float irms_med = median3(r0,r1,r2);
 
-  // ---- Idle floor learning (yours was capped at 0.03A, but you said idle is ~0.12A) ----
+  // ---- Idle floor learning (now based on LPF Irms) ----
   static bool floorInit=false;
   static float idleFloor=0.0f;
   static uint16_t learnFrames=0;
@@ -101,7 +115,7 @@ bool ArcFeatures::compute(const uint16_t* raw, size_t n, float fs_hz,
   const float frameHz = fs_hz / (float)n;
   const uint16_t learnMinFrames = (uint16_t)fmaxf(10.0f, frameHz * 1.5f);
 
-  static constexpr float FLOOR_LEARN_MAX_A = 0.20f; // allow learning up to ~0.12A idle
+  static constexpr float FLOOR_LEARN_MAX_A = 0.20f;
   static constexpr float FLOOR_MAX_A      = 0.18f;
   static constexpr float FLOOR_INIT_MAX_A = 0.18f;
 
@@ -118,10 +132,10 @@ bool ArcFeatures::compute(const uint16_t* raw, size_t n, float fs_hz,
   }
 
   if (learnFrames >= learnMinFrames) {
-    const float alphaUp = 0.01f;  // rise slow
-    const float alphaDn = 0.12f;  // fall fast
-    const float alpha = (irms_med > idleFloor) ? alphaUp : alphaDn;
-    idleFloor = (1.0f - alpha)*idleFloor + alpha*irms_med;
+    const float alphaUp = 0.01f;
+    const float alphaDn = 0.12f;
+    const float a = (irms_med > idleFloor) ? alphaUp : alphaDn;
+    idleFloor = (1.0f - a)*idleFloor + a*irms_med;
     idleFloor = fminf(idleFloor, FLOOR_MAX_A);
   }
 
@@ -130,17 +144,17 @@ bool ArcFeatures::compute(const uint16_t* raw, size_t n, float fs_hz,
 
   const bool lowSignal = (irms_clean < IDLE_IRMS_A);
 
-  // ---- ZCV + cycle variance (unchanged logic) ----
+  // ---- ZCV + cycle variance using LOW-PASSED signal ----
   int crossings[100];
   int cCount = 0;
   const float hys = fmaxf(ZC_HYS_MIN_A, ZC_HYS_FRAC * irms_med);
 
   int state = 0;
-  if (sig[0] >  hys) state =  1;
-  if (sig[0] < -hys) state = -1;
+  if (sig_lp[0] >  hys) state =  1;
+  if (sig_lp[0] < -hys) state = -1;
 
   for (size_t i=1; i<n && cCount<100; i++) {
-    const float s = sig[i];
+    const float s = sig_lp[i];
     if (state <= 0 && s >  hys) { crossings[cCount++] = (int)i; state =  1; }
     else if (state >= 0 && s < -hys) { crossings[cCount++] = (int)i; state = -1; }
   }
@@ -149,8 +163,8 @@ bool ArcFeatures::compute(const uint16_t* raw, size_t n, float fs_hz,
     double sum=0.0, sum2=0.0;
     int m=0;
     for (int k=1;k<cCount;k++) {
-      const int dt = crossings[k]-crossings[k-1];
-      const double dtMs = (double(dt)/double(fs_hz))*1000.0;
+      const int dtS = crossings[k]-crossings[k-1];
+      const double dtMs = (double(dtS)/double(fs_hz))*1000.0;
       sum += dtMs;
       sum2 += dtMs*dtMs;
       m++;
@@ -175,7 +189,7 @@ bool ArcFeatures::compute(const uint16_t* raw, size_t n, float fs_hz,
       double accC=0.0;
       const int len = b - a;
       for (int i=a;i<b;i++) {
-        const double s = (double)sig[i];
+        const double s = (double)sig_lp[i];
         accC += s*s;
       }
       const float rms = (len>0) ? (float)sqrt(accC/(double)len) : 0.0f;
@@ -207,7 +221,7 @@ bool ArcFeatures::compute(const uint16_t* raw, size_t n, float fs_hz,
     return true;
   }
 
-  // ---- FFT (real signal as complex with Im=0). Do NOT call dsps_cplx2reC_fc32 here. :contentReference[oaicite:4]{index=4}
+  // ---- FFT uses FULL-BAND centered signal for arc features ----
   for (size_t i=0; i<n; i++) {
     fft_cf[2*i + 0] = sig[i] * win[i];
     fft_cf[2*i + 1] = 0.0f;
@@ -243,7 +257,6 @@ bool ArcFeatures::compute(const uint16_t* raw, size_t n, float fs_hz,
     }
   }
 
-  // Frame guard: reject “random noise” frames (your CSV’s 1.58A / 283% THD ones)
   const double noiseAvg = pSum / (double)(half - 1);
   const double snr = (noiseAvg > 0) ? (double)fundP / noiseAvg : 0.0;
   if (fundP < FUND_MAG_MIN || snr < FUND_SNR_MIN) return false;
@@ -260,7 +273,7 @@ bool ArcFeatures::compute(const uint16_t* raw, size_t n, float fs_hz,
     }
     harmP += (double)hmP;
   }
-  out.thd_pct = (fundP > 1e-18f) ? (float)(sqrt(harmP / (double)fundP) * 100.0) : 0.0f;
+  out.thd_pct = (fundP > 1e-18f) ? (float)(sqrt(harmP / (double)fundP) * 100.0f) : 0.0f;
 
   // Entropy + Spectral Flatness up to ENTROPY_MAX_HZ
   const int maxBin = (int)fminf((float)half, floorf(ENTROPY_MAX_HZ / binHz));

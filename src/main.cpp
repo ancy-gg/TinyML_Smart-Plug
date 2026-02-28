@@ -64,9 +64,12 @@ static volatile bool gPauseByPortal = false;
 static volatile bool gPauseByOta = false;
 
 static inline void reassertCsRxPin() {
+  gpio_hold_dis((gpio_num_t)PIN_ADC_CS);
   pinMode(PIN_ADC_CS, OUTPUT);
   digitalWrite(PIN_ADC_CS, HIGH);
   gpio_set_pull_mode((gpio_num_t)PIN_ADC_CS, GPIO_PULLUP_ONLY);
+  gpio_set_drive_capability((gpio_num_t)PIN_ADC_CS, GPIO_DRIVE_CAP_3);
+  gpio_hold_en((gpio_num_t)PIN_ADC_CS);
 }
 
 static void onOtaEvent(OtaEvent ev) {
@@ -250,8 +253,6 @@ void loop() {
 
   gPauseByPortal = net.inConfigPortal();
   const bool paused = gPauseByPortal || gPauseByOta;
-
-  reassertCsRxPin();
 
   if (gSafeMode) {
     static uint32_t lastCloud = 0;
