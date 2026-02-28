@@ -107,42 +107,21 @@ bool ArcFeatures::compute(const uint16_t* raw, size_t n, float fs_hz,
   else { r0=r1; r1=r2; r2=irms_raw; }
   const float irms_med = median3(r0,r1,r2);
 
-  // ---- Idle floor learning (now based on LPF Irms) ----
-  static bool floorInit=false;
-  static float idleFloor=0.0f;
-  static uint16_t learnFrames=0;
+  // Idle Noise Gate (with hysteresis)
 
-  const float frameHz = fs_hz / (float)n;
-  const uint16_t learnMinFrames = (uint16_t)fmaxf(10.0f, frameHz * 1.5f);
+  static constexpr float IRMS_GATE_ON_A  = 0.05f;  // must be > your idle noise (~0.03A)
+  static constexpr float IRMS_GATE_OFF_A = 0.035f; // hysteresis (must be < ON threshold)
+  static bool irmsGateOn = false;
 
-  static constexpr float FLOOR_LEARN_MAX_A = 0.20f;
-  static constexpr float FLOOR_MAX_A      = 0.18f;
-  static constexpr float FLOOR_INIT_MAX_A = 0.18f;
-
-  if (!floorInit) {
-    floorInit=true;
-    idleFloor = fminf(irms_med, FLOOR_INIT_MAX_A);
-    learnFrames=0;
-  }
-
-  if (irms_med <= FLOOR_LEARN_MAX_A) {
-    if (learnFrames < 65535) learnFrames++;
+  if (!irmsGateOn) {
+    if (irms_med >= IRMS_GATE_ON_A) irmsGateOn = true;
   } else {
-    learnFrames = 0;
+    if (irms_med <= IRMS_GATE_OFF_A) irmsGateOn = false;
   }
 
-  if (learnFrames >= learnMinFrames) {
-    const float alphaUp = 0.01f;
-    const float alphaDn = 0.12f;
-    const float a = (irms_med > idleFloor) ? alphaUp : alphaDn;
-    idleFloor = (1.0f - a)*idleFloor + a*irms_med;
-    idleFloor = fminf(idleFloor, FLOOR_MAX_A);
-  }
+  out.irms_a = irmsGateOn ? irms_med : 0.0f;
 
-  const float irms_clean = fmaxf(0.0f, irms_med - idleFloor);
-  out.irms_a = irms_clean;
-
-  const bool lowSignal = (irms_clean < IDLE_IRMS_A);
+  const bool lowSignal = (out.irms_a < IDLE_IRMS_A);
 
   // ---- ZCV + cycle variance using LOW-PASSED signal ----
   int crossings[100];
