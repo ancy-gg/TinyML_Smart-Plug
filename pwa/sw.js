@@ -1,13 +1,15 @@
-// Change this on each deploy:
-const BUILD_VERSION = "TSPweb-v0.3.1";
+// Change this on each deploy (also session.html and js):
+const BUILD_VERSION = "TSPweb-v0.3.5";
 
 const CACHE_NAME = BUILD_VERSION;
 
 const CORE_ASSETS = [
   "/",
   "/index.html",
+  "/session.html",
   "/styles.css",
   "/app.js",
+  "session.js",
   "/manifest.json",
   "/icon-192.png",
   "/icon-512.png",

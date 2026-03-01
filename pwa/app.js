@@ -775,7 +775,10 @@ if (mlSessionBody) {
           <td class="mono">${en}</td>
           <td class="mono">${String(load)}</td>
           <td class="mono">${lab}</td>
-          <td><button class="btn btn-small" data-sid="${sid}">Download</button></td>
+          <td>
+            <button class="btn btn-small" data-view-sid="${sid}">View</button>
+            <button class="btn btn-small" data-sid="${sid}">Download</button>
+          </td>
         </tr>
       `;
     }).join("");
@@ -789,6 +792,13 @@ if (mlSessionBody) {
         downloadTextFileGeneric(sessionFilename(meta, sid), csv);
         if (mlLogStatus) mlLogStatus.textContent = `Downloaded session: ${sid}`;
         toast("Session CSV downloaded.", "ok");
+      });
+    });
+
+    mlSessionBody.querySelectorAll("button[data-view-sid]").forEach(btn => {
+      btn.addEventListener("click", () => {
+        const sid = btn.getAttribute("data-view-sid");
+        window.open(`session.html?sid=${encodeURIComponent(sid)}`, "_blank");
       });
     });
   });

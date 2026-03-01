@@ -1,0 +1,185 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Session Viewer</title>
+
+  <link rel="manifest" href="manifest.json">
+  <meta name="theme-color" content="#111111" />
+  <link rel="apple-touch-icon" href="icon-192.png">
+  
+  <link rel="icon" type="image/png" href="icons/icon-512.png">
+  
+  <link rel="stylesheet" href="styles.css" />
+  <link rel="stylesheet" href="https://unpkg.com/uplot/dist/uPlot.min.css" />
+
+  <style>
+    .viewer-wrap{ width:min(1180px, 96vw); margin: 18px auto 40px; }
+    .viewer-head{ display:flex; gap:12px; align-items:center; justify-content:space-between; flex-wrap:wrap; }
+    .viewer-meta{ font-size: 12px; color: rgba(255,255,255,0.65); }
+
+    .viewer-grid{ display:grid; grid-template-columns: 320px 1fr; gap:14px; margin-top:14px; }
+    .panel{
+      background: rgba(255,255,255,0.03);
+      border: 1px solid rgba(255,255,255,0.10);
+      border-radius: 16px;
+      box-shadow: var(--shadow);
+      backdrop-filter: blur(6px);
+      padding: 12px;
+    }
+
+    #chart{ height: 520px; }
+
+    .toggles{ max-height: 520px; overflow:auto; }
+    .row{
+      display:grid;
+      grid-template-columns: 18px 1fr 86px;
+      gap:10px;
+      align-items:center;
+      margin:6px 0;
+      font-size: 13px;
+    }
+    .toggles input{ width:16px; height:16px; accent-color: #2ecc71; }
+    .axisSel{
+      width: 86px;
+      background: rgba(255,255,255,0.06);
+      border: 1px solid rgba(255,255,255,0.12);
+      border-radius: 10px;
+      color: rgba(255,255,255,0.9);
+      padding: 6px 8px;
+      font-size: 12px;
+      outline:none;
+    }
+
+    .controlsbar{
+      display:flex; gap:10px; flex-wrap:wrap;
+      align-items:center; justify-content:space-between;
+      margin-bottom: 10px;
+    }
+    .controlsbar .left, .controlsbar .right{
+      display:flex; gap:10px; flex-wrap:wrap; align-items:center;
+    }
+    .chip{
+      background: rgba(255,255,255,0.06);
+      border: 1px solid rgba(255,255,255,0.12);
+      border-radius: 12px;
+      padding: 8px 10px;
+      display:flex; gap:8px; align-items:center;
+    }
+    .chip label{ font-size: 12px; color: rgba(255,255,255,0.85); }
+    .chip select, .chip input[type="checkbox"]{ cursor:pointer; }
+
+    .scrub{
+      width: min(520px, 56vw);
+      accent-color: #2ecc71;
+      cursor: pointer;
+    }
+
+    .smallnote{
+      font-size: 12px;
+      color: rgba(255,255,255,0.55);
+      margin-top:8px;
+      line-height:1.35;
+    }
+
+    .u-legend, .u-legend *{
+      color: rgba(255,255,255,0.88) !important;
+      font-size: 12px !important;
+    }
+
+    @media (max-width: 900px){
+      .viewer-grid{ grid-template-columns: 1fr; }
+      #chart{ height: 420px; }
+      .toggles{ max-height: 260px; }
+      .scrub{ width: 86vw; }
+    }
+  </style>
+</head>
+
+<body>
+  <main class="viewer-wrap">
+    <div class="viewer-head">
+      <div>
+        <h2 class="history-title" id="title">Session Viewer</h2>
+        <div class="viewer-meta mono" id="meta">—</div>
+      </div>
+      <div style="display:flex; gap:10px; flex-wrap:wrap;">
+        <button class="btn" id="btnBack">Back</button>
+        <button class="btn" id="btnDownload">Download CSV</button>
+      </div>
+    </div>
+
+    <div class="viewer-grid">
+      <div class="panel toggles">
+        <div style="font-weight:900; margin-bottom:8px;">Series + Axis</div>
+        <div class="smallnote" style="margin-top:0; margin-bottom:8px;">
+          Axis: <span class="mono">Y1</span>=left, <span class="mono">Y2</span>=right
+        </div>
+
+        <div id="toggleList"></div>
+
+        <div class="smallnote">
+          Zoom: drag on plot. Wheel: zoom. Pan: <span class="mono">Shift + drag</span>. Reset zoom: double-click or button.
+        </div>
+      </div>
+
+      <div class="panel">
+        <div class="controlsbar">
+          <div class="left">
+            <button class="btn" id="btnPlay">Play</button>
+            <button class="btn" id="btnPause" disabled>Pause</button>
+
+            <div class="chip">
+              <label>Speed</label>
+              <select id="selSpeed">
+                <option value="0.25">0.25×</option>
+                <option value="0.5">0.5×</option>
+                <option value="1" selected>1×</option>
+                <option value="2">2×</option>
+                <option value="4">4×</option>
+                <option value="8">8×</option>
+              </select>
+            </div>
+
+            <input class="scrub" id="scrub" type="range" min="0" max="0" value="0" step="1" />
+
+            <div class="chip">
+              <label class="mono" id="timeReadout">t=—</label>
+            </div>
+          </div>
+
+        <div class="right">
+            <div class="chip">
+                <label><input type="checkbox" id="chkNormalize"> Normalize</label>
+            </div>
+
+            <div class="chip">
+                <label><input type="checkbox" id="chkInterp"> Interpolate</label>
+            </div>
+
+            <div class="chip">
+                <label><input type="checkbox" id="chkFollow" checked> Follow</label>
+            </div>
+
+            <button class="btn" id="btnResetZoom">Reset Zoom</button>
+            </div>
+        </div>
+
+        <div id="chart"></div>
+        <div class="smallnote mono" id="statusLine">Loading…</div>
+        <div class="smallnote mono" id="valueLine">—</div>
+      </div>
+    </div>
+  </main>
+
+  <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-database-compat.js"></script>
+
+  <script src="https://unpkg.com/papaparse@5.4.1/papaparse.min.js"></script>
+  <script src="https://unpkg.com/uplot/dist/uPlot.iife.min.js"></script>
+
+  <!-- IMPORTANT: cache bust -->
+  <script src="session.js?v=TSPweb-v0.3.5"></script>
+</body>
+</html>
