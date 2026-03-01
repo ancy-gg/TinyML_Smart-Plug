@@ -7,33 +7,45 @@
 
   <link rel="manifest" href="manifest.json">
   <meta name="theme-color" content="#111111" />
-  <link rel="apple-touch-icon" href="icon-192.png">
-  <link rel="icon" type="image/png" href="icon-512.png">
+  <link rel="apple-touch-icon" href="icons/icon-192.png">
+  <link rel="icon" type="image/png" href="icons/icon-512.png">
 
   <link rel="stylesheet" href="styles.css" />
   <link rel="stylesheet" href="https://unpkg.com/uplot/dist/uPlot.min.css" />
 
   <style>
-    /* NO PAGE SCROLL: everything fits the viewport; internal areas scroll */
-    html, body{ height:100%; overflow:hidden; }
+
+    html, body{
+      height:100%;
+      margin:0;
+      overflow:hidden;
+    }
 
     .viewer-wrap{
-      width:min(1180px, 96vw);
-      height:100vh;
+      width:min(1400px, 98vw);
+      height: 100dvh; /* better on mobile address bars */
+      height: 100vh;
       margin: 10px auto;
       display:flex;
       flex-direction:column;
       gap: 10px;
     }
 
-    .viewer-head{ display:flex; gap:12px; align-items:center; justify-content:space-between; flex-wrap:wrap; }
+    .viewer-head{
+      display:flex;
+      gap:12px;
+      align-items:center;
+      justify-content:space-between;
+      flex-wrap:wrap;
+    }
+
     .viewer-meta{ font-size: 12px; color: rgba(255,255,255,0.65); }
 
     .viewer-grid{
       flex: 1;
       min-height: 0;
       display:grid;
-      grid-template-columns: 320px 1fr;
+      grid-template-columns: 340px 1fr;
       gap:14px;
     }
 
@@ -47,9 +59,17 @@
       min-height: 0;
     }
 
-    /* Left panel layout */
+    /* Left panel */
     .toggles{ display:flex; flex-direction:column; min-height:0; }
     #toggleList{ flex:1; min-height:0; overflow:auto; padding-right: 6px; }
+
+    .seriesTop{
+      display:flex;
+      align-items:center;
+      justify-content:space-between;
+      gap:10px;
+      margin-bottom:6px;
+    }
 
     .row{
       display:grid;
@@ -59,6 +79,7 @@
       margin:6px 0;
       font-size: 13px;
     }
+
     .toggles input[type="checkbox"]{ width:16px; height:16px; accent-color: #2ecc71; }
 
     .axisSel{
@@ -85,14 +106,18 @@
 
     .seriesActions{ display:flex; gap:8px; flex-wrap:wrap; margin: 0 0 10px; }
 
-    /* Right panel layout */
+    /* Right panel */
     .rightPanel{ display:flex; flex-direction:column; height:100%; min-height:0; }
 
     .controlsbar{
-      display:flex; gap:10px; flex-wrap:wrap;
-      align-items:center; justify-content:space-between;
+      display:flex;
+      gap:10px;
+      flex-wrap:wrap;
+      align-items:center;
+      justify-content:space-between;
       margin-bottom: 10px;
     }
+
     .controlsbar .left, .controlsbar .right{ display:flex; gap:10px; flex-wrap:wrap; align-items:center; }
 
     .chip{
@@ -100,14 +125,18 @@
       border: 1px solid rgba(255,255,255,0.12);
       border-radius: 12px;
       padding: 8px 10px;
-      display:flex; gap:8px; align-items:center;
+      display:flex;
+      gap:8px;
+      align-items:center;
+      white-space:nowrap;
     }
+
     .chip label{ font-size: 12px; color: rgba(255,255,255,0.85); }
 
-    .scrub{ width: min(520px, 56vw); accent-color: #2ecc71; cursor: pointer; }
+    .scrub{ width: min(560px, 54vw); accent-color: #2ecc71; cursor: pointer; }
 
     /* Chart consumes remaining vertical space */
-    #chart{ flex:1; min-height: 260px; }
+    #chart{ flex:1; min-height: 320px; }
 
     .smallnote{
       font-size: 12px;
@@ -136,19 +165,66 @@
       font-size: 12px;
       color: rgba(255,255,255,0.9);
     }
+
     .vdot{ width: 8px; height: 8px; border-radius: 50%; display:inline-block; }
     .vk{ color: rgba(255,255,255,0.80); }
     .vv{ font-weight: 950; color: rgba(255,255,255,0.95); }
 
+    /* Stats */
+    .statsWrap{ display:none; margin-top: 10px; }
+    .statsHead{ display:flex; align-items:center; justify-content:space-between; gap:10px; margin-bottom: 8px; }
+    .statsTableWrap{ max-height: 160px; overflow:auto; border: 1px solid rgba(255,255,255,0.10); border-radius: 12px; }
+    .statsTable{ width:100%; border-collapse: collapse; min-width: 520px; background: rgba(18,18,19,0.75); }
+    .statsTable th, .statsTable td{ padding: 8px 10px; border-bottom: 1px solid rgba(255,255,255,0.08); font-size: 12px; }
+    .statsTable th{ position: sticky; top: 0; background: rgba(30,30,31,0.95); color: rgba(255,255,255,0.62); text-align:left; }
+
     .btn-small{ padding: 8px 10px; font-size: 12px; border-radius: 10px; font-weight: 950; }
 
-    @media (max-width: 900px){
-      html, body{ overflow:auto; }
-      .viewer-wrap{ height:auto; }
+    /* Mobile: Series becomes a drawer overlay; plot stays full-size; still no PAGE scroll */
+    @media (max-width: 980px){
+      .viewer-wrap{ width: 98vw; }
       .viewer-grid{ grid-template-columns: 1fr; }
-      #toggleList{ max-height: 260px; }
-      #chart{ min-height: 360px; }
-      .scrub{ width: 86vw; }
+
+      /* hide the series panel from layout; show it only when body has .showSeries */
+      .panel.toggles{
+        position: fixed;
+        left: 10px;
+        right: 10px;
+        top: 86px; /* below header */
+        bottom: 10px;
+        z-index: 100;
+        display:none;
+      }
+      body.showSeries .panel.toggles{ display:flex; }
+
+      /* dim background when drawer is open */
+      body.showSeries::before{
+        content:"";
+        position: fixed;
+        inset:0;
+        background: rgba(0,0,0,0.55);
+        z-index: 90;
+      }
+
+      /* Scrubber should not crush */
+      .scrub{ width: 92vw; max-width: 92vw; }
+
+      /* Chart height: prioritize plot */
+      #chart{ min-height: 380px; }
+
+      /* value/stats: keep compact */
+      .valueLineWrap{ max-height: 84px; }
+      .statsTable{ min-width: 520px; }
+
+      /* A "Series" button is visible on mobile */
+      #btnSeries{ display:inline-flex !important; }
+    }
+
+    /* Desktop only: hide Series button and Close button */
+    #btnSeries{ display:none; }
+    #btnCloseSeries{ display:none; }
+    @media (max-width: 980px){
+      #btnCloseSeries{ display:inline-flex; }
     }
   </style>
 </head>
@@ -167,8 +243,13 @@
     </div>
 
     <div class="viewer-grid">
-      <div class="panel toggles">
-        <div style="font-weight:900; margin-bottom:8px;">Feature Data</div>
+      <!-- LEFT: Series list -->
+      <div class="panel toggles" id="seriesPanel">
+        <div class="seriesTop">
+          <div style="font-weight:900;">Feature Data</div>
+          <button class="btn btn-small" id="btnCloseSeries" type="button">Close</button>
+        </div>
+
         <div class="smallnote" style="margin-top:0; margin-bottom:6px;">
           Axis: <span class="mono">Y1</span>=left, <span class="mono">Y2</span>=right
         </div>
@@ -183,6 +264,12 @@
 
         <div id="toggleList"></div>
 
+        <div class="smallnote">
+          Zoom: drag on plot. Wheel: zoom. Pan: <span class="mono">Shift + drag</span>. Reset zoom: double-click or button.
+        </div>
+      </div>
+
+      <!-- RIGHT: Plot + controls -->
       <div class="panel rightPanel">
         <div class="controlsbar">
           <div class="left">
@@ -201,6 +288,8 @@
               </select>
             </div>
 
+            <button class="btn btn-small" id="btnSeries" type="button">Series</button>
+
             <input class="scrub" id="scrub" type="range" min="0" max="0" value="0" step="1" />
 
             <div class="chip">
@@ -215,11 +304,10 @@
 
             <div class="chip">
               <label><input type="checkbox" id="chkSmooth" checked> Smooth</label>
-              <span class="mono" id="smoothReadout">win=7</span>
             </div>
 
             <div class="chip">
-              <input id="rngSmooth" type="range" min="1" max="31" step="2" value="7" style="width:120px;" />
+              <input id="rngSmooth" type="range" min="1" max="31" step="2" value="15" style="width:120px;" />
             </div>
 
             <div class="chip">
@@ -228,6 +316,10 @@
 
             <div class="chip">
               <label><input type="checkbox" id="chkEvents"> Arc markers</label>
+            </div>
+
+            <div class="chip">
+              <label><input type="checkbox" id="chkStats"> Stats</label>
             </div>
 
             <div class="chip">
@@ -242,6 +334,28 @@
 
         <div class="smallnote mono" id="statusLine">Loading…</div>
         <div id="valueLine" class="valueLineWrap mono"></div>
+
+        <div id="statsWrap" class="statsWrap">
+          <div class="statsHead">
+            <div class="mono" id="statsHint">—</div>
+            <button class="btn btn-small" id="btnCopyStats" type="button">Copy</button>
+          </div>
+          <div class="statsTableWrap">
+            <table class="statsTable">
+              <thead>
+                <tr>
+                  <th>series</th>
+                  <th>mean</th>
+                  <th>min</th>
+                  <th>max</th>
+                  <th>std</th>
+                  <th>n</th>
+                </tr>
+              </thead>
+              <tbody id="statsBody"></tbody>
+            </table>
+          </div>
+        </div>
       </div>
     </div>
   </main>
@@ -253,6 +367,6 @@
   <script src="https://unpkg.com/uplot/dist/uPlot.iife.min.js"></script>
 
   <!-- IMPORTANT: cache bust -->
-  <script src="session.js?v=TSPweb-v0.3.8"></script>
+  <script src="session.js?v=TSPweb-v0.3.9"></script>
 </body>
 </html>

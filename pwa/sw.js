@@ -1,5 +1,5 @@
 // Change this on each deploy (also session.html and js):
-const BUILD_VERSION = "TSPweb-v0.3.8";
+const BUILD_VERSION = "TSPweb-v0.3.9";
 
 const CACHE_NAME = BUILD_VERSION;
 
@@ -11,8 +11,8 @@ const CORE_ASSETS = [
   "/app.js",
   "/session.js",
   "/manifest.json",
-  "/icon-192.png",
-  "/icon-512.png",
+  "/icons/icon-192.png",
+  "/icons/icon-512.png",
   "/404.html"
 ];
 

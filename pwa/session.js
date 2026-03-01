@@ -1,4 +1,4 @@
-console.log("session.js loaded: TSPweb-v0.3.8");
+console.log("session.js loaded: TSPweb-v0.3.9");
 
 const firebaseConfig = {
   apiKey: "AIzaSyAmJlZZszyWPJFgIkTAAl_TbIySys1nvEw",
@@ -42,6 +42,17 @@ const chkFollow = el("chkFollow");
 const btnResetZoom = el("btnResetZoom");
 
 const chkEvents = el("chkEvents");
+
+// NEW: stats
+const chkStats = el("chkStats");
+const statsWrap = el("statsWrap");
+const statsHint = el("statsHint");
+const statsBody = el("statsBody");
+const btnCopyStats = el("btnCopyStats");
+
+// NEW: series drawer (mobile)
+const btnSeries = el("btnSeries");
+const btnCloseSeries = el("btnCloseSeries");
 
 const seriesSearch = el("seriesSearch");
 const btnSelDefault = el("btnSelDefault");
@@ -128,8 +139,7 @@ function avgDt(x) {
 }
 
 function binarySearchNearest(arr, val) {
-  let lo = 0,
-    hi = arr.length - 1;
+  let lo = 0, hi = arr.length - 1;
   while (lo < hi) {
     const mid = (lo + hi) >> 1;
     if (arr[mid] < val) lo = mid + 1;
@@ -137,9 +147,28 @@ function binarySearchNearest(arr, val) {
   }
   if (lo <= 0) return 0;
   if (lo >= arr.length) return arr.length - 1;
-  const a = arr[lo - 1],
-    b = arr[lo];
+  const a = arr[lo - 1], b = arr[lo];
   return Math.abs(val - a) <= Math.abs(val - b) ? lo - 1 : lo;
+}
+
+function lowerBound(arr, val) {
+  let lo = 0, hi = arr.length;
+  while (lo < hi) {
+    const mid = (lo + hi) >> 1;
+    if (arr[mid] < val) lo = mid + 1;
+    else hi = mid;
+  }
+  return lo;
+}
+
+function upperBound(arr, val) {
+  let lo = 0, hi = arr.length;
+  while (lo < hi) {
+    const mid = (lo + hi) >> 1;
+    if (arr[mid] <= val) lo = mid + 1;
+    else hi = mid;
+  }
+  return lo;
 }
 
 const palette = [
@@ -179,16 +208,16 @@ let DATA_SMOOTH_NORM = null;
 let FULL_X_MIN = 0;
 let FULL_X_MAX = 0;
 
-// Guard: some browsers can fire input events when value is set programmatically.
+// Guard: some browsers fire input when setting value programmatically
 let INTERNAL_SCRUB_UPDATE = false;
 
 // Events
-let ARC_SERIES_INDEX = -1; // index in data arrays (uPlot series index)
+let ARC_SERIES_INDEX = -1;
 let ARC_IDXS = [];
 
 // User preferences
-const showPref = new Map(); // key -> bool
-const axisPref = new Map(); // key -> "y"|"y2"
+const showPref = new Map();
+const axisPref = new Map();
 
 // Defaults
 const DEFAULT_ON = new Set(["i_rms", "v_rms", "thd_pct", "spectral_entropy", "spectral_flatness"]);
@@ -212,8 +241,7 @@ function normalizeData(dataRaw) {
   const out = [dataRaw[0]];
   for (let si = 1; si < dataRaw.length; si++) {
     const arr = dataRaw[si];
-    let mn = Infinity,
-      mx = -Infinity;
+    let mn = Infinity, mx = -Infinity;
     for (let i = 0; i < arr.length; i++) {
       const v = arr[i];
       if (v == null) continue;
@@ -296,8 +324,7 @@ function chartSize() {
 }
 
 function calcVisibleRange(u, scaleKey) {
-  let lo = Infinity,
-    hi = -Infinity;
+  let lo = Infinity, hi = -Infinity;
 
   for (let si = 1; si < u.series.length; si++) {
     const s = u.series[si];
@@ -328,8 +355,7 @@ function calcVisibleRange(u, scaleKey) {
 function zoomPanPlugin() {
   let isPanning = false;
   let panStartX = 0;
-  let startMin = 0,
-    startMax = 0;
+  let startMin = 0, startMax = 0;
 
   const onMouseMove = (u, e) => {
     if (!isPanning) return;
@@ -342,9 +368,7 @@ function zoomPanPlugin() {
     u.setScale("x", { min: startMin + dv, max: startMax + dv });
   };
 
-  const onMouseUp = () => {
-    isPanning = false;
-  };
+  const onMouseUp = () => { isPanning = false; };
 
   return {
     hooks: {
@@ -354,30 +378,25 @@ function zoomPanPlugin() {
           resetZoom();
         });
 
-        u.over.addEventListener(
-          "wheel",
-          (e) => {
-            e.preventDefault();
-            const rect = u.over.getBoundingClientRect();
-            const px = e.clientX - rect.left;
-            const xVal = u.posToVal(px, "x");
-            const sc = u.scales.x;
-            const min = sc.min,
-              max = sc.max;
-            const range = max - min || 1;
+        u.over.addEventListener("wheel", (e) => {
+          e.preventDefault();
+          const rect = u.over.getBoundingClientRect();
+          const px = e.clientX - rect.left;
+          const xVal = u.posToVal(px, "x");
+          const sc = u.scales.x;
+          const min = sc.min, max = sc.max;
+          const range = max - min || 1;
 
-            const zoomIn = e.deltaY < 0;
-            const factor = zoomIn ? 0.85 : 1.18;
-            const newRange = range * factor;
+          const zoomIn = e.deltaY < 0;
+          const factor = zoomIn ? 0.85 : 1.18;
+          const newRange = range * factor;
 
-            const leftRatio = (xVal - min) / range;
-            const newMin = xVal - leftRatio * newRange;
-            const newMax = newMin + newRange;
+          const leftRatio = (xVal - min) / range;
+          const newMin = xVal - leftRatio * newRange;
+          const newMax = newMin + newRange;
 
-            u.setScale("x", { min: newMin, max: newMax });
-          },
-          { passive: false }
-        );
+          u.setScale("x", { min: newMin, max: newMax });
+        }, { passive: false });
 
         u.over.addEventListener("mousedown", (e) => {
           if (e.button !== 0) return;
@@ -414,7 +433,6 @@ function zoomPanPlugin() {
   };
 }
 
-// Plugin: draw vertical playhead
 function playheadPlugin() {
   return {
     hooks: {
@@ -437,7 +455,6 @@ function playheadPlugin() {
   };
 }
 
-// Plugin: draw ARC markers when label_arc exists
 function eventsPlugin() {
   return {
     hooks: {
@@ -461,6 +478,19 @@ function eventsPlugin() {
   };
 }
 
+// NEW: stats update whenever x-scale changes (zoom/pan/follow)
+function statsPlugin() {
+  return {
+    hooks: {
+      setScale: (u, key) => {
+        if (key !== "x") return;
+        // throttle to next frame
+        requestAnimationFrame(updateStats);
+      },
+    },
+  };
+}
+
 function resetZoom() {
   if (!plot) return;
   plot.setScale("x", { min: FULL_X_MIN, max: FULL_X_MAX });
@@ -473,9 +503,7 @@ function buildArcIndexes() {
   const kIdx = KEYS.indexOf("label_arc");
   if (kIdx < 0) return;
 
-  // uPlot data index: +1 (since data[0] is x)
-  ARC_SERIES_INDEX = kIdx + 1;
-
+  ARC_SERIES_INDEX = kIdx + 1; // +1 because data[0] is x
   const arr = DATA_RAW?.[ARC_SERIES_INDEX];
   if (!arr) return;
 
@@ -496,9 +524,6 @@ function buildPlot() {
   const data = currentData();
   const normalize = chkNormalize.checked;
 
-  // If smoothing is ON, default curves ON (looks nicer)
-  if (chkSmooth?.checked && chkCurves) chkCurves.checked = true;
-
   const useCurves = !!chkCurves?.checked;
   const splinePaths = (useCurves && uPlot?.paths?.spline) ? uPlot.paths.spline({}) : null;
 
@@ -507,7 +532,7 @@ function buildPlot() {
   const series = [{ label: "t(s)" }];
   KEYS.forEach((k, i) => {
     const show = showPref.get(k) ?? false;
-    const scale = normalize ? "y" : axisPref.get(k) ?? "y";
+    const scale = normalize ? "y" : (axisPref.get(k) ?? "y");
     series.push({
       label: k,
       show,
@@ -545,7 +570,7 @@ function buildPlot() {
     legend: { show: false },
     cursor: { show: true, lock: true, points: { show: false } },
     select: { show: true },
-    plugins: [zoomPanPlugin(), eventsPlugin(), playheadPlugin()],
+    plugins: [zoomPanPlugin(), eventsPlugin(), statsPlugin(), playheadPlugin()],
   };
 
   if (plot) plot.destroy();
@@ -558,6 +583,7 @@ function buildPlot() {
 
   setPlayIdx(Math.min(playIdx, X.length - 1), true);
   updateValueReadout();
+  updateStats();
 }
 
 function setPlayIdx(idx, updateCursor = false) {
@@ -568,32 +594,29 @@ function setPlayIdx(idx, updateCursor = false) {
   INTERNAL_SCRUB_UPDATE = true;
   scrub.value = String(playIdx);
   INTERNAL_SCRUB_UPDATE = false;
+
   timeReadout.textContent = `t=${fmt(X[playIdx])}s`;
 
-  // uPlot doesn't reliably support setCursor({idx}) across builds; we redraw via playhead plugin anyway.
   if (plot && updateCursor && plot.setCursor) {
-    // Keep the cursor where the playhead is by setting left from x value
     const xPos = plot.valToPos(X[playIdx], "x", true);
     plot.setCursor({ left: xPos, top: 0 });
   }
 
   updateValueReadout();
+
   if (plot) plot.redraw();
 
-  // Follow behavior:
-  // - When playing: always keep the playhead roughly centered.
-  // - When paused: only shift when near the edges (gentle follow).
+  // Follow:
+  // - Playing: keep centered
+  // - Paused: gentle follow if near edges
   if (plot && (chkFollow?.checked || playing)) {
     const sc = plot.scales.x;
     const x = X[playIdx];
-    const min = sc.min,
-      max = sc.max;
+    const min = sc.min, max = sc.max;
     const r = (max - min) || 1;
 
     if (playing) {
-      const newMin = x - 0.45 * r;
-      const newMax = x + 0.55 * r;
-      plot.setScale("x", { min: newMin, max: newMax });
+      plot.setScale("x", { min: x - 0.45 * r, max: x + 0.55 * r });
     } else {
       if (x < min + 0.12 * r || x > max - 0.12 * r) {
         plot.setScale("x", { min: x - 0.5 * r, max: x + 0.5 * r });
@@ -614,15 +637,19 @@ function updateValueReadout() {
 
   const meta = document.createElement("div");
   meta.className = "vchip";
+
   const metaDot = document.createElement("span");
   metaDot.className = "vdot";
   metaDot.style.background = "rgba(255,255,255,0.35)";
+
   const metaKey = document.createElement("span");
   metaKey.className = "vk";
   metaKey.textContent = `idx ${playIdx}/${X.length - 1}`;
+
   const metaVal = document.createElement("span");
   metaVal.className = "vv";
   metaVal.textContent = `t ${fmt(X[playIdx])}s`;
+
   meta.appendChild(metaDot);
   meta.appendChild(metaKey);
   meta.appendChild(metaVal);
@@ -636,7 +663,7 @@ function updateValueReadout() {
     if (!showPref.get(k)) continue;
     if (shown >= maxChips) break;
 
-    const v = DATA_RAW[i + 1]?.[playIdx]; // always show RAW
+    const v = DATA_RAW[i + 1]?.[playIdx];
     const chip = document.createElement("div");
     chip.className = "vchip";
 
@@ -664,15 +691,19 @@ function updateValueReadout() {
   if (totalSelected > maxChips) {
     const more = document.createElement("div");
     more.className = "vchip";
+
     const dot = document.createElement("span");
     dot.className = "vdot";
     dot.style.background = "rgba(255,255,255,0.20)";
+
     const key = document.createElement("span");
     key.className = "vk";
     key.textContent = `+${totalSelected - maxChips} more`;
+
     const val = document.createElement("span");
     val.className = "vv";
     val.textContent = "";
+
     more.appendChild(dot);
     more.appendChild(key);
     more.appendChild(val);
@@ -680,7 +711,114 @@ function updateValueReadout() {
   }
 }
 
-// Playback
+// ---------------- Range Stats ----------------
+function computeStats(arr, i0, i1) {
+  // Welford
+  let n = 0;
+  let mean = 0;
+  let m2 = 0;
+  let mn = Infinity;
+  let mx = -Infinity;
+
+  for (let i = i0; i <= i1; i++) {
+    const v = arr[i];
+    if (v == null) continue;
+    n++;
+    if (v < mn) mn = v;
+    if (v > mx) mx = v;
+    const delta = v - mean;
+    mean += delta / n;
+    const delta2 = v - mean;
+    m2 += delta * delta2;
+  }
+
+  if (n === 0) return { n: 0, mean: null, min: null, max: null, std: null };
+  const variance = n > 1 ? (m2 / (n - 1)) : 0;
+  const std = Math.sqrt(Math.max(0, variance));
+  return { n, mean, min: mn, max: mx, std };
+}
+
+function currentXRangeIdx() {
+  if (!plot || !X.length) return [0, Math.max(0, X.length - 1)];
+  const xmin = plot.scales.x.min;
+  const xmax = plot.scales.x.max;
+  let i0 = lowerBound(X, xmin);
+  let i1 = upperBound(X, xmax) - 1;
+  i0 = Math.max(0, Math.min(X.length - 1, i0));
+  i1 = Math.max(0, Math.min(X.length - 1, i1));
+  if (i1 < i0) [i0, i1] = [i1, i0];
+  return [i0, i1];
+}
+
+function updateStats() {
+  if (!statsWrap || !statsBody || !statsHint) return;
+
+  const enabled = !!chkStats?.checked;
+  statsWrap.style.display = enabled ? "" : "none";
+  if (!enabled) return;
+
+  if (!DATA_RAW || !KEYS.length || !plot) {
+    statsHint.textContent = "Stats unavailable.";
+    statsBody.innerHTML = "";
+    return;
+  }
+
+  const [i0, i1] = currentXRangeIdx();
+  const t0 = X[i0];
+  const t1 = X[i1];
+
+  const selectedKeys = KEYS.filter(k => showPref.get(k) && k !== "label_arc");
+  const cap = 16;
+  const shownKeys = selectedKeys.slice(0, cap);
+  const extra = Math.max(0, selectedKeys.length - shownKeys.length);
+
+  statsHint.textContent = `Stats (RAW) | idx ${i0}-${i1} | t=${fmt(t0)}s..${fmt(t1)}s` + (extra ? ` | +${extra} more hidden` : "");
+
+  statsBody.innerHTML = shownKeys.map((k) => {
+    const si = KEYS.indexOf(k) + 1;
+    const arr = DATA_RAW[si];
+    const st = computeStats(arr, i0, i1);
+
+    return `
+      <tr>
+        <td class="mono">${k}</td>
+        <td class="mono">${fmt(st.mean)}</td>
+        <td class="mono">${fmt(st.min)}</td>
+        <td class="mono">${fmt(st.max)}</td>
+        <td class="mono">${fmt(st.std)}</td>
+        <td class="mono">${st.n}</td>
+      </tr>
+    `;
+  }).join("");
+}
+
+btnCopyStats?.addEventListener("click", async () => {
+  if (!DATA_RAW || !KEYS.length || !plot) return;
+  const [i0, i1] = currentXRangeIdx();
+
+  const selectedKeys = KEYS.filter(k => showPref.get(k) && k !== "label_arc");
+  const shownKeys = selectedKeys.slice(0, 64);
+
+  let out = "series,mean,min,max,std,n\n";
+  for (const k of shownKeys) {
+    const si = KEYS.indexOf(k) + 1;
+    const st = computeStats(DATA_RAW[si], i0, i1);
+    out += `${k},${st.mean ?? ""},${st.min ?? ""},${st.max ?? ""},${st.std ?? ""},${st.n}\n`;
+  }
+
+  try {
+    await navigator.clipboard.writeText(out);
+    btnCopyStats.textContent = "Copied";
+    setTimeout(() => (btnCopyStats.textContent = "Copy"), 900);
+  } catch {
+    // fallback
+    downloadTextFile(`TSP_stats_${sid}.csv`, out, "text/csv;charset=utf-8");
+  }
+});
+
+chkStats?.addEventListener("change", updateStats);
+
+// ---------------- Playback ----------------
 function tick(ts) {
   if (!playing) return;
   if (!lastRAF) lastRAF = ts;
@@ -690,11 +828,9 @@ function tick(ts) {
   const dt = dtMs / 1000.0;
   const dT = avgDt(X);
 
-  // If dt is broken (e.g., all timestamps equal), fall back to fixed steps.
   let step = 1;
   if (dT > 1e-9) {
     step = (dt / dT) * speed;
-    // Avoid getting stuck when tab is throttled.
     if (!Number.isFinite(step) || step <= 0) step = 1;
   } else {
     step = Math.max(1, Math.round(speed));
@@ -721,7 +857,7 @@ function play() {
   btnPause.disabled = false;
   lastRAF = 0;
 
-  // Force follow ON while playing so it "scrolls" with the waveform.
+  // force follow ON while playing to keep chart "scrolling"
   if (chkFollow) chkFollow.checked = true;
 
   requestAnimationFrame(tick);
@@ -737,9 +873,7 @@ function pause() {
 
 btnPlay.onclick = () => play();
 btnPause.onclick = () => pause();
-selSpeed.onchange = () => {
-  speed = Number(selSpeed.value) || 1.0;
-};
+selSpeed.onchange = () => { speed = Number(selSpeed.value) || 1.0; };
 
 scrub.oninput = () => {
   if (INTERNAL_SCRUB_UPDATE) return;
@@ -756,22 +890,18 @@ function rebuildForDataMode() {
 chkNormalize.onchange = rebuildForDataMode;
 chkSmooth.onchange = rebuildForDataMode;
 chkCurves.onchange = rebuildForDataMode;
-chkEvents.onchange = () => {
-  if (plot) plot.redraw();
-};
+
+chkEvents.onchange = () => { if (plot) plot.redraw(); };
 
 rngSmooth.oninput = () => {
   const win = Number(rngSmooth.value) || 1;
-  smoothReadout.textContent = `win=${win}`;
-
-  // recompute smoothed arrays quickly
+  if (smoothReadout) smoothReadout.textContent = `win=${win}`;
   DATA_SMOOTH = makeSmoothedData(DATA_RAW, win);
   DATA_SMOOTH_NORM = normalizeData(DATA_SMOOTH);
-
   rebuildForDataMode();
 };
 
-// Filter series list
+// Series filter
 function applySeriesFilter() {
   const q = (seriesSearch?.value || "").trim().toLowerCase();
   const rows = toggleList?.querySelectorAll?.(".row") || [];
@@ -792,6 +922,7 @@ function setAllSeries(on) {
   });
   if (plot) plot.setData(plot.data, false);
   updateValueReadout();
+  updateStats();
 }
 
 function applyDefaultSelection() {
@@ -811,6 +942,7 @@ function applyDefaultSelection() {
     if (plot) plot.setSeries(i + 1, { show: on });
   });
   rebuildForDataMode();
+  updateStats();
 }
 
 btnSelAll?.addEventListener("click", () => setAllSeries(true));
@@ -827,7 +959,17 @@ window.addEventListener("resize", () => {
     if (!plot) return;
     const { w, h } = chartSize();
     plot.setSize({ width: w, height: h });
+    updateStats();
   });
+});
+
+// Mobile series drawer
+function openSeries() { document.body.classList.add("showSeries"); }
+function closeSeries() { document.body.classList.remove("showSeries"); }
+btnSeries?.addEventListener("click", openSeries);
+btnCloseSeries?.addEventListener("click", closeSeries);
+window.addEventListener("keydown", (e) => {
+  if (e.key === "Escape") closeSeries();
 });
 
 (async function main() {
@@ -877,7 +1019,7 @@ window.addEventListener("resize", () => {
     DATA_RAW = makeData(ROWS, X, KEYS);
 
     // smoothing init
-    const win0 = Number(rngSmooth?.value) || 7;
+    const win0 = Number(rngSmooth?.value) || 15;
     if (smoothReadout) smoothReadout.textContent = `win=${win0}`;
     DATA_SMOOTH = makeSmoothedData(DATA_RAW, win0);
 
@@ -893,7 +1035,6 @@ window.addEventListener("resize", () => {
 
     // Build toggle UI
     toggleList.innerHTML = "";
-
     KEYS.forEach((k, i) => {
       const wrap = document.createElement("div");
       wrap.className = "row";
@@ -910,6 +1051,7 @@ window.addEventListener("resize", () => {
           plot.setData(plot.data, false);
         }
         updateValueReadout();
+        updateStats();
       };
 
       const name = document.createElement("div");
@@ -935,7 +1077,7 @@ window.addEventListener("resize", () => {
     scrub.max = String(Math.max(0, X.length - 1));
     speed = Number(selSpeed.value) || 1.0;
 
-    // Events checkbox only if label_arc exists
+    // Arc markers checkbox only if label_arc exists
     if (chkEvents) {
       chkEvents.disabled = ARC_SERIES_INDEX < 0;
       if (ARC_SERIES_INDEX < 0) chkEvents.checked = false;
@@ -944,10 +1086,10 @@ window.addEventListener("resize", () => {
     statusLine.textContent = `Rows: ${ROWS.length} | Click plot to move playhead | Play to animate`;
     clearValueReadout();
 
-    // First render
     requestAnimationFrame(() => {
       buildPlot();
       setPlayIdx(0, true);
+      updateStats();
     });
   } catch (e) {
     console.error(e);
