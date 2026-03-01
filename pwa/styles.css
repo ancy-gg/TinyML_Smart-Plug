@@ -514,6 +514,13 @@ html, body{
   filter: brightness(1.10);
 }
 
+.btn-small{
+  padding: 8px 10px;
+  font-size: 12px;
+  border-radius: 10px;
+  font-weight: 950;
+}
+
 @media (max-width: 860px){
   .ota-grid{ grid-template-columns: 1fr; }
 }

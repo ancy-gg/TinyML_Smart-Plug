@@ -1,5 +1,5 @@
 // Change this on each deploy (also session.html and js):
-const BUILD_VERSION = "TSPweb-v0.3.5";
+const BUILD_VERSION = "TSPweb-v0.3.8";
 
 const CACHE_NAME = BUILD_VERSION;
 
@@ -9,7 +9,7 @@ const CORE_ASSETS = [
   "/session.html",
   "/styles.css",
   "/app.js",
-  "session.js",
+  "/session.js",
   "/manifest.json",
   "/icon-192.png",
   "/icon-512.png",
@@ -55,7 +55,7 @@ self.addEventListener("fetch", (event) => {
     return;
   }
 
-  // For external Firebase scripts, cache-first fallback
+  // External libs: cache-first fallback
   event.respondWith(caches.match(req).then((cached) => cached || fetch(req)));
 });
 

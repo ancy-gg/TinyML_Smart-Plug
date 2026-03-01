@@ -8,18 +8,35 @@
   <link rel="manifest" href="manifest.json">
   <meta name="theme-color" content="#111111" />
   <link rel="apple-touch-icon" href="icon-192.png">
-  
-  <link rel="icon" type="image/png" href="icons/icon-512.png">
-  
+  <link rel="icon" type="image/png" href="icon-512.png">
+
   <link rel="stylesheet" href="styles.css" />
   <link rel="stylesheet" href="https://unpkg.com/uplot/dist/uPlot.min.css" />
 
   <style>
-    .viewer-wrap{ width:min(1180px, 96vw); margin: 18px auto 40px; }
+    /* NO PAGE SCROLL: everything fits the viewport; internal areas scroll */
+    html, body{ height:100%; overflow:hidden; }
+
+    .viewer-wrap{
+      width:min(1180px, 96vw);
+      height:100vh;
+      margin: 10px auto;
+      display:flex;
+      flex-direction:column;
+      gap: 10px;
+    }
+
     .viewer-head{ display:flex; gap:12px; align-items:center; justify-content:space-between; flex-wrap:wrap; }
     .viewer-meta{ font-size: 12px; color: rgba(255,255,255,0.65); }
 
-    .viewer-grid{ display:grid; grid-template-columns: 320px 1fr; gap:14px; margin-top:14px; }
+    .viewer-grid{
+      flex: 1;
+      min-height: 0;
+      display:grid;
+      grid-template-columns: 320px 1fr;
+      gap:14px;
+    }
+
     .panel{
       background: rgba(255,255,255,0.03);
       border: 1px solid rgba(255,255,255,0.10);
@@ -27,11 +44,13 @@
       box-shadow: var(--shadow);
       backdrop-filter: blur(6px);
       padding: 12px;
+      min-height: 0;
     }
 
-    #chart{ height: 520px; }
+    /* Left panel layout */
+    .toggles{ display:flex; flex-direction:column; min-height:0; }
+    #toggleList{ flex:1; min-height:0; overflow:auto; padding-right: 6px; }
 
-    .toggles{ max-height: 520px; overflow:auto; }
     .row{
       display:grid;
       grid-template-columns: 18px 1fr 86px;
@@ -40,7 +59,8 @@
       margin:6px 0;
       font-size: 13px;
     }
-    .toggles input{ width:16px; height:16px; accent-color: #2ecc71; }
+    .toggles input[type="checkbox"]{ width:16px; height:16px; accent-color: #2ecc71; }
+
     .axisSel{
       width: 86px;
       background: rgba(255,255,255,0.06);
@@ -52,14 +72,29 @@
       outline:none;
     }
 
+    .seriesSearch{
+      width: 100%;
+      padding: 10px 12px;
+      border-radius: 12px;
+      border: 1px solid rgba(255,255,255,0.12);
+      background: rgba(0,0,0,0.20);
+      color: rgba(255,255,255,0.92);
+      outline:none;
+      margin: 10px 0 8px;
+    }
+
+    .seriesActions{ display:flex; gap:8px; flex-wrap:wrap; margin: 0 0 10px; }
+
+    /* Right panel layout */
+    .rightPanel{ display:flex; flex-direction:column; height:100%; min-height:0; }
+
     .controlsbar{
       display:flex; gap:10px; flex-wrap:wrap;
       align-items:center; justify-content:space-between;
       margin-bottom: 10px;
     }
-    .controlsbar .left, .controlsbar .right{
-      display:flex; gap:10px; flex-wrap:wrap; align-items:center;
-    }
+    .controlsbar .left, .controlsbar .right{ display:flex; gap:10px; flex-wrap:wrap; align-items:center; }
+
     .chip{
       background: rgba(255,255,255,0.06);
       border: 1px solid rgba(255,255,255,0.12);
@@ -68,13 +103,11 @@
       display:flex; gap:8px; align-items:center;
     }
     .chip label{ font-size: 12px; color: rgba(255,255,255,0.85); }
-    .chip select, .chip input[type="checkbox"]{ cursor:pointer; }
 
-    .scrub{
-      width: min(520px, 56vw);
-      accent-color: #2ecc71;
-      cursor: pointer;
-    }
+    .scrub{ width: min(520px, 56vw); accent-color: #2ecc71; cursor: pointer; }
+
+    /* Chart consumes remaining vertical space */
+    #chart{ flex:1; min-height: 260px; }
 
     .smallnote{
       font-size: 12px;
@@ -83,15 +116,38 @@
       line-height:1.35;
     }
 
-    .u-legend, .u-legend *{
-      color: rgba(255,255,255,0.88) !important;
-      font-size: 12px !important;
+    .valueLineWrap{
+      margin-top: 10px;
+      display:flex;
+      flex-wrap:wrap;
+      gap:8px;
+      max-height: 90px;
+      overflow:auto;
     }
 
+    .vchip{
+      display:inline-flex;
+      align-items:center;
+      gap:8px;
+      padding: 6px 10px;
+      border-radius: 999px;
+      border: 1px solid rgba(255,255,255,0.12);
+      background: rgba(255,255,255,0.04);
+      font-size: 12px;
+      color: rgba(255,255,255,0.9);
+    }
+    .vdot{ width: 8px; height: 8px; border-radius: 50%; display:inline-block; }
+    .vk{ color: rgba(255,255,255,0.80); }
+    .vv{ font-weight: 950; color: rgba(255,255,255,0.95); }
+
+    .btn-small{ padding: 8px 10px; font-size: 12px; border-radius: 10px; font-weight: 950; }
+
     @media (max-width: 900px){
+      html, body{ overflow:auto; }
+      .viewer-wrap{ height:auto; }
       .viewer-grid{ grid-template-columns: 1fr; }
-      #chart{ height: 420px; }
-      .toggles{ max-height: 260px; }
+      #toggleList{ max-height: 260px; }
+      #chart{ min-height: 360px; }
       .scrub{ width: 86vw; }
     }
   </style>
@@ -112,19 +168,22 @@
 
     <div class="viewer-grid">
       <div class="panel toggles">
-        <div style="font-weight:900; margin-bottom:8px;">Series + Axis</div>
-        <div class="smallnote" style="margin-top:0; margin-bottom:8px;">
+        <div style="font-weight:900; margin-bottom:8px;">Feature Data</div>
+        <div class="smallnote" style="margin-top:0; margin-bottom:6px;">
           Axis: <span class="mono">Y1</span>=left, <span class="mono">Y2</span>=right
+        </div>
+
+        <input id="seriesSearch" class="seriesSearch mono" placeholder="Filter series (e.g., rms, thd, entropy…)" />
+
+        <div class="seriesActions">
+          <button class="btn btn-small" id="btnSelDefault" type="button">Default</button>
+          <button class="btn btn-small" id="btnSelAll" type="button">All</button>
+          <button class="btn btn-small" id="btnSelNone" type="button">None</button>
         </div>
 
         <div id="toggleList"></div>
 
-        <div class="smallnote">
-          Zoom: drag on plot. Wheel: zoom. Pan: <span class="mono">Shift + drag</span>. Reset zoom: double-click or button.
-        </div>
-      </div>
-
-      <div class="panel">
+      <div class="panel rightPanel">
         <div class="controlsbar">
           <div class="left">
             <button class="btn" id="btnPlay">Play</button>
@@ -149,26 +208,40 @@
             </div>
           </div>
 
-        <div class="right">
+          <div class="right">
             <div class="chip">
-                <label><input type="checkbox" id="chkNormalize"> Normalize</label>
+              <label><input type="checkbox" id="chkNormalize"> Normalize</label>
             </div>
 
             <div class="chip">
-                <label><input type="checkbox" id="chkInterp"> Interpolate</label>
+              <label><input type="checkbox" id="chkSmooth" checked> Smooth</label>
+              <span class="mono" id="smoothReadout">win=7</span>
             </div>
 
             <div class="chip">
-                <label><input type="checkbox" id="chkFollow" checked> Follow</label>
+              <input id="rngSmooth" type="range" min="1" max="31" step="2" value="7" style="width:120px;" />
+            </div>
+
+            <div class="chip">
+              <label><input type="checkbox" id="chkCurves" checked> Curves</label>
+            </div>
+
+            <div class="chip">
+              <label><input type="checkbox" id="chkEvents"> Arc markers</label>
+            </div>
+
+            <div class="chip">
+              <label><input type="checkbox" id="chkFollow" checked> Follow</label>
             </div>
 
             <button class="btn" id="btnResetZoom">Reset Zoom</button>
-            </div>
+          </div>
         </div>
 
         <div id="chart"></div>
+
         <div class="smallnote mono" id="statusLine">Loading…</div>
-        <div class="smallnote mono" id="valueLine">—</div>
+        <div id="valueLine" class="valueLineWrap mono"></div>
       </div>
     </div>
   </main>
@@ -180,6 +253,6 @@
   <script src="https://unpkg.com/uplot/dist/uPlot.iife.min.js"></script>
 
   <!-- IMPORTANT: cache bust -->
-  <script src="session.js?v=TSPweb-v0.3.5"></script>
+  <script src="session.js?v=TSPweb-v0.3.8"></script>
 </body>
 </html>

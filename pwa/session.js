@@ -1,5 +1,4 @@
-// session.js (TSPweb-v0.3.4)
-console.log("session.js loaded: TSPweb-v0.3.4");
+console.log("session.js loaded: TSPweb-v0.3.8");
 
 const firebaseConfig = {
   apiKey: "AIzaSyAmJlZZszyWPJFgIkTAAl_TbIySys1nvEw",
@@ -32,14 +31,26 @@ const btnPause = el("btnPause");
 const selSpeed = el("selSpeed");
 const scrub = el("scrub");
 const timeReadout = el("timeReadout");
+
 const chkNormalize = el("chkNormalize");
-const chkInterp = el("chkInterp");
+const chkSmooth = el("chkSmooth");
+const rngSmooth = el("rngSmooth");
+const smoothReadout = el("smoothReadout");
+
+const chkCurves = el("chkCurves");
 const chkFollow = el("chkFollow");
 const btnResetZoom = el("btnResetZoom");
 
+const chkEvents = el("chkEvents");
+
+const seriesSearch = el("seriesSearch");
+const btnSelDefault = el("btnSelDefault");
+const btnSelAll = el("btnSelAll");
+const btnSelNone = el("btnSelNone");
+
 btnBack.onclick = () => (location.href = "index.html");
 
-function downloadTextFile(filename, text, mime="text/csv;charset=utf-8") {
+function downloadTextFile(filename, text, mime = "text/csv;charset=utf-8") {
   const blob = new Blob([text], { type: mime });
   const url = URL.createObjectURL(blob);
   const a = document.createElement("a");
@@ -57,8 +68,7 @@ async function fetchSessionCsv(sessionId) {
 
   const chunksObj = snap.val() || {};
   const keys = Object.keys(chunksObj);
-
-  keys.sort((a,b) => (chunksObj[a]?.created_at || 0) - (chunksObj[b]?.created_at || 0));
+  keys.sort((a, b) => (chunksObj[a]?.created_at || 0) - (chunksObj[b]?.created_at || 0));
 
   let header = "";
   let rows = [];
@@ -67,14 +77,14 @@ async function fetchSessionCsv(sessionId) {
     const csv = chunksObj[k]?.csv || "";
     if (!csv) continue;
 
-    const lines = csv.split("\n").filter(x => x.trim().length);
+    const lines = csv.split("\n").filter((x) => x.trim().length);
     if (!lines.length) continue;
 
     if (!header) {
-      header = lines[0];
+      header = lines[0].trimEnd();
       rows.push(...lines.slice(1));
     } else {
-      const startIdx = (lines[0].trim() === header.trim()) ? 1 : 0;
+      const startIdx = lines[0].trim() === header.trim() ? 1 : 0;
       rows.push(...lines.slice(startIdx));
     }
   }
@@ -88,13 +98,13 @@ function pickTimeAxis(rows) {
   if (!hasEpoch) return rows.map((_, i) => i);
 
   const t0 = Number(rows[0].epoch_ms) || 0;
-  return rows.map(r => ((Number(r.epoch_ms) || t0) - t0) / 1000.0);
+  return rows.map((r) => ((Number(r.epoch_ms) || t0) - t0) / 1000.0);
 }
 
 function buildSeriesKeys(rows) {
   if (!rows.length) return [];
   const keys = Object.keys(rows[0]);
-  return keys.filter(k => {
+  return keys.filter((k) => {
     if (k === "timestamp" || k === "session_id" || k === "load_type") return false;
     if (k === "epoch_ms") return false;
     const v = rows[0][k];
@@ -113,11 +123,13 @@ function fmt(v) {
 
 function avgDt(x) {
   if (!x || x.length < 2) return 1;
-  return (x[x.length - 1] - x[0]) / (x.length - 1);
+  const dt = (x[x.length - 1] - x[0]) / (x.length - 1);
+  return Number.isFinite(dt) && dt > 0 ? dt : 0;
 }
 
 function binarySearchNearest(arr, val) {
-  let lo = 0, hi = arr.length - 1;
+  let lo = 0,
+    hi = arr.length - 1;
   while (lo < hi) {
     const mid = (lo + hi) >> 1;
     if (arr[mid] < val) lo = mid + 1;
@@ -125,14 +137,24 @@ function binarySearchNearest(arr, val) {
   }
   if (lo <= 0) return 0;
   if (lo >= arr.length) return arr.length - 1;
-  const a = arr[lo - 1], b = arr[lo];
-  return (Math.abs(val - a) <= Math.abs(val - b)) ? (lo - 1) : lo;
+  const a = arr[lo - 1],
+    b = arr[lo];
+  return Math.abs(val - a) <= Math.abs(val - b) ? lo - 1 : lo;
 }
 
 const palette = [
-  "#2ecc71", "#e74c3c", "#3498db", "#f1c40f",
-  "#9b59b6", "#1abc9c", "#e67e22", "#ecf0f1",
-  "#00bcd4", "#ff4081", "#cddc39", "#ff9800",
+  "#2ecc71",
+  "#e74c3c",
+  "#3498db",
+  "#f1c40f",
+  "#9b59b6",
+  "#1abc9c",
+  "#e67e22",
+  "#ecf0f1",
+  "#00bcd4",
+  "#ff4081",
+  "#cddc39",
+  "#ff9800",
 ];
 
 let plot = null;
@@ -148,81 +170,214 @@ let speed = 1.0;
 let ROWS = [];
 let X = [];
 let KEYS = [];
+
 let DATA_RAW = null;
+let DATA_SMOOTH = null;
 let DATA_NORM = null;
+let DATA_SMOOTH_NORM = null;
 
 let FULL_X_MIN = 0;
 let FULL_X_MAX = 0;
+
+// Guard: some browsers can fire input events when value is set programmatically.
+let INTERNAL_SCRUB_UPDATE = false;
+
+// Events
+let ARC_SERIES_INDEX = -1; // index in data arrays (uPlot series index)
+let ARC_IDXS = [];
 
 // User preferences
 const showPref = new Map(); // key -> bool
 const axisPref = new Map(); // key -> "y"|"y2"
 
+// Defaults
+const DEFAULT_ON = new Set(["i_rms", "v_rms", "thd_pct", "spectral_entropy", "spectral_flatness"]);
+const DEFAULT_Y2 = new Set(["thd_pct", "v_rms", "temp_c"]);
+
 function makeData(rows, x, keys) {
   const data = [x];
-  keys.forEach(k => {
-    data.push(rows.map(r => {
-      const v = r[k];
-      const num = (typeof v === "number") ? v : Number(String(v ?? "").trim());
-      return Number.isFinite(num) ? num : null;
-    }));
+  keys.forEach((k) => {
+    data.push(
+      rows.map((r) => {
+        const v = r[k];
+        const num = typeof v === "number" ? v : Number(String(v ?? "").trim());
+        return Number.isFinite(num) ? num : null;
+      })
+    );
   });
   return data;
 }
 
-function makeNormalizedData(dataRaw) {
+function normalizeData(dataRaw) {
   const out = [dataRaw[0]];
   for (let si = 1; si < dataRaw.length; si++) {
     const arr = dataRaw[si];
-    let mn = Infinity, mx = -Infinity;
+    let mn = Infinity,
+      mx = -Infinity;
     for (let i = 0; i < arr.length; i++) {
       const v = arr[i];
       if (v == null) continue;
       if (v < mn) mn = v;
       if (v > mx) mx = v;
     }
-    const den = (mx - mn);
+    const den = mx - mn;
     const norm = new Array(arr.length);
     for (let i = 0; i < arr.length; i++) {
       const v = arr[i];
       if (v == null) norm[i] = null;
-      else norm[i] = (den > 1e-12) ? ((v - mn) / den) : 0.0;
+      else norm[i] = den > 1e-12 ? (v - mn) / den : 0.0;
     }
     out.push(norm);
   }
   return out;
 }
 
+function smoothArrayCentered(arr, win) {
+  if (!win || win <= 1) return arr.slice();
+  const w = Math.max(1, win | 0);
+  const hw = (w / 2) | 0;
+  const out = new Array(arr.length);
+
+  for (let i = 0; i < arr.length; i++) {
+    let sum = 0;
+    let cnt = 0;
+    const a = Math.max(0, i - hw);
+    const b = Math.min(arr.length - 1, i + hw);
+    for (let j = a; j <= b; j++) {
+      const v = arr[j];
+      if (v == null) continue;
+      sum += v;
+      cnt++;
+    }
+    out[i] = cnt ? sum / cnt : null;
+  }
+
+  return out;
+}
+
+function makeSmoothedData(dataRaw, win) {
+  const out = [dataRaw[0]];
+  for (let si = 1; si < dataRaw.length; si++) {
+    out.push(smoothArrayCentered(dataRaw[si], win));
+  }
+  return out;
+}
+
+function currentData() {
+  const smoothOn = !!chkSmooth?.checked;
+  const normOn = !!chkNormalize?.checked;
+  if (smoothOn && normOn) return DATA_SMOOTH_NORM;
+  if (smoothOn && !normOn) return DATA_SMOOTH;
+  if (!smoothOn && normOn) return DATA_NORM;
+  return DATA_RAW;
+}
+
+function visibleSeriesCount() {
+  let c = 0;
+  for (const k of KEYS) if (showPref.get(k)) c++;
+  return c;
+}
+
+function hasVisibleY2() {
+  if (chkNormalize.checked) return false;
+  for (const k of KEYS) {
+    if (!showPref.get(k)) continue;
+    if ((axisPref.get(k) || "y") === "y2") return true;
+  }
+  return false;
+}
+
+function chartSize() {
+  const c = el("chart");
+  const r = c.getBoundingClientRect();
+  const w = Math.max(320, Math.floor(r.width || c.clientWidth || 0));
+  const h = Math.max(240, Math.floor(r.height || c.clientHeight || 0));
+  return { w, h };
+}
+
+function calcVisibleRange(u, scaleKey) {
+  let lo = Infinity,
+    hi = -Infinity;
+
+  for (let si = 1; si < u.series.length; si++) {
+    const s = u.series[si];
+    if (!s.show) continue;
+    if ((s.scale || "y") !== scaleKey) continue;
+
+    const arr = u.data[si];
+    if (!arr) continue;
+
+    for (let i = 0; i < arr.length; i++) {
+      const v = arr[i];
+      if (v == null) continue;
+      if (v < lo) lo = v;
+      if (v > hi) hi = v;
+    }
+  }
+
+  if (!Number.isFinite(lo) || !Number.isFinite(hi)) return null;
+  if (lo === hi) {
+    const pad = (Math.abs(lo) || 1) * 0.06 + 1e-9;
+    return [lo - pad, hi + pad];
+  }
+  const pad = (hi - lo) * 0.08;
+  return [lo - pad, hi + pad];
+}
+
 // Plugin: zoom/pan + click to move playhead
 function zoomPanPlugin() {
   let isPanning = false;
   let panStartX = 0;
-  let startMin = 0, startMax = 0;
+  let startMin = 0,
+    startMax = 0;
+
+  const onMouseMove = (u, e) => {
+    if (!isPanning) return;
+    const rect = u.over.getBoundingClientRect();
+    const x0 = panStartX - rect.left;
+    const x1 = e.clientX - rect.left;
+    const v0 = u.posToVal(x0, "x");
+    const v1 = u.posToVal(x1, "x");
+    const dv = v0 - v1;
+    u.setScale("x", { min: startMin + dv, max: startMax + dv });
+  };
+
+  const onMouseUp = () => {
+    isPanning = false;
+  };
 
   return {
     hooks: {
       ready: (u) => {
-        u.root.addEventListener("dblclick", (e) => { e.preventDefault(); resetZoom(); });
-
-        u.over.addEventListener("wheel", (e) => {
+        u.root.addEventListener("dblclick", (e) => {
           e.preventDefault();
-          const rect = u.over.getBoundingClientRect();
-          const px = e.clientX - rect.left;
-          const xVal = u.posToVal(px, "x");
-          const sc = u.scales.x;
-          const min = sc.min, max = sc.max;
-          const range = max - min;
+          resetZoom();
+        });
 
-          const zoomIn = e.deltaY < 0;
-          const factor = zoomIn ? 0.85 : 1.18;
-          const newRange = range * factor;
+        u.over.addEventListener(
+          "wheel",
+          (e) => {
+            e.preventDefault();
+            const rect = u.over.getBoundingClientRect();
+            const px = e.clientX - rect.left;
+            const xVal = u.posToVal(px, "x");
+            const sc = u.scales.x;
+            const min = sc.min,
+              max = sc.max;
+            const range = max - min || 1;
 
-          const leftRatio = (xVal - min) / range;
-          const newMin = xVal - leftRatio * newRange;
-          const newMax = newMin + newRange;
+            const zoomIn = e.deltaY < 0;
+            const factor = zoomIn ? 0.85 : 1.18;
+            const newRange = range * factor;
 
-          u.setScale("x", { min: newMin, max: newMax });
-        }, { passive: false });
+            const leftRatio = (xVal - min) / range;
+            const newMin = xVal - leftRatio * newRange;
+            const newMax = newMin + newRange;
+
+            u.setScale("x", { min: newMin, max: newMax });
+          },
+          { passive: false }
+        );
 
         u.over.addEventListener("mousedown", (e) => {
           if (e.button !== 0) return;
@@ -234,24 +389,15 @@ function zoomPanPlugin() {
           e.preventDefault();
         });
 
-        window.addEventListener("mousemove", (e) => {
-          if (!isPanning) return;
-          const rect = u.over.getBoundingClientRect();
-          const x0 = panStartX - rect.left;
-          const x1 = e.clientX - rect.left;
-          const v0 = u.posToVal(x0, "x");
-          const v1 = u.posToVal(x1, "x");
-          const dv = v0 - v1;
-          u.setScale("x", { min: startMin + dv, max: startMax + dv });
-        });
-
-        window.addEventListener("mouseup", () => { isPanning = false; });
+        u.root.addEventListener("mousemove", (e) => onMouseMove(u, e));
+        window.addEventListener("mouseup", onMouseUp);
 
         u.over.addEventListener("click", (e) => {
           const rect = u.over.getBoundingClientRect();
           const px = e.clientX - rect.left;
           const xVal = u.posToVal(px, "x");
           const idx = binarySearchNearest(X, xVal);
+          pause();
           setPlayIdx(idx, true);
         });
       },
@@ -263,8 +409,8 @@ function zoomPanPlugin() {
         const xMax = u.posToVal(sel.left + sel.width, "x");
         u.setScale("x", { min: xMin, max: xMax });
         u.setSelect({ left: 0, width: 0, top: 0, height: 0 });
-      }
-    }
+      },
+    },
   };
 }
 
@@ -279,15 +425,39 @@ function playheadPlugin() {
         const xPos = u.valToPos(xVal, "x", true);
         const ctx = u.ctx;
         ctx.save();
-        ctx.strokeStyle = "rgba(255,255,255,0.35)";
-        ctx.lineWidth = 1;
+        ctx.strokeStyle = playing ? "rgba(46,204,113,0.70)" : "rgba(255,255,255,0.40)";
+        ctx.lineWidth = 2;
         ctx.beginPath();
         ctx.moveTo(Math.round(xPos) + 0.5, u.bbox.top);
         ctx.lineTo(Math.round(xPos) + 0.5, u.bbox.top + u.bbox.height);
         ctx.stroke();
         ctx.restore();
-      }
-    }
+      },
+    },
+  };
+}
+
+// Plugin: draw ARC markers when label_arc exists
+function eventsPlugin() {
+  return {
+    hooks: {
+      draw: (u) => {
+        if (!chkEvents?.checked) return;
+        if (!ARC_IDXS.length) return;
+        const ctx = u.ctx;
+        ctx.save();
+        ctx.strokeStyle = "rgba(231,76,60,0.55)";
+        ctx.lineWidth = 1;
+        for (const idx of ARC_IDXS) {
+          const xPos = u.valToPos(X[idx], "x", true);
+          ctx.beginPath();
+          ctx.moveTo(Math.round(xPos) + 0.5, u.bbox.top);
+          ctx.lineTo(Math.round(xPos) + 0.5, u.bbox.top + u.bbox.height);
+          ctx.stroke();
+        }
+        ctx.restore();
+      },
+    },
   };
 }
 
@@ -296,56 +466,86 @@ function resetZoom() {
   plot.setScale("x", { min: FULL_X_MIN, max: FULL_X_MAX });
 }
 
+function buildArcIndexes() {
+  ARC_SERIES_INDEX = -1;
+  ARC_IDXS = [];
+
+  const kIdx = KEYS.indexOf("label_arc");
+  if (kIdx < 0) return;
+
+  // uPlot data index: +1 (since data[0] is x)
+  ARC_SERIES_INDEX = kIdx + 1;
+
+  const arr = DATA_RAW?.[ARC_SERIES_INDEX];
+  if (!arr) return;
+
+  for (let i = 0; i < arr.length; i++) {
+    const v = arr[i];
+    if (v == null) continue;
+    if (v >= 0.5) ARC_IDXS.push(i);
+  }
+}
+
 function buildPlot() {
   if (!ROWS.length) return;
-  const useInterp = chkInterp.checked;
-  const splinePaths = (useInterp && uPlot?.paths?.spline) ? uPlot.paths.spline({}) : null;
+
+  if (visibleSeriesCount() === 0) {
+    statusLine.textContent = "No series selected. Check at least one series on the left.";
+  }
+
+  const data = currentData();
   const normalize = chkNormalize.checked;
-  const data = normalize ? DATA_NORM : DATA_RAW;
+
+  // If smoothing is ON, default curves ON (looks nicer)
+  if (chkSmooth?.checked && chkCurves) chkCurves.checked = true;
+
+  const useCurves = !!chkCurves?.checked;
+  const splinePaths = (useCurves && uPlot?.paths?.spline) ? uPlot.paths.spline({}) : null;
+
+  const { w, h } = chartSize();
 
   const series = [{ label: "t(s)" }];
   KEYS.forEach((k, i) => {
     const show = showPref.get(k) ?? false;
-    const scale = normalize ? "y" : (axisPref.get(k) ?? "y");
+    const scale = normalize ? "y" : axisPref.get(k) ?? "y";
     series.push({
-    label: k,
-    show,
-    stroke: palette[i % palette.length],
-    width: 2,
-    scale,
-    ...(splinePaths ? { paths: splinePaths } : {}),
+      label: k,
+      show,
+      stroke: palette[i % palette.length],
+      width: 2,
+      scale,
+      ...(splinePaths ? { paths: splinePaths } : {}),
     });
   });
 
-    chkInterp.onchange = () => {
-    const keep = playIdx;
-    buildPlot();
-    setPlayIdx(keep, true);
-    };
-  
   const gridStroke = "rgba(255,255,255,0.06)";
   const axisStroke = "rgba(255,255,255,0.75)";
 
-  const axes = normalize ? [
-    { stroke: axisStroke, grid: { stroke: gridStroke } },                 // x
-    { stroke: axisStroke, grid: { stroke: gridStroke }, scale: "y" },     // left y
-  ] : [
-    { stroke: axisStroke, grid: { stroke: gridStroke } },                 // x
-    { stroke: axisStroke, grid: { stroke: gridStroke }, scale: "y" },     // left y
-    { stroke: axisStroke, grid: { stroke: gridStroke }, scale: "y2", side: 1 }, // right y
+  const showY2 = !normalize && hasVisibleY2();
+
+  const axes = [
+    { stroke: axisStroke, grid: { stroke: gridStroke } },
+    { stroke: axisStroke, grid: { stroke: gridStroke }, scale: "y" },
   ];
+  if (showY2) axes.push({ stroke: axisStroke, grid: { stroke: gridStroke }, scale: "y2", side: 1 });
+
+  const scales = {
+    x: { time: false },
+    y: { auto: true, range: (u) => calcVisibleRange(u, "y") || [0, 1] },
+  };
+  if (showY2) scales.y2 = { auto: true, range: (u) => calcVisibleRange(u, "y2") || [0, 1] };
 
   const opts = {
     title: "Session Timeseries",
-    width: el("chart").clientWidth,
-    height: 520,
+    width: w,
+    height: h,
     series,
-    scales: { x: { time: false }, y: { auto: true }, y2: { auto: true } },
+    scales,
     axes,
-    legend: { show: true, live: true },
+    legend: { show: false },
     cursor: { show: true, lock: true, points: { show: false } },
     select: { show: true },
-    plugins: [zoomPanPlugin(), playheadPlugin()],
+    plugins: [zoomPanPlugin(), eventsPlugin(), playheadPlugin()],
   };
 
   if (plot) plot.destroy();
@@ -353,14 +553,11 @@ function buildPlot() {
 
   FULL_X_MIN = X[0];
   FULL_X_MAX = X[X.length - 1];
+
   btnResetZoom.onclick = () => resetZoom();
 
   setPlayIdx(Math.min(playIdx, X.length - 1), true);
-
-  window.addEventListener("resize", () => {
-    if (!plot) return;
-    plot.setSize({ width: el("chart").clientWidth, height: 520 });
-  });
+  updateValueReadout();
 }
 
 function setPlayIdx(idx, updateCursor = false) {
@@ -368,39 +565,119 @@ function setPlayIdx(idx, updateCursor = false) {
   playIdx = Math.max(0, Math.min(X.length - 1, idx | 0));
   playIdxF = playIdx;
 
+  INTERNAL_SCRUB_UPDATE = true;
   scrub.value = String(playIdx);
+  INTERNAL_SCRUB_UPDATE = false;
   timeReadout.textContent = `t=${fmt(X[playIdx])}s`;
 
-  if (plot && updateCursor) plot.setCursor({ idx: playIdx });
+  // uPlot doesn't reliably support setCursor({idx}) across builds; we redraw via playhead plugin anyway.
+  if (plot && updateCursor && plot.setCursor) {
+    // Keep the cursor where the playhead is by setting left from x value
+    const xPos = plot.valToPos(X[playIdx], "x", true);
+    plot.setCursor({ left: xPos, top: 0 });
+  }
 
   updateValueReadout();
   if (plot) plot.redraw();
 
-  if (plot && chkFollow.checked) {
+  // Follow behavior:
+  // - When playing: always keep the playhead roughly centered.
+  // - When paused: only shift when near the edges (gentle follow).
+  if (plot && (chkFollow?.checked || playing)) {
     const sc = plot.scales.x;
     const x = X[playIdx];
-    const min = sc.min, max = sc.max;
-    const r = max - min;
-    if (x < min + 0.12 * r || x > max - 0.12 * r) {
-      plot.setScale("x", { min: x - 0.5 * r, max: x + 0.5 * r });
+    const min = sc.min,
+      max = sc.max;
+    const r = (max - min) || 1;
+
+    if (playing) {
+      const newMin = x - 0.45 * r;
+      const newMax = x + 0.55 * r;
+      plot.setScale("x", { min: newMin, max: newMax });
+    } else {
+      if (x < min + 0.12 * r || x > max - 0.12 * r) {
+        plot.setScale("x", { min: x - 0.5 * r, max: x + 0.5 * r });
+      }
     }
   }
 }
 
-function updateValueReadout() {
-  if (!plot || !DATA_RAW) return;
-  const parts = [];
-  parts.push(`idx=${playIdx}/${X.length - 1}`);
-  parts.push(`t=${fmt(X[playIdx])}s`);
+function clearValueReadout() {
+  if (!valueLine) return;
+  valueLine.innerHTML = "";
+}
 
-  for (let si = 1; si < plot.series.length; si++) {
-    if (!plot.series[si].show) continue;
-    const label = plot.series[si].label;
-    const v = DATA_RAW[si][playIdx]; // always show RAW values
-    parts.push(`${label}=${fmt(v)}`);
+function updateValueReadout() {
+  if (!valueLine || !DATA_RAW || !KEYS.length) return;
+
+  valueLine.innerHTML = "";
+
+  const meta = document.createElement("div");
+  meta.className = "vchip";
+  const metaDot = document.createElement("span");
+  metaDot.className = "vdot";
+  metaDot.style.background = "rgba(255,255,255,0.35)";
+  const metaKey = document.createElement("span");
+  metaKey.className = "vk";
+  metaKey.textContent = `idx ${playIdx}/${X.length - 1}`;
+  const metaVal = document.createElement("span");
+  metaVal.className = "vv";
+  metaVal.textContent = `t ${fmt(X[playIdx])}s`;
+  meta.appendChild(metaDot);
+  meta.appendChild(metaKey);
+  meta.appendChild(metaVal);
+  valueLine.appendChild(meta);
+
+  const maxChips = 12;
+  let shown = 0;
+
+  for (let i = 0; i < KEYS.length; i++) {
+    const k = KEYS[i];
+    if (!showPref.get(k)) continue;
+    if (shown >= maxChips) break;
+
+    const v = DATA_RAW[i + 1]?.[playIdx]; // always show RAW
+    const chip = document.createElement("div");
+    chip.className = "vchip";
+
+    const dot = document.createElement("span");
+    dot.className = "vdot";
+    dot.style.background = palette[i % palette.length];
+
+    const key = document.createElement("span");
+    key.className = "vk";
+    key.textContent = k;
+
+    const val = document.createElement("span");
+    val.className = "vv";
+    val.textContent = fmt(v);
+
+    chip.appendChild(dot);
+    chip.appendChild(key);
+    chip.appendChild(val);
+
+    valueLine.appendChild(chip);
+    shown++;
   }
 
-  valueLine.textContent = parts.join("  |  ");
+  const totalSelected = visibleSeriesCount();
+  if (totalSelected > maxChips) {
+    const more = document.createElement("div");
+    more.className = "vchip";
+    const dot = document.createElement("span");
+    dot.className = "vdot";
+    dot.style.background = "rgba(255,255,255,0.20)";
+    const key = document.createElement("span");
+    key.className = "vk";
+    key.textContent = `+${totalSelected - maxChips} more`;
+    const val = document.createElement("span");
+    val.className = "vv";
+    val.textContent = "";
+    more.appendChild(dot);
+    more.appendChild(key);
+    more.appendChild(val);
+    valueLine.appendChild(more);
+  }
 }
 
 // Playback
@@ -412,7 +689,16 @@ function tick(ts) {
 
   const dt = dtMs / 1000.0;
   const dT = avgDt(X);
-  const step = (dT > 1e-9) ? (dt / dT) * speed : 1;
+
+  // If dt is broken (e.g., all timestamps equal), fall back to fixed steps.
+  let step = 1;
+  if (dT > 1e-9) {
+    step = (dt / dT) * speed;
+    // Avoid getting stuck when tab is throttled.
+    if (!Number.isFinite(step) || step <= 0) step = 1;
+  } else {
+    step = Math.max(1, Math.round(speed));
+  }
 
   playIdxF += step;
 
@@ -423,7 +709,8 @@ function tick(ts) {
     return;
   }
 
-  setPlayIdx(playIdxF | 0, true);
+  const newIdx = playIdxF | 0;
+  if (newIdx !== playIdx) setPlayIdx(newIdx, true);
   requestAnimationFrame(tick);
 }
 
@@ -433,6 +720,10 @@ function play() {
   btnPlay.disabled = true;
   btnPause.disabled = false;
   lastRAF = 0;
+
+  // Force follow ON while playing so it "scrolls" with the waveform.
+  if (chkFollow) chkFollow.checked = true;
+
   requestAnimationFrame(tick);
 }
 
@@ -441,100 +732,226 @@ function pause() {
   btnPlay.disabled = false;
   btnPause.disabled = true;
   lastRAF = 0;
+  if (plot) plot.redraw();
 }
 
 btnPlay.onclick = () => play();
 btnPause.onclick = () => pause();
-selSpeed.onchange = () => { speed = Number(selSpeed.value) || 1.0; };
+selSpeed.onchange = () => {
+  speed = Number(selSpeed.value) || 1.0;
+};
 
 scrub.oninput = () => {
+  if (INTERNAL_SCRUB_UPDATE) return;
   pause();
   setPlayIdx(Number(scrub.value) || 0, true);
 };
 
-chkNormalize.onchange = () => buildPlot();
+function rebuildForDataMode() {
+  const keep = playIdx;
+  buildPlot();
+  setPlayIdx(keep, true);
+}
 
-(async function main(){
+chkNormalize.onchange = rebuildForDataMode;
+chkSmooth.onchange = rebuildForDataMode;
+chkCurves.onchange = rebuildForDataMode;
+chkEvents.onchange = () => {
+  if (plot) plot.redraw();
+};
+
+rngSmooth.oninput = () => {
+  const win = Number(rngSmooth.value) || 1;
+  smoothReadout.textContent = `win=${win}`;
+
+  // recompute smoothed arrays quickly
+  DATA_SMOOTH = makeSmoothedData(DATA_RAW, win);
+  DATA_SMOOTH_NORM = normalizeData(DATA_SMOOTH);
+
+  rebuildForDataMode();
+};
+
+// Filter series list
+function applySeriesFilter() {
+  const q = (seriesSearch?.value || "").trim().toLowerCase();
+  const rows = toggleList?.querySelectorAll?.(".row") || [];
+  rows.forEach((r) => {
+    const key = r.dataset.key || "";
+    const ok = !q || key.toLowerCase().includes(q);
+    r.style.display = ok ? "" : "none";
+  });
+}
+seriesSearch?.addEventListener("input", applySeriesFilter);
+
+function setAllSeries(on) {
+  KEYS.forEach((k, i) => {
+    showPref.set(k, !!on);
+    const cb = toggleList?.querySelector?.(`.row[data-key="${k}"] input[type="checkbox"]`);
+    if (cb) cb.checked = !!on;
+    if (plot) plot.setSeries(i + 1, { show: !!on });
+  });
+  if (plot) plot.setData(plot.data, false);
+  updateValueReadout();
+}
+
+function applyDefaultSelection() {
+  KEYS.forEach((k, i) => {
+    const on = DEFAULT_ON.has(k);
+    showPref.set(k, on);
+    axisPref.set(k, DEFAULT_Y2.has(k) ? "y2" : "y");
+
+    const row = toggleList?.querySelector?.(`.row[data-key="${k}"]`);
+    if (row) {
+      const cb = row.querySelector('input[type="checkbox"]');
+      const sel = row.querySelector('select');
+      if (cb) cb.checked = on;
+      if (sel) sel.value = axisPref.get(k);
+    }
+
+    if (plot) plot.setSeries(i + 1, { show: on });
+  });
+  rebuildForDataMode();
+}
+
+btnSelAll?.addEventListener("click", () => setAllSeries(true));
+btnSelNone?.addEventListener("click", () => setAllSeries(false));
+btnSelDefault?.addEventListener("click", () => applyDefaultSelection());
+
+// Resize
+let resizeQueued = false;
+window.addEventListener("resize", () => {
+  if (!plot || resizeQueued) return;
+  resizeQueued = true;
+  requestAnimationFrame(() => {
+    resizeQueued = false;
+    if (!plot) return;
+    const { w, h } = chartSize();
+    plot.setSize({ width: w, height: h });
+  });
+});
+
+(async function main() {
   if (!sid) {
     titleEl.textContent = "Session Viewer";
     statusLine.textContent = "Missing sid (open from the Sessions table).";
+    clearValueReadout();
     return;
   }
 
   titleEl.textContent = `Session: ${sid}`;
 
-  const metaSnap = await db.ref(`ml_sessions/${sid}`).get();
-  const meta = metaSnap.exists() ? metaSnap.val() : {};
-  metaEl.textContent = `load=${meta.load_type ?? "—"}  duration=${meta.duration_s ?? "—"}s`;
+  try {
+    const metaSnap = await db.ref(`ml_sessions/${sid}`).get();
+    const meta = metaSnap.exists() ? metaSnap.val() : {};
+    metaEl.textContent = `load=${meta.load_type ?? "—"}  duration=${meta.duration_s ?? "—"}s`;
 
-  statusLine.textContent = "Fetching CSV chunks…";
-  const csv = await fetchSessionCsv(sid);
-  if (!csv) { statusLine.textContent = "No CSV chunks found for this session."; return; }
-  btnDownload.onclick = () => downloadTextFile(`TSP_ML_${sid}.csv`, csv);
+    statusLine.textContent = "Fetching CSV chunks…";
+    const csv = await fetchSessionCsv(sid);
+    if (!csv) {
+      statusLine.textContent = "No CSV chunks found for this session.";
+      clearValueReadout();
+      return;
+    }
 
-  statusLine.textContent = "Parsing CSV…";
-  const parsed = Papa.parse(csv.trim(), { header: true, dynamicTyping: true, skipEmptyLines: true });
-  ROWS = (parsed.data || []).filter(r => r && Object.keys(r).length);
+    btnDownload.onclick = () => downloadTextFile(`TSP_ML_${sid}.csv`, csv);
 
-  X = pickTimeAxis(ROWS);
-  KEYS = buildSeriesKeys(ROWS);
+    statusLine.textContent = "Parsing CSV…";
+    const parsed = Papa.parse(csv.trim(), { header: true, dynamicTyping: true, skipEmptyLines: true });
+    ROWS = (parsed.data || []).filter((r) => r && Object.keys(r).length);
 
-  DATA_RAW = makeData(ROWS, X, KEYS);
-  DATA_NORM = makeNormalizedData(DATA_RAW);
+    if (!ROWS.length) {
+      statusLine.textContent = "Parsed 0 rows. (CSV exists but has no data rows.)";
+      clearValueReadout();
+      return;
+    }
 
-  // Defaults: show a few; axis defaults: big ones on Y2
-  const defaultOn = new Set(["i_rms", "thd_pct", "spectral_entropy", "spectral_flatness"]);
-  const defaultY2 = new Set(["thd_pct", "v_rms", "temp_c"]);
+    X = pickTimeAxis(ROWS);
+    KEYS = buildSeriesKeys(ROWS);
 
-  KEYS.forEach(k => {
-    showPref.set(k, defaultOn.has(k));
-    axisPref.set(k, defaultY2.has(k) ? "y2" : "y");
-  });
+    if (!KEYS.length) {
+      statusLine.textContent = "No numeric series found in this session CSV.";
+      clearValueReadout();
+      return;
+    }
 
-  // Build the left panel rows (checkbox + axis selector)
-  toggleList.innerHTML = "";
-  KEYS.forEach((k) => {
-    const wrap = document.createElement("div");
-    wrap.className = "row";
+    DATA_RAW = makeData(ROWS, X, KEYS);
 
-    const cb = document.createElement("input");
-    cb.type = "checkbox";
-    cb.checked = showPref.get(k);
-    cb.onchange = () => {
-      showPref.set(k, cb.checked);
-      // update series visibility without full rebuild
-      const si = KEYS.indexOf(k) + 1;
-      if (plot) plot.setSeries(si, { show: cb.checked });
-      updateValueReadout();
-    };
+    // smoothing init
+    const win0 = Number(rngSmooth?.value) || 7;
+    if (smoothReadout) smoothReadout.textContent = `win=${win0}`;
+    DATA_SMOOTH = makeSmoothedData(DATA_RAW, win0);
 
-    const name = document.createElement("div");
-    name.textContent = k;
+    DATA_NORM = normalizeData(DATA_RAW);
+    DATA_SMOOTH_NORM = normalizeData(DATA_SMOOTH);
 
-    const sel = document.createElement("select");
-    sel.className = "axisSel";
-    sel.innerHTML = `<option value="y">Y1</option><option value="y2">Y2</option>`;
-    sel.value = axisPref.get(k) || "y";
-    sel.onchange = () => {
-      axisPref.set(k, sel.value);
-      // safest: rebuild plot to apply new scale mapping
-      const keepIdx = playIdx;
+    buildArcIndexes();
+
+    KEYS.forEach((k) => {
+      showPref.set(k, DEFAULT_ON.has(k));
+      axisPref.set(k, DEFAULT_Y2.has(k) ? "y2" : "y");
+    });
+
+    // Build toggle UI
+    toggleList.innerHTML = "";
+
+    KEYS.forEach((k, i) => {
+      const wrap = document.createElement("div");
+      wrap.className = "row";
+      wrap.dataset.key = k;
+
+      const cb = document.createElement("input");
+      cb.type = "checkbox";
+      cb.checked = !!showPref.get(k);
+      cb.onchange = () => {
+        const on = !!cb.checked;
+        showPref.set(k, on);
+        if (plot) {
+          plot.setSeries(i + 1, { show: on });
+          plot.setData(plot.data, false);
+        }
+        updateValueReadout();
+      };
+
+      const name = document.createElement("div");
+      name.textContent = k;
+
+      const sel = document.createElement("select");
+      sel.className = "axisSel";
+      sel.innerHTML = `<option value="y">Y1</option><option value="y2">Y2</option>`;
+      sel.value = axisPref.get(k) || "y";
+      sel.onchange = () => {
+        axisPref.set(k, sel.value);
+        rebuildForDataMode();
+      };
+
+      wrap.appendChild(cb);
+      wrap.appendChild(name);
+      wrap.appendChild(sel);
+      toggleList.appendChild(wrap);
+    });
+
+    applySeriesFilter();
+
+    scrub.max = String(Math.max(0, X.length - 1));
+    speed = Number(selSpeed.value) || 1.0;
+
+    // Events checkbox only if label_arc exists
+    if (chkEvents) {
+      chkEvents.disabled = ARC_SERIES_INDEX < 0;
+      if (ARC_SERIES_INDEX < 0) chkEvents.checked = false;
+    }
+
+    statusLine.textContent = `Rows: ${ROWS.length} | Click plot to move playhead | Play to animate`;
+    clearValueReadout();
+
+    // First render
+    requestAnimationFrame(() => {
       buildPlot();
-      setPlayIdx(keepIdx, true);
-    };
-
-    wrap.appendChild(cb);
-    wrap.appendChild(name);
-    wrap.appendChild(sel);
-    toggleList.appendChild(wrap);
-  });
-
-  scrub.max = String(Math.max(0, X.length - 1));
-  speed = Number(selSpeed.value) || 1.0;
-
-  statusLine.textContent = `Rows: ${ROWS.length} | Click plot to move playhead | Play to animate`;
-  valueLine.textContent = "—";
-
-  buildPlot();
-  setPlayIdx(0, true);
+      setPlayIdx(0, true);
+    });
+  } catch (e) {
+    console.error(e);
+    statusLine.textContent = "Failed to load this session (check Firebase rules / network).";
+    clearValueReadout();
+  }
 })();
