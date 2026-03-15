@@ -67,14 +67,14 @@ static constexpr int PIN_TEMP_ADC  = D1;   // NTC divider
 static constexpr int PIN_RESET_BTN = D6;   // freed GPIO
 
 // ADS8684 SPI (Current sensor AUX, 16-bit)
-static constexpr int PIN_ADC_CS   = D7;
+static constexpr int PIN_ADC_CS   = D3;
 static constexpr int PIN_ADC_SCK  = D8;
 static constexpr int PIN_ADC_MISO = D9;
 static constexpr int PIN_ADC_MOSI = D10;
 
 // Outputs (edit only if your actual board wiring differs)
-static constexpr int PIN_RELAY      = D2;
-static constexpr int PIN_BUZZER_PWM = D3;
+static constexpr int PIN_RELAY      = D7;
+static constexpr int PIN_BUZZER_PWM = D2;
 
 // ========= ADS8684 =========
 static constexpr float ADS_VREF_V = 4.096f;

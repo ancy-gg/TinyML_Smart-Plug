@@ -30,7 +30,7 @@
 
 #define API_KEY "AIzaSyAmJlZZszyWPJFgIkTAAl_TbIySys1nvEw"
 #define DATABASE_URL "tinyml-smart-plug-default-rtdb.asia-southeast1.firebasedatabase.app"
-static const char* FW_VERSION = "TSP-v0.3.0";
+static const char* FW_VERSION = "TSP-v0.4.0";
 
 static const char* OTA_DESIRED_VERSION_PATH = "/ota/desired_version";
 static const char* OTA_FIRMWARE_URL_PATH    = "/ota/firmware_url";
@@ -63,15 +63,6 @@ static bool gSafeMode = false;
 static volatile bool gPauseByPortal = false;
 static volatile bool gPauseByOta = false;
 
-static inline void reassertCsRxPin() {
-  gpio_hold_dis((gpio_num_t)PIN_ADC_CS);
-  pinMode(PIN_ADC_CS, OUTPUT);
-  digitalWrite(PIN_ADC_CS, HIGH);
-  gpio_set_pull_mode((gpio_num_t)PIN_ADC_CS, GPIO_PULLUP_ONLY);
-  gpio_set_drive_capability((gpio_num_t)PIN_ADC_CS, GPIO_DRIVE_CAP_3);
-  gpio_hold_en((gpio_num_t)PIN_ADC_CS);
-}
-
 static void onOtaEvent(OtaEvent ev) {
   if (ev == OtaEvent::START) {
     gPauseByOta = true;
@@ -100,8 +91,6 @@ static void Core0Task(void* pv) {
       continue;
     }
 
-    reassertCsRxPin();
-
     FeatureFrame f;
     f.uptime_ms = millis();
     f.feat_valid = 0;
@@ -113,7 +102,6 @@ static void Core0Task(void* pv) {
     // quick retry if short burst
     if (got != N_SAMP) {
       vTaskDelay(1);
-      reassertCsRxPin();
       fs_hz = FS_TARGET_HZ;
       got = curSensor.capture(s_raw, N_SAMP, &fs_hz);
       if (fs_hz < 1000.0f) fs_hz = FS_TARGET_HZ;
@@ -167,8 +155,6 @@ void setup() {
 
   oled.begin();
   actuators.begin(PIN_RELAY, PIN_BUZZER_PWM, PIN_RESET_BTN, &oled);
-
-  reassertCsRxPin();
 
   if (!gSafeMode) {
     voltSensor.begin();
