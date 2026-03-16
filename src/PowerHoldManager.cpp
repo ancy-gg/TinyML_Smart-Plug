@@ -8,7 +8,20 @@
 void PowerHoldManager::begin(int enPin) {
   _pinEn = enPin;
   _bootMs = millis();
+  _mainsPresent = false;
+  _mainsSeenOnce = false;
+  _outageActive = false;
+  _presentSinceMs = 0;
+  _absentSinceMs = 0;
+  _outageStartMs = 0;
+  _shutdownTriggered = false;
+
   if (_pinEn < 0) return;
+
+#if defined(ARDUINO_ARCH_ESP32)
+  // Recover cleanly if a previous failed shutdown left the pin held low.
+  gpio_hold_dis((gpio_num_t)_pinEn);
+#endif
   pinMode(_pinEn, OUTPUT);
   driveEnable(true);
 }
@@ -27,18 +40,20 @@ void PowerHoldManager::shutdownNow() {
   if (_shutdownTriggered || _pinEn < 0) return;
   _shutdownTriggered = true;
 
-  // Important: for your topology, EN low already removes the rail.
-  // Deep sleep here only causes brownout/reboot artifacts, so do a clean hard-off instead.
+  // For this topology, EN low should kill the rail directly.
+  // Do NOT use gpio_hold_en() here; if the rail droops instead of collapsing
+  // instantly, the latched low can survive into a warm reset and create a
+  // nasty blink/boot-loop state.
 #if defined(ARDUINO_ARCH_ESP32)
   gpio_hold_dis((gpio_num_t)_pinEn);
 #endif
-  driveEnable(false);
-#if defined(ARDUINO_ARCH_ESP32)
-  gpio_hold_en((gpio_num_t)_pinEn);
-#endif
-  delay(50);
 
-  while (true) {
+  noInterrupts();
+  driveEnable(false);
+  delay(150);
+
+  // If power did not collapse yet, just stay here quietly.
+  for (;;) {
     delay(1000);
   }
 }
@@ -54,6 +69,7 @@ void PowerHoldManager::update(float vrmsFast) {
 
   if (mainsNow) {
     _absentSinceMs = 0;
+
     if (!_mainsPresent) {
       if (_presentSinceMs == 0) _presentSinceMs = now;
       if ((now - _presentSinceMs) >= OUTAGE_PRESENT_DEBOUNCE_MS) {
@@ -73,6 +89,7 @@ void PowerHoldManager::update(float vrmsFast) {
   }
 
   _presentSinceMs = 0;
+
   if (_mainsPresent) {
     if (_absentSinceMs == 0) _absentSinceMs = now;
     if ((now - _absentSinceMs) >= OUTAGE_ABSENT_DEBOUNCE_MS) {
@@ -83,6 +100,8 @@ void PowerHoldManager::update(float vrmsFast) {
       }
     }
   } else {
+    // Never start the outage timer until the system has seen real mains once.
+    // This prevents battery-only startups or noisy early-boot Vrms from arming a fake outage.
     if (!_mainsSeenOnce || !bootArmed) {
       driveEnable(true);
       return;

@@ -30,7 +30,7 @@
 
 #define API_KEY "AIzaSyAmJlZZszyWPJFgIkTAAl_TbIySys1nvEw"
 #define DATABASE_URL "tinyml-smart-plug-default-rtdb.asia-southeast1.firebasedatabase.app"
-static const char* FW_VERSION = "TSP-v0.5.2";
+static const char* FW_VERSION = "TSP-v0.5.5";
 
 static const char* OTA_DESIRED_VERSION_PATH = "/ota/desired_version";
 static const char* OTA_FIRMWARE_URL_PATH    = "/ota/firmware_url";
@@ -56,6 +56,8 @@ DataLogger      logger;
 CurrentSensor   curSensor;
 ArcFeatures     arcFeat;
 CurrentCalib    curCalib;
+
+static constexpr uint32_t SENSOR_BOOT_SETTLE_MS = 4000;
 
 static uint16_t s_raw[N_SAMP];
 static QueueHandle_t qFeat = nullptr;
@@ -83,6 +85,10 @@ static void Core0Task(void* pv) {
   ArcFeatOut out;
   FeatureFrame lastGood = {};
   bool hasGood = false;
+
+  while (millis() < SENSOR_BOOT_SETTLE_MS) {
+    vTaskDelay(20 / portTICK_PERIOD_MS);
+  }
 
   while (true) {
     const bool paused = gPauseByPortal || gPauseByOta;
@@ -182,9 +188,9 @@ void setup() {
   actuators.begin(PIN_RELAY, PIN_BUZZER_PWM, &oled);
 
   voltSensor.begin();
-  voltSensor.setWindowMs(200);
+  voltSensor.setWindowMs(250);
   voltSensor.setClampHysteresis(15.0f, 25.0f);
-  voltSensor.setLongAverage(18.0f, 18.0f);
+  voltSensor.setLongAverage(28.0f, 35.0f);
 
   tempSensor.begin();
   powerHold.begin(PIN_BAT_HOLD_EN);
@@ -237,6 +243,8 @@ void loop() {
 
   gPauseByPortal = net.inConfigPortal();
   const bool paused = gPauseByPortal || gPauseByOta;
+
+  const bool bootSettling = (millis() < SENSOR_BOOT_SETTLE_MS);
 
   static bool lastWiFiConnected = false;
   const bool wifiConnected = net.isConnected();
@@ -299,7 +307,7 @@ void loop() {
 #endif
 
   int pred = 0;
-  if (!paused) {
+  if (!paused && !bootSettling) {
     pred = ArcPredict(f.entropy, f.thd_pct, f.zcv_ms,
                       f.hf_ratio, f.hf_var,
                       f.sf, f.cyc_var,
@@ -307,7 +315,9 @@ void loop() {
   }
   f.model_pred = (uint8_t)pred;
 
-  FaultState st = faultLogic.update(tC, f.irms, f.model_pred);
+  FaultState st = bootSettling
+      ? STATE_NORMAL
+      : faultLogic.update(tC, f.irms, f.model_pred);
 
   actuators.apply(st, vRms, vFast, f.irms, tC);
 
