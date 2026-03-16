@@ -101,7 +101,7 @@ void Actuators::begin(int pinRelay, int pinBuzzer, int pinResetBtn, OLED_NOTIF* 
   _oled = oled;
 
   pinMode(_pinRelay, OUTPUT);
-  digitalWrite(_pinRelay, HIGH);
+  digitalWrite(_pinRelay, LOW);
 
   pinMode(_pinBuzzer, OUTPUT);
 #if BUZZER_ACTIVE_HIGH
@@ -129,7 +129,7 @@ void Actuators::apply(FaultState st, float v, float i, float t) {
   static constexpr float HARD_ON_C  = HARD_OFF_C - 2.0f;
   if (!hardOff && t >= HARD_OFF_C) hardOff = true;
   else if (hardOff && t <= HARD_ON_C) hardOff = false;
-  setRelay(!hardOff);
+  setRelay(hardOff);
 #endif
 
   static FaultState lastSt = STATE_NORMAL;
