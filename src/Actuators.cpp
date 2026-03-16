@@ -19,13 +19,13 @@ struct TonePattern {
 
 // Pleasant status tones
 static constexpr ToneStep P_BOOT[] = {
-  {1046, 70, 110}, {0, 30, 0}, {1318, 70, 110}, {0, 30, 0}, {1568, 130, 120}
+  {2400, 70, 0}, {0, 30, 0}, {2900, 70, 0}, {0, 30, 0}, {3400, 120, 0}
 };
 static constexpr ToneStep P_WIFI_PORTAL[] = {
   {740, 120, 90}, {0, 70, 0}, {988, 120, 90}, {0, 850, 0}
 };
 static constexpr ToneStep P_WIFI_OK[] = {
-  {988, 70, 100}, {0, 30, 0}, {1318, 80, 105}, {0, 30, 0}, {1760, 120, 115}
+  {2600, 70, 0}, {0, 30, 0}, {3100, 80, 0}, {0, 30, 0}, {3600, 120, 0}
 };
 static constexpr ToneStep P_LOGGER_ON[] = {
   {1200, 60, 95}, {0, 40, 0}, {1600, 60, 95}, {0, 40, 0}, {2000, 80, 100}
@@ -48,19 +48,18 @@ static constexpr ToneStep P_DEVICE_PLUG[] = {
 
 // Fault tones: intentionally urgent / annoying
 static constexpr ToneStep P_FAULT_ARC[] = {
-  {1900, 70, 125}, {0, 30, 0}, {1200, 70, 120}, {0, 25, 0},
-  {2100, 60, 125}, {0, 35, 0}, {900, 90, 120}, {0, 180, 0}
+  {3800, 40, 0}, {0, 20, 0}, {3200, 35, 0}, {0, 20, 0},
+  {4000, 35, 0}, {0, 25, 0}, {2800, 50, 0}, {0, 160, 0}
 };
 static constexpr ToneStep P_FAULT_HEAT[] = {
-  {900, 180, 125}, {1200, 180, 125}, {0, 80, 0},
-  {900, 180, 125}, {1200, 180, 125}, {0, 80, 0},
-  {900, 180, 125}, {1200, 180, 125}, {0, 260, 0}
+  {1800, 180, 0}, {3200, 180, 0}, {0, 80, 0},
+  {1800, 180, 0}, {3200, 180, 0}, {0, 220, 0}
 };
 static constexpr ToneStep P_FAULT_OVER[] = {
-  {950, 160, 110}, {0, 120, 0}, {950, 160, 110}, {0, 420, 0}
+  {2600, 140, 0}, {0, 100, 0}, {2600, 140, 0}, {0, 300, 0}
 };
 static constexpr ToneStep P_FAULT_OVER_HARD[] = {
-  {760, 160, 125}, {1180, 160, 125}, {760, 160, 125}, {1180, 160, 125}, {0, 110, 0}
+  {2200, 120, 0}, {3200, 120, 0}, {2200, 120, 0}, {3200, 120, 0}, {0, 100, 0}
 };
 static constexpr ToneStep P_RESET_ACK[] = {
   {1200, 80, 100}, {0, 40, 0}, {1200, 80, 100}
@@ -117,18 +116,20 @@ static void pwmStop() {
 #endif
 }
 
-static void pwmTone(uint16_t hz, uint8_t duty) {
+static void pwmTone(uint16_t hz) {
   if (!s_pwmReady || s_buzzPin < 0) return;
-  if (hz == 0 || duty == 0) {
+
+  if (hz == 0) {
     pwmStop();
     return;
   }
+
 #if defined(ESP_ARDUINO_VERSION_MAJOR) && (ESP_ARDUINO_VERSION_MAJOR >= 3)
   ledcWriteTone(s_buzzPin, hz);
-  ledcWrite(s_buzzPin, duty);
+  ledcWrite(s_buzzPin, 128);   // 50% duty for 8-bit
 #else
   ledcWriteTone(BUZZ_CH, hz);
-  ledcWrite(BUZZ_CH, duty);
+  ledcWrite(BUZZ_CH, 128);     // 50% duty
 #endif
 }
 
@@ -167,7 +168,7 @@ static void soundLoop() {
 
   if (s_t0 == 0) {
     s_t0 = now;
-    pwmTone(p.steps[s_step].hz, p.steps[s_step].duty);
+    pwmTone(p.steps[s_step].hz);
     return;
   }
 
