@@ -18,7 +18,8 @@ static inline float clampf(float x, float lo, float hi) {
 static inline float codeToCurrentA(uint16_t code, const CurrentCalib& cal) {
   const float v_aux = (float(code) * ADS_VREF_V) / 65535.0f; // 0..Vref
   const float v_sensor = v_aux / cal.dividerRatio;          // undo divider
-  return (v_sensor - cal.offsetV) / cal.voltsPerAmp;
+  const float amps = (v_sensor - cal.offsetV) / cal.voltsPerAmp;
+  return amps * cal.ampsScale;
 }
 
 static inline float median3(float a, float b, float c) {

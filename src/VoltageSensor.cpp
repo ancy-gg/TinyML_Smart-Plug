@@ -8,7 +8,6 @@ void VoltageSensor::begin() {
   pinMode(_pin, INPUT);
 
 #if defined(ARDUINO_ARCH_ESP32)
-  // Safe on most Arduino-ESP32 cores. If your core complains, remove.
   adcAttachPin(_pin);
   analogSetPinAttenuation(_pin, ADC_11db);
 #endif
@@ -35,26 +34,28 @@ void VoltageSensor::setClampHysteresis(float v_off, float v_on) {
   _vOn  = v_on;
 }
 
+void VoltageSensor::setLongAverage(float tauS, float jumpV) {
+  if (tauS < 0.5f) tauS = 0.5f;
+  if (tauS > 30.0f) tauS = 30.0f;
+  if (jumpV < 1.0f) jumpV = 1.0f;
+  _avgTauS  = tauS;
+  _avgJumpV = jumpV;
+}
+
 float VoltageSensor::update() {
   const uint32_t now = micros();
 
-  // Start a new window
   if (!_sampling) {
     _sampling  = true;
     _startTime = now;
     _count = 0;
     _sum   = 0.0;
     _sumSq = 0.0;
-
-    // ADC settle discard
-    (void)analogRead(_pin);
+    (void)analogRead(_pin); // settle discard
     return -1.0f;
   }
 
-  // Small burst per call (robust vs spikes).
-  // If you ever feel CPU load is high, reduce SAMPLES_PER_CALL to 2 or 3.
   constexpr int SAMPLES_PER_CALL = 6;
-
   for (int i = 0; i < SAMPLES_PER_CALL; i++) {
     int a = analogRead(_pin);
     int b = analogRead(_pin);
@@ -66,16 +67,13 @@ float VoltageSensor::update() {
     _sumSq += (double)val * (double)val;
   }
 
-  // Window complete?
-  if ((now - _startTime) < _windowUs) {
+  if ((uint32_t)(now - _startTime) < _windowUs) {
     return -1.0f;
   }
 
   _sampling = false;
-
   if (_count < 32) return 0.0f;
 
-  // True RMS via variance => removes DC offset automatically
   const double mean = _sum / (double)_count;
   double var = (_sumSq / (double)_count) - (mean * mean);
   if (var < 0.0) var = 0.0;
@@ -83,24 +81,40 @@ float VoltageSensor::update() {
   const float vrms_counts = (float)sqrt(var);
   const float vrms_adc_v  = vrms_counts * (_adcFullScaleV / 4095.0f);
 
-// Work in ADC-pin Vrms first (calibration-independent)
-const float vrms_adc_clean = vrms_adc_v; // already DC-removed by variance
+  float vrms_main = vrms_adc_v * _sensitivity;
 
-// Clamp/hysteresis in ADC-volts (tune once and forget)
-static bool active_adc = false;
-const float off_adc_v = 0.020f; // 20mVrms at ADC pin (tune)
-const float on_adc_v  = 0.035f; // 35mVrms at ADC pin (tune)
+  if (_vActive) {
+    if (vrms_main < _vOff) {
+      _vActive = false;
+      vrms_main = 0.0f;
+    }
+  } else {
+    if (vrms_main > _vOn) _vActive = true;
+    else                  vrms_main = 0.0f;
+  }
 
-float vrms_adc_out = vrms_adc_clean;
+  if (!_avgInit) {
+    _avgInit = true;
+    _avgVrms = vrms_main;
+    return _avgVrms;
+  }
 
-if (active_adc) {
-  if (vrms_adc_out < off_adc_v) { active_adc = false; vrms_adc_out = 0.0f; }
-} else {
-  if (vrms_adc_out > on_adc_v)  { active_adc = true; }
-  else                          { vrms_adc_out = 0.0f; }
-}
+  const float dtS = (float)_windowUs / 1000000.0f;
+  const float slowAlpha = fminf(1.0f, dtS / _avgTauS);
+  const float fastAlpha = 0.45f;
 
-// Now scale to mains volts
-const float vrms_clean = vrms_adc_out * _sensitivity;
-return vrms_clean;
+  const float delta = fabsf(vrms_main - _avgVrms);
+
+  if (vrms_main <= 0.0f) {
+    // Snap down faster for outage detection.
+    _avgVrms += 0.55f * (vrms_main - _avgVrms);
+    if (_avgVrms < 0.5f) _avgVrms = 0.0f;
+  } else if (delta >= _avgJumpV) {
+    _avgVrms += fastAlpha * (vrms_main - _avgVrms);
+  } else {
+    _avgVrms += slowAlpha * (vrms_main - _avgVrms);
+  }
+
+  if (_avgVrms < 0.0f) _avgVrms = 0.0f;
+  return _avgVrms;
 }
