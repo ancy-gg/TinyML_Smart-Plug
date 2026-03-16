@@ -10,14 +10,14 @@ public:
   void setAdcFullScaleVolts(float vfs);
   void setWindowMs(uint16_t ms);
   void setClampHysteresis(float v_off, float v_on);
-
-  // Long-term display smoothing.
-  // When the newly measured Vrms changes by less than jumpV, use a slow average with tauS.
-  // When the change is large, the output snaps quickly to the new value.
   void setLongAverage(float tauS, float jumpV);
 
-  // Returns -1.0 while still accumulating the current RMS window, otherwise the filtered Vrms.
+  // Returns display-smoothed Vrms; returns -1 while current RMS window is still accumulating.
   float update();
+
+  // Faster voltages for protection / outage logic.
+  float rawVrms() const     { return _rawVrms; }
+  float protectVrms() const { return _protVrms; }
 
 private:
   int _pin;
@@ -34,12 +34,16 @@ private:
 
   bool  _vActive = false;
   float _vOff    = 15.0f;
-  float _vOn     = 20.0f;
+  float _vOn     = 25.0f;
 
-  bool  _avgInit   = false;
-  float _avgVrms   = 0.0f;
-  float _avgTauS   = 10.0f;
-  float _avgJumpV  = 10.0f;
+  float _rawVrms  = 0.0f;
+  bool  _protInit = false;
+  float _protVrms = 0.0f;
+
+  bool  _dispInit  = false;
+  float _dispVrms  = 0.0f;
+  float _avgTauS   = 18.0f;
+  float _avgJumpV  = 18.0f;
 
   static inline int _median3(int a, int b, int c) {
     if (a > b) { int t = a; a = b; b = t; }

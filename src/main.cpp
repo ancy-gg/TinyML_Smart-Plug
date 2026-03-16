@@ -30,7 +30,7 @@
 
 #define API_KEY "AIzaSyAmJlZZszyWPJFgIkTAAl_TbIySys1nvEw"
 #define DATABASE_URL "tinyml-smart-plug-default-rtdb.asia-southeast1.firebasedatabase.app"
-static const char* FW_VERSION = "TSP-v0.5.2";
+static const char* FW_VERSION = "TSP-v0.5.3";
 
 static const char* OTA_DESIRED_VERSION_PATH = "/ota/desired_version";
 static const char* OTA_FIRMWARE_URL_PATH    = "/ota/firmware_url";
@@ -184,7 +184,7 @@ void setup() {
   voltSensor.begin();
   voltSensor.setWindowMs(200);
   voltSensor.setClampHysteresis(15.0f, 25.0f);
-  voltSensor.setLongAverage(10.0f, 10.0f);
+  voltSensor.setLongAverage(18.0f, 18.0f);
 
   tempSensor.begin();
   powerHold.begin(PIN_BAT_HOLD_EN);
@@ -260,11 +260,15 @@ void loop() {
 
   // Slow sensors
   static float vRms = 0.0f;
+  static float vFast = 0.0f;
   static float tC = 0.0f;
   static uint32_t tTemp = 0;
 
   float newV = voltSensor.update();
-  if (newV >= 0.0f) vRms = newV;
+  if (newV >= 0.0f) {
+    vRms = newV;
+    vFast = voltSensor.protectVrms();
+  }
 
   if (millis() - tTemp >= 500) {
     tTemp = millis();
@@ -272,13 +276,13 @@ void loop() {
     if (newT > -50.0f && newT < 150.0f) tC = newT;
   }
 
-  powerHold.update(vRms);
+  powerHold.update(vFast);
 
   f.vrms = vRms;
   f.temp_c = tC;
 
   if (gSafeMode) {
-    actuators.apply(STATE_NORMAL, vRms, 0.0f, tC);
+    actuators.apply(STATE_NORMAL, vRms, voltSensor.protectVrms(), 0.0f, tC);
 
     static uint32_t lastSafeCloud = 0;
     if (millis() - lastSafeCloud > 5000) {
@@ -305,7 +309,7 @@ void loop() {
 
   FaultState st = faultLogic.update(tC, f.irms, f.model_pred);
 
-  actuators.apply(st, vRms, f.irms, tC);
+  actuators.apply(st, vRms, vFast, f.irms, tC);
 
 #if ENABLE_ML_LOGGER
   if (!paused) {
@@ -327,7 +331,7 @@ void loop() {
     String stateStr;
     if (paused) {
       stateStr = gPauseByPortal ? "CONFIG_PORTAL" : "OTA_UPDATING";
-    } else if (vRms >= VOLT_SURGE_TRIP_V) {
+    } else if (vFast >= VOLT_SURGE_TRIP_V) {
       stateStr = "SURGE";
     } else if (tC >= TEMP_DATA_HARD_C) {
       stateStr = "TEMP_CRITICAL";

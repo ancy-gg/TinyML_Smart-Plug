@@ -24,7 +24,7 @@ enum SoundEvent : uint8_t {
 class Actuators {
 public:
   void begin(int pinRelay, int pinBuzzer, OLED_NOTIF* oled);
-  void apply(FaultState st, float v, float i, float t);
+  void apply(FaultState st, float vDisplay, float vProtect, float i, float t);
   void notify(SoundEvent ev);
 
 private:
@@ -32,6 +32,5 @@ private:
   int _pinBuzzer = -1;
   OLED_NOTIF* _oled = nullptr;
   uint32_t _lastOled = 0;
-
   void setRelay(bool on);
 };
