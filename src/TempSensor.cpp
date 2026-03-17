@@ -21,7 +21,6 @@ float TempSensor::readTempC() {
 
   const float vOut = (mvSum / (float)N) / 1000.0f;
 
-  // Error when unplugged or open.
   if (vOut < 0.1f) return -99.0f;
 
   float vClamped = vOut;
@@ -49,13 +48,10 @@ float TempSensor::readTempC() {
   if (dtS < 0.05f) dtS = 0.05f;
   if (dtS > 2.0f)  dtS = 2.0f;
 
-  static constexpr float TEMP_TAU_S  = 8.0f;
-  static constexpr float TEMP_JUMP_C = 1.5f;
-
-  if (fabsf(steinhart - _filtTempC) >= TEMP_JUMP_C) {
+  if (fabsf(steinhart - _filtTempC) >= _avgJumpC) {
     _filtTempC = steinhart;
   } else {
-    const float alpha = fminf(1.0f, dtS / TEMP_TAU_S);
+    const float alpha = fminf(1.0f, dtS / _avgTauS);
     _filtTempC += alpha * (steinhart - _filtTempC);
   }
 

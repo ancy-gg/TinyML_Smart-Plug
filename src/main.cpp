@@ -5,6 +5,7 @@
 #include <freertos/task.h>
 #include <freertos/queue.h>
 #include <esp_log.h>
+#include <math.h>
 
 #include "SmartPlugConfig.h"
 #include "SmartPlugTypes.h"
@@ -30,32 +31,32 @@
 
 #define API_KEY "AIzaSyAmJlZZszyWPJFgIkTAAl_TbIySys1nvEw"
 #define DATABASE_URL "tinyml-smart-plug-default-rtdb.asia-southeast1.firebasedatabase.app"
-static const char* FW_VERSION = "TSP-v0.5.6";
+static const char* FW_VERSION = "TSP-v0.5.5";
 
 static const char* OTA_DESIRED_VERSION_PATH = "/ota/desired_version";
 static const char* OTA_FIRMWARE_URL_PATH    = "/ota/firmware_url";
 static const uint32_t OTA_CHECK_INTERVAL_MS = 60000;
 
-OLED_NOTIF       oled(0x3C);
-NetworkManager   net;
-CloudHandler     cloud;
-TimeSync         timeSync;
-PullOTA          ota;
+OLED_NOTIF      oled(0x3C);
+NetworkManager  net;
+CloudHandler    cloud;
+TimeSync        timeSync;
+PullOTA         ota;
 
-VoltageSensor    voltSensor(PIN_VOLT_ADC);
-TempSensor       tempSensor(PIN_TEMP_ADC);
+VoltageSensor   voltSensor(PIN_VOLT_ADC);
+TempSensor      tempSensor(PIN_TEMP_ADC);
 PowerHoldManager powerHold;
 
-FaultLogic       faultLogic;
-Actuators        actuators;
+FaultLogic      faultLogic;
+Actuators       actuators;
 
 #if ENABLE_ML_LOGGER
-DataLogger       logger;
+DataLogger      logger;
 #endif
 
-CurrentSensor    curSensor;
-ArcFeatures      arcFeat;
-CurrentCalib     curCalib;
+CurrentSensor   curSensor;
+ArcFeatures     arcFeat;
+CurrentCalib    curCalib;
 
 static constexpr uint32_t SENSOR_BOOT_SETTLE_MS = 4000;
 
@@ -65,9 +66,81 @@ static QueueHandle_t qFeat = nullptr;
 static bool gSafeMode = false;
 static volatile bool gPauseByPortal = false;
 static volatile bool gPauseByOta = false;
-static uint32_t gSystemReadyMs = 0;
-static bool gReadyChimeSent = false;
 
+
+static void handleCueEvents(float vProtect, float irms, bool paused) {
+  static bool mainsPresentLast = false;
+  static uint32_t lowSinceMs = 0;
+  static uint32_t highSinceMs = 0;
+  static uint32_t lastVoltWarnMs = 0;
+
+  static float loadBaseA = 0.0f;
+  static float prevIrms = 0.0f;
+  static uint32_t stableSinceMs = 0;
+  static uint32_t lastLoadCueMs = 0;
+
+  const uint32_t now = millis();
+  if (paused) return;
+
+  const bool mainsPresent = (vProtect >= MAINS_PRESENT_ON_V);
+  if (!mainsPresentLast && vProtect >= 200.0f) {
+    actuators.notify(SND_MAINS_RESTORED);
+  }
+  mainsPresentLast = mainsPresent;
+
+  const bool lowWarn = (vProtect > MAINS_PRESENT_ON_V && vProtect < 200.0f);
+  const bool highWarn = (vProtect > 250.0f && vProtect < VOLT_SURGE_TRIP_V);
+
+  if (lowWarn) {
+    if (lowSinceMs == 0) lowSinceMs = now;
+  } else {
+    lowSinceMs = 0;
+  }
+
+  if (highWarn) {
+    if (highSinceMs == 0) highSinceMs = now;
+  } else {
+    highSinceMs = 0;
+  }
+
+  if (lowSinceMs && (now - lowSinceMs >= 1500U) && (now - lastVoltWarnMs >= 8000U)) {
+    lastVoltWarnMs = now;
+    actuators.notify(SND_VOLT_LOW);
+  }
+  if (highSinceMs && (now - highSinceMs >= 1000U) && (now - lastVoltWarnMs >= 8000U)) {
+    lastVoltWarnMs = now;
+    actuators.notify(SND_VOLT_HIGH);
+  }
+
+  if (!mainsPresent || vProtect < 200.0f) {
+    loadBaseA = 0.0f;
+    prevIrms = irms;
+    stableSinceMs = 0;
+    return;
+  }
+
+  const float dI = fabsf(irms - prevIrms);
+  prevIrms = irms;
+
+  if (dI < 0.08f) {
+    if (stableSinceMs == 0) stableSinceMs = now;
+  } else {
+    stableSinceMs = 0;
+  }
+
+  if (stableSinceMs && (now - stableSinceMs >= 1200U)) {
+    loadBaseA += 0.02f * (irms - loadBaseA);
+  }
+
+  const bool firstLoad = (loadBaseA < 0.15f && irms >= 0.35f);
+  const bool addedLoad = (loadBaseA >= 0.15f && (irms - loadBaseA) >= 0.45f && dI < 0.15f);
+  if ((firstLoad || addedLoad) && (now - lastLoadCueMs >= 6000U)) {
+    actuators.notify(SND_DEVICE_PLUG);
+    lastLoadCueMs = now;
+    loadBaseA = irms;
+    stableSinceMs = 0;
+  }
+}
 static void onOtaEvent(OtaEvent ev) {
   if (ev == OtaEvent::START) {
     gPauseByOta = true;
@@ -190,14 +263,13 @@ void setup() {
   actuators.begin(PIN_RELAY, PIN_BUZZER_PWM, &oled);
 
   voltSensor.begin();
-  voltSensor.setWindowMs(120);          // faster RMS refresh
-  voltSensor.setClampHysteresis(10.0f, 18.0f);
-  voltSensor.setLongAverage(10.0f, 10.0f); // instant for >=10 V jumps, long memory when stable
+  voltSensor.setWindowMs(250);
+  voltSensor.setClampHysteresis(15.0f, 25.0f);
+  voltSensor.setLongAverage(28.0f, 35.0f);
 
   tempSensor.begin();
+  tempSensor.setLongAverage(8.0f, 1.0f);
   powerHold.begin(PIN_BAT_HOLD_EN);
-
-  curSensor.setCalib(curCalib);
 
   if (!gSafeMode) {
     if (curSensor.begin()) {
@@ -231,13 +303,11 @@ void setup() {
 #endif
 
   ota.begin(FW_VERSION, &cloud);
-  ota.setInsecureTLS(true);
   ota.setEventCallback(onOtaEvent);
   ota.setPaths(OTA_DESIRED_VERSION_PATH, OTA_FIRMWARE_URL_PATH);
   ota.setCheckInterval(OTA_CHECK_INTERVAL_MS);
 
   oled.showStatus("System", gSafeMode ? "Safe mode" : "Ready");
-  gSystemReadyMs = millis();
 }
 
 void loop() {
@@ -257,13 +327,7 @@ void loop() {
   if (wifiConnected && !lastWiFiConnected) actuators.notify(SND_WIFI_OK);
   lastWiFiConnected = wifiConnected;
 
-  if (!gReadyChimeSent && gSystemReadyMs != 0 &&
-      (millis() - gSystemReadyMs) >= SYSTEM_READY_CHIME_DELAY_MS) {
-    gReadyChimeSent = true;
-    actuators.notify(SND_BOOT);
-  }
-
-  // Read latest features from core0.
+  // Read latest features from core0
   static FeatureFrame lastF = {};
   static bool hasLast = false;
 
@@ -278,30 +342,31 @@ void loop() {
     f.uptime_ms = millis();
   }
 
-  // Slow sensors.
+  // Slow sensors
   static float vRms = 0.0f;
+  static float vFast = 0.0f;
   static float tC = 0.0f;
   static uint32_t tTemp = 0;
 
-  const float newV = voltSensor.update();
+  float newV = voltSensor.update();
   if (newV >= 0.0f) {
     vRms = newV;
+    vFast = voltSensor.protectVrms();
   }
 
-  if (millis() - tTemp >= 250) {
+  if (millis() - tTemp >= 500) {
     tTemp = millis();
-    const float newT = tempSensor.readTempC();
+    float newT = tempSensor.readTempC();
     if (newT > -50.0f && newT < 150.0f) tC = newT;
   }
 
-  const float vProtect = voltSensor.protectVrms();
-  powerHold.update(vProtect);
+  powerHold.update(vFast);
 
   f.vrms = vRms;
   f.temp_c = tC;
 
   if (gSafeMode) {
-    actuators.apply(STATE_NORMAL, vRms, vProtect, 0.0f, tC);
+    actuators.apply(STATE_NORMAL, vRms, voltSensor.protectVrms(), 0.0f, tC);
 
     static uint32_t lastSafeCloud = 0;
     if (millis() - lastSafeCloud > 5000) {
@@ -326,11 +391,11 @@ void loop() {
   }
   f.model_pred = (uint8_t)pred;
 
-  const FaultState st = bootSettling
+  FaultState st = bootSettling
       ? STATE_NORMAL
       : faultLogic.update(tC, f.irms, f.model_pred);
 
-  actuators.apply(st, vRms, vProtect, f.irms, tC);
+  actuators.apply(st, vRms, vFast, f.irms, tC);
 
 #if ENABLE_ML_LOGGER
   if (!paused) {
@@ -352,7 +417,7 @@ void loop() {
     String stateStr;
     if (paused) {
       stateStr = gPauseByPortal ? "CONFIG_PORTAL" : "OTA_UPDATING";
-    } else if (vProtect >= VOLT_SURGE_TRIP_V) {
+    } else if (vFast >= VOLT_SURGE_TRIP_V) {
       stateStr = "SURGE";
     } else if (tC >= TEMP_DATA_HARD_C) {
       stateStr = "TEMP_CRITICAL";

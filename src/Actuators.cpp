@@ -42,29 +42,31 @@ static constexpr ToneStep P_OTA_FAIL[] = {
 static constexpr ToneStep P_MAINS_LOST[] = {
   {430, 240, 128}, {0, 90, 0}, {330, 320, 128}
 };
+static constexpr ToneStep P_MAINS_RESTORED[] = {
+  {1700, 70, 110}, {0, 30, 0}, {2300, 80, 118}, {0, 30, 0}, {3000, 110, 126}
+};
+static constexpr ToneStep P_VOLT_LOW[] = {
+  {700, 180, 120}, {0, 70, 0}, {620, 220, 124}
+};
+static constexpr ToneStep P_VOLT_HIGH[] = {
+  {2500, 120, 118}, {0, 60, 0}, {2900, 150, 124}
+};
 static constexpr ToneStep P_DEVICE_PLUG[] = {
   {1400, 55, 108}, {0, 25, 0}, {1750, 85, 116}
 };
 
 // Fault tones: repeating by design
-// Arc = sharp "lightning" crackle style
 static constexpr ToneStep P_FAULT_ARC[] = {
   {4100, 28, 132}, {0, 18, 0}, {3450, 34, 132}, {0, 20, 0},
   {3900, 30, 132}, {0, 24, 0}, {3000, 48, 132}, {0, 140, 0}
 };
-
-// Heat = temporal fire-alarm rhythm
 static constexpr ToneStep P_FAULT_HEAT[] = {
   {1650, 180, 126}, {0, 70, 0}, {1650, 180, 126}, {0, 70, 0}, {1650, 180, 126},
   {0, 220, 0}
 };
-
-// Overload warn = medium urgency pulse
 static constexpr ToneStep P_FAULT_OVER[] = {
   {2450, 120, 118}, {0, 100, 0}, {2450, 120, 118}, {0, 280, 0}
 };
-
-// Hard overload / short / surge = ambulance "wang-wang"
 static constexpr ToneStep P_FAULT_OVER_HARD[] = {
   {1650, 180, 138}, {2450, 180, 138}, {1650, 180, 138}, {2450, 180, 138}, {0, 80, 0}
 };
@@ -82,6 +84,9 @@ static constexpr TonePattern PATTERNS[] = {
   { P_OTA_OK,           (uint8_t)(sizeof(P_OTA_OK) / sizeof(P_OTA_OK[0])),                   false, 2 },
   { P_OTA_FAIL,         (uint8_t)(sizeof(P_OTA_FAIL) / sizeof(P_OTA_FAIL[0])),               false, 2 },
   { P_MAINS_LOST,       (uint8_t)(sizeof(P_MAINS_LOST) / sizeof(P_MAINS_LOST[0])),           false, 2 },
+  { P_MAINS_RESTORED,   (uint8_t)(sizeof(P_MAINS_RESTORED) / sizeof(P_MAINS_RESTORED[0])),   false, 2 },
+  { P_VOLT_LOW,         (uint8_t)(sizeof(P_VOLT_LOW) / sizeof(P_VOLT_LOW[0])),               false, 2 },
+  { P_VOLT_HIGH,        (uint8_t)(sizeof(P_VOLT_HIGH) / sizeof(P_VOLT_HIGH[0])),             false, 2 },
   { P_DEVICE_PLUG,      (uint8_t)(sizeof(P_DEVICE_PLUG) / sizeof(P_DEVICE_PLUG[0])),         false, 1 },
   { P_FAULT_ARC,        (uint8_t)(sizeof(P_FAULT_ARC) / sizeof(P_FAULT_ARC[0])),             true,  4 },
   { P_FAULT_HEAT,       (uint8_t)(sizeof(P_FAULT_HEAT) / sizeof(P_FAULT_HEAT[0])),           true,  5 },
