@@ -25,14 +25,17 @@ const vVal   = el("vVal");
 const iVal   = el("iVal");
 const pVal   = el("pVal");
 const tVal   = el("tVal");
-const zcvVal = el("zcvVal");
-const thdVal = el("thdVal");
-const entVal = el("entVal");
 
-const hfRatioVal = el("hfRatioVal");
-const hfVarVal   = el("hfVarVal");
-const sfVal      = el("sfVal");
-const cycVarVal  = el("cycVarVal");
+const cycleNmseVal = el("cycleNmseVal");
+const zcvVal       = el("zcvVal");
+const zcDwellVal   = el("zcDwellVal");
+const pulseCountVal= el("pulseCountVal");
+const peakFluctVal = el("peakFluctVal");
+const midbandResidVal = el("midbandResidVal");
+const hfEnergyVal  = el("hfEnergyVal");
+const wpeEntropyVal= el("wpeEntropyVal");
+const specEntropyVal = el("specEntropyVal");
+const thdVal       = el("thdVal");
 
 const alertEnable = el("alertEnable");
 const soundEnable = el("soundEnable");
@@ -258,11 +261,11 @@ function applyHistoryFilter() {
         <td class="mono">${timeStr}</td>
         <td>${pillHTML(r.status)}</td>
         <td class="mono">${toFixedOrDash(r.voltage, 1)}</td>
-        <td class="mono">${toFixedOrDash(r.current, 2)}</td>
+        <td class="mono">${toFixedOrDash(r.current, 3)}</td>
         <td class="mono">${toFixedOrDash(r.temp, 1)}</td>
-        <td class="mono">${toFixedOrDash(r.zcv, 2)}</td>
-        <td class="mono">${toFixedOrDash(r.thd, 1)}</td>
-        <td class="mono">${toFixedOrDash(r.entropy, 3)}</td>
+        <td class="mono">${toFixedOrDash(r.cycle_nmse, 3)}</td>
+        <td class="mono">${toFixedOrDash(r.zcv, 3)}</td>
+        <td class="mono">${toFixedOrDash(r.thd_i, 3)}</td>
       </tr>
     `;
   }).join("");
@@ -358,29 +361,35 @@ db.ref("live_data").on("value", (snap) => {
   if (liveEpoch > 0) lastEpochMs = liveEpoch;
 
   // values
-  const v  = toFixedOrDash(data.voltage, 1);
-  const i  = toFixedOrDash(data.current, 2);
-  const p  = toFixedOrDash(data.apparent_power, 1);
-  const t  = toFixedOrDash(data.temp, 1);
-  const z  = toFixedOrDash(data.zcv, 2);
-  const th = toFixedOrDash(data.thd, 1);
-  const en = toFixedOrDash(data.entropy, 3);
-  const hfr = toFixedOrDash(data.hf_ratio, 3);
-  const hfv = toFixedOrDash(data.hf_var, 4);
-  const sf  = toFixedOrDash(data.sf, 3);
-  const cv  = toFixedOrDash(data.cyc_var, 5);
+  const v   = toFixedOrDash(data.voltage, 1);
+  const i   = toFixedOrDash(data.current, 3);
+  const p   = toFixedOrDash(data.apparent_power, 1);
+  const t   = toFixedOrDash(data.temp, 1);
+  const cn  = toFixedOrDash(data.cycle_nmse, 3);
+  const z   = toFixedOrDash(data.zcv, 3);
+  const zd  = toFixedOrDash(data.zc_dwell_ratio, 3);
+  const pc  = toFixedOrDash(data.pulse_count_per_cycle, 3);
+  const pf  = toFixedOrDash(data.peak_fluct_cv, 3);
+  const mr  = toFixedOrDash(data.midband_residual_rms, 3);
+  const hf  = toFixedOrDash(data.hf_band_energy_ratio, 3);
+  const wpe = toFixedOrDash(data.wpe_entropy, 3);
+  const se  = toFixedOrDash(data.spec_entropy, 3);
+  const th  = toFixedOrDash(data.thd_i, 3);
 
   if (vVal && vVal.textContent !== v) { vVal.textContent = v; animateNumber(vVal); }
   if (iVal && iVal.textContent !== i) { iVal.textContent = i; animateNumber(iVal); }
   if (pVal && pVal.textContent !== p) { pVal.textContent = p; animateNumber(pVal); }
   if (tVal && tVal.textContent !== t) { tVal.textContent = t; animateNumber(tVal); }
+  if (cycleNmseVal && cycleNmseVal.textContent !== cn) { cycleNmseVal.textContent = cn; animateNumber(cycleNmseVal); }
   if (zcvVal && zcvVal.textContent !== z) { zcvVal.textContent = z; animateNumber(zcvVal); }
+  if (zcDwellVal && zcDwellVal.textContent !== zd) { zcDwellVal.textContent = zd; animateNumber(zcDwellVal); }
+  if (pulseCountVal && pulseCountVal.textContent !== pc) { pulseCountVal.textContent = pc; animateNumber(pulseCountVal); }
+  if (peakFluctVal && peakFluctVal.textContent !== pf) { peakFluctVal.textContent = pf; animateNumber(peakFluctVal); }
+  if (midbandResidVal && midbandResidVal.textContent !== mr) { midbandResidVal.textContent = mr; animateNumber(midbandResidVal); }
+  if (hfEnergyVal && hfEnergyVal.textContent !== hf) { hfEnergyVal.textContent = hf; animateNumber(hfEnergyVal); }
+  if (wpeEntropyVal && wpeEntropyVal.textContent !== wpe) { wpeEntropyVal.textContent = wpe; animateNumber(wpeEntropyVal); }
+  if (specEntropyVal && specEntropyVal.textContent !== se) { specEntropyVal.textContent = se; animateNumber(specEntropyVal); }
   if (thdVal && thdVal.textContent !== th) { thdVal.textContent = th; animateNumber(thdVal); }
-  if (entVal && entVal.textContent !== en) { entVal.textContent = en; animateNumber(entVal); }
-  if (hfRatioVal && hfRatioVal.textContent !== hfr) { hfRatioVal.textContent = hfr; animateNumber(hfRatioVal); }
-  if (hfVarVal   && hfVarVal.textContent !== hfv) { hfVarVal.textContent = hfv; animateNumber(hfVarVal); }
-  if (sfVal      && sfVal.textContent !== sf)  { sfVal.textContent = sf;  animateNumber(sfVal); }
-  if (cycVarVal  && cycVarVal.textContent !== cv) { cycVarVal.textContent = cv; animateNumber(cycVarVal); }
 
   // NO LAG: only update top status if this live update is newer than what we've shown
   if (liveEpoch >= topStatusSourceEpoch) {
@@ -474,7 +483,7 @@ if (btnDownloadCSV) {
       .slice()
       .sort((a, b) => getRecordEpochMs(a) - getRecordEpochMs(b)); // oldest->newest
 
-    const header = ["timestamp","epoch_ms","status","voltage","current","temp","zcv","thd","entropy"];
+    const header = ["timestamp","epoch_ms","status","voltage","current","temp","cycle_nmse","zcv","zc_dwell_ratio","pulse_count_per_cycle","peak_fluct_cv","midband_residual_rms","hf_band_energy_ratio","wpe_entropy","spec_entropy","thd_i"];
     const lines = [header.join(",")];
 
     for (const r of rows) {
@@ -488,9 +497,16 @@ if (btnDownloadCSV) {
         csvEscape(r.voltage ?? ""),
         csvEscape(r.current ?? ""),
         csvEscape(r.temp ?? ""),
+        csvEscape(r.cycle_nmse ?? ""),
         csvEscape(r.zcv ?? ""),
-        csvEscape(r.thd ?? ""),
-        csvEscape(r.entropy ?? "")
+        csvEscape(r.zc_dwell_ratio ?? ""),
+        csvEscape(r.pulse_count_per_cycle ?? ""),
+        csvEscape(r.peak_fluct_cv ?? ""),
+        csvEscape(r.midband_residual_rms ?? ""),
+        csvEscape(r.hf_band_energy_ratio ?? ""),
+        csvEscape(r.wpe_entropy ?? ""),
+        csvEscape(r.spec_entropy ?? ""),
+        csvEscape(r.thd_i ?? "")
       ].join(","));
     }
 

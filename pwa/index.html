@@ -50,7 +50,7 @@
 
     <section class="metrics-block">
       <div class="section-head">
-        <h2 class="section-title">Electrical Data</h2>
+        <h2 class="section-title">Live Electrical Data</h2>
         <div class="section-hint">LIVE</div>
       </div>
 
@@ -79,45 +79,36 @@
 
     <section class="features-block">
       <div class="section-head">
-        <h2 class="section-title">Waveform Features</h2>
+        <h2 class="section-title">Waveform Data</h2>
         <div class="section-hint">LIVE</div>
       </div>
 
-      <div class="feature-clusters">
-        <div class="feature-cluster cols-2">
-          <div class="card feature-card">
-            <div class="card-label">Spectral Entropy</div>
-            <div class="card-value"><span id="entVal">—</span></div>
+      <div class="wave-grid">
+        <div class="feature-group-card">
+          <div class="group-head">
+            <h3 class="group-title">Time and Cycle Domain</h3>
+            <div class="muted small">First 6 features</div>
           </div>
-          <div class="card feature-card">
-            <div class="card-label">Spectral Flatness</div>
-            <div class="card-value"><span id="sfVal">—</span></div>
-          </div>
-        </div>
-
-        <div class="feature-cluster cols-2">
-          <div class="card feature-card">
-            <div class="card-label">High Frequency Ratio</div>
-            <div class="card-value"><span id="hfRatioVal">—</span></div>
-          </div>
-          <div class="card feature-card">
-            <div class="card-label">High Frequency Variance</div>
-            <div class="card-value"><span id="hfVarVal">—</span></div>
+          <div class="feature-grid feature-grid-2col">
+            <div class="card feature-card"><div class="card-label">Cycle NMSE</div><div class="card-value"><span id="cycleNmseVal">—</span></div></div>
+            <div class="card feature-card"><div class="card-label">Zero-Cross Variance</div><div class="card-value"><span id="zcvVal">—</span></div></div>
+            <div class="card feature-card"><div class="card-label">Zero-Cross Dwell Ratio</div><div class="card-value"><span id="zcDwellVal">—</span></div></div>
+            <div class="card feature-card"><div class="card-label">Pulse Count / Cycle</div><div class="card-value"><span id="pulseCountVal">—</span></div></div>
+            <div class="card feature-card"><div class="card-label">Peak Fluctuation CV</div><div class="card-value"><span id="peakFluctVal">—</span></div></div>
+            <div class="card feature-card"><div class="card-label">Midband Residual RMS</div><div class="card-value"><span id="midbandResidVal">—</span></div></div>
           </div>
         </div>
 
-        <div class="feature-cluster cols-3">
-          <div class="card feature-card">
-            <div class="card-label">Total Harmonic Distortion</div>
-            <div class="card-value"><span id="thdVal">—</span><span class="unit">%</span></div>
+        <div class="feature-group-card">
+          <div class="group-head">
+            <h3 class="group-title">Frequency and Energy Domain</h3>
+            <div class="muted small">Last 4 features</div>
           </div>
-          <div class="card feature-card">
-            <div class="card-label">Cycle Variance</div>
-            <div class="card-value"><span id="cycVarVal">—</span></div>
-          </div>
-          <div class="card feature-card">
-            <div class="card-label">Zero Crossing Variance</div>
-            <div class="card-value"><span id="zcvVal">—</span></div>
+          <div class="feature-grid feature-grid-2col">
+            <div class="card feature-card"><div class="card-label">HF Band Energy Ratio</div><div class="card-value"><span id="hfEnergyVal">—</span></div></div>
+            <div class="card feature-card"><div class="card-label">Wavelet Packet Energy Entropy</div><div class="card-value"><span id="wpeEntropyVal">—</span></div></div>
+            <div class="card feature-card"><div class="card-label">Spectral Entropy</div><div class="card-value"><span id="specEntropyVal">—</span></div></div>
+            <div class="card feature-card"><div class="card-label">THD Current</div><div class="card-value"><span id="thdVal">—</span><span class="unit">%</span></div></div>
           </div>
         </div>
       </div>
@@ -152,9 +143,9 @@
               <th>V</th>
               <th>A</th>
               <th>°C</th>
+              <th>Cycle</th>
               <th>ZCV</th>
               <th>THD%</th>
-              <th>H</th>
             </tr>
           </thead>
           <tbody id="historyBody">

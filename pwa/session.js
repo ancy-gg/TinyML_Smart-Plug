@@ -195,8 +195,8 @@
   const showPref = new Map();
   const axisPref = new Map();
 
-  const DEFAULT_ON = new Set(["i_rms", "v_rms", "thd_pct", "spectral_entropy", "spectral_flatness"]);
-  const DEFAULT_Y2 = new Set(["thd_pct", "v_rms", "temp_c"]);
+  const DEFAULT_ON = new Set(["i_rms", "v_rms", "thd_i", "cycle_nmse", "zcv", "hf_band_energy_ratio"]);
+  const DEFAULT_Y2 = new Set(["thd_i", "v_rms", "temp_c"]);
 
   function resetState() {
     pause();

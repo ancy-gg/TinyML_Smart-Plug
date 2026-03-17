@@ -630,3 +630,41 @@ body.showSeries{ overflow:hidden; }
   .ota-input{ width:100%; }
   .history-table{ min-width:640px; }
 }
+
+.wave-grid{
+  display:grid;
+  grid-template-columns: repeat(2, minmax(0,1fr));
+  gap:18px;
+}
+.feature-group-card{
+  background:linear-gradient(180deg, rgba(255,255,255,0.04), rgba(255,255,255,0.02));
+  border:1px solid rgba(255,255,255,0.10);
+  border-radius:20px;
+  padding:14px;
+}
+.group-head{
+  display:flex;
+  align-items:flex-end;
+  justify-content:space-between;
+  gap:12px;
+  margin-bottom:12px;
+}
+.group-title{
+  margin:0;
+  font-size:20px;
+  font-weight:900;
+}
+.feature-grid{
+  display:grid;
+  gap:12px;
+}
+.feature-grid-2col{
+  grid-template-columns: repeat(2, minmax(0,1fr));
+}
+.feature-card .card-value{
+  font-size: clamp(24px, 2.2vw, 36px);
+}
+@media (max-width: 920px){
+  .wave-grid{ grid-template-columns: 1fr; }
+  .feature-grid-2col{ grid-template-columns: 1fr; }
+}
