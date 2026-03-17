@@ -54,11 +54,11 @@ float VoltageSensor::update() {
     return -1.0f;
   }
 
-  constexpr int SAMPLES_PER_CALL = 6;
+  constexpr int SAMPLES_PER_CALL = 8;
   for (int i = 0; i < SAMPLES_PER_CALL; i++) {
-    int a = analogRead(_pin);
-    int b = analogRead(_pin);
-    int c = analogRead(_pin);
+    const int a = analogRead(_pin);
+    const int b = analogRead(_pin);
+    const int c = analogRead(_pin);
     const int val = _median3(a, b, c);
     _count++;
     _sum   += val;
@@ -91,37 +91,42 @@ float VoltageSensor::update() {
   }
 
   _rawVrms = vrms_main;
+  const float dtS = (float)_windowUs / 1000000.0f;
 
+  // Protection voltage: keep stable during noise, but jump immediately on real events.
   if (!_protInit) {
     _protInit = true;
     _protVrms = _rawVrms;
   } else {
-    float alpha = 0.10f;
-    const float d = fabsf(_rawVrms - _protVrms);
-    if (_rawVrms <= MAINS_PRESENT_OFF_V || d >= 12.0f || _rawVrms >= (VOLT_SURGE_TRIP_V - 5.0f)) {
-      alpha = 0.30f;
+    const float dProt = fabsf(_rawVrms - _protVrms);
+    const bool hardJump = (_rawVrms <= _vOff) ||
+                          (dProt >= _avgJumpV) ||
+                          (_rawVrms >= (VOLT_SURGE_TRIP_V - 5.0f));
+
+    if (hardJump) {
+      _protVrms = _rawVrms;
+    } else {
+      const float alphaProt = fminf(1.0f, dtS / 1.2f);
+      _protVrms += alphaProt * (_rawVrms - _protVrms);
     }
-    _protVrms += alpha * (_rawVrms - _protVrms);
+
     if (_protVrms < 0.25f) _protVrms = 0.0f;
   }
 
+  // Display voltage: instant on large changes, very long memory when stable.
   if (!_dispInit) {
     _dispInit = true;
     _dispVrms = _protVrms;
     return _dispVrms;
   }
 
-  const float dtS = (float)_windowUs / 1000000.0f;
-  const float slowAlpha = fminf(1.0f, dtS / _avgTauS);
-  const float fastAlpha = 0.10f;
   const float delta = fabsf(_protVrms - _dispVrms);
-
   if (_protVrms <= 0.0f) {
-    _dispVrms += 0.14f * (_protVrms - _dispVrms);
-    if (_dispVrms < 0.5f) _dispVrms = 0.0f;
+    _dispVrms = 0.0f;
   } else if (delta >= _avgJumpV) {
-    _dispVrms += fastAlpha * (_protVrms - _dispVrms);
+    _dispVrms = _protVrms;
   } else {
+    const float slowAlpha = fminf(1.0f, dtS / _avgTauS);
     _dispVrms += slowAlpha * (_protVrms - _dispVrms);
   }
 

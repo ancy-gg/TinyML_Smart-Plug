@@ -19,67 +19,75 @@ struct TonePattern {
 
 // Status tones: one-shot only
 static constexpr ToneStep P_BOOT[] = {
-  {2400, 70, 0}, {0, 30, 0}, {2900, 70, 0}, {0, 30, 0}, {3400, 120, 0}
+  {1850, 80, 112}, {0, 40, 0}, {2350, 90, 120}, {0, 40, 0}, {2950, 130, 128}
 };
 static constexpr ToneStep P_WIFI_PORTAL[] = {
-  {740, 120, 90}, {0, 70, 0}, {988, 120, 90}
+  {880, 120, 112}, {0, 70, 0}, {1175, 120, 116}, {0, 70, 0}, {1568, 150, 120}
 };
 static constexpr ToneStep P_WIFI_OK[] = {
-  {2600, 70, 0}, {0, 30, 0}, {3100, 80, 0}, {0, 30, 0}, {3600, 120, 0}
+  {1800, 60, 110}, {0, 25, 0}, {2400, 70, 118}, {0, 25, 0}, {3200, 110, 126}
 };
 static constexpr ToneStep P_LOGGER_ON[] = {
-  {1200, 60, 95}, {0, 40, 0}, {1600, 60, 95}, {0, 40, 0}, {2000, 80, 100}
+  {1150, 55, 104}, {0, 35, 0}, {1500, 55, 110}, {0, 35, 0}, {1950, 85, 118}
 };
 static constexpr ToneStep P_OTA_START[] = {
-  {1700, 80, 100}, {0, 30, 0}, {1400, 90, 100}, {0, 30, 0}, {1100, 110, 100}
+  {1500, 80, 112}, {0, 30, 0}, {1300, 90, 112}, {0, 30, 0}, {1100, 120, 118}
 };
 static constexpr ToneStep P_OTA_OK[] = {
-  {1200, 60, 95}, {0, 25, 0}, {1600, 60, 105}, {0, 25, 0}, {2100, 160, 115}
+  {1300, 60, 110}, {0, 25, 0}, {1800, 60, 118}, {0, 25, 0}, {2500, 140, 126}
 };
 static constexpr ToneStep P_OTA_FAIL[] = {
-  {520, 180, 110}, {0, 70, 0}, {420, 220, 120}, {0, 70, 0}, {320, 280, 125}
+  {520, 200, 132}, {0, 80, 0}, {420, 240, 136}, {0, 80, 0}, {320, 320, 140}
 };
 static constexpr ToneStep P_MAINS_LOST[] = {
-  {430, 260, 120}, {0, 100, 0}, {320, 320, 120}
+  {430, 240, 128}, {0, 90, 0}, {330, 320, 128}
 };
 static constexpr ToneStep P_DEVICE_PLUG[] = {
-  {1500, 60, 95}, {0, 30, 0}, {1800, 90, 105}
+  {1400, 55, 108}, {0, 25, 0}, {1750, 85, 116}
 };
 
 // Fault tones: repeating by design
+// Arc = sharp "lightning" crackle style
 static constexpr ToneStep P_FAULT_ARC[] = {
-  {3800, 40, 0}, {0, 20, 0}, {3200, 35, 0}, {0, 20, 0},
-  {4000, 35, 0}, {0, 25, 0}, {2800, 50, 0}, {0, 160, 0}
+  {4100, 28, 132}, {0, 18, 0}, {3450, 34, 132}, {0, 20, 0},
+  {3900, 30, 132}, {0, 24, 0}, {3000, 48, 132}, {0, 140, 0}
 };
+
+// Heat = temporal fire-alarm rhythm
 static constexpr ToneStep P_FAULT_HEAT[] = {
-  {1800, 180, 0}, {3200, 180, 0}, {0, 80, 0},
-  {1800, 180, 0}, {3200, 180, 0}, {0, 220, 0}
+  {1650, 180, 126}, {0, 70, 0}, {1650, 180, 126}, {0, 70, 0}, {1650, 180, 126},
+  {0, 220, 0}
 };
+
+// Overload warn = medium urgency pulse
 static constexpr ToneStep P_FAULT_OVER[] = {
-  {2600, 140, 0}, {0, 100, 0}, {2600, 140, 0}, {0, 300, 0}
+  {2450, 120, 118}, {0, 100, 0}, {2450, 120, 118}, {0, 280, 0}
 };
+
+// Hard overload / short / surge = ambulance "wang-wang"
 static constexpr ToneStep P_FAULT_OVER_HARD[] = {
-  {2200, 120, 0}, {3200, 120, 0}, {2200, 120, 0}, {3200, 120, 0}, {0, 100, 0}
+  {1650, 180, 138}, {2450, 180, 138}, {1650, 180, 138}, {2450, 180, 138}, {0, 80, 0}
 };
+
 static constexpr ToneStep P_RESET_ACK[] = {
-  {1200, 80, 100}, {0, 40, 0}, {1200, 80, 100}
+  {1200, 80, 110}, {0, 40, 0}, {1200, 80, 110}
 };
 
 static constexpr TonePattern PATTERNS[] = {
-  { P_BOOT,             (uint8_t)(sizeof(P_BOOT) / sizeof(P_BOOT[0])),                   false, 0 },
-  { P_WIFI_PORTAL,      (uint8_t)(sizeof(P_WIFI_PORTAL) / sizeof(P_WIFI_PORTAL[0])),     false, 1 },
-  { P_WIFI_OK,          (uint8_t)(sizeof(P_WIFI_OK) / sizeof(P_WIFI_OK[0])),             false, 1 },
-  { P_LOGGER_ON,        (uint8_t)(sizeof(P_LOGGER_ON) / sizeof(P_LOGGER_ON[0])),         false, 1 },
-  { P_OTA_START,        (uint8_t)(sizeof(P_OTA_START) / sizeof(P_OTA_START[0])),         false, 2 },
-  { P_OTA_OK,           (uint8_t)(sizeof(P_OTA_OK) / sizeof(P_OTA_OK[0])),               false, 2 },
-  { P_OTA_FAIL,         (uint8_t)(sizeof(P_OTA_FAIL) / sizeof(P_OTA_FAIL[0])),           false, 2 },
-  { P_MAINS_LOST,       (uint8_t)(sizeof(P_MAINS_LOST) / sizeof(P_MAINS_LOST[0])),       false, 2 },
-  { P_DEVICE_PLUG,      (uint8_t)(sizeof(P_DEVICE_PLUG) / sizeof(P_DEVICE_PLUG[0])),     false, 1 },
-  { P_FAULT_ARC,        (uint8_t)(sizeof(P_FAULT_ARC) / sizeof(P_FAULT_ARC[0])),         true,  4 },
-  { P_FAULT_HEAT,       (uint8_t)(sizeof(P_FAULT_HEAT) / sizeof(P_FAULT_HEAT[0])),       true,  5 },
-  { P_FAULT_OVER,       (uint8_t)(sizeof(P_FAULT_OVER) / sizeof(P_FAULT_OVER[0])),       true,  3 },
-  { P_FAULT_OVER_HARD,  (uint8_t)(sizeof(P_FAULT_OVER_HARD) / sizeof(P_FAULT_OVER_HARD[0])), true, 5 },
-  { P_RESET_ACK,        (uint8_t)(sizeof(P_RESET_ACK) / sizeof(P_RESET_ACK[0])),         false, 1 },
+  { P_BOOT,             (uint8_t)(sizeof(P_BOOT) / sizeof(P_BOOT[0])),                       false, 1 },
+  { P_WIFI_PORTAL,      (uint8_t)(sizeof(P_WIFI_PORTAL) / sizeof(P_WIFI_PORTAL[0])),         false, 1 },
+  { P_WIFI_OK,          (uint8_t)(sizeof(P_WIFI_OK) / sizeof(P_WIFI_OK[0])),                 false, 1 },
+  { P_LOGGER_ON,        (uint8_t)(sizeof(P_LOGGER_ON) / sizeof(P_LOGGER_ON[0])),             false, 1 },
+  { P_OTA_START,        (uint8_t)(sizeof(P_OTA_START) / sizeof(P_OTA_START[0])),             false, 2 },
+  { P_OTA_OK,           (uint8_t)(sizeof(P_OTA_OK) / sizeof(P_OTA_OK[0])),                   false, 2 },
+  { P_OTA_FAIL,         (uint8_t)(sizeof(P_OTA_FAIL) / sizeof(P_OTA_FAIL[0])),               false, 2 },
+  { P_MAINS_LOST,       (uint8_t)(sizeof(P_MAINS_LOST) / sizeof(P_MAINS_LOST[0])),           false, 2 },
+  { P_DEVICE_PLUG,      (uint8_t)(sizeof(P_DEVICE_PLUG) / sizeof(P_DEVICE_PLUG[0])),         false, 1 },
+  { P_FAULT_ARC,        (uint8_t)(sizeof(P_FAULT_ARC) / sizeof(P_FAULT_ARC[0])),             true,  4 },
+  { P_FAULT_HEAT,       (uint8_t)(sizeof(P_FAULT_HEAT) / sizeof(P_FAULT_HEAT[0])),           true,  5 },
+  { P_FAULT_OVER,       (uint8_t)(sizeof(P_FAULT_OVER) / sizeof(P_FAULT_OVER[0])),           true,  3 },
+  { P_FAULT_OVER_HARD,  (uint8_t)(sizeof(P_FAULT_OVER_HARD) / sizeof(P_FAULT_OVER_HARD[0])), true,  6 },
+  { P_RESET_ACK,        (uint8_t)(sizeof(P_RESET_ACK) / sizeof(P_RESET_ACK[0])),             false, 1 },
 };
 
 static int s_buzzPin = -1;
@@ -105,7 +113,6 @@ static inline bool statusSoundAllowed() {
 }
 
 static inline bool eventSoundAllowed(uint8_t id) {
-  if (startupMuteActive()) return false;
   if (isFaultPattern(id)) return true;
   return statusSoundAllowed();
 }
@@ -132,18 +139,19 @@ static void pwmStop() {
 #endif
 }
 
-static void pwmTone(uint16_t hz) {
+static void pwmTone(uint16_t hz, uint8_t duty) {
   if (!s_pwmReady || s_buzzPin < 0) return;
-  if (hz == 0) {
+  if (hz == 0 || duty == 0) {
     pwmStop();
     return;
   }
+
 #if defined(ESP_ARDUINO_VERSION_MAJOR) && (ESP_ARDUINO_VERSION_MAJOR >= 3)
   ledcWriteTone(s_buzzPin, hz);
-  ledcWrite(s_buzzPin, BUZZER_PWM_DUTY);
+  ledcWrite(s_buzzPin, duty);
 #else
   ledcWriteTone(BUZZ_CH, hz);
-  ledcWrite(BUZZ_CH, BUZZER_PWM_DUTY);
+  ledcWrite(BUZZ_CH, duty);
 #endif
 }
 
@@ -183,7 +191,7 @@ static void soundLoop() {
 
   if (s_t0 == 0) {
     s_t0 = now;
-    pwmTone(p.steps[s_step].hz);
+    pwmTone(p.steps[s_step].hz, p.steps[s_step].duty);
     return;
   }
 

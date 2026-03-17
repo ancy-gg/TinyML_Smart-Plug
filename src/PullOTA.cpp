@@ -2,11 +2,13 @@
 #include "CloudHandler.h"
 
 #include <WiFi.h>
+#include <WiFiClient.h>
 #include <WiFiClientSecure.h>
 #include <HTTPClient.h>
 #include <Update.h>
 
 static const uint32_t OTA_HTTP_TIMEOUT_MS = 60000;
+static const uint32_t OTA_STREAM_IDLE_MS  = 12000;
 
 void PullOTA::begin(const char* currentVersion, CloudHandler* cloud) {
   _currentVersion = currentVersion ? currentVersion : "TSP-v0.0.0";
@@ -61,20 +63,37 @@ bool PullOTA::fetchOtaTargets(String& desiredVersion, String& firmwareUrl) {
 }
 
 bool PullOTA::performUpdateFromUrl(const String& url) {
-  WiFiClientSecure client;
-  if (_insecureTLS) client.setInsecure();
+  const bool isHttps = url.startsWith("https://");
+  const bool isHttp  = url.startsWith("http://");
+  if (!isHttps && !isHttp) return false;
 
   HTTPClient http;
   http.setTimeout(OTA_HTTP_TIMEOUT_MS);
   http.setFollowRedirects(HTTPC_STRICT_FOLLOW_REDIRECTS);
+  http.useHTTP10(true);
 
-  if (!http.begin(client, url)) return false;
+  bool begun = false;
+  WiFiClient plainClient;
+  WiFiClientSecure secureClient;
 
-  int code = http.GET();
-  if (code != HTTP_CODE_OK) { http.end(); return false; }
+  if (isHttps) {
+    secureClient.setTimeout(OTA_HTTP_TIMEOUT_MS);
+    if (_insecureTLS) secureClient.setInsecure();
+    begun = http.begin(secureClient, url);
+  } else {
+    plainClient.setTimeout(OTA_HTTP_TIMEOUT_MS);
+    begun = http.begin(plainClient, url);
+  }
 
-  int total = http.getSize();
+  if (!begun) return false;
 
+  const int code = http.GET();
+  if (code != HTTP_CODE_OK) {
+    http.end();
+    return false;
+  }
+
+  const int total = http.getSize();
   if (!Update.begin(total > 0 ? (size_t)total : UPDATE_SIZE_UNKNOWN, U_FLASH)) {
     http.end();
     return false;
@@ -83,21 +102,49 @@ bool PullOTA::performUpdateFromUrl(const String& url) {
   WiFiClient* stream = http.getStreamPtr();
   size_t written = 0;
   uint8_t buf[2048];
+  uint32_t lastDataMs = millis();
 
   while (http.connected() && (total < 0 || (int)written < total)) {
-    size_t avail = stream->available();
-    if (!avail) { delay(1); continue; }
+    const size_t avail = stream->available();
+    if (!avail) {
+      if ((millis() - lastDataMs) > OTA_STREAM_IDLE_MS) {
+        Update.abort();
+        http.end();
+        return false;
+      }
+      delay(1);
+      continue;
+    }
 
-    int r = stream->readBytes(buf, (avail > sizeof(buf)) ? sizeof(buf) : avail);
-    if (r <= 0) break;
+    const int r = stream->readBytes(buf, (avail > sizeof(buf)) ? sizeof(buf) : avail);
+    if (r <= 0) {
+      if ((millis() - lastDataMs) > OTA_STREAM_IDLE_MS) {
+        Update.abort();
+        http.end();
+        return false;
+      }
+      delay(1);
+      continue;
+    }
 
-    size_t w = Update.write(buf, (size_t)r);
-    if (w != (size_t)r) { Update.abort(); http.end(); return false; }
+    lastDataMs = millis();
+    const size_t w = Update.write(buf, (size_t)r);
+    if (w != (size_t)r) {
+      Update.abort();
+      http.end();
+      return false;
+    }
     written += w;
   }
 
-  if (!Update.end(true)) { http.end(); return false; }
-  if (!Update.isFinished()) { http.end(); return false; }
+  if (!Update.end(true)) {
+    http.end();
+    return false;
+  }
+  if (!Update.isFinished()) {
+    http.end();
+    return false;
+  }
 
   http.end();
   return true;

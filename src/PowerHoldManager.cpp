@@ -3,6 +3,7 @@
 
 #if defined(ARDUINO_ARCH_ESP32)
 #include <driver/gpio.h>
+#include <esp_sleep.h>
 #endif
 
 void PowerHoldManager::begin(int enPin) {
@@ -19,9 +20,11 @@ void PowerHoldManager::begin(int enPin) {
   if (_pinEn < 0) return;
 
 #if defined(ARDUINO_ARCH_ESP32)
-  // Recover cleanly if a previous failed shutdown left the pin held low.
+  // Release any previous pin hold after a true power cycle.
   gpio_hold_dis((gpio_num_t)_pinEn);
+  gpio_deep_sleep_hold_dis();
 #endif
+
   pinMode(_pinEn, OUTPUT);
   driveEnable(true);
 }
@@ -40,19 +43,24 @@ void PowerHoldManager::shutdownNow() {
   if (_shutdownTriggered || _pinEn < 0) return;
   _shutdownTriggered = true;
 
-  // For this topology, EN low should kill the rail directly.
-  // Do NOT use gpio_hold_en() here; if the rail droops instead of collapsing
-  // instantly, the latched low can survive into a warm reset and create a
-  // nasty blink/boot-loop state.
+  noInterrupts();
+  pinMode(_pinEn, OUTPUT);
+  digitalWrite(_pinEn, LOW);
+
 #if defined(ARDUINO_ARCH_ESP32)
+  // Latch EN LOW through deep sleep so the TPS stays off until the user
+  // physically power-cycles the battery rail.
   gpio_hold_dis((gpio_num_t)_pinEn);
+  gpio_set_direction((gpio_num_t)_pinEn, GPIO_MODE_OUTPUT);
+  gpio_set_level((gpio_num_t)_pinEn, 0);
+  gpio_hold_en((gpio_num_t)_pinEn);
+  gpio_deep_sleep_hold_en();
+
+  delay(20);
+  esp_sleep_disable_wakeup_source(ESP_SLEEP_WAKEUP_ALL);
+  esp_deep_sleep_start();
 #endif
 
-  noInterrupts();
-  driveEnable(false);
-  delay(150);
-
-  // If power did not collapse yet, just stay here quietly.
   for (;;) {
     delay(1000);
   }
@@ -101,7 +109,6 @@ void PowerHoldManager::update(float vrmsFast) {
     }
   } else {
     // Never start the outage timer until the system has seen real mains once.
-    // This prevents battery-only startups or noisy early-boot Vrms from arming a fake outage.
     if (!_mainsSeenOnce || !bootArmed) {
       driveEnable(true);
       return;

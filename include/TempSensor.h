@@ -17,6 +17,10 @@ private:
   const float R_NTC_NOMINAL = 10000.0f;
   const float B_COEFF = 3950.0f;
   const float TEMP_NOMINAL = 25.0f;
+
+  bool _filtInit = false;
+  float _filtTempC = 0.0f;
+  uint32_t _lastReadMs = 0;
 };
 
 #endif
