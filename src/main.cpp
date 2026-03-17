@@ -31,42 +31,39 @@
 
 #define API_KEY "AIzaSyAmJlZZszyWPJFgIkTAAl_TbIySys1nvEw"
 #define DATABASE_URL "tinyml-smart-plug-default-rtdb.asia-southeast1.firebasedatabase.app"
-static const char* FW_VERSION = "TSP-v0.5.9";
+static const char* FW_VERSION = "TSP-v0.6.0";
 
 static const char* OTA_DESIRED_VERSION_PATH = "/ota/desired_version";
 static const char* OTA_FIRMWARE_URL_PATH    = "/ota/firmware_url";
 static const uint32_t OTA_CHECK_INTERVAL_MS = 60000;
+static constexpr uint32_t SENSOR_BOOT_SETTLE_MS = 300;
 
-OLED_NOTIF      oled(0x3C);
-NetworkManager  net;
-CloudHandler    cloud;
-TimeSync        timeSync;
-PullOTA         ota;
+OLED_NOTIF       oled(0x3C);
+NetworkManager   net;
+CloudHandler     cloud;
+TimeSync         timeSync;
+PullOTA          ota;
 
-VoltageSensor   voltSensor(PIN_VOLT_ADC);
-TempSensor      tempSensor(PIN_TEMP_ADC);
+VoltageSensor    voltSensor(PIN_VOLT_ADC);
+TempSensor       tempSensor(PIN_TEMP_ADC);
 PowerHoldManager powerHold;
 
-FaultLogic      faultLogic;
-Actuators       actuators;
+FaultLogic       faultLogic;
+Actuators        actuators;
 
 #if ENABLE_ML_LOGGER
-DataLogger      logger;
+DataLogger       logger;
 #endif
 
-CurrentSensor   curSensor;
-ArcFeatures     arcFeat;
-CurrentCalib    curCalib;
-
-static constexpr uint32_t SENSOR_BOOT_SETTLE_MS = 4000;
+CurrentSensor    curSensor;
+ArcFeatures      arcFeat;
+CurrentCalib     curCalib;
 
 static uint16_t s_raw[N_SAMP];
 static QueueHandle_t qFeat = nullptr;
 
 static bool gSafeMode = false;
-static volatile bool gPauseByPortal = false;
 static volatile bool gPauseByOta = false;
-
 
 static void handleCueEvents(float vProtect, float irms, bool paused) {
   static bool mainsPresentLast = false;
@@ -83,9 +80,7 @@ static void handleCueEvents(float vProtect, float irms, bool paused) {
   if (paused) return;
 
   const bool mainsPresent = (vProtect >= MAINS_PRESENT_ON_V);
-  if (!mainsPresentLast && vProtect >= 200.0f) {
-    actuators.notify(SND_MAINS_RESTORED);
-  }
+  if (!mainsPresentLast && vProtect >= 200.0f) actuators.notify(SND_MAINS_RESTORED);
   mainsPresentLast = mainsPresent;
 
   const bool lowWarn = (vProtect > MAINS_PRESENT_ON_V && vProtect < 200.0f);
@@ -93,15 +88,11 @@ static void handleCueEvents(float vProtect, float irms, bool paused) {
 
   if (lowWarn) {
     if (lowSinceMs == 0) lowSinceMs = now;
-  } else {
-    lowSinceMs = 0;
-  }
+  } else lowSinceMs = 0;
 
   if (highWarn) {
     if (highSinceMs == 0) highSinceMs = now;
-  } else {
-    highSinceMs = 0;
-  }
+  } else highSinceMs = 0;
 
   if (lowSinceMs && (now - lowSinceMs >= 1500U) && (now - lastVoltWarnMs >= 8000U)) {
     lastVoltWarnMs = now;
@@ -121,12 +112,9 @@ static void handleCueEvents(float vProtect, float irms, bool paused) {
 
   const float dI = fabsf(irms - prevIrms);
   prevIrms = irms;
-
   if (dI < 0.08f) {
     if (stableSinceMs == 0) stableSinceMs = now;
-  } else {
-    stableSinceMs = 0;
-  }
+  } else stableSinceMs = 0;
 
   if (stableSinceMs && (now - stableSinceMs >= 1200U)) {
     loadBaseA += 0.02f * (irms - loadBaseA);
@@ -141,51 +129,42 @@ static void handleCueEvents(float vProtect, float irms, bool paused) {
     stableSinceMs = 0;
   }
 }
-static void onOtaEvent(OtaEvent ev) {
+
+static void onOtaEvent(OtaEvent ev, int progress) {
   if (ev == OtaEvent::START) {
     gPauseByOta = true;
+    oled.setOta(true, 0);
     actuators.notify(SND_OTA_START);
+  } else if (ev == OtaEvent::PROGRESS) {
+    oled.setOta(true, (uint8_t)constrain(progress, 0, 100));
   } else if (ev == OtaEvent::SUCCESS) {
+    oled.setOta(true, 100);
     actuators.notify(SND_OTA_OK);
   } else if (ev == OtaEvent::FAIL) {
     gPauseByOta = false;
+    oled.setOta(false, 0);
     actuators.notify(SND_OTA_FAIL);
   }
 }
 
-// Core0: capture + features (hold last good, never spam zeros)
 static void Core0Task(void* pv) {
   (void)pv;
-
   ArcFeatOut out;
   FeatureFrame lastGood = {};
   bool hasGood = false;
 
-  while (millis() < SENSOR_BOOT_SETTLE_MS) {
-    vTaskDelay(20 / portTICK_PERIOD_MS);
-  }
+  while (millis() < SENSOR_BOOT_SETTLE_MS) vTaskDelay(20 / portTICK_PERIOD_MS);
 
   while (true) {
-    const bool paused = gPauseByPortal || gPauseByOta;
-    if (paused) {
-      if (hasGood && qFeat) xQueueOverwrite(qFeat, &lastGood);
-      vTaskDelay(20);
-      continue;
-    }
-
     FeatureFrame f;
     f.uptime_ms = millis();
-    f.feat_valid = 0;
 
     float fs_hz = FS_TARGET_HZ;
     size_t got = curSensor.capture(s_raw, N_SAMP, &fs_hz);
-    if (fs_hz < 1000.0f) fs_hz = FS_TARGET_HZ;
-
-    if (got != N_SAMP) {
+    if (got != N_SAMP || fs_hz < 20000.0f) {
       vTaskDelay(1);
       fs_hz = FS_TARGET_HZ;
       got = curSensor.capture(s_raw, N_SAMP, &fs_hz);
-      if (fs_hz < 1000.0f) fs_hz = FS_TARGET_HZ;
     }
 
     bool ok = false;
@@ -194,21 +173,27 @@ static void Core0Task(void* pv) {
     }
 
     if (ok) {
-      f.feat_valid = 1;
-      f.irms     = out.irms_a;
-      f.thd_pct  = out.thd_pct;
-      f.entropy  = out.entropy;
-      f.zcv_ms   = out.zcv_ms;
-      f.hf_ratio = out.hf_ratio;
-      f.hf_var   = out.hf_var;
-      f.sf       = out.sf;
-      f.cyc_var  = out.cyc_var;
+      f.adc_fs_hz = out.fs_hz;
+      f.irms = out.irms_a;
+      f.current_valid = out.current_valid ? 1 : 0;
+      f.feat_valid = out.feat_valid ? 1 : 0;
+
+      f.cycle_nmse            = out.cycle_nmse;
+      f.zcv                   = out.zcv;
+      f.zc_dwell_ratio        = out.zc_dwell_ratio;
+      f.pulse_count_per_cycle = out.pulse_count_per_cycle;
+      f.peak_fluct_cv         = out.peak_fluct_cv;
+      f.midband_residual_rms  = out.midband_residual_rms;
+      f.hf_band_energy_ratio  = out.hf_band_energy_ratio;
+      f.wpe_entropy           = out.wpe_entropy;
+      f.spec_entropy          = out.spec_entropy;
+      f.thd_i                 = out.thd_i;
 
       lastGood = f;
       hasGood = true;
       if (qFeat) xQueueOverwrite(qFeat, &f);
-    } else {
-      if (hasGood && qFeat) xQueueOverwrite(qFeat, &lastGood);
+    } else if (hasGood && qFeat) {
+      xQueueOverwrite(qFeat, &lastGood);
     }
 
     vTaskDelay(1);
@@ -216,7 +201,7 @@ static void Core0Task(void* pv) {
 }
 
 #if ENABLE_ML_LOGGER
-static void pollMlControl(CloudHandler& cloud, DataLogger& logger) {
+static void pollMlControl(CloudHandler& cloud, DataLogger& logger, OLED_NOTIF& oledUi) {
   static uint32_t lastPoll = 0;
   static bool lastEnabled = false;
 
@@ -248,7 +233,10 @@ static void pollMlControl(CloudHandler& cloud, DataLogger& logger) {
   logger.setSession(sid, load, labelOv);
   logger.setEnabled(enabled);
 
-  if (enabled && !lastEnabled) actuators.notify(SND_LOGGER_ON);
+  if (enabled && !lastEnabled) {
+    actuators.notify(SND_LOGGER_ON);
+    oledUi.triggerCollecting(1000);
+  }
   lastEnabled = enabled;
 }
 #endif
@@ -263,9 +251,10 @@ void setup() {
   actuators.begin(PIN_RELAY, PIN_BUZZER_PWM, &oled);
 
   voltSensor.begin();
-  voltSensor.setWindowMs(250);
+  voltSensor.setWindowMs(220);
   voltSensor.setClampHysteresis(15.0f, 25.0f);
-  voltSensor.setLongAverage(28.0f, 35.0f);
+  voltSensor.setLongAverage(18.0f, 25.0f);
+  voltSensor.setCubicCalib(0.0f, 0.0f, 1.0f, 0.0f);
 
   tempSensor.begin();
   tempSensor.setLongAverage(8.0f, 1.0f);
@@ -274,8 +263,8 @@ void setup() {
   if (!gSafeMode) {
     if (curSensor.begin()) {
       qFeat = xQueueCreate(1, sizeof(FeatureFrame));
-      xTaskCreatePinnedToCore(Core0Task, "Core0Sense", 12288, nullptr, 3, nullptr, 0);
-      oled.showStatus("Sensors", "Ready");
+      xTaskCreatePinnedToCore(Core0Task, "Core0Sense", 16384, nullptr, 3, nullptr, 0);
+      oled.showStatus("Sensors", "ADS8684 ready");
     } else {
       oled.showStatus("WARN", "No ADS8684");
       delay(600);
@@ -284,9 +273,8 @@ void setup() {
     oled.showStatus("SAFE MODE", "OTA only");
   }
 
-  net.begin([](WiFiManager* wm){
+  net.begin([](WiFiManager* wm) {
     (void)wm;
-    oled.showStatus("Setup Mode", "Connect to AP");
     actuators.notify(SND_WIFI_PORTAL);
   });
 
@@ -312,14 +300,12 @@ void setup() {
 
 void loop() {
   BootGuard::loop();
-
   net.update();
   ota.loop();
   timeSync.update();
 
-  gPauseByPortal = net.inConfigPortal();
-  const bool paused = gPauseByPortal || gPauseByOta;
-
+  const bool networkBlocking = net.isBlockingPhase();
+  const bool paused = networkBlocking || gPauseByOta;
   const bool bootSettling = (millis() < SENSOR_BOOT_SETTLE_MS);
 
   static bool lastWiFiConnected = false;
@@ -327,10 +313,8 @@ void loop() {
   if (wifiConnected && !lastWiFiConnected) actuators.notify(SND_WIFI_OK);
   lastWiFiConnected = wifiConnected;
 
-  // Read latest features from core0
   static FeatureFrame lastF = {};
   static bool hasLast = false;
-
   FeatureFrame f;
   if (qFeat && xQueueReceive(qFeat, &f, 0) == pdTRUE) {
     lastF = f;
@@ -342,7 +326,6 @@ void loop() {
     f.uptime_ms = millis();
   }
 
-  // Slow sensors
   static float vRms = 0.0f;
   static float vFast = 0.0f;
   static float tC = 0.0f;
@@ -365,40 +348,37 @@ void loop() {
   f.vrms = vRms;
   f.temp_c = tC;
 
-  if (gSafeMode) {
-    actuators.apply(STATE_NORMAL, vRms, voltSensor.protectVrms(), 0.0f, tC);
-
-    static uint32_t lastSafeCloud = 0;
-    if (millis() - lastSafeCloud > 5000) {
-      lastSafeCloud = millis();
-      cloud.update(vRms, 0.0f, 0.0f, tC, 0,0,0, 0,0, 0,0, 0, String("SAFE_MODE"), &timeSync);
-    }
-    delay(10);
-    return;
-  }
-
-#if ENABLE_ML_LOGGER
-  if (!paused) pollMlControl(cloud, logger);
-  else logger.setEnabled(false);
-#endif
+  float apparentPowerVa = 0.0f;
+  if (vRms > 0.10f && f.irms > 0.001f) apparentPowerVa = vRms * f.irms;
 
   int pred = 0;
-  if (!paused && !bootSettling) {
-    pred = ArcPredict(f.entropy, f.thd_pct, f.zcv_ms,
-                      f.hf_ratio, f.hf_var,
-                      f.sf, f.cyc_var,
-                      f.vrms, f.irms, f.temp_c);
+  if (!gSafeMode && !paused && !bootSettling) {
+    pred = ArcPredict(
+      f.cycle_nmse, f.zcv, f.zc_dwell_ratio,
+      f.pulse_count_per_cycle, f.peak_fluct_cv,
+      f.midband_residual_rms, f.hf_band_energy_ratio,
+      f.wpe_entropy, f.spec_entropy, f.thd_i,
+      f.vrms, f.irms, f.temp_c
+    );
   }
   f.model_pred = (uint8_t)pred;
 
   FaultState st = bootSettling
-      ? STATE_NORMAL
-      : faultLogic.update(tC, f.irms, f.model_pred);
+    ? STATE_NORMAL
+    : faultLogic.update(tC, f.irms, f.model_pred);
+
+  if (gSafeMode) st = STATE_NORMAL;
 
   actuators.apply(st, vRms, vFast, f.irms, tC);
+  handleCueEvents(vFast, f.irms, paused || gSafeMode);
 
 #if ENABLE_ML_LOGGER
-  if (!paused) {
+  if (!paused && !gSafeMode) pollMlControl(cloud, logger, oled);
+  else logger.setEnabled(false);
+#endif
+
+  if (!paused && !gSafeMode) {
+#if ENABLE_ML_LOGGER
     static uint32_t lastMl = 0;
     const uint32_t period = 1000UL / ML_LOG_RATE_HZ;
     if (millis() - lastMl >= period) {
@@ -407,36 +387,49 @@ void loop() {
       logger.ingest(f, st, faultLogic.arcCounter());
     }
     logger.loop();
-  }
 #endif
+  }
+
+  OledOverlay ov = OledOverlay::NONE;
+  if (!gPauseByOta) {
+    if (vFast >= VOLT_SURGE_TRIP_V) ov = OledOverlay::FAULT_SURGE;
+    else if (tC >= TEMP_DATA_HARD_C) ov = OledOverlay::FAULT_TEMP_CRITICAL;
+    else if (st == STATE_ARCING) ov = OledOverlay::FAULT_ARC;
+    else if (st == STATE_HEATING) ov = OledOverlay::FAULT_HEAT;
+    else if (st == STATE_OVERLOAD || f.irms >= OVERLOAD_WARN_A) ov = OledOverlay::FAULT_OVERLOAD;
+  }
+  oled.setOverlay(ov);
+  oled.setState(st);
+  oled.setMeasurements(vRms, f.irms, apparentPowerVa, tC);
+  oled.setWiFi(wifiConnected, net.rssi(), networkBlocking, net.inConfigPortal());
+  static uint32_t lastOled = 0;
+  if (millis() - lastOled >= 80) {
+    lastOled = millis();
+    oled.render();
+  }
 
   static uint32_t lastLive = 0;
   if (millis() - lastLive > 1000) {
     lastLive = millis();
 
     String stateStr;
-    if (paused) {
-      stateStr = gPauseByPortal ? "CONFIG_PORTAL" : "OTA_UPDATING";
-    } else if (vFast >= VOLT_SURGE_TRIP_V) {
-      stateStr = "SURGE";
-    } else if (tC >= TEMP_DATA_HARD_C) {
-      stateStr = "TEMP_CRITICAL";
-    } else if (f.irms >= OVERLOAD_HARD_TRIP_A) {
-      stateStr = "OVERLOAD_HARD";
-    } else {
-      stateStr = String(stateToCstr(st));
-    }
-
-    float apparentPowerVa = 0.0f;
-    if (vRms > 0.10f && f.irms > 0.001f) {
-      apparentPowerVa = vRms * f.irms;
-    }
+    if (gPauseByOta) stateStr = "OTA_UPDATING";
+    else if (net.inConfigPortal()) stateStr = "CONFIG_PORTAL";
+    else if (networkBlocking) stateStr = "WIFI_CONNECTING";
+    else if (vFast >= VOLT_SURGE_TRIP_V) stateStr = "SURGE";
+    else if (tC >= TEMP_DATA_HARD_C) stateStr = "TEMP_CRITICAL";
+    else if (f.irms >= OVERLOAD_HARD_TRIP_A) stateStr = "OVERLOAD_HARD";
+    else if (gSafeMode) stateStr = "SAFE_MODE";
+    else stateStr = String(stateToCstr(st));
 
     cloud.update(vRms, f.irms, apparentPowerVa, tC,
-                 f.zcv_ms, f.thd_pct, f.entropy,
-                 f.hf_ratio, f.hf_var,
-                 f.sf, f.cyc_var,
+                 f.cycle_nmse, f.zcv, f.zc_dwell_ratio,
+                 f.pulse_count_per_cycle, f.peak_fluct_cv,
+                 f.midband_residual_rms, f.hf_band_energy_ratio,
+                 f.wpe_entropy, f.spec_entropy, f.thd_i,
                  f.model_pred,
                  stateStr, &timeSync);
   }
+
+  delay(2);
 }

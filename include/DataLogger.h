@@ -12,10 +12,10 @@ public:
   void setEnabled(bool en);
   bool enabled() const { return _enabled; }
 
-  void setDurationSeconds(uint16_t sec);   // 5..60
+  void setDurationSeconds(uint16_t sec);
   void setSession(const String& sessionId, const String& loadType, int labelOverride);
 
-  void ingest(const FeatureFrame& f, FaultState st, int arcCounter); // keep signature
+  void ingest(const FeatureFrame& f, FaultState st, int arcCounter);
   void loop();
 
 private:
@@ -23,13 +23,16 @@ private:
   struct Rec {
     uint64_t epoch_ms;
 
-    float spectral_entropy;
-    float spectral_flatness;
-    float thd_pct;
+    float cycle_nmse;
     float zcv;
-    float hf_ratio;
-    float hf_var;
-    float cyc_var;
+    float zc_dwell_ratio;
+    float pulse_count_per_cycle;
+    float peak_fluct_cv;
+    float midband_residual_rms;
+    float hf_band_energy_ratio;
+    float wpe_entropy;
+    float spec_entropy;
+    float thd_i;
 
     float v_rms;
     float i_rms;
@@ -38,7 +41,6 @@ private:
   };
 
   CloudHandler* _cloud = nullptr;
-
   bool _enabled = false;
   bool _wasEnabled = false;
 
@@ -47,7 +49,6 @@ private:
   int8_t _labelOverride = -1;
 
   uint16_t _durationS = ML_LOG_DURATION_S;
-
   uint32_t _chunkStartMs = 0;
   uint32_t _lastFlushAttemptMs = 0;
 
@@ -57,7 +58,6 @@ private:
 
   bool flushToFirebase(bool finalFlush);
   static String sanitizeToken(const String& s);
-
 #else
   CloudHandler* _cloud = nullptr;
   bool _enabled = false;

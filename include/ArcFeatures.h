@@ -5,15 +5,20 @@
 struct ArcFeatOut {
   float fs_hz   = FS_TARGET_HZ;
   float irms_a  = 0.0f;
-  float thd_pct = 0.0f;
-  float entropy = 0.0f;
-  float zcv_ms  = 0.0f;
 
-  float hf_ratio = 0.0f;  // 0..1
-  float hf_var   = 0.0f;
+  float cycle_nmse            = 0.0f;
+  float zcv                   = 0.0f;
+  float zc_dwell_ratio        = 0.0f;
+  float pulse_count_per_cycle = 0.0f;
+  float peak_fluct_cv         = 0.0f;
+  float midband_residual_rms  = 0.0f;
+  float hf_band_energy_ratio  = 0.0f;
+  float wpe_entropy           = 0.0f;
+  float spec_entropy          = 0.0f;
+  float thd_i                 = 0.0f;
 
-  float sf      = 0.0f;   // 0..1
-  float cyc_var = 0.0f;   // normalized variance
+  bool feat_valid    = false;
+  bool current_valid = false;
 };
 
 class ArcFeatures {

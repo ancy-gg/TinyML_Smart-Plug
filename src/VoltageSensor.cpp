@@ -1,10 +1,6 @@
 #include "VoltageSensor.h"
 #include <math.h>
 
-static inline float hornerLinear(float x, float a, float b) {
-  return fmaf(a, x, b);
-}
-
 VoltageSensor::VoltageSensor(int pin)
   : _pin(pin), _cal{} {}
 
@@ -21,8 +17,17 @@ void VoltageSensor::setSensitivity(float factor) {
 }
 
 void VoltageSensor::setLinearCalib(float slope, float intercept) {
-  _cal.regSlope = slope;
-  _cal.regIntercept = intercept;
+  _cal.cubic3 = 0.0f;
+  _cal.cubic2 = 0.0f;
+  _cal.cubic1 = slope;
+  _cal.cubic0 = intercept;
+}
+
+void VoltageSensor::setCubicCalib(float c3, float c2, float c1, float c0) {
+  _cal.cubic3 = c3;
+  _cal.cubic2 = c2;
+  _cal.cubic1 = c1;
+  _cal.cubic0 = c0;
 }
 
 void VoltageSensor::setAdcFullScaleVolts(float vfs) {
@@ -74,9 +79,7 @@ float VoltageSensor::update() {
     _sumSq += (double)val * (double)val;
   }
 
-  if ((uint32_t)(now - _startTime) < _windowUs) {
-    return -1.0f;
-  }
+  if ((uint32_t)(now - _startTime) < _windowUs) return -1.0f;
 
   _sampling = false;
   if (_count < 32) return _dispVrms;
@@ -85,46 +88,50 @@ float VoltageSensor::update() {
   double var = (_sumSq / (double)_count) - (mean * mean);
   if (var < 0.0) var = 0.0;
 
-  const float vrms_counts = (float)sqrt(var);
-  const float vrms_adc_v   = vrms_counts * (_adcFullScaleV / 4095.0f);
-  const float vrms_uncal   = vrms_adc_v * _cal.sensitivity;
-  float vrms_main          = hornerLinear(vrms_uncal, _cal.regSlope, _cal.regIntercept);
-  if (vrms_main < 0.0f) vrms_main = 0.0f;
+  const float vrmsCounts = (float)sqrt(var);
+  const float vrmsAdcV   = vrmsCounts * (_adcFullScaleV / 4095.0f);
+  const float vrmsUncal  = vrmsAdcV * _cal.sensitivity;
+  float vrmsMain = eval_cubic_horner(vrmsUncal, _cal.cubic3, _cal.cubic2, _cal.cubic1, _cal.cubic0);
+  if (vrmsMain < 0.0f) vrmsMain = 0.0f;
 
   if (_vActive) {
-    if (vrms_main < _vOff) {
+    if (vrmsMain < _vOff) {
       _vActive = false;
-      vrms_main = 0.0f;
+      vrmsMain = 0.0f;
     }
+  } else if (vrmsMain > _vOn) {
+    _vActive = true;
   } else {
-    if (vrms_main > _vOn) _vActive = true;
-    else                  vrms_main = 0.0f;
+    vrmsMain = 0.0f;
   }
 
-  _rawVrms = vrms_main;
+  _rawVrms = vrmsMain;
   const float dtS = (float)_windowUs / 1000000.0f;
 
-  // Protection voltage: keep stable during noise, but jump immediately on real events.
   if (!_protInit) {
     _protInit = true;
     _protVrms = _rawVrms;
   } else {
     const float dProt = fabsf(_rawVrms - _protVrms);
-    const bool hardJump = (_rawVrms <= _vOff) ||
-                          (dProt >= _avgJumpV) ||
-                          (_rawVrms >= (VOLT_SURGE_TRIP_V - 5.0f));
+    const bool highEvent = (_rawVrms >= (VOLT_SURGE_TRIP_V - 5.0f));
 
-    if (hardJump) {
-      _protVrms = _rawVrms;
+    if (_rawVrms <= _vOff) {
+      if (_lowWindows < 255) _lowWindows++;
     } else {
-      const float alphaProt = fminf(1.0f, dtS / 1.2f);
-      _protVrms += alphaProt * (_rawVrms - _protVrms);
+      _lowWindows = 0;
     }
 
-    if (_protVrms < 0.25f) _protVrms = 0.0f;
+    if (highEvent || dProt >= _avgJumpV) {
+      _protVrms = _rawVrms;
+    } else if (_rawVrms <= _vOff && _lowWindows >= 2) {
+      _protVrms = 0.0f;
+    } else {
+      const float alphaProt = fminf(1.0f, dtS / 1.0f);
+      _protVrms += alphaProt * (_rawVrms - _protVrms);
+      if (_protVrms < 0.25f) _protVrms = 0.0f;
+    }
   }
 
-  // Display voltage: instant on large changes, very long memory when stable.
   if (!_dispInit) {
     _dispInit = true;
     _dispVrms = _protVrms;

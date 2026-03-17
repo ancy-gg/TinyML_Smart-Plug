@@ -46,23 +46,22 @@ bool CloudHandler::pushJSON(const char* path, FirebaseJson& json) {
 }
 
 void CloudHandler::update(float v, float c, float apparentPower, float t,
-                          float zcv, float thd, float entropy,
-                          float hf_ratio, float hf_var,
-                          float sf, float cyc_var,
+                          float cycle_nmse, float zcv, float zc_dwell_ratio,
+                          float pulse_count_per_cycle, float peak_fluct_cv,
+                          float midband_residual_rms, float hf_band_energy_ratio,
+                          float wpe_entropy, float spec_entropy, float thd_i,
                           uint8_t model_pred,
                           const String& state, TimeSync* time) {
   if (!Firebase.ready()) return;
 
   const bool isNormal = (state == "NORMAL");
   const bool stateChanged = (state != _lastSentLiveState);
-
   const unsigned long now = millis();
   const uint32_t interval = isNormal ? _normalIntervalMs : _faultIntervalMs;
 
   bool shouldSend = false;
   if (stateChanged) shouldSend = true;
   else if (now - _lastLiveSend >= interval) shouldSend = true;
-
   if (!shouldSend) return;
 
   _lastLiveSend = now;
@@ -87,14 +86,16 @@ void CloudHandler::update(float v, float c, float apparentPower, float t,
   json.set("apparent_power", apparentPower);
   json.set("temp", t);
 
+  json.set("cycle_nmse", cycle_nmse);
   json.set("zcv", zcv);
-  json.set("thd", thd);
-  json.set("entropy", entropy);
-
-  json.set("hf_ratio", hf_ratio);
-  json.set("hf_var", hf_var);
-  json.set("sf", sf);
-  json.set("cyc_var", cyc_var);
+  json.set("zc_dwell_ratio", zc_dwell_ratio);
+  json.set("pulse_count_per_cycle", pulse_count_per_cycle);
+  json.set("peak_fluct_cv", peak_fluct_cv);
+  json.set("midband_residual_rms", midband_residual_rms);
+  json.set("hf_band_energy_ratio", hf_band_energy_ratio);
+  json.set("wpe_entropy", wpe_entropy);
+  json.set("spec_entropy", spec_entropy);
+  json.set("thd_i", thd_i);
 
   json.set("model_pred", (int)model_pred);
   json.set("status", state);

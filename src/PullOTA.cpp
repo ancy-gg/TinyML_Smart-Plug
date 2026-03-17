@@ -38,20 +38,19 @@ void PullOTA::loop() {
 
   String desiredVer, fwUrl;
   if (!fetchOtaTargets(desiredVer, fwUrl)) return;
-
   desiredVer.trim();
   fwUrl.trim();
 
   if (!desiredVer.length() || !fwUrl.length()) return;
   if (desiredVer.equals(_currentVersion)) return;
 
-  if (_cb) _cb(OtaEvent::START);
+  if (_cb) _cb(OtaEvent::START, 0);
   if (performUpdateFromUrl(fwUrl)) {
-    if (_cb) _cb(OtaEvent::SUCCESS);
+    if (_cb) _cb(OtaEvent::SUCCESS, 100);
     delay(300);
     ESP.restart();
   } else {
-    if (_cb) _cb(OtaEvent::FAIL);
+    if (_cb) _cb(OtaEvent::FAIL, 0);
   }
 }
 
@@ -84,7 +83,6 @@ bool PullOTA::performUpdateFromUrl(const String& url) {
     plainClient.setTimeout(OTA_HTTP_TIMEOUT_MS);
     begun = http.begin(plainClient, url);
   }
-
   if (!begun) return false;
 
   const int code = http.GET();
@@ -103,6 +101,7 @@ bool PullOTA::performUpdateFromUrl(const String& url) {
   size_t written = 0;
   uint8_t buf[2048];
   uint32_t lastDataMs = millis();
+  int lastPct = -1;
 
   while (http.connected() && (total < 0 || (int)written < total)) {
     const size_t avail = stream->available();
@@ -135,6 +134,14 @@ bool PullOTA::performUpdateFromUrl(const String& url) {
       return false;
     }
     written += w;
+
+    if (total > 0 && _cb) {
+      const int pct = (int)((100.0f * (float)written) / (float)total);
+      if (pct != lastPct) {
+        lastPct = pct;
+        _cb(OtaEvent::PROGRESS, pct);
+      }
+    }
   }
 
   if (!Update.end(true)) {

@@ -1,5 +1,6 @@
 #include "ArcFeatures.h"
 #include <math.h>
+#include <string.h>
 
 #include "esp_dsp.h"
 #include "dsps_fft2r.h"
@@ -15,39 +16,53 @@ static inline float clampf(float x, float lo, float hi) {
   return (x < lo) ? lo : (x > hi) ? hi : x;
 }
 
-static inline float hornerLinear(float x, float a, float b) {
-  return fmaf(a, x, b);
-}
-
 static inline float codeToCurrentA(uint16_t code, const CurrentCalib& cal) {
-  const float v_aux = (float(code) * ADS_VREF_V) / 65535.0f; // 0..Vref
-  const float v_sensor = v_aux / cal.dividerRatio;           // undo divider
+  const float v_aux = (float(code) * ADS_VREF_V) / 65535.0f;
+  const float v_sensor = v_aux / cal.dividerRatio;
   const float amps_uncal = ((v_sensor - cal.offsetV) / cal.voltsPerAmp) * cal.ampsScale;
-  return hornerLinear(amps_uncal, cal.regSlope, cal.regIntercept);
+  return eval_cubic_horner(amps_uncal, cal.cubic3, cal.cubic2, cal.cubic1, cal.cubic0);
 }
 
-static inline float median3(float a, float b, float c) {
-  if (a > b) { float t=a; a=b; b=t; }
-  if (b > c) { float t=b; b=c; c=t; }
-  if (a > b) { float t=a; a=b; b=t; }
+static inline float median3f(float a, float b, float c) {
+  if (a > b) { float t = a; a = b; b = t; }
+  if (b > c) { float t = b; b = c; c = t; }
+  if (a > b) { float t = a; a = b; b = t; }
   return b;
+}
+
+static inline int clampi(int x, int lo, int hi) {
+  return (x < lo) ? lo : (x > hi) ? hi : x;
+}
+
+static float computeEntropyFromBands(const float* e, int n) {
+  double sum = 0.0;
+  for (int i = 0; i < n; ++i) sum += e[i];
+  if (sum <= 1e-18) return 0.0f;
+
+  double H = 0.0;
+  for (int i = 0; i < n; ++i) {
+    const double p = e[i] / sum;
+    if (p > 1e-18) H += -p * log(p);
+  }
+  return clampf((float)(H / log((double)n)), 0.0f, 1.0f);
 }
 
 bool ArcFeatures::compute(const uint16_t* raw, size_t n, float fs_hz,
                           const CurrentCalib& cal, float mainsHz,
                           ArcFeatOut& out) {
-  if (!raw || n != N_SAMP) return false;
-  if (fs_hz <= 1000.0f) return false;
+  out = ArcFeatOut{};
+  out.fs_hz = fs_hz;
+
+  if (!raw || n != N_SAMP || fs_hz < 1000.0f) return false;
   if (!dsp_is_power_of_two((int)n)) return false;
   if ((int)n > CONFIG_DSP_MAX_FFT_SIZE) return false;
 
-  out.fs_hz = fs_hz;
-
-  static float sig[N_SAMP];        // centered, full-band
-  static float sig_lp[N_SAMP];     // centered, low-passed (for Irms/ZC)
-  static float fft_cf[2 * N_SAMP]; // complex interleaved
+  static float sig[N_SAMP];         // full-band centered
+  static float sigClean[N_SAMP];    // gentle LP for RMS / cycle features
+  static float sigBase[N_SAMP];     // fundamental-ish baseline
+  static float resid[N_SAMP];       // impulsive residual
+  static float fft_cf[2 * N_SAMP];  // complex interleaved
   static float win[N_SAMP];
-
   static bool dspReady = false;
   static bool winReady = false;
 
@@ -60,15 +75,13 @@ bool ArcFeatures::compute(const uint16_t* raw, size_t n, float fs_hz,
     winReady = true;
   }
 
-  // ---- Convert + integrity checks ----
   double mean = 0.0;
   int sat = 0;
   int changes = 0;
-
   uint16_t prev = raw[0];
-  for (size_t i = 0; i < n; i++) {
+  for (size_t i = 0; i < n; ++i) {
     const uint16_t c = raw[i];
-    if (c < 32 || c > 65503) sat++;
+    if (c < 16 || c > 65519) sat++;
     if (i && c != prev) changes++;
     prev = c;
 
@@ -78,251 +91,345 @@ bool ArcFeatures::compute(const uint16_t* raw, size_t n, float fs_hz,
   }
   mean /= (double)n;
 
-  // bad frames
-  if (sat > 32) return false;
-  if (changes < 8) return false;
+  if (sat > 64) return false;
+  if (changes < 16) return false;
 
-  // ---- Center ----
-  for (size_t i = 0; i < n; i++) {
-    sig[i] = sig[i] - (float)mean;
-  }
+  for (size_t i = 0; i < n; ++i) sig[i] -= (float)mean;
 
-  // ---- Low-pass for "load Irms" and ZC features (kills WiFi/HF junk) ----
-  // 1-pole LPF cutoff
-  const float fc = 500.0f;
   const float dt = 1.0f / fs_hz;
-  const float two_pi = 6.283185307179586f;
-  const float rc = 1.0f / (two_pi * fc);
-  const float alpha = dt / (rc + dt);
+  const float rcClean = 1.0f / (6.2831853f * CURRENT_LPF_HZ);
+  const float rcBase  = 1.0f / (6.2831853f * CURRENT_BASE_LPF_HZ);
+  const float aClean = dt / (rcClean + dt);
+  const float aBase  = dt / (rcBase + dt);
 
-  float y = sig[0];
-  double acc_lp = 0.0;
-  for (size_t i = 0; i < n; i++) {
-    y += alpha * (sig[i] - y);
-    sig_lp[i] = y;
-    acc_lp += (double)y * (double)y;
+  float yClean = sig[0];
+  float yBase = sig[0];
+  double accIrms = 0.0;
+  double accResidSq = 0.0;
+  for (size_t i = 0; i < n; ++i) {
+    yClean += aClean * (sig[i] - yClean);
+    yBase  += aBase  * (sig[i] - yBase);
+    sigClean[i] = yClean;
+    sigBase[i]  = yBase;
+    resid[i] = yClean - yBase;
+    accIrms += (double)yClean * (double)yClean;
+    accResidSq += (double)resid[i] * (double)resid[i];
   }
 
-  const float irms_raw = sqrtf((float)(acc_lp / (double)n));
+  const float irmsRaw = sqrtf((float)(accIrms / (double)n));
 
-  // Median-of-3 smoothing
-  static bool init=false;
-  static float r0=0, r1=0, r2=0;
-  if (!init) { init=true; r0=r1=r2=irms_raw; }
-  else { r0=r1; r1=r2; r2=irms_raw; }
-  const float irms_med = median3(r0,r1,r2);
-
-  // Idle Noise Gate (with hysteresis)
-
-  static constexpr float IRMS_GATE_ON_A  = 0.05f;  // must be > your idle noise (~0.03A)
-  static constexpr float IRMS_GATE_OFF_A = 0.035f; // hysteresis (must be < ON threshold)
+  static bool gateInited = false;
+  static float r0 = 0.0f, r1 = 0.0f, r2 = 0.0f;
   static bool irmsGateOn = false;
-
-  if (!irmsGateOn) {
-    if (irms_med >= IRMS_GATE_ON_A) irmsGateOn = true;
+  if (!gateInited) {
+    gateInited = true;
+    r0 = r1 = r2 = irmsRaw;
   } else {
-    if (irms_med <= IRMS_GATE_OFF_A) irmsGateOn = false;
+    r0 = r1;
+    r1 = r2;
+    r2 = irmsRaw;
+  }
+  const float irmsMed = median3f(r0, r1, r2);
+  if (!irmsGateOn) {
+    if (irmsMed >= IRMS_GATE_ON_A) irmsGateOn = true;
+  } else if (irmsMed <= IRMS_GATE_OFF_A) {
+    irmsGateOn = false;
   }
 
-  out.irms_a = irmsGateOn ? irms_med : 0.0f;
+  out.irms_a = irmsGateOn ? irmsMed : 0.0f;
+  out.current_valid = true;
 
-  const bool lowSignal = (out.irms_a < IDLE_IRMS_A);
-  if (lowSignal) {
-    out.zcv_ms = 0.0f;
-    out.cyc_var = 0.0f;
-    out.thd_pct = 0.0f;
-    out.entropy = 0.0f;
-    out.hf_ratio = 0.0f;
-    out.hf_var = 0.0f;
-    out.sf = 0.0f;
+  if (irmsRaw < FEATURE_MIN_IRMS_A) {
+    out.feat_valid = true;
     return true;
   }
-  // ---- ZCV + cycle variance using LOW-PASSED signal ----
-  int crossings[100];
-  int cCount = 0;
-  const float hys = fmaxf(ZC_HYS_MIN_A, ZC_HYS_FRAC * irms_med);
 
-  int state = 0;
-  if (sig_lp[0] >  hys) state =  1;
-  if (sig_lp[0] < -hys) state = -1;
+  // --- zero crossings and cycle boundaries on smoothed current ---
+  float crossAll[128];
+  int crossAllN = 0;
+  float crossPos[64];
+  int crossPosN = 0;
+  const float zcHys = fmaxf(ZC_HYS_MIN_A, ZC_HYS_FRAC * fmaxf(irmsRaw, 0.1f));
 
-  for (size_t i=1; i<n && cCount<100; i++) {
-    const float s = sig_lp[i];
-    if (state <= 0 && s >  hys) { crossings[cCount++] = (int)i; state =  1; }
-    else if (state >= 0 && s < -hys) { crossings[cCount++] = (int)i; state = -1; }
-  }
+  for (size_t i = 1; i < n && crossAllN < 128; ++i) {
+    const float a = sigClean[i - 1];
+    const float b = sigClean[i];
 
-  if (cCount >= 6) {
-    double sum=0.0, sum2=0.0;
-    int m=0;
-    for (int k=1;k<cCount;k++) {
-      const int dtS = crossings[k]-crossings[k-1];
-      const double dtMs = (double(dtS)/double(fs_hz))*1000.0;
-      sum += dtMs;
-      sum2 += dtMs*dtMs;
-      m++;
+    if (a <= -zcHys && b >= zcHys) {
+      const float denom = (b - a);
+      const float frac = (fabsf(denom) > 1e-9f) ? ((0.0f - a) / denom) : 0.5f;
+      const float idx = (float)(i - 1) + clampf(frac, 0.0f, 1.0f);
+      crossAll[crossAllN++] = idx;
+      if (crossPosN < 64) crossPos[crossPosN++] = idx;
+    } else if (a >= zcHys && b <= -zcHys) {
+      const float denom = (b - a);
+      const float frac = (fabsf(denom) > 1e-9f) ? ((0.0f - a) / denom) : 0.5f;
+      const float idx = (float)(i - 1) + clampf(frac, 0.0f, 1.0f);
+      crossAll[crossAllN++] = idx;
     }
-    const double mu = sum/(double)m;
-    const double var = (sum2/(double)m) - (mu*mu);
-    out.zcv_ms = (float)sqrt(var > 0 ? var : 0);
-  } else {
-    out.zcv_ms = 0.0f;
   }
 
-  out.cyc_var = 0.0f;
-  if (cCount >= 8) {
-    float cycRms[12];
-    int cycN=0;
+  if (crossAllN >= 4) {
+    double mu = 0.0;
+    for (int i = 1; i < crossAllN; ++i) {
+      mu += (double)(crossAll[i] - crossAll[i - 1]);
+    }
+    mu /= (double)(crossAllN - 1);
 
-    for (int k=0; k+2<cCount && cycN<12; k+=2) {
-      const int a = crossings[k];
-      const int b = crossings[k+2];
-      if (a < 0 || b <= a || b > (int)n) continue;
+    double vv = 0.0;
+    for (int i = 1; i < crossAllN; ++i) {
+      const double d = (double)(crossAll[i] - crossAll[i - 1]) - mu;
+      vv += d * d;
+    }
+    vv /= (double)(crossAllN - 1);
+    out.zcv = (float)(sqrt(vv) * (1000.0 / fs_hz));
+  }
 
-      double accC=0.0;
-      const int len = b - a;
-      for (int i=a;i<b;i++) {
-        const double s = (double)sig_lp[i];
-        accC += s*s;
+  if (crossAllN >= 3) {
+    const float dwellThr = fmaxf(ZC_DWELL_THR_MIN_A, ZC_DWELL_THR_FRAC * irmsRaw);
+    const float avgHalfSamp = (crossAllN >= 4)
+      ? (float)((crossAll[crossAllN - 1] - crossAll[0]) / (float)(crossAllN - 1))
+      : (fs_hz / (mainsHz * 2.0f));
+    const int halfWin = clampi((int)lroundf(avgHalfSamp * 0.12f), 3, 100);
+
+    int total = 0;
+    int dwell = 0;
+    for (int ci = 0; ci < crossAllN; ++ci) {
+      const int c = (int)lroundf(crossAll[ci]);
+      const int a = clampi(c - halfWin, 0, (int)n - 1);
+      const int b = clampi(c + halfWin, 0, (int)n - 1);
+      for (int i = a; i <= b; ++i) {
+        total++;
+        if (fabsf(sigClean[i]) <= dwellThr) dwell++;
       }
-      const float rms = (len>0) ? (float)sqrt(accC/(double)len) : 0.0f;
-      cycRms[cycN++] = rms;
     }
+    out.zc_dwell_ratio = (total > 0) ? ((float)dwell / (float)total) : 0.0f;
+  }
 
-    if (cycN >= 3) {
-      double mu=0.0;
-      for (int i=0;i<cycN;i++) mu += cycRms[i];
-      mu /= (double)cycN;
+  const int cycleCount = crossPosN - 1;
+  if (cycleCount <= 0) {
+    out.feat_valid = true;
+    return true;
+  }
 
-      double var=0.0;
-      for (int i=0;i<cycN;i++) {
-        const double d = (double)cycRms[i]-mu;
-        var += d*d;
+  float cyclePeaks[24];
+  int peakN = 0;
+  float pulsePerCycleAcc = 0.0f;
+  int pulseCycles = 0;
+  float nmseAcc = 0.0f;
+  int nmsePairs = 0;
+  static constexpr int RSZ = 96;
+  float prevCycle[RSZ];
+  bool havePrevCycle = false;
+
+  const float residRms = sqrtf((float)(accResidSq / (double)n));
+  const float pulseThr = fmaxf(PULSE_THRESH_MIN_A, PULSE_THRESH_RMS_MUL * residRms);
+  const int pulseMinW = clampi((int)lroundf((PULSE_MIN_WIDTH_US * 1e-6f) * fs_hz), 1, 32);
+  const int pulseMaxW = clampi((int)lroundf((PULSE_MAX_WIDTH_US * 1e-6f) * fs_hz), pulseMinW, 512);
+
+  for (int c = 0; c < cycleCount && c < 24; ++c) {
+    const int a = clampi((int)floorf(crossPos[c]), 0, (int)n - 2);
+    const int b = clampi((int)floorf(crossPos[c + 1]), a + 2, (int)n - 1);
+    const int len = b - a;
+    if (len < 16) continue;
+
+    float peak = 0.0f;
+    int pulseCount = 0;
+    bool inPulse = false;
+    int pulseStart = a;
+    for (int i = a; i < b; ++i) {
+      const float av = fabsf(sigClean[i]);
+      if (av > peak) peak = av;
+
+      const bool over = fabsf(resid[i]) >= pulseThr;
+      if (over && !inPulse) {
+        inPulse = true;
+        pulseStart = i;
+      } else if (!over && inPulse) {
+        const int w = i - pulseStart;
+        if (w >= pulseMinW && w <= pulseMaxW) pulseCount++;
+        inPulse = false;
       }
-      var /= (double)cycN;
-
-      out.cyc_var = (float)(var / (mu*mu + 1e-12));
     }
+    if (inPulse) {
+      const int w = b - pulseStart;
+      if (w >= pulseMinW && w <= pulseMaxW) pulseCount++;
+    }
+
+    pulsePerCycleAcc += pulseCount;
+    pulseCycles++;
+    cyclePeaks[peakN++] = peak;
+
+    float curCycle[RSZ];
+    for (int j = 0; j < RSZ; ++j) {
+      const float pos = (float)a + ((float)j * (float)(len - 1) / (float)(RSZ - 1));
+      const int i0 = clampi((int)floorf(pos), a, b - 1);
+      const int i1 = clampi(i0 + 1, a, b - 1);
+      const float frac = pos - (float)i0;
+      curCycle[j] = sigClean[i0] + frac * (sigClean[i1] - sigClean[i0]);
+    }
+
+    if (havePrevCycle) {
+      double mse = 0.0;
+      double eRef = 0.0;
+      for (int j = 0; j < RSZ; ++j) {
+        const double d = (double)curCycle[j] - (double)prevCycle[j];
+        mse += d * d;
+        eRef += 0.5 * ((double)curCycle[j] * (double)curCycle[j] + (double)prevCycle[j] * (double)prevCycle[j]);
+      }
+      nmseAcc += (float)(mse / (eRef + 1e-9));
+      nmsePairs++;
+    }
+    memcpy(prevCycle, curCycle, sizeof(prevCycle));
+    havePrevCycle = true;
   }
 
-  // ---- FFT uses FULL-BAND centered signal for arc features ----
-  for (size_t i=0; i<n; i++) {
-    fft_cf[2*i + 0] = sig[i] * win[i];
-    fft_cf[2*i + 1] = 0.0f;
+  if (pulseCycles > 0) out.pulse_count_per_cycle = pulsePerCycleAcc / (float)pulseCycles;
+  if (peakN >= 2) {
+    double mu = 0.0;
+    for (int i = 0; i < peakN; ++i) mu += cyclePeaks[i];
+    mu /= (double)peakN;
+    double vv = 0.0;
+    for (int i = 0; i < peakN; ++i) {
+      const double d = (double)cyclePeaks[i] - mu;
+      vv += d * d;
+    }
+    vv /= (double)peakN;
+    out.peak_fluct_cv = (float)(sqrt(vv) / (mu + 1e-9));
+  }
+  if (nmsePairs > 0) out.cycle_nmse = nmseAcc / (float)nmsePairs;
+
+  // --- FFT-domain features ---
+  for (size_t i = 0; i < n; ++i) {
+    fft_cf[2 * i + 0] = sig[i] * win[i];
+    fft_cf[2 * i + 1] = 0.0f;
   }
 
-  if (dsps_fft2r_fc32(fft_cf, (int)n) != ESP_OK) return false;
-  if (dsps_bit_rev_fc32(fft_cf, (int)n) != ESP_OK) return false;
+  if (dsps_fft2r_fc32(fft_cf, (int)n) != ESP_OK) return true;
+  if (dsps_bit_rev_fc32(fft_cf, (int)n) != ESP_OK) return true;
 
-  // Power spectrum into sig[0..n/2-1]
-  const int half = (int)(n/2);
-  double pSum = 0.0;
-  for (int k=0; k<half; k++) {
-    const float re = fft_cf[2*k + 0];
-    const float im = fft_cf[2*k + 1];
-    const float P  = re*re + im*im;
+  const int half = (int)(n / 2);
+  double pTotNoDc = 0.0;
+  for (int k = 0; k < half; ++k) {
+    const float re = fft_cf[2 * k + 0];
+    const float im = fft_cf[2 * k + 1];
+    const float P = re * re + im * im;
     sig[k] = P;
-    if (k) pSum += (double)P;
+    if (k > 0) pTotNoDc += P;
   }
 
   const float binHz = fs_hz / (float)n;
-
-  // Fundamental near expected bin
-  int kNom = (int)lround(mainsHz / binHz);
-  if (kNom < 1) kNom = 1;
-  if (kNom > (half - 2)) kNom = (half - 2);
+  int kNom = (int)lroundf(mainsHz / binHz);
+  kNom = clampi(kNom, 1, half - 2);
 
   int k1 = kNom;
   float fundP = 0.0f;
-  for (int dk=-2; dk<=2; dk++) {
-    int k = kNom + dk;
-    if (k>=1 && k<half) {
-      if (sig[k] > fundP) { fundP = sig[k]; k1 = k; }
+  for (int dk = -2; dk <= 2; ++dk) {
+    const int k = clampi(kNom + dk, 1, half - 1);
+    if (sig[k] > fundP) {
+      fundP = sig[k];
+      k1 = k;
     }
   }
 
-  const double noiseAvg = pSum / (double)(half - 1);
-  const double snr = (noiseAvg > 0) ? (double)fundP / noiseAvg : 0.0;
-  if (fundP < FUND_MAG_MIN || snr < FUND_SNR_MIN) return false;
+  const double avgNoise = pTotNoDc / (double)(half - 1);
+  const double snr = (avgNoise > 0.0) ? ((double)fundP / avgNoise) : 0.0;
+  const bool haveFund = (fundP >= FUND_MAG_MIN) && (snr >= FUND_SNR_MIN);
 
-  // THD 2..10 using power
-  double harmP = 0.0;
-  for (int h=2; h<=10; h++) {
-    int khNom = h*k1;
-    if (khNom >= half) break;
-    float hmP = 0.0f;
-    for (int dk=-1; dk<=1; dk++) {
-      int kh = khNom + dk;
-      if (kh>=1 && kh<half) hmP = fmaxf(hmP, sig[kh]);
+  if (haveFund) {
+    double harmP = 0.0;
+    for (int h = 2; h <= 10; ++h) {
+      const int khNom = h * k1;
+      if (khNom >= half) break;
+      float hmP = 0.0f;
+      for (int dk = -1; dk <= 1; ++dk) {
+        const int kh = clampi(khNom + dk, 1, half - 1);
+        hmP = fmaxf(hmP, sig[kh]);
+      }
+      harmP += hmP;
     }
-    harmP += (double)hmP;
-  }
-  out.thd_pct = (fundP > 1e-18f) ? (float)(sqrt(harmP / (double)fundP) * 100.0f) : 0.0f;
-
-  // Entropy + Spectral Flatness up to ENTROPY_MAX_HZ
-  const int maxBin = (int)fminf((float)half, floorf(ENTROPY_MAX_HZ / binHz));
-  double psum2=0.0;
-  double logSum=0.0;
-  int K=0;
-
-  for (int b=1; b<maxBin; b++) {
-    const double pw = (double)sig[b];
-    psum2 += pw;
-    logSum += log(pw + SF_EPS);
-    K++;
+    out.thd_i = (fundP > 1e-12f) ? (float)(sqrt(harmP / (double)fundP) * 100.0) : 0.0f;
   }
 
-  if (psum2 < 1e-18 || K <= 2) {
-    out.entropy = 0.0f;
-    out.sf = 0.0f;
-  } else {
-    double H=0.0;
-    for (int b=1; b<maxBin; b++) {
-      const double pw = (double)sig[b];
-      const double p = pw/psum2;
-      if (p > 1e-18) H += -p*log(p);
+  const int kSpec0 = clampi((int)floorf(SPEC_ENT_LO_HZ / binHz), 1, half - 1);
+  const int kSpec1 = clampi((int)floorf(SPEC_ENT_HI_HZ / binHz), kSpec0 + 1, half - 1);
+  double psum = 0.0;
+  for (int k = kSpec0; k <= kSpec1; ++k) psum += (double)sig[k];
+  if (psum > 1e-18) {
+    double H = 0.0;
+    for (int k = kSpec0; k <= kSpec1; ++k) {
+      const double p = (double)sig[k] / psum;
+      if (p > 1e-18) H += -p * log(p);
     }
-    H /= log((double)(maxBin - 1));
-    out.entropy = clampf((float)H, 0.0f, 1.0f);
-
-    const double geo = exp(logSum/(double)K);
-    const double ari = psum2/(double)K;
-    out.sf = clampf((float)(geo/(ari + SF_EPS)), 0.0f, 1.0f);
+    out.spec_entropy = clampf((float)(H / log((double)(kSpec1 - kSpec0 + 1))), 0.0f, 1.0f);
   }
 
-  // HF ratio + variance
-  const int lf1 = (int)fminf((float)(half - 1), floorf(LF_BAND_HI_HZ / binHz));
-  const int hf0 = (int)fminf((float)(half - 1), ceilf (HF_BAND_LO_HZ / binHz));
-  const int hf1 = (int)fminf((float)(half - 1), floorf(HF_BAND_HI_HZ / binHz));
+  const int kUm0 = clampi((int)floorf(UPPERMID_LO_HZ / binHz), 1, half - 1);
+  const int kUm1 = clampi((int)floorf(UPPERMID_HI_HZ / binHz), kUm0 + 1, half - 1);
+  const int kHf0 = clampi((int)floorf(HF_BAND_LO_HZ / binHz), 1, half - 1);
+  const int kHf1 = clampi((int)floorf(HF_BAND_HI_HZ / binHz), kHf0 + 1, half - 1);
+  double pUM = 0.0;
+  double pHF = 0.0;
+  for (int k = kUm0; k <= kUm1; ++k) pUM += (double)sig[k];
+  for (int k = kHf0; k <= kHf1; ++k) pHF += (double)sig[k];
+  out.hf_band_energy_ratio = (float)(pHF / (pHF + pUM + 1e-12));
 
-  double pLF=0.0, pHF=0.0;
-  for (int b=1;b<=lf1;b++) pLF += (double)sig[b];
-  for (int b=hf0;b<=hf1;b++) pHF += (double)sig[b];
-
-  const double pTot = pLF + pHF;
-  out.hf_ratio = (pTot > 1e-12) ? (float)(pHF / (pTot + 1e-12)) : 0.0f;
-
-  static constexpr int HF_WIN = 12;
-  static float hfHist[HF_WIN];
-  static int hfIdx=0;
-  static bool hfInit=false;
-
-  if (!hfInit) { for (int i=0;i<HF_WIN;i++) hfHist[i]=out.hf_ratio; hfInit=true; }
-
-  hfHist[hfIdx] = out.hf_ratio;
-  hfIdx = (hfIdx + 1) % HF_WIN;
-
-  double mu=0.0;
-  for (int i=0;i<HF_WIN;i++) mu += hfHist[i];
-  mu /= (double)HF_WIN;
-
-  double vv=0.0;
-  for (int i=0;i<HF_WIN;i++) {
-    const double d = (double)hfHist[i]-mu;
-    vv += d*d;
+  const int kMb0 = clampi((int)floorf(MIDBAND_LO_HZ / binHz), 1, half - 1);
+  const int kMb1 = clampi((int)floorf(MIDBAND_HI_HZ / binHz), kMb0 + 1, half - 1);
+  double pResidual = 0.0;
+  for (int k = kMb0; k <= kMb1; ++k) {
+    bool skip = false;
+    if (haveFund) {
+      for (int h = 1; h <= 3; ++h) {
+        const int kh = h * k1;
+        if (kh >= half) break;
+        if (abs(k - kh) <= 2) { skip = true; break; }
+      }
+    }
+    if (!skip) pResidual += (double)sig[k];
   }
-  vv /= (double)HF_WIN;
-  out.hf_var = (float)vv;
+  out.midband_residual_rms = (float)(sqrt(pResidual + 1e-12) / (double)n);
 
+  // --- compact wavelet packet energy entropy (3-level Haar on 512 points) ---
+  static constexpr int WP_N = 512;
+  static float wpA[WP_N];
+  static float wpB[WP_N];
+  int step = (int)(n / WP_N);
+  if (step < 1) step = 1;
+  for (int i = 0; i < WP_N; ++i) {
+    const int idx = clampi(i * step, 0, (int)n - 1);
+    wpA[i] = sigClean[idx];
+  }
+
+  int segLen = WP_N;
+  float* in = wpA;
+  float* outBuf = wpB;
+  for (int level = 0; level < 3; ++level) {
+    const int nodeCount = 1 << level;
+    const int nodeLen = segLen / nodeCount;
+    for (int node = 0; node < nodeCount; ++node) {
+      const int base = node * nodeLen;
+      const int halfLen = nodeLen / 2;
+      for (int j = 0; j < halfLen; ++j) {
+        const float s0 = in[base + 2 * j];
+        const float s1 = in[base + 2 * j + 1];
+        outBuf[base + j] = (s0 + s1) * 0.70710678f;
+        outBuf[base + halfLen + j] = (s0 - s1) * 0.70710678f;
+      }
+    }
+    float* tmp = in;
+    in = outBuf;
+    outBuf = tmp;
+  }
+  float leafE[8] = {0};
+  for (int leaf = 0; leaf < 8; ++leaf) {
+    for (int j = 0; j < 64; ++j) {
+      const float s = in[leaf * 64 + j];
+      leafE[leaf] += s * s;
+    }
+  }
+  out.wpe_entropy = computeEntropyFromBands(leafE, 8);
+
+  out.feat_valid = true;
   return true;
 }

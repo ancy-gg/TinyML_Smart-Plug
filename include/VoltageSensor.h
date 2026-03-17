@@ -7,16 +7,14 @@ public:
   explicit VoltageSensor(int pin);
   void begin();
   void setSensitivity(float factor);
-  void setLinearCalib(float slope, float intercept);
+  void setLinearCalib(float slope, float intercept); // legacy helper -> maps to cubic1/cubic0
+  void setCubicCalib(float c3, float c2, float c1, float c0);
   void setAdcFullScaleVolts(float vfs);
   void setWindowMs(uint16_t ms);
   void setClampHysteresis(float v_off, float v_on);
   void setLongAverage(float tauS, float jumpV);
 
-  // Returns display-smoothed Vrms; returns -1 while current RMS window is still accumulating.
   float update();
-
-  // Faster voltages for protection / outage logic.
   float rawVrms() const     { return _rawVrms; }
   float protectVrms() const { return _protVrms; }
 
@@ -41,10 +39,12 @@ private:
   bool  _protInit = false;
   float _protVrms = 0.0f;
 
-  bool  _dispInit  = false;
-  float _dispVrms  = 0.0f;
-  float _avgTauS   = 18.0f;
-  float _avgJumpV  = 18.0f;
+  bool  _dispInit = false;
+  float _dispVrms = 0.0f;
+  float _avgTauS  = 18.0f;
+  float _avgJumpV = 18.0f;
+
+  uint8_t _lowWindows = 0;
 
   static inline int _median3(int a, int b, int c) {
     if (a > b) { int t = a; a = b; b = t; }

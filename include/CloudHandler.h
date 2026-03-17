@@ -14,9 +14,10 @@ public:
   void setFaultIntervalMs(uint32_t ms);
 
   void update(float v, float c, float apparentPower, float t,
-              float zcv, float thd, float entropy,
-              float hf_ratio, float hf_var,
-              float sf, float cyc_var,
+              float cycle_nmse, float zcv, float zc_dwell_ratio,
+              float pulse_count_per_cycle, float peak_fluct_cv,
+              float midband_residual_rms, float hf_band_energy_ratio,
+              float wpe_entropy, float spec_entropy, float thd_i,
               uint8_t model_pred,
               const String& state, TimeSync* time);
 

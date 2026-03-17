@@ -17,27 +17,30 @@ static inline const char* stateToCstr(FaultState s) {
   }
 }
 
-// One unified “feature frame” that core0/core1 can fill progressively.
 struct FeatureFrame {
-  uint64_t epoch_ms  = 0;   // set in core1 logger tick
-  uint32_t uptime_ms = 0;   // set in Core0Task when FFT frame computed
+  uint64_t epoch_ms  = 0;
+  uint32_t uptime_ms = 0;
 
-  float vrms   = 0;
-  float irms   = 0;
-  float temp_c = 0;
+  // context
+  float vrms   = 0.0f;
+  float irms   = 0.0f;
+  float temp_c = 0.0f;
 
-  float zcv_ms   = 0;
-  float thd_pct  = 0;
-  float entropy  = 0;
+  // exact main 10-feature order
+  float cycle_nmse            = 0.0f;
+  float zcv                   = 0.0f;
+  float zc_dwell_ratio        = 0.0f;
+  float pulse_count_per_cycle = 0.0f;
+  float peak_fluct_cv         = 0.0f;
+  float midband_residual_rms  = 0.0f;
+  float hf_band_energy_ratio  = 0.0f;
+  float wpe_entropy           = 0.0f;
+  float spec_entropy          = 0.0f;
+  float thd_i                 = 0.0f;
 
-  // HF & robustness
-  float hf_ratio = 0;       // 0..1
-  float hf_var   = 0;
+  float adc_fs_hz = 0.0f;
 
-  // NEW
-  float sf       = 0;       // spectral flatness 0..1
-  float cyc_var  = 0;       // normalized cycle-to-cycle Irms variance
-
-  uint8_t feat_valid = 0;   // 1 if this FFT frame is valid
-  uint8_t model_pred = 0;
+  uint8_t feat_valid    = 0;
+  uint8_t current_valid = 0;
+  uint8_t model_pred    = 0;
 };

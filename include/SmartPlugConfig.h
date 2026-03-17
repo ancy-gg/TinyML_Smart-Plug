@@ -16,11 +16,11 @@
 // =========================
 // Relay / buzzer hardware
 // =========================
-static constexpr bool RELAY_ACTIVE_LOW      = true;   // LOW = relay ON / AC conducted
+static constexpr bool RELAY_ACTIVE_LOW      = true;
 static constexpr bool BUZZER_PASSIVE_PWM    = true;
 static constexpr uint8_t BUZZER_PWM_BITS    = 8;
-static constexpr uint8_t BUZZER_PWM_DUTY    = 128;    // 50% duty default for passive piezo
-static constexpr bool BUZZER_STATUS_ENABLED = true;   // allow Wi-Fi / ready / OTA status chirps
+static constexpr uint8_t BUZZER_PWM_DUTY    = 128;
+static constexpr bool BUZZER_STATUS_ENABLED = true;
 static constexpr uint32_t BUZZER_STARTUP_MUTE_MS = 700;
 static constexpr uint32_t SYSTEM_READY_CHIME_DELAY_MS = 1000;
 
@@ -30,6 +30,14 @@ static constexpr uint32_t SYSTEM_READY_CHIME_DELAY_MS = 1000;
 static constexpr float    FS_TARGET_HZ = 125000.0f;
 static constexpr uint16_t N_SAMP       = 4096;
 static constexpr float    MAINS_F0_HZ  = 60.0f;
+
+// =========================
+// Wi-Fi startup / portal
+// =========================
+static constexpr uint32_t WIFI_BOOT_BLOCK_MS      = 10000UL;
+static constexpr uint32_t WIFI_CONNECT_TIMEOUT_MS = 10000UL;
+static constexpr uint32_t WIFI_PORTAL_TIMEOUT_MS  = 180000UL;
+static constexpr uint8_t  WIFI_TRIPLE_TAP_COUNT   = 3;
 
 // =========================
 // Protection thresholds
@@ -48,41 +56,58 @@ static constexpr float MAINS_PRESENT_ON_V   = 25.0f;
 
 // Battery hold / outage shutdown
 static constexpr uint32_t OUTAGE_SHUTDOWN_MS         = 10UL * 60UL * 1000UL;
-static constexpr uint32_t OUTAGE_BOOT_ARM_MS         = 30000UL; // ignore outage countdown during early boot/filter settle
+static constexpr uint32_t OUTAGE_BOOT_ARM_MS         = 30000UL;
 static constexpr uint32_t OUTAGE_PRESENT_DEBOUNCE_MS = 3000UL;
 static constexpr uint32_t OUTAGE_ABSENT_DEBOUNCE_MS  = 5000UL;
 
 // =========================
-// Arc decision thresholds
+// Feature extraction tuning
 // =========================
-static constexpr float ENTROPY_ARC_H   = 0.82f;
-static constexpr float THD_ARC_H_PCT   = 100.0f;
-static constexpr float ZCV_ARC_H_MS    = 2.0f;
-static constexpr float HF_RATIO_ARC_H  = 0.24f;
-static constexpr float HF_VAR_ARC_H    = 0.0060f;
-static constexpr float ARC_MIN_IRMS_A  = 0.03f;
-static constexpr float SF_ARC_H        = 0.62f;
-static constexpr float CYC_VAR_ARC_H   = 0.030f;
+static constexpr float IRMS_GATE_ON_A          = 0.018f;
+static constexpr float IRMS_GATE_OFF_A         = 0.010f;
+static constexpr float ARC_MIN_IRMS_A          = 0.05f;
+static constexpr float FEATURE_MIN_VRMS        = 70.0f;
+static constexpr float FEATURE_MIN_IRMS_A      = 0.015f;
+static constexpr float CURRENT_LPF_HZ          = 3500.0f;
+static constexpr float CURRENT_BASE_LPF_HZ     = 550.0f;
+static constexpr float ZC_HYS_MIN_A            = 0.015f;
+static constexpr float ZC_HYS_FRAC             = 0.10f;
+static constexpr float ZC_DWELL_THR_FRAC       = 0.06f;
+static constexpr float ZC_DWELL_THR_MIN_A      = 0.020f;
+static constexpr float PULSE_MIN_WIDTH_US      = 15.0f;
+static constexpr float PULSE_MAX_WIDTH_US      = 450.0f;
+static constexpr float PULSE_THRESH_RMS_MUL    = 3.5f;
+static constexpr float PULSE_THRESH_MIN_A      = 0.050f;
+static constexpr float MIDBAND_LO_HZ           = 300.0f;
+static constexpr float MIDBAND_HI_HZ           = 6000.0f;
+static constexpr float UPPERMID_LO_HZ          = 1500.0f;
+static constexpr float UPPERMID_HI_HZ          = 6000.0f;
+static constexpr float HF_BAND_LO_HZ           = 6000.0f;
+static constexpr float HF_BAND_HI_HZ           = 20000.0f;
+static constexpr float SPEC_ENT_LO_HZ          = 300.0f;
+static constexpr float SPEC_ENT_HI_HZ          = 20000.0f;
+static constexpr float FUND_SNR_MIN            = 4.0f;
+static constexpr float FUND_MAG_MIN            = 1e-5f;
+static constexpr float SF_EPS                  = 1e-12f;
+static constexpr uint32_t FEAT_STALE_MS        = 350;
+static constexpr uint32_t ML_CTRL_POLL_MS      = 10000;
 
-static constexpr float HF_BAND_LO_HZ = 2000.0f;
-static constexpr float HF_BAND_HI_HZ = 20000.0f;
-static constexpr float LF_BAND_HI_HZ = 1000.0f;
-
 // =========================
-// Feature gating / transient control
+// Rule fallback thresholds
 // =========================
-static constexpr float IDLE_IRMS_A        = 0.02f;
-static constexpr float FUND_SNR_MIN       = 6.0f;
-static constexpr float FUND_MAG_MIN       = 1e-4f;
-static constexpr float ZC_HYS_FRAC        = 0.30f;
-static constexpr float ZC_HYS_MIN_A       = 0.01f;
-static constexpr float ENTROPY_MAX_HZ     = 50000.0f;
-static constexpr float SF_EPS             = 1e-12f;
-static constexpr float THD_GUARD_PCT      = 180.0f;
-static constexpr float HF_VAR_GUARD_LO    = 0.0020f;
-static constexpr float CYC_VAR_GUARD_LO   = 0.015f;
-static constexpr uint32_t FEAT_STALE_MS   = 350;
-static constexpr uint32_t ML_CTRL_POLL_MS = 10000;
+static constexpr float CYCLE_NMSE_ARC_H        = 0.18f;
+static constexpr float ZCV_ARC_H_MS            = 0.20f;
+static constexpr float ZC_DWELL_ARC_H          = 0.22f;
+static constexpr float PULSE_DENS_ARC_H        = 1.20f;
+static constexpr float PEAK_FLUCT_ARC_H        = 0.11f;
+static constexpr float MIDBAND_RESID_ARC_H     = 0.08f;
+static constexpr float HF_ENERGY_ARC_H         = 0.28f;
+static constexpr float WPE_ENT_ARC_H           = 0.60f;
+static constexpr float SPEC_ENT_ARC_H          = 0.68f;
+static constexpr float THD_STEADY_GUARD_PCT    = 135.0f;
+static constexpr float LOW_UNCERT_CYCLE_NMSE   = 0.06f;
+static constexpr float LOW_UNCERT_ZCV_MS       = 0.06f;
+static constexpr float LOW_UNCERT_PULSE_DENS   = 0.25f;
 
 // =========================
 // Leaky integrator
@@ -119,26 +144,36 @@ static constexpr float ADS_VREF_V = 4.096f;
 static constexpr int   ADS_SPI_HZ = 4000000;
 
 // =========================
+// Calibration helpers
+// =========================
+static inline float eval_cubic_horner(float x, float c3, float c2, float c1, float c0) {
+  return (((c3 * x) + c2) * x + c1) * x + c0;
+}
+
+// =========================
 // Current calibration
 // =========================
 struct CurrentCalib {
-  // Sensor-domain conversion first, then a linear-regression correction:
-  // I_cal = regSlope * I_uncal + regIntercept
-  // Keep regSlope/regIntercept at 1/0 until you have new clamp-meter data.
   float dividerRatio = 4.096f / 5.0f;
   float offsetV      = 2.5f;
   float voltsPerAmp  = 0.100f;
   float ampsScale    = 0.790f;
-  float regSlope     = 1.0f;
-  float regIntercept = 0.0f;
+
+  // I_cal = cubic(I_uncal)
+  float cubic3 = 0.0f;
+  float cubic2 = 0.0f;
+  float cubic1 = 1.0f;
+  float cubic0 = 0.0f;
 };
 
 struct VoltageCalib {
-  // Sensor-domain conversion first, then a linear-regression correction:
-  // V_cal = regSlope * V_uncal + regIntercept
   float sensitivity  = 580.0f;
-  float regSlope     = 1.0f;
-  float regIntercept = 0.0f;
+
+  // V_cal = cubic(V_uncal)
+  float cubic3 = 0.0f;
+  float cubic2 = 0.0f;
+  float cubic1 = 1.0f;
+  float cubic0 = 0.0f;
 };
 
 // =========================

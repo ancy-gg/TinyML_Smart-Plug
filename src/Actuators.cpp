@@ -2,7 +2,6 @@
 #include "OLED_NOTIF.h"
 #include "SmartPlugConfig.h"
 
-static constexpr uint32_t OLED_MS = 250;
 static constexpr uint8_t  BUZZ_CH = 0;
 
 struct ToneStep {
@@ -17,7 +16,6 @@ struct TonePattern {
   uint8_t priority;
 };
 
-// Status tones: one-shot only
 static constexpr ToneStep P_BOOT[] = {
   {1850, 80, 112}, {0, 40, 0}, {2350, 90, 120}, {0, 40, 0}, {2950, 130, 128}
 };
@@ -54,8 +52,6 @@ static constexpr ToneStep P_VOLT_HIGH[] = {
 static constexpr ToneStep P_DEVICE_PLUG[] = {
   {1400, 55, 108}, {0, 25, 0}, {1750, 85, 116}
 };
-
-// Fault tones: repeating by design
 static constexpr ToneStep P_FAULT_ARC[] = {
   {4100, 28, 132}, {0, 18, 0}, {3450, 34, 132}, {0, 20, 0},
   {3900, 30, 132}, {0, 24, 0}, {3000, 48, 132}, {0, 140, 0}
@@ -70,7 +66,6 @@ static constexpr ToneStep P_FAULT_OVER[] = {
 static constexpr ToneStep P_FAULT_OVER_HARD[] = {
   {1650, 180, 138}, {2450, 180, 138}, {1650, 180, 138}, {2450, 180, 138}, {0, 80, 0}
 };
-
 static constexpr ToneStep P_RESET_ACK[] = {
   {1200, 80, 110}, {0, 40, 0}, {1200, 80, 110}
 };
@@ -150,7 +145,6 @@ static void pwmTone(uint16_t hz, uint8_t duty) {
     pwmStop();
     return;
   }
-
 #if defined(ESP_ARDUINO_VERSION_MAJOR) && (ESP_ARDUINO_VERSION_MAJOR >= 3)
   ledcWriteTone(s_buzzPin, hz);
   ledcWrite(s_buzzPin, duty);
@@ -193,13 +187,11 @@ static void soundLoop() {
 
   const TonePattern& p = PATTERNS[s_activeId];
   const uint32_t now = millis();
-
   if (s_t0 == 0) {
     s_t0 = now;
     pwmTone(p.steps[s_step].hz, p.steps[s_step].duty);
     return;
   }
-
   if ((uint32_t)(now - s_t0) >= p.steps[s_step].dur_ms) {
     s_step++;
     if (s_step >= p.count) {
@@ -245,6 +237,7 @@ void Actuators::notify(SoundEvent ev) {
 }
 
 void Actuators::apply(FaultState st, float vDisplay, float vProtect, float i, float t) {
+  (void)vDisplay;
   const bool surge = (vProtect >= VOLT_SURGE_TRIP_V);
   const bool heatWarn = (t >= heatAlarmTempC()) || (st == STATE_HEATING);
   const bool hardOver = (i >= OVERLOAD_HARD_TRIP_A);
@@ -279,9 +272,4 @@ void Actuators::apply(FaultState st, float vDisplay, float vProtect, float i, fl
   mainsWasOn = mainsOn;
 
   soundLoop();
-
-  if (_oled && (millis() - _lastOled) >= OLED_MS) {
-    _lastOled = millis();
-    _oled->updateDashboard(vDisplay, i, t, st);
-  }
 }
