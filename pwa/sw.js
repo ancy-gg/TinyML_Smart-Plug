@@ -1,4 +1,4 @@
-const BUILD_VERSION = "TSP-Web-v1.0.0";
+const BUILD_VERSION = "TSP-Web-v1.0.1";
 
 const CACHE_NAME = BUILD_VERSION;
 
@@ -10,8 +10,8 @@ const CORE_ASSETS = [
   "/app.js",
   "/session.js",
   "/manifest.json",
-  "/icon-192.png",
-  "/icon-512.png",
+  "icons/icon-192.png",
+  "icons/icon-512.png",
   "/404.html"
 ];
 

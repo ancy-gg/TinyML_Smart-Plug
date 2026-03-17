@@ -318,15 +318,15 @@ async function showFaultNotification(title, body){
     if (reg) {
       reg.showNotification(title, {
         body,
-        icon: "icon-192.png",
-        badge: "icon-192.png",
+        icon: "icons/icon-192.png",
+        badge: "icons/icon-192.png",
         tag: "tsp-fault",
         renotify: true
       });
       return;
     }
   }
-  new Notification(title, { body, icon: "icon-192.png" });
+  new Notification(title, { body, icon: "icons/icon-192.png" });
 }
 
 // ---------- LIVE DATA ----------
