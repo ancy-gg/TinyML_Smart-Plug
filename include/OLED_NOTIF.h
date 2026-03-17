@@ -16,11 +16,13 @@ private:
   Adafruit_SSD1306* display;
   uint8_t _address;
   uint32_t _normalSinceMs = 0;
+  uint32_t _noPowerSinceMs = 0;
   FaultState _lastState = STATE_NORMAL;
 
   void drawNormalPane(float current, uint32_t nowMs);
   void drawFaultPane(FaultState state, uint32_t nowMs);
   void drawScreensaver(uint32_t nowMs);
+  void drawNoPowerPane();
 
 public:
   OLED_NOTIF(uint8_t address = 0x3C);

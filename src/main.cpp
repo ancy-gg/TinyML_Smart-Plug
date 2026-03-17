@@ -31,7 +31,7 @@
 
 #define API_KEY "AIzaSyAmJlZZszyWPJFgIkTAAl_TbIySys1nvEw"
 #define DATABASE_URL "tinyml-smart-plug-default-rtdb.asia-southeast1.firebasedatabase.app"
-static const char* FW_VERSION = "TSP-v0.5.7";
+static const char* FW_VERSION = "TSP-v0.5.8";
 
 static const char* OTA_DESIRED_VERSION_PATH = "/ota/desired_version";
 static const char* OTA_FIRMWARE_URL_PATH    = "/ota/firmware_url";
@@ -371,7 +371,7 @@ void loop() {
     static uint32_t lastSafeCloud = 0;
     if (millis() - lastSafeCloud > 5000) {
       lastSafeCloud = millis();
-      cloud.update(vRms, 0.0f, tC, 0,0,0, 0,0, 0,0, 0, String("SAFE_MODE"), &timeSync);
+      cloud.update(vRms, 0.0f, 0.0f, tC, 0,0,0, 0,0, 0,0, 0, String("SAFE_MODE"), &timeSync);
     }
     delay(10);
     return;
@@ -427,7 +427,12 @@ void loop() {
       stateStr = String(stateToCstr(st));
     }
 
-    cloud.update(vRms, f.irms, tC,
+    float apparentPowerVa = 0.0f;
+    if (vRms > 0.10f && f.irms > 0.001f) {
+      apparentPowerVa = vRms * f.irms;
+    }
+
+    cloud.update(vRms, f.irms, apparentPowerVa, tC,
                  f.zcv_ms, f.thd_pct, f.entropy,
                  f.hf_ratio, f.hf_var,
                  f.sf, f.cyc_var,

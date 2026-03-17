@@ -45,7 +45,7 @@ bool CloudHandler::pushJSON(const char* path, FirebaseJson& json) {
   return Firebase.RTDB.pushJSON(&fbdo, path, &json);
 }
 
-void CloudHandler::update(float v, float c, float t,
+void CloudHandler::update(float v, float c, float apparentPower, float t,
                           float zcv, float thd, float entropy,
                           float hf_ratio, float hf_var,
                           float sf, float cyc_var,
@@ -84,6 +84,7 @@ void CloudHandler::update(float v, float c, float t,
 
   json.set("voltage", v);
   json.set("current", c);
+  json.set("apparent_power", apparentPower);
   json.set("temp", t);
 
   json.set("zcv", zcv);

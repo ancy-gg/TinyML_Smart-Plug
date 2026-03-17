@@ -1,11 +1,3 @@
-// =============================
-// TinyML Smart Plug PWA - app.js
-// - No lag between history and top status
-// - Shows Device IP when connected
-// - CSV export + today/yesterday/7d/30d filters
-// - OTA Release Control (writes /ota/*)
-// =============================
-
 const firebaseConfig = {
   apiKey: "AIzaSyAmJlZZszyWPJFgIkTAAl_TbIySys1nvEw",
   authDomain: "tinyml-smart-plug.firebaseapp.com",
@@ -31,6 +23,7 @@ const deviceIpText = el("deviceIpText");
 
 const vVal   = el("vVal");
 const iVal   = el("iVal");
+const pVal   = el("pVal");
 const tVal   = el("tVal");
 const zcvVal = el("zcvVal");
 const thdVal = el("thdVal");
@@ -325,15 +318,15 @@ async function showFaultNotification(title, body){
     if (reg) {
       reg.showNotification(title, {
         body,
-        icon: "icons/icon-192.png",
-        badge: "icons/icon-192.png",
+        icon: "icon-192.png",
+        badge: "icon-192.png",
         tag: "tsp-fault",
         renotify: true
       });
       return;
     }
   }
-  new Notification(title, { body, icon: "icons/icon-192.png" });
+  new Notification(title, { body, icon: "icon-192.png" });
 }
 
 // ---------- LIVE DATA ----------
@@ -367,6 +360,7 @@ db.ref("live_data").on("value", (snap) => {
   // values
   const v  = toFixedOrDash(data.voltage, 1);
   const i  = toFixedOrDash(data.current, 2);
+  const p  = toFixedOrDash(data.apparent_power, 1);
   const t  = toFixedOrDash(data.temp, 1);
   const z  = toFixedOrDash(data.zcv, 2);
   const th = toFixedOrDash(data.thd, 1);
@@ -378,6 +372,7 @@ db.ref("live_data").on("value", (snap) => {
 
   if (vVal && vVal.textContent !== v) { vVal.textContent = v; animateNumber(vVal); }
   if (iVal && iVal.textContent !== i) { iVal.textContent = i; animateNumber(iVal); }
+  if (pVal && pVal.textContent !== p) { pVal.textContent = p; animateNumber(pVal); }
   if (tVal && tVal.textContent !== t) { tVal.textContent = t; animateNumber(tVal); }
   if (zcvVal && zcvVal.textContent !== z) { zcvVal.textContent = z; animateNumber(zcvVal); }
   if (thdVal && thdVal.textContent !== th) { thdVal.textContent = th; animateNumber(thdVal); }
@@ -798,7 +793,12 @@ if (mlSessionBody) {
     mlSessionBody.querySelectorAll("button[data-view-sid]").forEach(btn => {
       btn.addEventListener("click", () => {
         const sid = btn.getAttribute("data-view-sid");
-        window.open(`session.html?sid=${encodeURIComponent(sid)}`, "_blank");
+        const meta = obj[sid] || {};
+        if (typeof window.openSessionViewer === "function") {
+          window.openSessionViewer(sid, meta);
+        } else {
+          window.location.href = `session.html?sid=${encodeURIComponent(sid)}`;
+        }
       });
     });
   });

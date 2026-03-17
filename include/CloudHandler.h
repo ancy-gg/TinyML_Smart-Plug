@@ -13,7 +13,7 @@ public:
   void setNormalIntervalMs(uint32_t ms);
   void setFaultIntervalMs(uint32_t ms);
 
-  void update(float v, float c, float t,
+  void update(float v, float c, float apparentPower, float t,
               float zcv, float thd, float entropy,
               float hf_ratio, float hf_var,
               float sf, float cyc_var,

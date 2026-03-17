@@ -1,5 +1,4 @@
-// Change this on each deploy (also session.html and js):
-const BUILD_VERSION = "TSPweb-v0.3.9";
+const BUILD_VERSION = "TSP-Web-v1.0.0";
 
 const CACHE_NAME = BUILD_VERSION;
 
@@ -11,8 +10,8 @@ const CORE_ASSETS = [
   "/app.js",
   "/session.js",
   "/manifest.json",
-  "/icons/icon-192.png",
-  "/icons/icon-512.png",
+  "/icon-192.png",
+  "/icon-512.png",
   "/404.html"
 ];
 
@@ -39,7 +38,6 @@ self.addEventListener("fetch", (event) => {
 
   const url = new URL(req.url);
 
-  // Network-first for same-origin files so refresh gets new deploy
   if (url.origin === self.location.origin) {
     event.respondWith((async () => {
       try {
@@ -55,7 +53,6 @@ self.addEventListener("fetch", (event) => {
     return;
   }
 
-  // External libs: cache-first fallback
   event.respondWith(caches.match(req).then((cached) => cached || fetch(req)));
 });
 

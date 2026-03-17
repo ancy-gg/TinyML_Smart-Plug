@@ -7,6 +7,7 @@ public:
   explicit VoltageSensor(int pin);
   void begin();
   void setSensitivity(float factor);
+  void setLinearCalib(float slope, float intercept);
   void setAdcFullScaleVolts(float vfs);
   void setWindowMs(uint16_t ms);
   void setClampHysteresis(float v_off, float v_on);
@@ -21,7 +22,7 @@ public:
 
 private:
   int _pin;
-  float _sensitivity;
+  VoltageCalib _cal;
   float _adcFullScaleV = 3.3f;
 
   uint32_t _windowUs = 200000;

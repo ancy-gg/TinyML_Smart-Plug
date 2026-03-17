@@ -1,6 +1,7 @@
 #include "OLED_NOTIF.h"
 #include <math.h>
 #include <stdio.h>
+#include <string.h>
 
 // 10x10 icons
 static const unsigned char icon_arrow_up[] PROGMEM = {
@@ -16,16 +17,18 @@ static const unsigned char icon_fire_better[] PROGMEM = {
   0x5D, 0x00, 0x7F, 0x00, 0x3E, 0x00, 0x1C, 0x00, 0x08, 0x00
 };
 
-// 24x32 monochrome portrait derived from the attached photo for the OLED idle screen.
-static const unsigned char portrait24x32[] PROGMEM = {
-  0x51,0x2a,0xa9,0x90,0x55,0x55,0x29,0x48,0x4a,0x59,0x12,0x55,0x90,0x64,0x0a,
-  0x59,0x49,0xe4,0xa1,0x96,0xf4,0xd9,0x37,0xe4,0xb9,0x5d,0x6a,0x79,0x57,0xea,
-  0xf9,0xae,0xf4,0xb9,0x7b,0xea,0xf9,0xd7,0xe4,0xf9,0x6e,0xea,0xf1,0x5b,0xa9,
-  0xb9,0x6e,0x12,0xf9,0x2b,0x49,0xf9,0x5e,0x90,0xb1,0x0d,0xe5,0x7b,0x6a,0x81,
-  0x0b,0xac,0x09,0x4b,0x79,0x22,0x13,0x50,0x89,0xa3,0xa4,0x52,0x05,0x10,0x02,
-  0x28,0xa1,0xa8,0x40,0x48,0x42,0x08,0x40,0x49,0x60,0x01,0x96,0x90,0x04,0x0f,
-  0x00,0x11,0xaa,0xa2,0x08,0x48
+// 28x32 monochrome portrait generated from the uploaded professor photo.
+static const unsigned char portrait28x32[] PROGMEM = {
+  0x00,0x01,0xe0,0x00,0x00,0x0f,0xfc,0x00,0x00,0x3f,0xfe,0x00,0x00,0x7f,0xff,0x00,
+  0x00,0xff,0xff,0x80,0x00,0xff,0xff,0xc0,0x01,0xff,0xff,0xc0,0x01,0xfc,0x3f,0xc0,
+  0x01,0xfc,0x3f,0xe0,0x00,0xfe,0x1f,0xe0,0x00,0x76,0x0f,0xe0,0x00,0x70,0x08,0xc0,
+  0x00,0x20,0x08,0xc0,0x00,0x00,0x00,0xc0,0x00,0x30,0x00,0xc0,0x00,0x00,0x01,0xb0,
+  0x00,0x30,0x03,0xf0,0x00,0x30,0x03,0xf0,0x00,0x38,0x03,0xf0,0x00,0x19,0xc3,0xf0,
+  0x06,0xff,0x03,0xf0,0x3f,0x7e,0x03,0xf0,0x1f,0xff,0x83,0xf0,0x1f,0xf9,0x87,0xf0,
+  0x3f,0xf9,0x87,0xf0,0x13,0xf9,0x07,0xf0,0x67,0xf8,0x0f,0xf0,0xef,0xf8,0x0f,0xf0,
+  0x8f,0xf8,0x0f,0xf0,0x0f,0xfc,0x0f,0xf0,0x1f,0xfc,0x0f,0xf0,0x3f,0xfc,0x0f,0xf0
 };
+
 
 OLED_NOTIF::OLED_NOTIF(uint8_t address) {
   _address = address;
@@ -127,22 +130,13 @@ void OLED_NOTIF::drawFaultPane(FaultState state, uint32_t nowMs) {
 
 void OLED_NOTIF::drawScreensaver(uint32_t nowMs) {
   const int bob = ((nowMs / 350U) % 2U) ? 1 : 0;
-  const int tw = (nowMs / 220U) % 4;
+  const int tw = (nowMs / 220U) % 6;
+  const int x = (SCREEN_WIDTH - 28) / 2;
+  display->drawBitmap(x, bob, portrait28x32, 28, 32, SSD1306_WHITE);
 
-  display->drawBitmap(2, bob, portrait24x32, 24, 32, SSD1306_WHITE);
-  display->drawLine(29, 0, 29, 31, SSD1306_WHITE);
-
-  display->setTextSize(1);
-  display->setCursor(36, 3);
-  display->print("ALL GOOD");
-  display->setCursor(36, 14);
-  display->print("SMARTPLUG");
-  display->setCursor(36, 25);
-  display->print(":)");
-
-  const int sx[4] = {112, 118, 108, 121};
-  const int sy[4] = {5, 11, 21, 27};
-  for (int i = 0; i < 4; ++i) {
+  const int sx[6] = {14, 28, 44, 84, 100, 114};
+  const int sy[6] = {6, 24, 10, 22, 7, 26};
+  for (int i = 0; i < 6; ++i) {
     if (i == tw) {
       display->drawFastHLine(sx[i] - 1, sy[i], 3, SSD1306_WHITE);
       display->drawFastVLine(sx[i], sy[i] - 1, 3, SSD1306_WHITE);
@@ -150,6 +144,44 @@ void OLED_NOTIF::drawScreensaver(uint32_t nowMs) {
       display->drawPixel(sx[i], sy[i], SSD1306_WHITE);
     }
   }
+}
+
+void OLED_NOTIF::drawNoPowerPane() {
+  display->drawRoundRect(0, 0, SCREEN_WIDTH, SCREEN_HEIGHT, 4, SSD1306_WHITE);
+  display->setTextSize(2);
+  display->setTextColor(SSD1306_WHITE);
+  int16_t x1, y1;
+  uint16_t w, h;
+  const char* line1 = "No";
+  const char* line2 = "Power";
+  display->getTextBounds(line1, 0, 0, &x1, &y1, &w, &h);
+  display->setCursor((SCREEN_WIDTH - (int)w) / 2, 4);
+  display->print(line1);
+  display->getTextBounds(line2, 0, 0, &x1, &y1, &w, &h);
+  display->setCursor((SCREEN_WIDTH - (int)w) / 2, 18);
+  display->print(line2);
+}
+
+static void formatCompactUnit(char* dst, size_t n, float value, char unit, uint8_t fracDigits, float zeroThresh = 0.0005f) {
+  if (!dst || n < 4) return;
+  if (fabsf(value) < zeroThresh) value = 0.0f;
+
+  char tmp[16];
+  if (value == 0.0f) {
+    snprintf(dst, n, "0%c", unit);
+    return;
+  }
+
+  snprintf(tmp, sizeof(tmp), "%.*f", (int)fracDigits, value);
+
+  // Trim trailing zeros and a dangling decimal point.
+  char* p = tmp + strlen(tmp) - 1;
+  while (p > tmp && *p == '0' && strchr(tmp, '.') != nullptr) {
+    *p-- = '\0';
+  }
+  if (p > tmp && *p == '.') *p = '\0';
+
+  snprintf(dst, n, "%s%c", tmp, unit);
 }
 
 void OLED_NOTIF::updateDashboard(float voltage, float current, float temperature, FaultState state) {
@@ -162,8 +194,20 @@ void OLED_NOTIF::updateDashboard(float voltage, float current, float temperature
     _normalSinceMs = now;
   }
 
+  if (voltage < 0.0f) voltage = 0.0f;
+  if (current < 0.0f) current = 0.0f;
+
+  const bool noPowerNow = (voltage <= 0.20f);
+  if (noPowerNow) {
+    if (_noPowerSinceMs == 0) _noPowerSinceMs = now;
+  } else {
+    _noPowerSinceMs = 0;
+  }
+
+  const bool showNoPower = (_noPowerSinceMs != 0) && ((now - _noPowerSinceMs) >= 10000UL);
+
   bool showScreensaver = false;
-  if (state == STATE_NORMAL && _normalSinceMs != 0) {
+  if (!showNoPower && state == STATE_NORMAL && _normalSinceMs != 0) {
     const uint32_t held = now - _normalSinceMs;
     if (held >= 10000UL) {
       const uint32_t cyc = (held - 10000UL) % 15000UL;
@@ -174,15 +218,19 @@ void OLED_NOTIF::updateDashboard(float voltage, float current, float temperature
   char vBuf[12];
   char iBuf[12];
   char tBuf[12];
-  if (voltage < 0.0f) voltage = 0.0f;
-  if (current < 0.0f) current = 0.0f;
-  snprintf(vBuf, sizeof(vBuf), "%06.2fV", voltage);
-  snprintf(iBuf, sizeof(iBuf), "%06.3fA", current);
-  snprintf(tBuf, sizeof(tBuf), "%05.2f", temperature);
+  formatCompactUnit(vBuf, sizeof(vBuf), voltage, 'V', 2, 0.05f);
+  formatCompactUnit(iBuf, sizeof(iBuf), current, 'A', 3, 0.002f);
+  snprintf(tBuf, sizeof(tBuf), "%.1f", temperature);
 
   display->clearDisplay();
   display->setTextColor(SSD1306_WHITE);
   display->setTextSize(1);
+
+  if (showNoPower) {
+    drawNoPowerPane();
+    display->display();
+    return;
+  }
 
   if (showScreensaver) {
     drawScreensaver(now);

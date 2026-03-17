@@ -122,17 +122,23 @@ static constexpr int   ADS_SPI_HZ = 4000000;
 // Current calibration
 // =========================
 struct CurrentCalib {
-  // Divider return is already applied in ArcFeatures.cpp using dividerRatio.
-  // If clamp-vs-device current still disagrees after re-test, tune ampsScale using:
-  // ampsScale_new = ampsScale_old * (clamp_meter_A / device_reported_A)
+  // Sensor-domain conversion first, then a linear-regression correction:
+  // I_cal = regSlope * I_uncal + regIntercept
+  // Keep regSlope/regIntercept at 1/0 until you have new clamp-meter data.
   float dividerRatio = 4.096f / 5.0f;
   float offsetV      = 2.5f;
   float voltsPerAmp  = 0.100f;
   float ampsScale    = 0.790f;
+  float regSlope     = 1.0f;
+  float regIntercept = 0.0f;
 };
 
 struct VoltageCalib {
-  float sensitivity = 580.0f;
+  // Sensor-domain conversion first, then a linear-regression correction:
+  // V_cal = regSlope * V_uncal + regIntercept
+  float sensitivity  = 580.0f;
+  float regSlope     = 1.0f;
+  float regIntercept = 0.0f;
 };
 
 // =========================

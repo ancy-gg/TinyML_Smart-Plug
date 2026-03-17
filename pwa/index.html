@@ -7,17 +7,18 @@
 
   <link rel="manifest" href="manifest.json">
   <meta name="theme-color" content="#111111" />
-  <link rel="apple-touch-icon" href="icons/icon-192.png">
-  <link rel="icon" type="image/png" href="icons/icon-512.png">
+  <link rel="apple-touch-icon" href="icon-192.png">
+  <link rel="icon" type="image/png" href="icon-512.png">
 
   <link rel="stylesheet" href="styles.css" />
+  <link rel="stylesheet" href="https://unpkg.com/uplot/dist/uPlot.min.css" />
 </head>
 
 <body>
   <main class="app">
     <header class="top">
       <div class="brand">
-        <img class="logo" src="icons/icon-512.png" alt="TinyML Smart Plug Logo" />
+        <img class="logo" src="icon-512.png" alt="TinyML Smart Plug Logo" />
         <h1 class="title">TinyML Smart Plug</h1>
       </div>
 
@@ -47,58 +48,81 @@
       </div>
     </header>
 
-    <section class="grid">
-      <div class="card">
-        <div class="card-label">Voltage</div>
-        <div class="card-value"><span id="vVal">—</span><span class="unit">V</span></div>
+    <section class="metrics-block">
+      <div class="section-head">
+        <h2 class="section-title">Live Electrical Data</h2>
+        <div class="section-hint">2×2 top mapping as requested, with apparent power on the website only.</div>
       </div>
 
-      <div class="card">
-        <div class="card-label">Current</div>
-        <div class="card-value"><span id="iVal">—</span><span class="unit">A</span></div>
-      </div>
+      <div class="metric-grid-top">
+        <div class="card live-card">
+          <div class="card-label">Voltage</div>
+          <div class="card-value"><span id="vVal">—</span><span class="unit">V</span></div>
+        </div>
 
-      <div class="card">
-        <div class="card-label">Temperature</div>
-        <div class="card-value"><span id="tVal">—</span><span class="unit">°C</span></div>
-      </div>
+        <div class="card live-card">
+          <div class="card-label">Current</div>
+          <div class="card-value"><span id="iVal">—</span><span class="unit">A</span></div>
+        </div>
 
-      <div class="card">
-        <div class="card-label">ZCV (Δt)</div>
-        <div class="card-value"><span id="zcvVal">—</span></div>
-      </div>
+        <div class="card live-card">
+          <div class="card-label">Apparent Power</div>
+          <div class="card-value"><span id="pVal">—</span><span class="unit">VA</span></div>
+        </div>
 
-      <div class="card">
-        <div class="card-label">THD</div>
-        <div class="card-value"><span id="thdVal">—</span><span class="unit">%</span></div>
-      </div>
-
-      <div class="card">
-        <div class="card-label">Spectral Entropy</div>
-        <div class="card-value"><span id="entVal">—</span><span class="unit">H</span></div>
-      </div>
-
-      <div class="card">
-        <div class="card-label">Spectral Flatness</div>
-        <div class="card-value"><span id="sfVal">—</span></div>
-      </div>
-
-      <div class="card">
-        <div class="card-label">HF Ratio</div>
-        <div class="card-value"><span id="hfRatioVal">—</span></div>
-      </div>
-
-      <div class="card">
-        <div class="card-label">HF Variance</div>
-        <div class="card-value"><span id="hfVarVal">—</span></div>
-      </div>
-
-      <div class="card">
-        <div class="card-label">Cycle Variance</div>
-        <div class="card-value"><span id="cycVarVal">—</span></div>
+        <div class="card live-card">
+          <div class="card-label">Temperature</div>
+          <div class="card-value"><span id="tVal">—</span><span class="unit">°C</span></div>
+        </div>
       </div>
     </section>
-    
+
+    <section class="features-block">
+      <div class="section-head">
+        <h2 class="section-title">Arc Features</h2>
+        <div class="section-hint">Grouped as 2, 2, and 3.</div>
+      </div>
+
+      <div class="feature-clusters">
+        <div class="feature-cluster cols-2">
+          <div class="card feature-card">
+            <div class="card-label">Entropy</div>
+            <div class="card-value"><span id="entVal">—</span></div>
+          </div>
+          <div class="card feature-card">
+            <div class="card-label">Flatness</div>
+            <div class="card-value"><span id="sfVal">—</span></div>
+          </div>
+        </div>
+
+        <div class="feature-cluster cols-2">
+          <div class="card feature-card">
+            <div class="card-label">HF Ratio</div>
+            <div class="card-value"><span id="hfRatioVal">—</span></div>
+          </div>
+          <div class="card feature-card">
+            <div class="card-label">HF Variance</div>
+            <div class="card-value"><span id="hfVarVal">—</span></div>
+          </div>
+        </div>
+
+        <div class="feature-cluster cols-3">
+          <div class="card feature-card">
+            <div class="card-label">THD</div>
+            <div class="card-value"><span id="thdVal">—</span><span class="unit">%</span></div>
+          </div>
+          <div class="card feature-card">
+            <div class="card-label">Cycle Variance</div>
+            <div class="card-value"><span id="cycVarVal">—</span></div>
+          </div>
+          <div class="card feature-card">
+            <div class="card-label">ZCV (Δt)</div>
+            <div class="card-value"><span id="zcvVal">—</span></div>
+          </div>
+        </div>
+      </div>
+    </section>
+
     <section class="history">
       <div class="history-head">
         <div>
@@ -140,7 +164,6 @@
       </div>
     </section>
 
-<!-- ================= OTA RELEASE PANEL ================= -->
     <section class="history ota-panel">
       <div class="history-head">
         <div>
@@ -186,7 +209,6 @@
         </div>
       </div>
     </section>
-    <!-- ===================================================== -->
 
     <section class="history">
       <div class="history-head">
@@ -243,6 +265,134 @@
       </div>
     </section>
 
+    <section id="plotDrawer" class="history plot-drawer collapsed">
+      <div class="history-head drawer-head">
+        <div>
+          <h2 class="history-title" id="title">Plot Viewer</h2>
+          <div class="viewer-meta mono" id="meta">Open a session from the ML table above.</div>
+        </div>
+        <div class="history-actions">
+          <button class="btn" id="btnBack" type="button">Close</button>
+          <button class="btn" id="btnDownload" type="button">Download CSV</button>
+        </div>
+      </div>
+
+      <div class="viewer-grid">
+        <div class="panel toggles" id="seriesPanel">
+          <div class="seriesTop">
+            <div style="font-weight:900;">Feature Data</div>
+            <button class="btn btn-small" id="btnCloseSeries" type="button">Close</button>
+          </div>
+
+          <div class="smallnote" style="margin-top:0; margin-bottom:6px;">
+            Axis: <span class="mono">Y1</span>=left, <span class="mono">Y2</span>=right
+          </div>
+
+          <input id="seriesSearch" class="seriesSearch mono" placeholder="Filter series (e.g., rms, thd, entropy…)" />
+
+          <div class="seriesActions">
+            <button class="btn btn-small" id="btnSelDefault" type="button">Default</button>
+            <button class="btn btn-small" id="btnSelAll" type="button">All</button>
+            <button class="btn btn-small" id="btnSelNone" type="button">None</button>
+          </div>
+
+          <div id="toggleList"></div>
+
+          <div class="smallnote">
+            Zoom: drag on plot. Wheel: zoom. Pan: <span class="mono">Shift + drag</span>. Reset zoom: double-click or button.
+          </div>
+        </div>
+
+        <div class="panel rightPanel">
+          <div class="controlsbar">
+            <div class="left">
+              <button class="btn" id="btnPlay">Play</button>
+              <button class="btn" id="btnPause" disabled>Pause</button>
+
+              <div class="chip">
+                <label>Speed</label>
+                <select id="selSpeed">
+                  <option value="0.25">0.25×</option>
+                  <option value="0.5">0.5×</option>
+                  <option value="1" selected>1×</option>
+                  <option value="2">2×</option>
+                  <option value="4">4×</option>
+                  <option value="8">8×</option>
+                </select>
+              </div>
+
+              <button class="btn btn-small" id="btnSeries" type="button">Series</button>
+
+              <input class="scrub" id="scrub" type="range" min="0" max="0" value="0" step="1" />
+
+              <div class="chip">
+                <label class="mono" id="timeReadout">t=—</label>
+              </div>
+            </div>
+
+            <div class="right">
+              <div class="chip">
+                <label><input type="checkbox" id="chkNormalize"> Normalize</label>
+              </div>
+
+              <div class="chip">
+                <label><input type="checkbox" id="chkSmooth" checked> Smooth</label>
+              </div>
+
+              <div class="chip">
+                <input id="rngSmooth" type="range" min="1" max="31" step="2" value="15" style="width:120px;" />
+              </div>
+
+              <div class="chip">
+                <label><input type="checkbox" id="chkCurves" checked> Curves</label>
+              </div>
+
+              <div class="chip">
+                <label><input type="checkbox" id="chkEvents"> Arc markers</label>
+              </div>
+
+              <div class="chip">
+                <label><input type="checkbox" id="chkStats"> Stats</label>
+              </div>
+
+              <div class="chip">
+                <label><input type="checkbox" id="chkFollow" checked> Follow</label>
+              </div>
+
+              <button class="btn" id="btnResetZoom">Reset Zoom</button>
+            </div>
+          </div>
+
+          <div id="chart"></div>
+
+          <div class="smallnote mono" id="statusLine">Pick a session above to load the plot viewer.</div>
+          <div id="valueLine" class="valueLineWrap mono"></div>
+
+          <div id="statsWrap" class="statsWrap">
+            <div class="statsHead">
+              <div class="mono" id="statsHint">—</div>
+              <button class="btn btn-small" id="btnCopyStats" type="button">Copy</button>
+            </div>
+            <div class="statsTableWrap">
+              <table class="statsTable">
+                <thead>
+                  <tr>
+                    <th>series</th>
+                    <th>mean</th>
+                    <th>min</th>
+                    <th>max</th>
+                    <th>std</th>
+                    <th>n</th>
+                  </tr>
+                </thead>
+                <tbody id="statsBody"></tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
     <footer class="footer">
       <div class="muted small">
         TinyML Smart Plug Monitoring Dashboard<br/>
@@ -253,9 +403,12 @@
     <div id="toast" class="toast" role="status" aria-live="polite"></div>
   </main>
 
-  <!-- Firebase compat (global firebase) -->
   <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-app-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-database-compat.js"></script>
+  <script src="https://unpkg.com/papaparse@5.4.1/papaparse.min.js"></script>
+  <script src="https://unpkg.com/uplot/dist/uPlot.iife.min.js"></script>
+
   <script src="app.js"></script>
+  <script src="session.js"></script>
 </body>
 </html>

@@ -1,8 +1,12 @@
 #include "VoltageSensor.h"
 #include <math.h>
 
+static inline float hornerLinear(float x, float a, float b) {
+  return fmaf(a, x, b);
+}
+
 VoltageSensor::VoltageSensor(int pin)
-  : _pin(pin), _sensitivity(580.0f) {}
+  : _pin(pin), _cal{} {}
 
 void VoltageSensor::begin() {
   pinMode(_pin, INPUT);
@@ -13,7 +17,12 @@ void VoltageSensor::begin() {
 }
 
 void VoltageSensor::setSensitivity(float factor) {
-  _sensitivity = factor;
+  _cal.sensitivity = factor;
+}
+
+void VoltageSensor::setLinearCalib(float slope, float intercept) {
+  _cal.regSlope = slope;
+  _cal.regIntercept = intercept;
 }
 
 void VoltageSensor::setAdcFullScaleVolts(float vfs) {
@@ -77,8 +86,10 @@ float VoltageSensor::update() {
   if (var < 0.0) var = 0.0;
 
   const float vrms_counts = (float)sqrt(var);
-  const float vrms_adc_v  = vrms_counts * (_adcFullScaleV / 4095.0f);
-  float vrms_main = vrms_adc_v * _sensitivity;
+  const float vrms_adc_v   = vrms_counts * (_adcFullScaleV / 4095.0f);
+  const float vrms_uncal   = vrms_adc_v * _cal.sensitivity;
+  float vrms_main          = hornerLinear(vrms_uncal, _cal.regSlope, _cal.regIntercept);
+  if (vrms_main < 0.0f) vrms_main = 0.0f;
 
   if (_vActive) {
     if (vrms_main < _vOff) {
