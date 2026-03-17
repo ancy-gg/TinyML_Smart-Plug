@@ -467,6 +467,7 @@ body.showSeries{ overflow:hidden; }
   display:flex;
   flex-direction:column;
   min-height:0;
+  overflow:hidden;
 }
 .controlsbar{
   display:flex;
@@ -506,7 +507,14 @@ body.showSeries{ overflow:hidden; }
 }
 #chart{
   width:100%;
+  height:460px;
   min-height:460px;
+  max-height:460px;
+  overflow:hidden;
+  position:relative;
+}
+#statusLine{
+  margin-top:10px;
 }
 .smallnote{
   font-size:12px;
@@ -578,7 +586,7 @@ body.showSeries{ overflow:hidden; }
   .features-block{ padding:14px; }
   .card-value{ font-size:26px; }
   .scrub{ width:100%; min-width:0; }
-  #chart{ min-height:360px; }
+  #chart{ height:360px; min-height:360px; max-height:360px; }
   .valueLineWrap{ max-height:140px; }
   #btnSeries{ display:inline-flex !important; }
   #btnCloseSeries{ display:inline-flex !important; }

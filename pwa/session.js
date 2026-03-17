@@ -61,6 +61,10 @@
   let sid = "";
   let currentCsv = "";
 
+  function setStatus(text) {
+    if (statusLine) statusLine.textContent = text;
+  }
+
   function downloadTextFile(filename, text, mime = "text/csv;charset=utf-8") {
     const blob = new Blob([text], { type: mime });
     const url = URL.createObjectURL(blob);
@@ -221,7 +225,7 @@
     if (valueLine) valueLine.innerHTML = "";
     if (statsBody) statsBody.innerHTML = "";
     if (statsHint) statsHint.textContent = "—";
-    if (statusLine) statusLine.textContent = "Loading…";
+    setStatus("Loading…");
     if (scrub) { scrub.min = "0"; scrub.max = "0"; scrub.value = "0"; }
     if (timeReadout) timeReadout.textContent = "t=—";
   }
@@ -315,9 +319,15 @@
 
   function chartSize() {
     const c = $("chart");
-    const r = c.getBoundingClientRect();
-    const w = Math.max(320, Math.floor(r.width || c.clientWidth || 0));
-    const h = Math.max(300, Math.floor(r.height || c.clientHeight || 0));
+    if (!c) return { w: 320, h: 300 };
+
+    const style = window.getComputedStyle(c);
+    const cssWidth = parseFloat(style.width);
+    const cssHeight = parseFloat(style.height);
+    const parentWidth = c.parentElement?.clientWidth || 0;
+
+    const w = Math.max(320, Math.floor((Number.isFinite(cssWidth) ? cssWidth : 0) || c.clientWidth || parentWidth || 0));
+    const h = Math.max(300, Math.floor((Number.isFinite(cssHeight) ? cssHeight : 0) || c.clientHeight || 0));
     return { w, h };
   }
 
@@ -355,23 +365,74 @@
     }
   }
 
+  function clampXWindow(min, max) {
+    if (!X.length) return [0, 0];
+    const fullMin = FULL_X_MIN;
+    const fullMax = FULL_X_MAX;
+    const fullRange = Math.max(0, fullMax - fullMin);
+    if (fullRange <= 0) return [fullMin, fullMax];
+
+    let lo = Number.isFinite(min) ? min : fullMin;
+    let hi = Number.isFinite(max) ? max : fullMax;
+    let range = hi - lo;
+
+    const minRange = Math.max(avgDt(X) * 8, fullRange / Math.max(32, Math.min(X.length, 512)));
+    range = Math.max(minRange, Math.min(fullRange, range || fullRange));
+
+    if (lo < fullMin) {
+      hi += fullMin - lo;
+      lo = fullMin;
+    }
+    if (hi > fullMax) {
+      lo -= hi - fullMax;
+      hi = fullMax;
+    }
+
+    lo = Math.max(fullMin, lo);
+    hi = Math.min(fullMax, hi);
+
+    if ((hi - lo) < range) {
+      const short = range - (hi - lo);
+      const pushLeft = Math.min(lo - fullMin, short * 0.5);
+      const pushRight = Math.min(fullMax - hi, short - pushLeft);
+      lo -= pushLeft;
+      hi += pushRight;
+    }
+
+    return [Math.max(fullMin, lo), Math.min(fullMax, hi)];
+  }
+
   function resetZoom() {
     if (!plot || !X.length) return;
-    plot.setScale("x", { min: FULL_X_MIN, max: FULL_X_MAX });
+    const keepIdx = playIdx;
+    const resume = playing;
+    pause();
+    buildPlot();
+    setPlayIdx(keepIdx, true);
+    if (resume) play();
   }
 
   function zoomPanPlugin() {
     let isPanning = false;
     let panStartX = 0;
     let startMin = 0, startMax = 0;
+    let dragged = false;
+    let mouseMoveHandler = null;
+    let mouseUpHandler = null;
+    let wheelHandler = null;
+    let dblClickHandler = null;
+    let clickHandler = null;
+    let mouseDownHandler = null;
 
     const onMouseMove = (u, e) => {
       if (!isPanning) return;
+      dragged = true;
       const rect = u.root.getBoundingClientRect();
       const x = e.clientX - rect.left;
       const dxPx = x - panStartX;
       const dxVal = u.posToVal(0, "x") - u.posToVal(dxPx, "x");
-      u.setScale("x", { min: startMin + dxVal, max: startMax + dxVal });
+      const [min, max] = clampXWindow(startMin + dxVal, startMax + dxVal);
+      u.setScale("x", { min, max });
     };
     const onMouseUp = () => { isPanning = false; };
 
@@ -379,18 +440,18 @@
       hooks: {
         ready: [
           (u) => {
-            u.root.addEventListener("mousedown", (e) => {
+            mouseDownHandler = (e) => {
               if (!e.shiftKey || e.button !== 0) return;
               isPanning = true;
+              dragged = false;
               panStartX = e.offsetX;
               startMin = u.scales.x.min;
               startMax = u.scales.x.max;
               e.preventDefault();
-            });
-            window.addEventListener("mousemove", (e) => onMouseMove(u, e));
-            window.addEventListener("mouseup", onMouseUp);
-
-            u.root.addEventListener("wheel", (e) => {
+            };
+            mouseMoveHandler = (e) => onMouseMove(u, e);
+            mouseUpHandler = () => onMouseUp();
+            wheelHandler = (e) => {
               e.preventDefault();
               const left = e.offsetX;
               const xVal = u.posToVal(left, "x");
@@ -399,18 +460,39 @@
               const range = max - min;
               const factor = e.deltaY < 0 ? 0.85 : 1.18;
               const newRange = Math.min((FULL_X_MAX - FULL_X_MIN), Math.max(avgDt(X) * 8, range * factor));
-              const frac = (xVal - min) / range;
+              const frac = range > 0 ? (xVal - min) / range : 0.5;
               const newMin = xVal - frac * newRange;
               const newMax = newMin + newRange;
-              u.setScale("x", { min: newMin, max: newMax });
-            }, { passive: false });
-
-            u.root.addEventListener("dblclick", () => resetZoom());
-            u.root.addEventListener("click", (e) => {
+              const [clampedMin, clampedMax] = clampXWindow(newMin, newMax);
+              u.setScale("x", { min: clampedMin, max: clampedMax });
+            };
+            dblClickHandler = () => resetZoom();
+            clickHandler = (e) => {
+              if (dragged) {
+                dragged = false;
+                return;
+              }
               const x = u.posToVal(e.offsetX, "x");
               const idx = lowerBound(X, x);
               if (idx >= 0 && idx < X.length) setPlayIdx(idx, true);
-            });
+            };
+
+            u.root.addEventListener("mousedown", mouseDownHandler);
+            window.addEventListener("mousemove", mouseMoveHandler);
+            window.addEventListener("mouseup", mouseUpHandler);
+            u.root.addEventListener("wheel", wheelHandler, { passive: false });
+            u.root.addEventListener("dblclick", dblClickHandler);
+            u.root.addEventListener("click", clickHandler);
+          }
+        ],
+        destroy: [
+          (u) => {
+            if (mouseDownHandler) u.root.removeEventListener("mousedown", mouseDownHandler);
+            if (wheelHandler) u.root.removeEventListener("wheel", wheelHandler);
+            if (dblClickHandler) u.root.removeEventListener("dblclick", dblClickHandler);
+            if (clickHandler) u.root.removeEventListener("click", clickHandler);
+            if (mouseMoveHandler) window.removeEventListener("mousemove", mouseMoveHandler);
+            if (mouseUpHandler) window.removeEventListener("mouseup", mouseUpHandler);
           }
         ]
       }
@@ -475,7 +557,7 @@
 
   function buildPlot() {
     if (!DATA_RAW || !X.length) return;
-    if (visibleSeriesCount() === 0) statusLine.textContent = "No series selected. Check at least one series.";
+    if (visibleSeriesCount() === 0) setStatus("No series selected. Check at least one series.");
 
     const data = currentData();
     const normalize = chkNormalize.checked;
@@ -520,7 +602,7 @@
       scales,
       axes,
       legend: { show: false },
-      cursor: { show: true, lock: true, points: { show: false } },
+      cursor: { show: true, lock: true, points: { show: false }, drag: { x: true, y: false, setScale: true } },
       select: { show: true },
       plugins: [zoomPanPlugin(), eventsPlugin(), statsPlugin(), playheadPlugin()],
     };
@@ -564,9 +646,11 @@
       const r = (max - min) || 1;
 
       if (playing) {
-        plot.setScale("x", { min: x - 0.45 * r, max: x + 0.55 * r });
+        const [nextMin, nextMax] = clampXWindow(x - 0.45 * r, x + 0.55 * r);
+        plot.setScale("x", { min: nextMin, max: nextMax });
       } else if (x < min + 0.12 * r || x > max - 0.12 * r) {
-        plot.setScale("x", { min: x - 0.5 * r, max: x + 0.5 * r });
+        const [nextMin, nextMax] = clampXWindow(x - 0.5 * r, x + 0.5 * r);
+        plot.setScale("x", { min: nextMin, max: nextMax });
       }
     }
   }
@@ -860,7 +944,7 @@
     if (!sid) {
       titleEl.textContent = "Plot Viewer";
       metaEl.textContent = "Open a session from the ML table above.";
-      statusLine.textContent = "Missing sid.";
+      setStatus("Missing sid.");
       clearValueReadout();
       return;
     }
@@ -875,23 +959,23 @@
       }
       metaEl.textContent = `load=${meta?.load_type ?? "—"}  duration=${meta?.duration_s ?? "—"}s`;
 
-      statusLine.textContent = "Fetching CSV chunks…";
+      setStatus("Fetching CSV chunks…");
       const csv = await fetchSessionCsv(sid);
       currentCsv = csv;
       if (!csv) {
-        statusLine.textContent = "No CSV chunks found for this session.";
+        setStatus("No CSV chunks found for this session.");
         clearValueReadout();
         return;
       }
 
       btnDownload.onclick = () => downloadTextFile(`TSP_ML_${sid}.csv`, currentCsv);
 
-      statusLine.textContent = "Parsing CSV…";
+      setStatus("Parsing CSV…");
       const parsed = Papa.parse(csv.trim(), { header: true, dynamicTyping: true, skipEmptyLines: true });
       ROWS = (parsed.data || []).filter((r) => r && Object.keys(r).length);
 
       if (!ROWS.length) {
-        statusLine.textContent = "Parsed 0 rows. (CSV exists but has no data rows.)";
+        setStatus("Parsed 0 rows. (CSV exists but has no data rows.)");
         clearValueReadout();
         return;
       }
@@ -900,7 +984,7 @@
       KEYS = buildSeriesKeys(ROWS);
 
       if (!KEYS.length) {
-        statusLine.textContent = "No numeric series found in this session CSV.";
+        setStatus("No numeric series found in this session CSV.");
         clearValueReadout();
         return;
       }
@@ -969,7 +1053,7 @@
         if (ARC_SERIES_INDEX < 0) chkEvents.checked = false;
       }
 
-      statusLine.textContent = `Rows: ${ROWS.length} | Click plot to move playhead | Play to animate`;
+      setStatus(`Rows: ${ROWS.length} | Click plot to move playhead | Play to animate`);
       clearValueReadout();
 
       requestAnimationFrame(() => {
@@ -979,7 +1063,7 @@
       });
     } catch (e) {
       console.error(e);
-      statusLine.textContent = "Failed to load this session (check Firebase rules / network).";
+      setStatus("Failed to load this session (check Firebase rules / network).");
       clearValueReadout();
     }
   }
@@ -998,7 +1082,7 @@
     plotDrawer.classList.add("collapsed");
     titleEl.textContent = "Plot Viewer";
     metaEl.textContent = "Open a session from the ML table above.";
-    statusLine.textContent = "Pick a session above to load the plot viewer.";
+    setStatus("Pick a session above to load the plot viewer.");
   }
 
   btnBack.onclick = () => closeSessionViewer();
