@@ -408,11 +408,7 @@ body.showSeries{ overflow:hidden; }
 .plot-drawer.collapsed #statsWrap{
   display:none;
 }
-.plot-drawer.collapsed #title::after{
-  content:" — select a session above";
-  color:var(--muted);
-  font-weight:600;
-}
+
 .viewer-grid{
   display:grid;
   grid-template-columns:minmax(260px, 320px) minmax(0, 1fr);

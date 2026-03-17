@@ -147,18 +147,21 @@ void OLED_NOTIF::drawScreensaver(uint32_t nowMs) {
 }
 
 void OLED_NOTIF::drawNoPowerPane() {
-  display->drawRoundRect(0, 0, SCREEN_WIDTH, SCREEN_HEIGHT, 4, SSD1306_WHITE);
-  display->setTextSize(2);
-  display->setTextColor(SSD1306_WHITE);
   int16_t x1, y1;
   uint16_t w, h;
-  const char* line1 = "No";
-  const char* line2 = "Power";
+
+  const char* line1 = "SYSTEM";
+  const char* line2 = "OFFLINE"; 
+
+  display->setTextColor(SSD1306_WHITE);
+  display->setTextSize(2); 
+
   display->getTextBounds(line1, 0, 0, &x1, &y1, &w, &h);
-  display->setCursor((SCREEN_WIDTH - (int)w) / 2, 4);
+  display->setCursor((SCREEN_WIDTH - w) / 2, 0);
   display->print(line1);
+
   display->getTextBounds(line2, 0, 0, &x1, &y1, &w, &h);
-  display->setCursor((SCREEN_WIDTH - (int)w) / 2, 18);
+  display->setCursor((SCREEN_WIDTH - w) / 2, 16);
   display->print(line2);
 }
 
