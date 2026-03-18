@@ -136,7 +136,7 @@ bool ArcFeatures::compute(const uint16_t* raw, size_t n, float fs_hz,
     yBase  += aBase  * (sig[i] - yBase);
     sigClean[i] = yClean;
     sigBase[i]  = yBase;
-    resid[i] = yClean - yBase;
+    resid[i]    = yClean - yBase;
     accIrmsClean += (double)yClean * (double)yClean;
     accIrmsWide  += (double)sig[i] * (double)sig[i];
     accResidSq   += (double)resid[i] * (double)resid[i];
@@ -146,7 +146,13 @@ bool ArcFeatures::compute(const uint16_t* raw, size_t n, float fs_hz,
   const float irmsWide  = sqrtf((float)(accIrmsWide / (double)n));
 
   float irms = fmaxf(irmsClean, irmsWide * 0.92f);
-  if (irms < IRMS_GATE_OFF_A) irms = 0.0f;
+  const uint16_t codeSpan = (uint16_t)(mxCode - mnCode);
+
+  if (irms < CURRENT_IDLE_SUPPRESS_A && codeSpan < LOW_CURRENT_CODE_SPAN) {
+    irms = 0.0f;
+  } else if (irms < IRMS_GATE_OFF_A) {
+    irms = 0.0f;
+  }
 
   out.irms_a = irms;
   out.current_valid = true;
@@ -169,16 +175,12 @@ bool ArcFeatures::compute(const uint16_t* raw, size_t n, float fs_hz,
     winReady = true;
   }
 
-  // ----------------------------
-  // Hysteretic zero-cross detection
-  // ----------------------------
   float crossAll[128];
   int crossAllN = 0;
   float crossPos[64];
   int crossPosN = 0;
 
   const float zcHys = fmaxf(ZC_HYS_MIN_A, ZC_HYS_FRAC * fmaxf(irms, 0.1f));
-
   ZcRegion armedSide = classifyRegion(sigClean[0], zcHys);
 
   for (size_t i = 1; i < n && crossAllN < 128; ++i) {
@@ -186,11 +188,8 @@ bool ArcFeatures::compute(const uint16_t* raw, size_t n, float fs_hz,
     const float b = sigClean[i];
     const ZcRegion r = classifyRegion(b, zcHys);
 
-    if (r == ZC_POS || r == ZC_NEG) {
-      armedSide = r;
-    }
+    if (r == ZC_POS || r == ZC_NEG) armedSide = r;
 
-    // Positive-going crossing: must have previously been clearly negative
     if (armedSide == ZC_NEG && a <= 0.0f && b > 0.0f) {
       const float idx = interpZeroCrossIndex(a, b, (int)(i - 1));
       crossAll[crossAllN++] = idx;
@@ -199,7 +198,6 @@ bool ArcFeatures::compute(const uint16_t* raw, size_t n, float fs_hz,
       continue;
     }
 
-    // Negative-going crossing: must have previously been clearly positive
     if (armedSide == ZC_POS && a >= 0.0f && b < 0.0f) {
       const float idx = interpZeroCrossIndex(a, b, (int)(i - 1));
       crossAll[crossAllN++] = idx;
@@ -264,7 +262,9 @@ bool ArcFeatures::compute(const uint16_t* raw, size_t n, float fs_hz,
   bool havePrevCycle = false;
 
   const float residRms = sqrtf((float)(accResidSq / (double)n));
-  const float pulseThr = fmaxf(PULSE_THRESH_MIN_A, PULSE_THRESH_RMS_MUL * residRms);
+  float pulseThr = fmaxf(PULSE_THRESH_MIN_A, PULSE_THRESH_RMS_MUL * residRms);
+  if (irms < 0.25f) pulseThr = fmaxf(pulseThr, PULSE_THRESH_MIN_A);
+
   const int pulseMinW = clampi((int)lroundf((PULSE_MIN_WIDTH_US * 1e-6f) * fs_hz), 1, 32);
   const int pulseMaxW = clampi((int)lroundf((PULSE_MAX_WIDTH_US * 1e-6f) * fs_hz), pulseMinW, 512);
 
@@ -388,6 +388,11 @@ bool ArcFeatures::compute(const uint16_t* raw, size_t n, float fs_hz,
   const double snr = (avgNoise > 0.0) ? ((double)fundP / avgNoise) : 0.0;
   const bool haveFund = (fundP >= FUND_MAG_MIN) && (snr >= FUND_SNR_MIN);
 
+  if (!haveFund && irms < FEATURE_REQUIRE_FUND_BELOW_A) {
+    out.feat_valid = false;
+    return true;
+  }
+
   if (haveFund) {
     double harmP = 0.0;
     for (int h = 2; h <= 10; ++h) {
@@ -401,6 +406,8 @@ bool ArcFeatures::compute(const uint16_t* raw, size_t n, float fs_hz,
       harmP += hmP;
     }
     out.thd_i = (fundP > 1e-12f) ? (float)(sqrt(harmP / (double)fundP) * 100.0) : 0.0f;
+  } else {
+    out.thd_i = 0.0f;
   }
 
   int kSpec0 = 0, kSpec1 = 0;
@@ -415,9 +422,7 @@ bool ArcFeatures::compute(const uint16_t* raw, size_t n, float fs_hz,
         const double p = (double)sig[k] / psum;
         if (p > 1e-18) H += -p * log(p);
       }
-      if (bins > 1) {
-        out.spec_entropy = clampf((float)(H / log((double)bins)), 0.0f, 1.0f);
-      }
+      if (bins > 1) out.spec_entropy = clampf((float)(H / log((double)bins)), 0.0f, 1.0f);
     }
   }
 

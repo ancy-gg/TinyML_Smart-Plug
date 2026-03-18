@@ -31,13 +31,13 @@
 
 #define API_KEY "AIzaSyAmJlZZszyWPJFgIkTAAl_TbIySys1nvEw"
 #define DATABASE_URL "tinyml-smart-plug-default-rtdb.asia-southeast1.firebasedatabase.app"
-static const char* FW_VERSION = "TSP-v0.6.2";
+static const char* FW_VERSION = "TSP-v0.6.4";
 
 static const char* OTA_DESIRED_VERSION_PATH = "/ota/desired_version";
 static const char* OTA_FIRMWARE_URL_PATH    = "/ota/firmware_url";
 static const uint32_t OTA_CHECK_INTERVAL_MS = 60000;
-static constexpr uint32_t SENSOR_BOOT_SETTLE_MS   = CURRENT_BOOT_SETTLE_MS;
-static constexpr uint32_t PROTECTION_INHIBIT_MS   = 5000UL;  // ignore startup garbage for trips/history
+static constexpr uint32_t SENSOR_BOOT_SETTLE_MS = CURRENT_BOOT_SETTLE_MS;
+static constexpr uint32_t PROTECTION_INHIBIT_MS = 5000UL;
 
 OLED_NOTIF       oled(0x3C);
 NetworkManager   net;
@@ -357,11 +357,31 @@ void loop() {
   f.vrms = vRms;
   f.temp_c = tC;
 
+  // Display current can remain visible, but noisy low-current feature analytics are disabled.
+  if (f.irms < CURRENT_IDLE_SUPPRESS_A) {
+    f.irms = 0.0f;
+  }
+
+  if (f.irms < FEATURE_MIN_IRMS_A) {
+    f.feat_valid = 0;
+    f.cycle_nmse = 0.0f;
+    f.zcv = 0.0f;
+    f.zc_dwell_ratio = 0.0f;
+    f.pulse_count_per_cycle = 0.0f;
+    f.peak_fluct_cv = 0.0f;
+    f.midband_residual_rms = 0.0f;
+    f.hf_band_energy_ratio = 0.0f;
+    f.wpe_entropy = 0.0f;
+    f.spec_entropy = 0.0f;
+    f.thd_i = 0.0f;
+  }
+
   float apparentPowerVa = 0.0f;
   if (vRms > 0.10f && f.irms > 0.001f) apparentPowerVa = vRms * f.irms;
 
   int pred = 0;
-  if (!gSafeMode && !paused && !bootSettling && !protectionInhibit && f.current_valid && f.feat_valid) {
+  if (!gSafeMode && !paused && !bootSettling && !protectionInhibit &&
+      f.current_valid && f.feat_valid && f.irms >= ARC_MIN_IRMS_A) {
     pred = ArcPredict(
       f.cycle_nmse, f.zcv, f.zc_dwell_ratio,
       f.pulse_count_per_cycle, f.peak_fluct_cv,
@@ -373,7 +393,7 @@ void loop() {
   f.model_pred = (uint8_t)pred;
 
   FaultState st = STATE_NORMAL;
-  if (!bootSettling && !protectionInhibit) {
+  if (!bootSettling && !protectionInhibit && f.irms >= ARC_MIN_IRMS_A) {
     st = faultLogic.update(tC, f.irms, f.model_pred);
   }
 
