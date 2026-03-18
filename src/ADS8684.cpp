@@ -17,13 +17,27 @@ static inline uint16_t unpack_word(const uint8_t rx[4]) {
 
 static inline void cs_high(int pin) { if (pin >= 0) gpio_set_level((gpio_num_t)pin, 1); }
 static inline void cs_low(int pin)  { if (pin >= 0) gpio_set_level((gpio_num_t)pin, 0); }
+static inline void cs_hold_enable(int pin) { if (pin >= 0) gpio_hold_en((gpio_num_t)pin); }
+static inline void cs_hold_disable(int pin) { if (pin >= 0) gpio_hold_dis((gpio_num_t)pin); }
 
-static inline void cs_hold_enable(int pin) {
-  if (pin >= 0) gpio_hold_en((gpio_num_t)pin);
-}
+bool ADS8684::addDevice(int clock_hz) {
+  if (_dev) {
+    spi_bus_remove_device(_dev);
+    _dev = nullptr;
+  }
 
-static inline void cs_hold_disable(int pin) {
-  if (pin >= 0) gpio_hold_dis((gpio_num_t)pin);
+  spi_device_interface_config_t devcfg = {};
+  devcfg.clock_speed_hz = clock_hz;
+  devcfg.mode = 1;
+  devcfg.spics_io_num = -1;
+  devcfg.queue_size = 1;
+  devcfg.cs_ena_pretrans = 0;
+  devcfg.cs_ena_posttrans = 0;
+
+  esp_err_t err = spi_bus_add_device(_cfg.host, &devcfg, &_dev);
+  if (err != ESP_OK) return false;
+  _activeClockHz = clock_hz;
+  return true;
 }
 
 bool ADS8684::begin() {
@@ -34,7 +48,6 @@ bool ADS8684::begin() {
   gpio_set_pull_mode((gpio_num_t)_cfg.pin_cs, GPIO_PULLUP_ONLY);
   gpio_set_drive_capability((gpio_num_t)_cfg.pin_cs, GPIO_DRIVE_CAP_3);
 
-  // Hold CS HIGH when idle (helps if this pin is shared / noisy during portal)
   cs_hold_disable(_cfg.pin_cs);
   cs_high(_cfg.pin_cs);
   cs_hold_enable(_cfg.pin_cs);
@@ -50,17 +63,14 @@ bool ADS8684::begin() {
   esp_err_t err = spi_bus_initialize(_cfg.host, &buscfg, SPI_DMA_CH_AUTO);
   if (err != ESP_OK && err != ESP_ERR_INVALID_STATE) return false;
 
-  spi_device_interface_config_t devcfg = {};
-  devcfg.clock_speed_hz = _cfg.spi_clock_hz;
-  devcfg.mode = 1;
-  devcfg.spics_io_num = -1; // manual CS
-  devcfg.queue_size = 1;
-
-  err = spi_bus_add_device(_cfg.host, &devcfg, &_dev);
-  if (err != ESP_OK) return false;
-
+  if (!addDevice(_cfg.spi_clock_hz)) return false;
   delay(20);
-  return selectAux();
+  if (!selectAux() || !probeActivity()) {
+    if (!addDevice(ADS_SPI_FALLBACK_HZ)) return false;
+    delay(10);
+    if (!selectAux() || !probeActivity()) return false;
+  }
+  return true;
 }
 
 esp_err_t ADS8684::xfer32(uint16_t cmd, uint16_t* out_data) {
@@ -87,22 +97,39 @@ esp_err_t ADS8684::xfer32(uint16_t cmd, uint16_t* out_data) {
 
 bool ADS8684::selectAux() {
   uint16_t dummy = 0;
-  if (xfer32(0xE000, &dummy) != ESP_OK) return false; // MAN_AUX
-  (void)xfer32(0x0000, &dummy);                       // prime
+  if (xfer32(0xE000, &dummy) != ESP_OK) return false;
+  (void)xfer32(0x0000, &dummy);
+  (void)xfer32(0x0000, &dummy);
   _auxSelected = true;
   return true;
 }
 
+bool ADS8684::probeActivity() {
+  uint16_t tmp[32];
+  float fs = 0.0f;
+  size_t got = readRawBurstInternal(tmp, 32, &fs);
+  if (got != 32) return false;
+
+  uint16_t mn = 0xFFFF, mx = 0;
+  int changes = 0;
+  for (size_t i = 0; i < got; ++i) {
+    if (tmp[i] < mn) mn = tmp[i];
+    if (tmp[i] > mx) mx = tmp[i];
+    if (i && tmp[i] != tmp[i - 1]) changes++;
+  }
+  return (changes >= 4) && ((uint16_t)(mx - mn) >= 2);
+}
+
 uint16_t ADS8684::readRaw() {
   uint16_t data = 0;
+  if (!_auxSelected) (void)selectAux();
   (void)xfer32(0x0000, &data);
   (void)xfer32(0x0000, &data);
   return data;
 }
 
-size_t ADS8684::readRawBurst(uint16_t* dst, size_t n, float* measured_fs_hz) {
-  if (!dst || n == 0) return 0;
-  if (_dev == nullptr) return 0;
+size_t ADS8684::readRawBurstInternal(uint16_t* dst, size_t n, float* measured_fs_hz) {
+  if (!dst || n == 0 || _dev == nullptr) return 0;
 
   (void)spi_device_acquire_bus(_dev, portMAX_DELAY);
 
@@ -114,17 +141,12 @@ size_t ADS8684::readRawBurst(uint16_t* dst, size_t n, float* measured_fs_hz) {
   t.tx_data[2] = 0x00;
   t.tx_data[3] = 0x00;
 
-  // ADS868x: each conversion/frame starts on CS falling edge, ends when CS high. :contentReference[oaicite:1]{index=1}
-  // So we MUST pulse CS per frame.
-
   cs_hold_disable(_cfg.pin_cs);
 
-  // Prime 2 frames (pipeline)
   cs_low(_cfg.pin_cs); (void)spi_device_polling_transmit(_dev, &t); cs_high(_cfg.pin_cs);
   cs_low(_cfg.pin_cs); (void)spi_device_polling_transmit(_dev, &t); cs_high(_cfg.pin_cs);
 
   const int64_t t0 = esp_timer_get_time();
-
   for (size_t i = 0; i < n; i++) {
     cs_low(_cfg.pin_cs);
     esp_err_t err = spi_device_polling_transmit(_dev, &t);
@@ -137,7 +159,6 @@ size_t ADS8684::readRawBurst(uint16_t* dst, size_t n, float* measured_fs_hz) {
     }
     dst[i] = unpack_word(t.rx_data);
   }
-
   const int64_t t1 = esp_timer_get_time();
 
   cs_high(_cfg.pin_cs);
@@ -146,8 +167,31 @@ size_t ADS8684::readRawBurst(uint16_t* dst, size_t n, float* measured_fs_hz) {
 
   const float dt_s = float(t1 - t0) / 1e6f;
   if (measured_fs_hz && dt_s > 0.0f) *measured_fs_hz = float(n) / dt_s;
-
   return n;
+}
+
+size_t ADS8684::readRawBurst(uint16_t* dst, size_t n, float* measured_fs_hz) {
+  if (!_auxSelected) {
+    if (!selectAux()) return 0;
+  }
+
+  size_t got = readRawBurstInternal(dst, n, measured_fs_hz);
+  if (got != n) return got;
+
+  uint16_t mn = 0xFFFF, mx = 0;
+  int changes = 0;
+  for (size_t i = 0; i < n; ++i) {
+    if (dst[i] < mn) mn = dst[i];
+    if (dst[i] > mx) mx = dst[i];
+    if (i && dst[i] != dst[i - 1]) changes++;
+  }
+
+  if (changes < 2 || (uint16_t)(mx - mn) < 2) {
+    _auxSelected = false;
+    if (!selectAux()) return got;
+    got = readRawBurstInternal(dst, n, measured_fs_hz);
+  }
+  return got;
 }
 
 float ADS8684::rawToVolts(uint16_t code) const {

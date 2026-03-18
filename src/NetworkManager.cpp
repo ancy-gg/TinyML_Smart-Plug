@@ -101,7 +101,9 @@ bool NetworkManager::isConnected() const {
 }
 
 bool NetworkManager::isBlockingPhase() const {
-  return (_phase == PHASE_CONNECTING) || (_phase == PHASE_AP_WAIT_CLIENT) || (_phase == PHASE_PORTAL_ACTIVE);
+  // Do not permanently block the device while merely waiting for someone to join the AP.
+  // Only the initial STA connect window and an active portal should block normal logic.
+  return (_phase == PHASE_CONNECTING) || (_phase == PHASE_PORTAL_ACTIVE);
 }
 
 void NetworkManager::resetSettings() {

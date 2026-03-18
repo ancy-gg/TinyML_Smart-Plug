@@ -31,12 +31,12 @@
 
 #define API_KEY "AIzaSyAmJlZZszyWPJFgIkTAAl_TbIySys1nvEw"
 #define DATABASE_URL "tinyml-smart-plug-default-rtdb.asia-southeast1.firebasedatabase.app"
-static const char* FW_VERSION = "TSP-v0.6.0";
+static const char* FW_VERSION = "TSP-v0.6.1";
 
 static const char* OTA_DESIRED_VERSION_PATH = "/ota/desired_version";
 static const char* OTA_FIRMWARE_URL_PATH    = "/ota/firmware_url";
 static const uint32_t OTA_CHECK_INTERVAL_MS = 60000;
-static constexpr uint32_t SENSOR_BOOT_SETTLE_MS = 300;
+static constexpr uint32_t SENSOR_BOOT_SETTLE_MS = CURRENT_BOOT_SETTLE_MS;
 
 OLED_NOTIF       oled(0x3C);
 NetworkManager   net;
@@ -156,38 +156,40 @@ static void Core0Task(void* pv) {
   while (millis() < SENSOR_BOOT_SETTLE_MS) vTaskDelay(20 / portTICK_PERIOD_MS);
 
   while (true) {
-    FeatureFrame f;
+    FeatureFrame f = {};
     f.uptime_ms = millis();
 
     float fs_hz = FS_TARGET_HZ;
     size_t got = curSensor.capture(s_raw, N_SAMP, &fs_hz);
-    if (got != N_SAMP || fs_hz < 20000.0f) {
+    if (got != N_SAMP || fs_hz < CURRENT_FRAME_MIN_FS_HZ) {
       vTaskDelay(1);
       fs_hz = FS_TARGET_HZ;
       got = curSensor.capture(s_raw, N_SAMP, &fs_hz);
     }
 
     bool ok = false;
-    if (got == N_SAMP && fs_hz > 20000.0f) {
+    if (got == N_SAMP && fs_hz >= CURRENT_FRAME_MIN_FS_HZ) {
       ok = arcFeat.compute(s_raw, N_SAMP, fs_hz, curCalib, MAINS_F0_HZ, out);
     }
 
-    if (ok) {
+    if (ok && out.current_valid) {
       f.adc_fs_hz = out.fs_hz;
       f.irms = out.irms_a;
-      f.current_valid = out.current_valid ? 1 : 0;
+      f.current_valid = 1;
       f.feat_valid = out.feat_valid ? 1 : 0;
 
-      f.cycle_nmse            = out.cycle_nmse;
-      f.zcv                   = out.zcv;
-      f.zc_dwell_ratio        = out.zc_dwell_ratio;
-      f.pulse_count_per_cycle = out.pulse_count_per_cycle;
-      f.peak_fluct_cv         = out.peak_fluct_cv;
-      f.midband_residual_rms  = out.midband_residual_rms;
-      f.hf_band_energy_ratio  = out.hf_band_energy_ratio;
-      f.wpe_entropy           = out.wpe_entropy;
-      f.spec_entropy          = out.spec_entropy;
-      f.thd_i                 = out.thd_i;
+      if (out.feat_valid) {
+        f.cycle_nmse            = out.cycle_nmse;
+        f.zcv                   = out.zcv;
+        f.zc_dwell_ratio        = out.zc_dwell_ratio;
+        f.pulse_count_per_cycle = out.pulse_count_per_cycle;
+        f.peak_fluct_cv         = out.peak_fluct_cv;
+        f.midband_residual_rms  = out.midband_residual_rms;
+        f.hf_band_energy_ratio  = out.hf_band_energy_ratio;
+        f.wpe_entropy           = out.wpe_entropy;
+        f.spec_entropy          = out.spec_entropy;
+        f.thd_i                 = out.thd_i;
+      }
 
       lastGood = f;
       hasGood = true;
@@ -264,10 +266,15 @@ void setup() {
     if (curSensor.begin()) {
       qFeat = xQueueCreate(1, sizeof(FeatureFrame));
       xTaskCreatePinnedToCore(Core0Task, "Core0Sense", 16384, nullptr, 3, nullptr, 0);
-      oled.showStatus("Sensors", "ADS8684 ready");
+
+      char msg[24];
+      snprintf(msg, sizeof(msg), "%s ready", currentBackendName());
+      oled.showStatus("Sensors", msg);
     } else {
-      oled.showStatus("WARN", "No ADS8684");
-      delay(600);
+      char msg[24];
+      snprintf(msg, sizeof(msg), "No %s", currentBackendName());
+      oled.showStatus("WARN", msg);
+      delay(700);
     }
   } else {
     oled.showStatus("SAFE MODE", "OTA only");
@@ -352,7 +359,7 @@ void loop() {
   if (vRms > 0.10f && f.irms > 0.001f) apparentPowerVa = vRms * f.irms;
 
   int pred = 0;
-  if (!gSafeMode && !paused && !bootSettling) {
+  if (!gSafeMode && !paused && !bootSettling && f.current_valid && f.feat_valid) {
     pred = ArcPredict(
       f.cycle_nmse, f.zcv, f.zc_dwell_ratio,
       f.pulse_count_per_cycle, f.peak_fluct_cv,
@@ -398,10 +405,12 @@ void loop() {
     else if (st == STATE_HEATING) ov = OledOverlay::FAULT_HEAT;
     else if (st == STATE_OVERLOAD || f.irms >= OVERLOAD_WARN_A) ov = OledOverlay::FAULT_OVERLOAD;
   }
+
   oled.setOverlay(ov);
   oled.setState(st);
   oled.setMeasurements(vRms, f.irms, apparentPowerVa, tC);
   oled.setWiFi(wifiConnected, net.rssi(), networkBlocking, net.inConfigPortal());
+
   static uint32_t lastOled = 0;
   if (millis() - lastOled >= 80) {
     lastOled = millis();
