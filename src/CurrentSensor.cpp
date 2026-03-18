@@ -33,9 +33,35 @@ size_t CurrentSensor::capture(uint16_t* dst, size_t n, float* measuredFsHz) {
 
 #elif CURRENT_CAPTURE_BACKEND == CUR_BACKEND_MCP3204
 
+namespace {
+  static inline void mcpBuildCh0Txn(spi_transaction_t& t) {
+    memset(&t, 0, sizeof(t));
+    t.flags = SPI_TRANS_USE_TXDATA | SPI_TRANS_USE_RXDATA;
+    t.length = 24;
+
+    // MCP3204 command, single-ended, channel select.
+    // For CH0: start=1, sgl=1, d2=0, d1=0, d0=0
+    // Packed as commonly used:
+    // tx[0] = 0b00000110
+    // tx[1] = channel bits in top two bits
+    t.tx_data[0] = uint8_t(0x06 | ((MCP3204_CHANNEL & 0x04) >> 2));
+    t.tx_data[1] = uint8_t((MCP3204_CHANNEL & 0x03) << 6);
+    t.tx_data[2] = 0x00;
+  }
+
+  static inline uint16_t mcpExtract12(const spi_transaction_t& t) {
+    return uint16_t(((t.rx_data[1] & 0x0F) << 8) | t.rx_data[2]);
+  }
+}
+
 CurrentSensor::CurrentSensor() {}
 
 bool CurrentSensor::initMcp3204() {
+  // Keep CS high before SPI attach. This avoids bad power-up framing.
+  pinMode(PIN_ADC_CS, OUTPUT);
+  digitalWrite(PIN_ADC_CS, HIGH);
+  delayMicroseconds(50);
+
   spi_bus_config_t buscfg = {};
   buscfg.mosi_io_num = PIN_ADC_MOSI;
   buscfg.miso_io_num = PIN_ADC_MISO;
@@ -49,7 +75,12 @@ bool CurrentSensor::initMcp3204() {
 
   spi_device_interface_config_t devcfg = {};
   devcfg.mode = 0;
-  devcfg.clock_speed_hz = MCP3204_SPI_HZ;
+
+  // MCP3204 is happier here on a temporary 3.3 V floating-wire setup.
+  // Cap effective clock to 1 MHz even if config is higher.
+  const int effectiveHz = (MCP3204_SPI_HZ > 1000000UL) ? 1000000 : (int)MCP3204_SPI_HZ;
+  devcfg.clock_speed_hz = effectiveHz;
+
   devcfg.spics_io_num = PIN_ADC_CS;
   devcfg.queue_size = 1;
   devcfg.flags = SPI_DEVICE_NO_DUMMY;
@@ -62,41 +93,55 @@ bool CurrentSensor::initMcp3204() {
 bool CurrentSensor::begin() {
   if (!initMcp3204()) return false;
 
-  // Settle / discard initial samples.
-  spi_transaction_t t = {};
-  t.flags = SPI_TRANS_USE_TXDATA | SPI_TRANS_USE_RXDATA;
-  t.length = 24;
-  t.tx_data[0] = uint8_t(0x06 | ((MCP3204_CHANNEL & 0x04) >> 2));
-  t.tx_data[1] = uint8_t((MCP3204_CHANNEL & 0x03) << 6);
-  t.tx_data[2] = 0x00;
+  // Large startup flush. Let the MCP, divider node, and sensor bias settle.
+  spi_transaction_t t;
+  mcpBuildCh0Txn(t);
 
-  for (int i = 0; i < 32; ++i) {
+  (void)spi_device_acquire_bus(_dev, portMAX_DELAY);
+
+  // Initial idle-high CS time, then many discard reads.
+  digitalWrite(PIN_ADC_CS, HIGH);
+  delayMicroseconds(100);
+
+  for (int i = 0; i < 512; ++i) {
     (void)spi_device_polling_transmit(_dev, &t);
   }
+
+  spi_device_release_bus(_dev);
   return true;
 }
 
 size_t CurrentSensor::capture(uint16_t* dst, size_t n, float* measuredFsHz) {
   if (!dst || n == 0 || !_dev) return 0;
 
-  spi_transaction_t t = {};
-  t.flags = SPI_TRANS_USE_TXDATA | SPI_TRANS_USE_RXDATA;
-  t.length = 24;
-  t.tx_data[0] = uint8_t(0x06 | ((MCP3204_CHANNEL & 0x04) >> 2));
-  t.tx_data[1] = uint8_t((MCP3204_CHANNEL & 0x03) << 6);
-  t.tx_data[2] = 0x00;
+  spi_transaction_t t;
+  mcpBuildCh0Txn(t);
+
+  static uint8_t warmupBurstsRemaining = 4;
 
   const int64_t t0 = esp_timer_get_time();
   size_t count = 0;
 
   (void)spi_device_acquire_bus(_dev, portMAX_DELAY);
+
+  // First few frame captures after boot get an extra flush.
+  if (warmupBurstsRemaining > 0) {
+    digitalWrite(PIN_ADC_CS, HIGH);
+    delayMicroseconds(40);
+    for (int i = 0; i < 128; ++i) {
+      (void)spi_device_polling_transmit(_dev, &t);
+    }
+    warmupBurstsRemaining--;
+  }
+
   while (count < n) {
     esp_err_t e = spi_device_polling_transmit(_dev, &t);
     if (e != ESP_OK) break;
 
-    const uint16_t raw12 = uint16_t(((t.rx_data[1] & 0x0F) << 8) | t.rx_data[2]);
+    const uint16_t raw12 = mcpExtract12(t);
     dst[count++] = scale12to16(raw12);
   }
+
   spi_device_release_bus(_dev);
 
   const int64_t t1 = esp_timer_get_time();

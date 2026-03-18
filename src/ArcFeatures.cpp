@@ -57,6 +57,24 @@ static inline bool makeBandBins(float f0, float f1, float binHz, int half, int& 
   return (k1 >= k0);
 }
 
+static inline float interpZeroCrossIndex(float a, float b, int i0) {
+  const float denom = (b - a);
+  const float frac = (fabsf(denom) > 1e-12f) ? ((0.0f - a) / denom) : 0.5f;
+  return (float)i0 + clampf(frac, 0.0f, 1.0f);
+}
+
+enum ZcRegion : uint8_t {
+  ZC_MID = 0,
+  ZC_POS = 1,
+  ZC_NEG = 2
+};
+
+static inline ZcRegion classifyRegion(float x, float hys) {
+  if (x >= hys) return ZC_POS;
+  if (x <= -hys) return ZC_NEG;
+  return ZC_MID;
+}
+
 bool ArcFeatures::compute(const uint16_t* raw, size_t n, float fs_hz,
                           const CurrentCalib& cal, float mainsHz,
                           ArcFeatOut& out) {
@@ -76,7 +94,6 @@ bool ArcFeatures::compute(const uint16_t* raw, size_t n, float fs_hz,
   static bool dspReady = false;
   static bool winReady = false;
 
-  // ---- current path first, always ----
   double mean = 0.0;
   int changes = 0;
   uint16_t mnCode = 0xFFFF;
@@ -128,14 +145,12 @@ bool ArcFeatures::compute(const uint16_t* raw, size_t n, float fs_hz,
   const float irmsClean = sqrtf((float)(accIrmsClean / (double)n));
   const float irmsWide  = sqrtf((float)(accIrmsWide / (double)n));
 
-  // Keep the raw current path robust. Never let feature validity collapse a real load to zero.
   float irms = fmaxf(irmsClean, irmsWide * 0.92f);
   if (irms < IRMS_GATE_OFF_A) irms = 0.0f;
 
   out.irms_a = irms;
   out.current_valid = true;
 
-  // No-load current is still valid current, but features are intentionally not asserted.
   if (irms < FEATURE_MIN_IRMS_A) {
     out.feat_valid = false;
     return true;
@@ -154,27 +169,42 @@ bool ArcFeatures::compute(const uint16_t* raw, size_t n, float fs_hz,
     winReady = true;
   }
 
-  // --- zero crossings and cycle boundaries on smoothed current ---
+  // ----------------------------
+  // Hysteretic zero-cross detection
+  // ----------------------------
   float crossAll[128];
   int crossAllN = 0;
   float crossPos[64];
   int crossPosN = 0;
+
   const float zcHys = fmaxf(ZC_HYS_MIN_A, ZC_HYS_FRAC * fmaxf(irms, 0.1f));
+
+  ZcRegion armedSide = classifyRegion(sigClean[0], zcHys);
 
   for (size_t i = 1; i < n && crossAllN < 128; ++i) {
     const float a = sigClean[i - 1];
     const float b = sigClean[i];
-    if (a <= -zcHys && b >= zcHys) {
-      const float denom = (b - a);
-      const float frac = (fabsf(denom) > 1e-9f) ? ((0.0f - a) / denom) : 0.5f;
-      const float idx = (float)(i - 1) + clampf(frac, 0.0f, 1.0f);
+    const ZcRegion r = classifyRegion(b, zcHys);
+
+    if (r == ZC_POS || r == ZC_NEG) {
+      armedSide = r;
+    }
+
+    // Positive-going crossing: must have previously been clearly negative
+    if (armedSide == ZC_NEG && a <= 0.0f && b > 0.0f) {
+      const float idx = interpZeroCrossIndex(a, b, (int)(i - 1));
       crossAll[crossAllN++] = idx;
       if (crossPosN < 64) crossPos[crossPosN++] = idx;
-    } else if (a >= zcHys && b <= -zcHys) {
-      const float denom = (b - a);
-      const float frac = (fabsf(denom) > 1e-9f) ? ((0.0f - a) / denom) : 0.5f;
-      const float idx = (float)(i - 1) + clampf(frac, 0.0f, 1.0f);
+      armedSide = ZC_MID;
+      continue;
+    }
+
+    // Negative-going crossing: must have previously been clearly positive
+    if (armedSide == ZC_POS && a >= 0.0f && b < 0.0f) {
+      const float idx = interpZeroCrossIndex(a, b, (int)(i - 1));
       crossAll[crossAllN++] = idx;
+      armedSide = ZC_MID;
+      continue;
     }
   }
 
@@ -316,7 +346,6 @@ bool ArcFeatures::compute(const uint16_t* raw, size_t n, float fs_hz,
 
   if (nmsePairs > 0) out.cycle_nmse = nmseAcc / (float)nmsePairs;
 
-  // --- FFT-domain features ---
   for (size_t i = 0; i < n; ++i) {
     fft_cf[2 * i + 0] = sig[i] * win[i];
     fft_cf[2 * i + 1] = 0.0f;
@@ -426,7 +455,6 @@ bool ArcFeatures::compute(const uint16_t* raw, size_t n, float fs_hz,
     out.midband_residual_rms = 0.0f;
   }
 
-  // --- compact wavelet packet energy entropy (3-level Haar on 512 points) ---
   static constexpr int WP_N = 512;
   static float wpA[WP_N];
   static float wpB[WP_N];

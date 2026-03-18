@@ -31,12 +31,13 @@
 
 #define API_KEY "AIzaSyAmJlZZszyWPJFgIkTAAl_TbIySys1nvEw"
 #define DATABASE_URL "tinyml-smart-plug-default-rtdb.asia-southeast1.firebasedatabase.app"
-static const char* FW_VERSION = "TSP-v0.6.1";
+static const char* FW_VERSION = "TSP-v0.6.2";
 
 static const char* OTA_DESIRED_VERSION_PATH = "/ota/desired_version";
 static const char* OTA_FIRMWARE_URL_PATH    = "/ota/firmware_url";
 static const uint32_t OTA_CHECK_INTERVAL_MS = 60000;
-static constexpr uint32_t SENSOR_BOOT_SETTLE_MS = CURRENT_BOOT_SETTLE_MS;
+static constexpr uint32_t SENSOR_BOOT_SETTLE_MS   = CURRENT_BOOT_SETTLE_MS;
+static constexpr uint32_t PROTECTION_INHIBIT_MS   = 5000UL;  // ignore startup garbage for trips/history
 
 OLED_NOTIF       oled(0x3C);
 NetworkManager   net;
@@ -314,6 +315,7 @@ void loop() {
   const bool networkBlocking = net.isBlockingPhase();
   const bool paused = networkBlocking || gPauseByOta;
   const bool bootSettling = (millis() < SENSOR_BOOT_SETTLE_MS);
+  const bool protectionInhibit = (millis() < (SENSOR_BOOT_SETTLE_MS + PROTECTION_INHIBIT_MS));
 
   static bool lastWiFiConnected = false;
   const bool wifiConnected = net.isConnected();
@@ -359,7 +361,7 @@ void loop() {
   if (vRms > 0.10f && f.irms > 0.001f) apparentPowerVa = vRms * f.irms;
 
   int pred = 0;
-  if (!gSafeMode && !paused && !bootSettling && f.current_valid && f.feat_valid) {
+  if (!gSafeMode && !paused && !bootSettling && !protectionInhibit && f.current_valid && f.feat_valid) {
     pred = ArcPredict(
       f.cycle_nmse, f.zcv, f.zc_dwell_ratio,
       f.pulse_count_per_cycle, f.peak_fluct_cv,
@@ -370,14 +372,15 @@ void loop() {
   }
   f.model_pred = (uint8_t)pred;
 
-  FaultState st = bootSettling
-    ? STATE_NORMAL
-    : faultLogic.update(tC, f.irms, f.model_pred);
+  FaultState st = STATE_NORMAL;
+  if (!bootSettling && !protectionInhibit) {
+    st = faultLogic.update(tC, f.irms, f.model_pred);
+  }
 
   if (gSafeMode) st = STATE_NORMAL;
 
   actuators.apply(st, vRms, vFast, f.irms, tC);
-  handleCueEvents(vFast, f.irms, paused || gSafeMode);
+  handleCueEvents(vFast, f.irms, paused || gSafeMode || protectionInhibit);
 
 #if ENABLE_ML_LOGGER
   if (!paused && !gSafeMode) pollMlControl(cloud, logger, oled);
@@ -401,9 +404,9 @@ void loop() {
   if (!gPauseByOta) {
     if (vFast >= VOLT_SURGE_TRIP_V) ov = OledOverlay::FAULT_SURGE;
     else if (tC >= TEMP_DATA_HARD_C) ov = OledOverlay::FAULT_TEMP_CRITICAL;
-    else if (st == STATE_ARCING) ov = OledOverlay::FAULT_ARC;
-    else if (st == STATE_HEATING) ov = OledOverlay::FAULT_HEAT;
-    else if (st == STATE_OVERLOAD || f.irms >= OVERLOAD_WARN_A) ov = OledOverlay::FAULT_OVERLOAD;
+    else if (!protectionInhibit && st == STATE_ARCING) ov = OledOverlay::FAULT_ARC;
+    else if (!protectionInhibit && st == STATE_HEATING) ov = OledOverlay::FAULT_HEAT;
+    else if (!protectionInhibit && (st == STATE_OVERLOAD || f.irms >= OVERLOAD_WARN_A)) ov = OledOverlay::FAULT_OVERLOAD;
   }
 
   oled.setOverlay(ov);
@@ -425,6 +428,7 @@ void loop() {
     if (gPauseByOta) stateStr = "OTA_UPDATING";
     else if (net.inConfigPortal()) stateStr = "CONFIG_PORTAL";
     else if (networkBlocking) stateStr = "WIFI_CONNECTING";
+    else if (bootSettling || protectionInhibit) stateStr = "STARTUP_STABILIZING";
     else if (vFast >= VOLT_SURGE_TRIP_V) stateStr = "SURGE";
     else if (tC >= TEMP_DATA_HARD_C) stateStr = "TEMP_CRITICAL";
     else if (f.irms >= OVERLOAD_HARD_TRIP_A) stateStr = "OVERLOAD_HARD";
