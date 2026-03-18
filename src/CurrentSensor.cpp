@@ -3,6 +3,12 @@
 #include <string.h>
 #include <esp_timer.h>
 
+static constexpr uint8_t kMcpMedianSamples =
+    (MCP3204_MEDIAN_SAMPLES < 1) ? 1 :
+    ((MCP3204_MEDIAN_SAMPLES > 3) ? 3 : MCP3204_MEDIAN_SAMPLES);
+
+static constexpr uint8_t kMcpBurstFlush = MCP3204_BURST_FLUSH;
+
 #if CURRENT_CAPTURE_BACKEND == CUR_BACKEND_MCP3204
   #include <driver/spi_master.h>
 #endif
@@ -10,6 +16,13 @@
 static inline uint16_t scale12to16(uint16_t x12) {
   x12 &= 0x0FFF;
   return uint16_t((x12 << 4) | (x12 >> 8));
+}
+
+static inline uint16_t median3u16(uint16_t a, uint16_t b, uint16_t c) {
+  if (a > b) { const uint16_t t = a; a = b; b = t; }
+  if (b > c) { const uint16_t t = b; b = c; c = t; }
+  if (a > b) { const uint16_t t = a; a = b; b = t; }
+  return b;
 }
 
 #if CURRENT_CAPTURE_BACKEND == CUR_BACKEND_ADS8684
@@ -87,7 +100,7 @@ bool CurrentSensor::begin() {
 
   (void)spi_device_acquire_bus(_dev, portMAX_DELAY);
   digitalWrite(PIN_ADC_CS, HIGH);
-  delayMicroseconds(80);
+  delayMicroseconds(100);
 
   for (uint16_t i = 0; i < MCP3204_STARTUP_FLUSH; ++i) {
     (void)spi_device_polling_transmit(_dev, &t);
@@ -113,14 +126,14 @@ size_t CurrentSensor::capture(uint16_t* dst, size_t n, float* measuredFsHz) {
 
   if (warmupBurstsRemaining > 0) {
     digitalWrite(PIN_ADC_CS, HIGH);
-    delayMicroseconds(25);
-    for (uint8_t i = 0; i < MCP3204_BURST_FLUSH; ++i) {
+    delayMicroseconds(40);
+    for (int i = 0; i < 128; ++i) {
       (void)spi_device_polling_transmit(_dev, &t);
     }
     warmupBurstsRemaining--;
   }
 
-  for (uint8_t i = 0; i < MCP3204_BURST_FLUSH; ++i) {
+ for (uint8_t i = 0; i < kMcpBurstFlush; ++i) {
     (void)spi_device_polling_transmit(_dev, &t);
   }
 
@@ -129,9 +142,29 @@ size_t CurrentSensor::capture(uint16_t* dst, size_t n, float* measuredFsHz) {
     uint8_t good = 0;
 
     for (uint8_t o = 0; o < overs; ++o) {
-      const esp_err_t e = spi_device_polling_transmit(_dev, &t);
-      if (e != ESP_OK) break;
-      acc += (uint32_t)mcpExtract12(t);
+      uint16_t s0 = 0, s1 = 0, s2 = 0;
+      uint8_t localGood = 0;
+
+      if (spi_device_polling_transmit(_dev, &t) == ESP_OK) { s0 = mcpExtract12(t); localGood++; }
+      if (kMcpMedianSamples >= 2) {
+        if (spi_device_polling_transmit(_dev, &t) == ESP_OK) { s1 = mcpExtract12(t); localGood++; }
+      } else {
+        s1 = s0;
+      }
+      if (kMcpMedianSamples >= 3) {
+        if (spi_device_polling_transmit(_dev, &t) == ESP_OK) { s2 = mcpExtract12(t); localGood++; }
+      } else {
+        s2 = s1;
+      }
+
+      if (localGood == 0) break;
+
+      uint16_t sample12 = s0;
+      if (localGood == 1) sample12 = s0;
+      else if (localGood == 2) sample12 = uint16_t((uint32_t(s0) + uint32_t(s1) + 1U) / 2U);
+      else sample12 = median3u16(s0, s1, s2);
+
+      acc += (uint32_t)sample12;
       good++;
     }
 

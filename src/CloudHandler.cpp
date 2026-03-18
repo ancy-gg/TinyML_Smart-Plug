@@ -172,8 +172,8 @@ void CloudHandler::update(float v, float c, float apparentPower, float t,
   bool pushHistory = false;
 
   if (state == "ARCING" || state == "HEATING" || state == "OVERLOAD" ||
-      state == "SURGE" || state == "TEMP_CRITICAL" || state == "OVERLOAD_HARD" ||
-      state == "SAFE_MODE") {
+      state == "UNDERVOLTAGE" || state == "OVERVOLTAGE" ||
+      state == "SURGE" || state == "SAFE_MODE") {
     historyStatus = state;
     pushHistory = (historyStatus != _lastLoggedFaultState);
     if (pushHistory) _lastLoggedFaultState = historyStatus;

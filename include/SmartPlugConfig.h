@@ -1,14 +1,26 @@
 #pragma once
 #include <Arduino.h>
 
-// =========================
-// Build / operating modes
-// =========================
-// #define USE_M2CGEN_RF
-#define DATA_COLLECTION_MODE
+#define USE_M2CGEN_RF
+
+#ifndef ENABLE_MODEL_INFERENCE
+#define ENABLE_MODEL_INFERENCE 1
+#endif
+
+#ifndef ENABLE_RULE_FALLBACK
+#define ENABLE_RULE_FALLBACK 0
+#endif
 
 #ifndef ENABLE_ML_LOGGER
 #define ENABLE_ML_LOGGER 1
+#endif
+
+#ifndef COLLECTION_ONLY_MODE
+#define COLLECTION_ONLY_MODE 0
+#endif
+
+#ifndef ENABLE_AUTO_ARC_CAPTURE
+#define ENABLE_AUTO_ARC_CAPTURE 1
 #endif
 
 #define USE_SOFT_LATCH 0
@@ -35,8 +47,6 @@ static constexpr float    MAINS_F0_HZ  = 60.0f;
 // Wi-Fi startup / portal
 // =========================
 static constexpr uint32_t WIFI_BOOT_BLOCK_MS      = 10000UL;
-static constexpr uint32_t STARTUP_SPLASH_MS       = 3000UL;
-static constexpr uint32_t WIFI_CONNECTED_HOLD_MS  = 900UL;
 static constexpr uint32_t WIFI_CONNECT_TIMEOUT_MS = 10000UL;
 static constexpr uint32_t WIFI_PORTAL_TIMEOUT_MS  = 180000UL;
 static constexpr uint8_t  WIFI_TRIPLE_TAP_COUNT   = 3;
@@ -48,10 +58,20 @@ static constexpr float OVERLOAD_WARN_A      = 10.0f;
 static constexpr float OVERLOAD_HARD_TRIP_A = 15.0f;
 static constexpr float OVERLOAD_TRIP_A      = OVERLOAD_WARN_A;
 
+// Temperature cutoff:
+// collection mode -> 80 C
+// normal mode     -> 70 C
 static constexpr float TEMP_TRIP_C          = 70.0f;
 static constexpr float TEMP_DATA_WARN_C     = 80.0f;
 static constexpr float TEMP_DATA_HARD_C     = 90.0f;
-static constexpr float VOLT_SURGE_TRIP_V    = 260.0f;
+
+// Voltage protection
+static constexpr float VOLT_UNDERVOLT_MIN_V = 100.0f;
+static constexpr float VOLT_UNDERVOLT_MAX_V = 200.0f;
+static constexpr float VOLT_OVERVOLT_TRIP_V = 250.0f;
+
+// Backward-compatible alias for older code paths
+static constexpr float VOLT_SURGE_TRIP_V    = VOLT_OVERVOLT_TRIP_V;
 
 static constexpr float MAINS_PRESENT_OFF_V  = 12.0f;
 static constexpr float MAINS_PRESENT_ON_V   = 25.0f;
@@ -122,12 +142,18 @@ static constexpr int   ADS_SPI_HZ = 4000000;
 static constexpr int   ADS_SPI_FALLBACK_HZ = 2000000;
 
 // MCP3204 temporary backend
-static constexpr uint8_t  MCP3204_CHANNEL        = 0;
-static constexpr uint32_t MCP3204_SPI_HZ         = 2400000UL;
-static constexpr uint8_t  MCP3204_OVERSAMPLE     = 1;
-static constexpr uint16_t MCP3204_STARTUP_FLUSH  = 256;
-static constexpr uint8_t  MCP3204_WARMUP_BURSTS  = 4;
-static constexpr uint8_t  MCP3204_BURST_FLUSH    = 12;
+static constexpr uint8_t  MCP3204_CHANNEL         = 0;
+static constexpr uint32_t MCP3204_SPI_HZ          = 2000000UL;
+static constexpr uint8_t  MCP3204_OVERSAMPLE      = 1;
+
+// 1 = single sample, 2 = average of 2, 3 = median-of-3.
+// For MCP3204, 3 is the best default to suppress impulsive junk
+// without washing out arc-like detail too much.
+static constexpr uint8_t  MCP3204_MEDIAN_SAMPLES  = 3;
+
+static constexpr uint16_t MCP3204_STARTUP_FLUSH   = 512;
+static constexpr uint8_t  MCP3204_WARMUP_BURSTS   = 4;
+static constexpr uint8_t  MCP3204_BURST_FLUSH     = 8;
 
 // Direct ESP32 ADC fallback
 static constexpr uint8_t  ESP32_ADC_OVERSAMPLE   = 2;
@@ -158,7 +184,6 @@ static constexpr float PULSE_MIN_WIDTH_US         = 15.0f;
 static constexpr float PULSE_MAX_WIDTH_US         = 450.0f;
 static constexpr float PULSE_THRESH_RMS_MUL       = 3.5f;
 static constexpr float PULSE_THRESH_MIN_A         = 0.050f;
-static constexpr float PULSE_THRESH_MAX_IRMS_FRAC = 0.45f;
 
 static constexpr float MIDBAND_LO_HZ              = 300.0f;
 static constexpr float MIDBAND_HI_HZ              = 6000.0f;
@@ -176,60 +201,53 @@ static constexpr float SF_EPS                     = 1e-12f;
 static constexpr int CURRENT_MIN_ACTIVITY_CHANGES = 8;
 static constexpr uint16_t CURRENT_MIN_CODE_SPAN   = 6;
 static constexpr uint16_t LOW_CURRENT_CODE_SPAN   = 16;
-static constexpr uint16_t RAW_GLITCH_ISOLATED_LSB = 10;
-static constexpr uint16_t RAW_GLITCH_NEIGHBOR_LSB = 3;
 
 static constexpr float CURRENT_FRAME_MIN_FS_HZ    = 20000.0f;
-static constexpr float FEATURE_FRAME_MIN_FS_HZ    = 20000.0f;
 static constexpr uint32_t CURRENT_BOOT_SETTLE_MS  = 300UL;
 
 #elif CURRENT_CAPTURE_BACKEND == CUR_BACKEND_MCP3204
 
-// Temporary MCP3204 profile: keep >=50 mA usable, but stay conservative for arc inference
-static constexpr float IRMS_GATE_ON_A             = 0.022f;
-static constexpr float IRMS_GATE_OFF_A            = 0.012f;
-static constexpr float CURRENT_IDLE_SUPPRESS_A    = 0.015f;
+// Temporary MCP3204 profile: prioritize stability, medium loads, and avoid idle junk.
+static constexpr float IRMS_GATE_ON_A             = 0.075f;
+static constexpr float IRMS_GATE_OFF_A            = 0.045f;
+static constexpr float CURRENT_IDLE_SUPPRESS_A    = 0.075f;
 static constexpr float FEATURE_MIN_VRMS           = 70.0f;
-static constexpr float FEATURE_MIN_IRMS_A         = 0.050f;
-static constexpr float ARC_MIN_IRMS_A             = 0.120f;
+static constexpr float FEATURE_MIN_IRMS_A         = 0.075f;
+static constexpr float ARC_MIN_IRMS_A             = 0.075f;
 static constexpr float FEATURE_REQUIRE_FUND_BELOW_A = 0.180f;
 
-static constexpr float CURRENT_LPF_HZ             = 2200.0f;
-static constexpr float CURRENT_BASE_LPF_HZ        = 320.0f;
+static constexpr float CURRENT_LPF_HZ             = 1800.0f;
+static constexpr float CURRENT_BASE_LPF_HZ        = 260.0f;
 
-static constexpr float ZC_HYS_MIN_A               = 0.018f;
-static constexpr float ZC_HYS_FRAC                = 0.13f;
-static constexpr float ZC_DWELL_THR_FRAC          = 0.08f;
-static constexpr float ZC_DWELL_THR_MIN_A         = 0.018f;
+static constexpr float ZC_HYS_MIN_A               = 0.035f;
+static constexpr float ZC_HYS_FRAC                = 0.18f;
+static constexpr float ZC_DWELL_THR_FRAC          = 0.10f;
+static constexpr float ZC_DWELL_THR_MIN_A         = 0.035f;
 
-static constexpr float PULSE_MIN_WIDTH_US         = 10.0f;
-static constexpr float PULSE_MAX_WIDTH_US         = 350.0f;
-static constexpr float PULSE_THRESH_RMS_MUL       = 3.2f;
-static constexpr float PULSE_THRESH_MIN_A         = 0.025f;
-static constexpr float PULSE_THRESH_MAX_IRMS_FRAC = 0.30f;
+static constexpr float PULSE_MIN_WIDTH_US         = 20.0f;
+static constexpr float PULSE_MAX_WIDTH_US         = 500.0f;
+static constexpr float PULSE_THRESH_RMS_MUL       = 7.0f;
+static constexpr float PULSE_THRESH_MIN_A         = 0.120f;
 
-static constexpr float MIDBAND_LO_HZ              = 250.0f;
-static constexpr float MIDBAND_HI_HZ              = 3500.0f;
-static constexpr float UPPERMID_LO_HZ             = 1200.0f;
-static constexpr float UPPERMID_HI_HZ             = 3500.0f;
-static constexpr float HF_BAND_LO_HZ              = 3500.0f;
-static constexpr float HF_BAND_HI_HZ              = 9000.0f;
-static constexpr float SPEC_ENT_LO_HZ             = 250.0f;
-static constexpr float SPEC_ENT_HI_HZ             = 9000.0f;
+static constexpr float MIDBAND_LO_HZ              = 220.0f;
+static constexpr float MIDBAND_HI_HZ              = 3200.0f;
+static constexpr float UPPERMID_LO_HZ             = 900.0f;
+static constexpr float UPPERMID_HI_HZ             = 3200.0f;
+static constexpr float HF_BAND_LO_HZ              = 3200.0f;
+static constexpr float HF_BAND_HI_HZ              = 6800.0f;
+static constexpr float SPEC_ENT_LO_HZ             = 220.0f;
+static constexpr float SPEC_ENT_HI_HZ             = 6800.0f;
 
-static constexpr float FUND_SNR_MIN               = 4.5f;
+static constexpr float FUND_SNR_MIN               = 6.0f;
 static constexpr float FUND_MAG_MIN               = 1e-5f;
 static constexpr float SF_EPS                     = 1e-12f;
 
-static constexpr int CURRENT_MIN_ACTIVITY_CHANGES = 8;
-static constexpr uint16_t CURRENT_MIN_CODE_SPAN   = 6;
-static constexpr uint16_t LOW_CURRENT_CODE_SPAN   = 12;
-static constexpr uint16_t RAW_GLITCH_ISOLATED_LSB = 8;
-static constexpr uint16_t RAW_GLITCH_NEIGHBOR_LSB = 3;
+static constexpr int CURRENT_MIN_ACTIVITY_CHANGES = 10;
+static constexpr uint16_t CURRENT_MIN_CODE_SPAN   = 10;
+static constexpr uint16_t LOW_CURRENT_CODE_SPAN   = 30;
 
-static constexpr float CURRENT_FRAME_MIN_FS_HZ    = 12000.0f;
-static constexpr float FEATURE_FRAME_MIN_FS_HZ    = 18000.0f;
-static constexpr uint32_t CURRENT_BOOT_SETTLE_MS  = 1200UL;
+static constexpr float CURRENT_FRAME_MIN_FS_HZ    = 9000.0f;
+static constexpr uint32_t CURRENT_BOOT_SETTLE_MS  = 450UL;
 
 #else
 
@@ -254,7 +272,6 @@ static constexpr float PULSE_MIN_WIDTH_US         = 20.0f;
 static constexpr float PULSE_MAX_WIDTH_US         = 700.0f;
 static constexpr float PULSE_THRESH_RMS_MUL       = 7.0f;
 static constexpr float PULSE_THRESH_MIN_A         = 0.120f;
-static constexpr float PULSE_THRESH_MAX_IRMS_FRAC = 0.25f;
 
 static constexpr float MIDBAND_LO_HZ              = 150.0f;
 static constexpr float MIDBAND_HI_HZ              = 1800.0f;
@@ -272,42 +289,45 @@ static constexpr float SF_EPS                     = 1e-12f;
 static constexpr int CURRENT_MIN_ACTIVITY_CHANGES = 12;
 static constexpr uint16_t CURRENT_MIN_CODE_SPAN   = 16;
 static constexpr uint16_t LOW_CURRENT_CODE_SPAN   = 44;
-static constexpr uint16_t RAW_GLITCH_ISOLATED_LSB = 12;
-static constexpr uint16_t RAW_GLITCH_NEIGHBOR_LSB = 4;
 
 static constexpr float CURRENT_FRAME_MIN_FS_HZ    = 3000.0f;
-static constexpr float FEATURE_FRAME_MIN_FS_HZ    = 6000.0f;
 static constexpr uint32_t CURRENT_BOOT_SETTLE_MS  = 300UL;
 
 #endif
 
+#if CURRENT_CAPTURE_BACKEND == CUR_BACKEND_ADS8684
+static constexpr float PULSE_ANALYSIS_MIN_IRMS_A  = 0.020f;
+static constexpr float PULSE_ANALYSIS_MIN_RESID_A = 0.020f;
+#elif CURRENT_CAPTURE_BACKEND == CUR_BACKEND_MCP3204
+static constexpr float PULSE_ANALYSIS_MIN_IRMS_A  = 0.075f;
+static constexpr float PULSE_ANALYSIS_MIN_RESID_A = 0.035f;
+#else
+static constexpr float PULSE_ANALYSIS_MIN_IRMS_A  = 0.180f;
+static constexpr float PULSE_ANALYSIS_MIN_RESID_A = 0.050f;
+#endif
+
 static constexpr uint32_t FEAT_STALE_MS           = 350;
 static constexpr uint32_t ML_CTRL_POLL_MS         = 10000;
+static constexpr uint16_t AUTO_ARC_CAPTURE_DURATION_S = 12;
+static constexpr uint32_t AUTO_ARC_CAPTURE_COOLDOWN_MS = 60000UL;
+static constexpr int8_t ML_UNKNOWN_LABEL = -1;
 
 // =========================
 // Rule fallback thresholds
 // =========================
-static constexpr float CYCLE_NMSE_ARC_H        = 0.22f;
-static constexpr float ZCV_ARC_H_MS            = 0.55f;
-static constexpr float ZC_DWELL_ARC_H          = 0.32f;
-static constexpr float PULSE_DENS_ARC_H        = 0.30f;
-static constexpr float PEAK_FLUCT_ARC_H        = 0.070f;
-static constexpr float MIDBAND_RESID_ARC_H     = 0.035f;
-static constexpr float HF_ENERGY_ARC_H         = 0.20f;
-static constexpr float WPE_ENT_ARC_H           = 0.35f;
-static constexpr float SPEC_ENT_ARC_H          = 0.62f;
-static constexpr float THD_STEADY_GUARD_PCT    = 80.0f;
-static constexpr float LOW_UNCERT_CYCLE_NMSE   = 0.05f;
-static constexpr float LOW_UNCERT_ZCV_MS       = 0.08f;
-static constexpr float LOW_UNCERT_PULSE_DENS   = 0.20f;
-static constexpr float SMPS_GUARD_ZC_DWELL_H   = 0.50f;
-static constexpr float SMPS_GUARD_PEAK_FLUCT_H = 0.035f;
-static constexpr float SMPS_GUARD_HF_MAX       = 0.18f;
-static constexpr float SMPS_GUARD_SPEC_MAX     = 0.62f;
-static constexpr float SMPS_GUARD_PULSE_MAX    = 0.20f;
-static constexpr float SMPS_GUARD_MIDBAND_MAX  = 0.12f;
-static constexpr float SMPS_GUARD_ZCV_MAX_MS   = 1.80f;
-static constexpr float SMPS_GUARD_NMSE_MAX     = 0.80f;
+static constexpr float CYCLE_NMSE_ARC_H        = 0.18f;
+static constexpr float ZCV_ARC_H_MS            = 0.20f;
+static constexpr float ZC_DWELL_ARC_H          = 0.22f;
+static constexpr float PULSE_DENS_ARC_H        = 1.20f;
+static constexpr float PEAK_FLUCT_ARC_H        = 0.11f;
+static constexpr float MIDBAND_RESID_ARC_H     = 0.08f;
+static constexpr float HF_ENERGY_ARC_H         = 0.28f;
+static constexpr float WPE_ENT_ARC_H           = 0.60f;
+static constexpr float SPEC_ENT_ARC_H          = 0.68f;
+static constexpr float THD_STEADY_GUARD_PCT    = 135.0f;
+static constexpr float LOW_UNCERT_CYCLE_NMSE   = 0.06f;
+static constexpr float LOW_UNCERT_ZCV_MS       = 0.06f;
+static constexpr float LOW_UNCERT_PULSE_DENS   = 0.25f;
 
 // =========================
 // Calibration helpers

@@ -4,16 +4,20 @@
 enum FaultState : uint8_t {
   STATE_NORMAL = 0,
   STATE_OVERLOAD,
+  STATE_UNDERVOLTAGE,
+  STATE_OVERVOLTAGE,
   STATE_HEATING,
   STATE_ARCING
 };
 
 static inline const char* stateToCstr(FaultState s) {
   switch (s) {
-    case STATE_OVERLOAD: return "OVERLOAD";
-    case STATE_HEATING:  return "HEATING";
-    case STATE_ARCING:   return "ARCING";
-    default:             return "NORMAL";
+    case STATE_OVERLOAD:      return "OVERLOAD";
+    case STATE_UNDERVOLTAGE:  return "UNDERVOLTAGE";
+    case STATE_OVERVOLTAGE:   return "OVERVOLTAGE";
+    case STATE_HEATING:       return "HEATING";
+    case STATE_ARCING:        return "ARCING";
+    default:                  return "NORMAL";
   }
 }
 

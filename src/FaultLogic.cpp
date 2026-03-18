@@ -5,7 +5,7 @@ static inline int clampi(int x, int lo, int hi) {
 }
 
 static inline float heatTripTempC() {
-#ifdef DATA_COLLECTION_MODE
+#if COLLECTION_ONLY_MODE
   return TEMP_DATA_WARN_C;
 #else
   return TEMP_TRIP_C;
@@ -19,10 +19,10 @@ void FaultLogic::resetLatch() {
   _heatHoldUntil = 0;
 }
 
-FaultState FaultLogic::update(float tempC, float irmsA, int arcModelOut) {
+FaultState FaultLogic::update(float vProtect, float tempC, float irmsA, int arcModelOut, bool arcEligible) {
   const uint32_t now = millis();
 
-  if (irmsA < ARC_MIN_IRMS_A) arcModelOut = 0;
+  if (!arcEligible || irmsA < ARC_MIN_IRMS_A) arcModelOut = 0;
 
   if (arcModelOut == 1) _arcCnt += ARC_CNT_INC;
   else                  _arcCnt -= ARC_CNT_DEC;
@@ -38,11 +38,16 @@ FaultState FaultLogic::update(float tempC, float irmsA, int arcModelOut) {
   if (arcTrip)  _arcHoldUntil  = now + ARC_HOLD_MS;
   if (heatTrip) _heatHoldUntil = now + HEAT_HOLD_MS;
 
-  const bool arcActive  = arcTrip  || (now < _arcHoldUntil);
-  const bool heatActive = heatTrip || (now < _heatHoldUntil);
+  const bool arcActive       = arcTrip  || (now < _arcHoldUntil);
+  const bool heatActive      = heatTrip || (now < _heatHoldUntil);
+  const bool overVoltActive  = (vProtect >= VOLT_OVERVOLT_TRIP_V);
+  const bool underVoltActive = (vProtect > VOLT_UNDERVOLT_MIN_V && vProtect < VOLT_UNDERVOLT_MAX_V);
+  const bool overloadActive  = (irmsA >= OVERLOAD_WARN_A);
 
-  if (heatActive) return STATE_HEATING;
-  if (arcActive)  return STATE_ARCING;
-  if (irmsA >= OVERLOAD_WARN_A) return STATE_OVERLOAD;
+  if (heatActive)      return STATE_HEATING;
+  if (arcActive)       return STATE_ARCING;
+  if (overVoltActive)  return STATE_OVERVOLTAGE;
+  if (underVoltActive) return STATE_UNDERVOLTAGE;
+  if (overloadActive)  return STATE_OVERLOAD;
   return STATE_NORMAL;
 }

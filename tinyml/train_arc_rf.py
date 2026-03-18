@@ -12,13 +12,10 @@ from sklearn.metrics import (
 import joblib
 import m2cgen as m2c
 
-DEFAULT_CSV = r"tinyml/Arcfault_dataset.csv"
+DEFAULT_CSV = r"tinyml/gen_zero_scaffold_data.csv"
 OUT_HEADER = r"tinyml/TinyML_RF.h"
 OUT_JOBLIB = r"tinyml/TinyML_RF.joblib"
 
-# Must exactly match firmware order in ArcModel.h.
-# Context columns such as v_rms, i_rms, and temp_c may remain in the CSV for analysis,
-# but the RF model is trained only on the main 10 arc features.
 FEATURES = [
     "cycle_nmse",
     "zcv",
@@ -53,6 +50,10 @@ def clean_df(df: pd.DataFrame) -> pd.DataFrame:
     if missing:
         raise ValueError(f"Missing required columns: {missing}")
 
+    df = df.copy()
+    df[TARGET] = pd.to_numeric(df[TARGET], errors="coerce")
+    df = df[df[TARGET].isin([0, 1])].copy()
+
     x = df[FEATURES].replace([np.inf, -np.inf], np.nan)
     mask_ok = x.notna().all(axis=1)
     df = df.loc[mask_ok].copy()
@@ -67,9 +68,6 @@ def clean_df(df: pd.DataFrame) -> pd.DataFrame:
     df["wpe_entropy"] = df["wpe_entropy"].clip(0.0, 1.0)
     df["spec_entropy"] = df["spec_entropy"].clip(0.0, 1.0)
     df["thd_i"] = df["thd_i"].clip(0.0, 400.0)
-    df["v_rms"] = df["v_rms"].clip(0.0, 400.0)
-    df["i_rms"] = df["i_rms"].clip(0.0, 100.0)
-    df["temp_c"] = df["temp_c"].clip(-40.0, 150.0)
 
     df[TARGET] = df[TARGET].astype(int).clip(0, 1)
     return df
@@ -92,6 +90,58 @@ def model_size_estimate(rf: RandomForestClassifier) -> int:
     return int(sum(est.tree_.node_count for est in rf.estimators_))
 
 
+def postprocess_m2c_header(c_code: str) -> str:
+    """Make m2cgen RandomForest output compile cleanly as a C++ header.
+
+    m2cgen emits C compound literals in some memcpy calls, e.g.
+        memcpy(var80, (double[]){1.0, 0.0}, 2 * sizeof(double));
+    which is valid in C but not in this PlatformIO C++ build.
+    Replace those with a tiny helper and also make helper functions inline.
+    """
+    import re
+
+    c_code = re.sub(
+        r'(^|\n)void\s+add_vectors\s*\(\s*double\s*\*\s*v1\s*,\s*double\s*\*\s*v2\s*,\s*int\s+size\s*,\s*double\s*\*\s*result\s*\)\s*\{',
+        r'\1static inline void add_vectors(double *v1, double *v2, int size, double *result) {',
+        c_code,
+        flags=re.MULTILINE,
+    )
+    c_code = re.sub(
+        r'(^|\n)void\s+mul_vector_number\s*\(\s*double\s*\*\s*v1\s*,\s*double\s+num\s*,\s*int\s+size\s*,\s*double\s*\*\s*result\s*\)\s*\{',
+        r'\1static inline void mul_vector_number(double *v1, double num, int size, double *result) {',
+        c_code,
+        flags=re.MULTILINE,
+    )
+    c_code = re.sub(
+        r'(^|\n)void\s+arc_rf_predict\s*\(\s*double\s*\*\s*input\s*,\s*double\s*\*\s*output\s*\)\s*\{',
+        '\\1static inline void set_output2(double *dst, double a, double b) {\n'
+        '    dst[0] = a;\n'
+        '    dst[1] = b;\n'
+        '}\n'
+        'static inline void arc_rf_predict(double * input, double * output) {',
+        c_code,
+        flags=re.MULTILINE,
+    )
+
+    memcpy_pat = re.compile(
+        r'(?m)^(?P<indent>\s*)memcpy\(\s*'
+        r'(?P<dst>[A-Za-z_]\w*)\s*,\s*'
+        r'\(\s*double\s*\[\s*\]\s*\)\s*\{\s*'
+        r'(?P<a>[^,{}]+?)\s*,\s*(?P<b>[^{}]+?)\s*\}\s*,\s*'
+        r'2\s*\*\s*sizeof\s*\(\s*double\s*\)\s*\)\s*;\s*$'
+    )
+
+    def repl(m: re.Match) -> str:
+        indent = m.group('indent')
+        dst = m.group('dst').strip()
+        a = m.group('a').strip()
+        b = m.group('b').strip()
+        return f"{indent}set_output2({dst}, {a}, {b});"
+
+    c_code = memcpy_pat.sub(repl, c_code)
+    return c_code
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--csv", default=DEFAULT_CSV)
@@ -102,6 +152,11 @@ def main():
     print(f"Loading dataset: {args.csv}")
     df = pd.read_csv(args.csv)
     df = clean_df(df)
+
+    if df.empty:
+        raise ValueError("No labeled rows remain after filtering. label_arc must be 0 or 1.")
+    if df[TARGET].nunique() < 2:
+        raise ValueError("Training requires both classes. Provide at least one non-arc row and one arc row.")
 
     group_col = pick_group_column(df)
     if group_col is None:
@@ -123,7 +178,7 @@ def main():
     print(f"Train rows: {len(X_train)}  Test rows: {len(X_test)}")
     print(f"Train groups: {groups_train.nunique()}  Test groups: {groups.iloc[test_idx].nunique()}")
 
-    base = RandomForestClassifier(random_state=42, class_weight="balanced", n_jobs=-1)
+    base = RandomForestClassifier(random_state=42, class_weight="balanced_subsample", n_jobs=-1)
 
     param_dist = {
         "n_estimators": [40, 60, 80, 120],
@@ -135,7 +190,7 @@ def main():
         "ccp_alpha": [0.0, 0.0002, 0.0005, 0.001],
     }
 
-    cv = GroupKFold(n_splits=5)
+    cv = GroupKFold(n_splits=min(5, groups_train.nunique()))
     search = RandomizedSearchCV(
         estimator=base,
         param_distributions=param_dist,
@@ -189,9 +244,10 @@ def main():
 
     ensure_dir(args.out_header)
     c_code = m2c.export_to_c(best, function_name="arc_rf_predict")
+    c_code = postprocess_m2c_header(c_code)
     feat_lines = "\n".join([f"// [{i}] {name}" for i, name in enumerate(FEATURES)])
 
-    header = f'''#pragma once
+    header = f"""#pragma once
 // Auto-generated by m2cgen from scikit-learn RandomForest
 // Generated on: {pd.Timestamp.now()}
 
@@ -200,20 +256,11 @@ def main():
 // Input Feature Order:
 {feat_lines}
 
-#ifdef __cplusplus
-extern "C" {{
-#endif
-
 // output[0] = Probability of Normal
 // output[1] = Probability of Arc Fault
-void arc_rf_predict(double *input, double *output);
-
-#ifdef __cplusplus
-}}
-#endif
 
 {c_code}
-'''
+"""
     with open(args.out_header, "w", encoding="utf-8") as f:
         f.write(header)
 

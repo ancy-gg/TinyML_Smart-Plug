@@ -156,7 +156,9 @@ function classifyStatus(s) {
   if (u.includes("UNPLUG")) return "UNPLUGGED";
   if (u.includes("ARC")) return "ARCING";
   if (u.includes("HEAT")) return "HEATING";
-  if (u.includes("OVER")) return "OVERLOAD";
+  if (u.includes("OVERVOLT")) return "OVERVOLTAGE";
+  if (u.includes("UNDERVOLT")) return "UNDERVOLTAGE";
+  if (u === "OVERLOAD" || u.includes("OVERLOAD")) return "OVERLOAD";
   if (u.includes("WARN")) return "WARNING";
   if (u.includes("NORM")) return "NORMAL";
   return u || "OK";
@@ -167,6 +169,8 @@ function statusBadgeHTML(kind) {
     case "OVERLOAD": return `OVERLOAD <span class="emoji blink">⬆️</span>`;
     case "HEATING":  return `HEATING <span class="emoji flicker">🔥</span>`;
     case "ARCING":   return `ARCING <span class="emoji zap">⚡</span>`;
+    case "OVERVOLTAGE": return `OVERVOLTAGE`;
+    case "UNDERVOLTAGE": return `UNDERVOLTAGE`;
     case "UNPLUGGED": return `UNPLUGGED`;
     case "DEVICE_DISCONNECTED": return `DISCONNECTED`;
     case "DEVICE_ON": return `DEVICE ON`;
@@ -187,6 +191,8 @@ function setTopStatus(kind) {
   else if (k === "OVERLOAD") statusBadge.classList.add("status-OVERLOAD");
   else if (k === "HEATING") statusBadge.classList.add("status-HEATING");
   else if (k === "ARCING") statusBadge.classList.add("status-ARCING");
+  else if (k === "OVERVOLTAGE") statusBadge.classList.add("status-OVERVOLTAGE");
+  else if (k === "UNDERVOLTAGE") statusBadge.classList.add("status-UNDERVOLTAGE");
   else if (k === "FIRMWARE_UPDATED") statusBadge.classList.add("status-FW");
   else if (k === "DEVICE_ON") statusBadge.classList.add("status-OK");
   else if (k === "WARNING") statusBadge.classList.add("status-WARN");
@@ -206,6 +212,8 @@ function pillHTML(kind) {
   if (k === "OVERLOAD") return `<span class="pill pill-OVERLOAD">OVERLOAD <span class="emoji blink">⬆️</span></span>`;
   if (k === "HEATING")  return `<span class="pill pill-HEATING">HEATING <span class="emoji flicker">🔥</span></span>`;
   if (k === "ARCING")   return `<span class="pill pill-ARCING">ARCING <span class="emoji zap">⚡</span></span>`;
+  if (k === "OVERVOLTAGE") return `<span class="pill pill-OVERVOLTAGE">OVERVOLTAGE</span>`;
+  if (k === "UNDERVOLTAGE") return `<span class="pill pill-UNDERVOLTAGE">UNDERVOLTAGE</span>`;
   if (k === "UNPLUGGED") return `<span class="pill pill-UNPLUG">DEVICE UNPLUGGED</span>`;
   if (k === "DEVICE_DISCONNECTED") return `<span class="pill pill-DIS">DEVICE DISCONNECTED</span>`;
   if (k === "DEVICE_ON") return `<span class="pill pill-OK">DEVICE ON</span>`;

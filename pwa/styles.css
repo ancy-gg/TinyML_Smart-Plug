@@ -686,3 +686,8 @@ body.showSeries{ overflow:hidden; }
   gap:8px;
   flex-wrap:wrap;
 }
+
+.status-OVERVOLTAGE{ background: rgba(231,76,60,0.95); color:#fff; }
+.status-UNDERVOLTAGE{ background: rgba(142,68,173,0.95); color:#fff; }
+.pill-OVERVOLTAGE{ background:rgba(231,76,60,0.18); color:#ffc7c0; }
+.pill-UNDERVOLTAGE{ background:rgba(142,68,173,0.18); color:#e7c8ff; }

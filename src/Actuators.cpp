@@ -2,13 +2,14 @@
 #include "OLED_NOTIF.h"
 #include "SmartPlugConfig.h"
 
-static constexpr uint8_t  BUZZ_CH = 0;
+static constexpr uint8_t BUZZ_CH = 0;
 
 struct ToneStep {
   uint16_t hz;
   uint16_t dur_ms;
   uint8_t duty;
 };
+
 struct TonePattern {
   const ToneStep* steps;
   uint8_t count;
@@ -57,38 +58,46 @@ static constexpr ToneStep P_FAULT_ARC[] = {
   {3900, 30, 132}, {0, 24, 0}, {3000, 48, 132}, {0, 140, 0}
 };
 static constexpr ToneStep P_FAULT_HEAT[] = {
-  {1650, 180, 126}, {0, 70, 0}, {1650, 180, 126}, {0, 70, 0}, {1650, 180, 126},
-  {0, 220, 0}
+  {1650, 180, 126}, {0, 70, 0}, {1650, 180, 126}, {0, 70, 0},
+  {1650, 180, 126}, {0, 220, 0}
 };
 static constexpr ToneStep P_FAULT_OVER[] = {
   {2450, 120, 118}, {0, 100, 0}, {2450, 120, 118}, {0, 280, 0}
 };
-static constexpr ToneStep P_FAULT_OVER_HARD[] = {
-  {1650, 180, 138}, {2450, 180, 138}, {1650, 180, 138}, {2450, 180, 138}, {0, 80, 0}
+static constexpr ToneStep P_FAULT_UNDERVOLT[] = {
+  {760, 180, 124}, {0, 70, 0}, {680, 220, 128}, {0, 220, 0}
+};
+static constexpr ToneStep P_FAULT_OVERVOLT[] = {
+  {2600, 140, 126}, {0, 60, 0}, {3200, 160, 130}, {0, 220, 0}
 };
 static constexpr ToneStep P_RESET_ACK[] = {
   {1200, 80, 110}, {0, 40, 0}, {1200, 80, 110}
 };
 
+// IMPORTANT: this table must follow the exact order of SoundEvent in Actuators.h
 static constexpr TonePattern PATTERNS[] = {
-  { P_BOOT,             (uint8_t)(sizeof(P_BOOT) / sizeof(P_BOOT[0])),                       false, 1 },
-  { P_WIFI_PORTAL,      (uint8_t)(sizeof(P_WIFI_PORTAL) / sizeof(P_WIFI_PORTAL[0])),         false, 1 },
-  { P_WIFI_OK,          (uint8_t)(sizeof(P_WIFI_OK) / sizeof(P_WIFI_OK[0])),                 false, 1 },
-  { P_LOGGER_ON,        (uint8_t)(sizeof(P_LOGGER_ON) / sizeof(P_LOGGER_ON[0])),             false, 1 },
-  { P_OTA_START,        (uint8_t)(sizeof(P_OTA_START) / sizeof(P_OTA_START[0])),             false, 2 },
-  { P_OTA_OK,           (uint8_t)(sizeof(P_OTA_OK) / sizeof(P_OTA_OK[0])),                   false, 2 },
-  { P_OTA_FAIL,         (uint8_t)(sizeof(P_OTA_FAIL) / sizeof(P_OTA_FAIL[0])),               false, 2 },
-  { P_MAINS_LOST,       (uint8_t)(sizeof(P_MAINS_LOST) / sizeof(P_MAINS_LOST[0])),           false, 2 },
-  { P_MAINS_RESTORED,   (uint8_t)(sizeof(P_MAINS_RESTORED) / sizeof(P_MAINS_RESTORED[0])),   false, 2 },
-  { P_VOLT_LOW,         (uint8_t)(sizeof(P_VOLT_LOW) / sizeof(P_VOLT_LOW[0])),               false, 2 },
-  { P_VOLT_HIGH,        (uint8_t)(sizeof(P_VOLT_HIGH) / sizeof(P_VOLT_HIGH[0])),             false, 2 },
-  { P_DEVICE_PLUG,      (uint8_t)(sizeof(P_DEVICE_PLUG) / sizeof(P_DEVICE_PLUG[0])),         false, 1 },
-  { P_FAULT_ARC,        (uint8_t)(sizeof(P_FAULT_ARC) / sizeof(P_FAULT_ARC[0])),             true,  4 },
-  { P_FAULT_HEAT,       (uint8_t)(sizeof(P_FAULT_HEAT) / sizeof(P_FAULT_HEAT[0])),           true,  5 },
-  { P_FAULT_OVER,       (uint8_t)(sizeof(P_FAULT_OVER) / sizeof(P_FAULT_OVER[0])),           true,  3 },
-  { P_FAULT_OVER_HARD,  (uint8_t)(sizeof(P_FAULT_OVER_HARD) / sizeof(P_FAULT_OVER_HARD[0])), true,  6 },
-  { P_RESET_ACK,        (uint8_t)(sizeof(P_RESET_ACK) / sizeof(P_RESET_ACK[0])),             false, 1 },
+  { P_BOOT,            (uint8_t)(sizeof(P_BOOT) / sizeof(P_BOOT[0])),                   false, 1 }, // SND_BOOT
+  { P_WIFI_PORTAL,     (uint8_t)(sizeof(P_WIFI_PORTAL) / sizeof(P_WIFI_PORTAL[0])),     false, 1 }, // SND_WIFI_PORTAL
+  { P_WIFI_OK,         (uint8_t)(sizeof(P_WIFI_OK) / sizeof(P_WIFI_OK[0])),             false, 1 }, // SND_WIFI_OK
+  { P_LOGGER_ON,       (uint8_t)(sizeof(P_LOGGER_ON) / sizeof(P_LOGGER_ON[0])),         false, 1 }, // SND_LOGGER_ON
+  { P_OTA_START,       (uint8_t)(sizeof(P_OTA_START) / sizeof(P_OTA_START[0])),         false, 2 }, // SND_OTA_START
+  { P_OTA_OK,          (uint8_t)(sizeof(P_OTA_OK) / sizeof(P_OTA_OK[0])),               false, 2 }, // SND_OTA_OK
+  { P_OTA_FAIL,        (uint8_t)(sizeof(P_OTA_FAIL) / sizeof(P_OTA_FAIL[0])),           false, 2 }, // SND_OTA_FAIL
+  { P_MAINS_LOST,      (uint8_t)(sizeof(P_MAINS_LOST) / sizeof(P_MAINS_LOST[0])),       false, 2 }, // SND_MAINS_LOST
+  { P_MAINS_RESTORED,  (uint8_t)(sizeof(P_MAINS_RESTORED) / sizeof(P_MAINS_RESTORED[0])), false, 2 }, // SND_MAINS_RESTORED
+  { P_VOLT_LOW,        (uint8_t)(sizeof(P_VOLT_LOW) / sizeof(P_VOLT_LOW[0])),           false, 2 }, // SND_VOLT_LOW
+  { P_VOLT_HIGH,       (uint8_t)(sizeof(P_VOLT_HIGH) / sizeof(P_VOLT_HIGH[0])),         false, 2 }, // SND_VOLT_HIGH
+  { P_DEVICE_PLUG,     (uint8_t)(sizeof(P_DEVICE_PLUG) / sizeof(P_DEVICE_PLUG[0])),     false, 1 }, // SND_DEVICE_PLUG
+  { P_FAULT_ARC,       (uint8_t)(sizeof(P_FAULT_ARC) / sizeof(P_FAULT_ARC[0])),         true,  4 }, // SND_FAULT_ARC
+  { P_FAULT_HEAT,      (uint8_t)(sizeof(P_FAULT_HEAT) / sizeof(P_FAULT_HEAT[0])),       true,  5 }, // SND_FAULT_HEAT
+  { P_FAULT_OVER,      (uint8_t)(sizeof(P_FAULT_OVER) / sizeof(P_FAULT_OVER[0])),       true,  3 }, // SND_FAULT_OVER
+  { P_FAULT_UNDERVOLT, (uint8_t)(sizeof(P_FAULT_UNDERVOLT) / sizeof(P_FAULT_UNDERVOLT[0])), true, 3 }, // SND_FAULT_UNDERVOLT
+  { P_FAULT_OVERVOLT,  (uint8_t)(sizeof(P_FAULT_OVERVOLT) / sizeof(P_FAULT_OVERVOLT[0])), true, 4 }, // SND_FAULT_OVERVOLT
+  { P_RESET_ACK,       (uint8_t)(sizeof(P_RESET_ACK) / sizeof(P_RESET_ACK[0])),         false, 1 }  // SND_RESET_ACK
 };
+
+static_assert((sizeof(PATTERNS) / sizeof(PATTERNS[0])) == (SND_RESET_ACK + 1),
+              "PATTERNS must match SoundEvent enum order/count");
 
 static int s_buzzPin = -1;
 static bool s_pwmReady = false;
@@ -99,7 +108,11 @@ static uint8_t s_activePrio = 0;
 static uint8_t s_lastFaultSound = 255;
 
 static inline bool isFaultPattern(uint8_t id) {
-  return id == SND_FAULT_ARC || id == SND_FAULT_HEAT || id == SND_FAULT_OVER || id == SND_FAULT_OVER_HARD;
+  return id == SND_FAULT_ARC ||
+         id == SND_FAULT_HEAT ||
+         id == SND_FAULT_OVER ||
+         id == SND_FAULT_UNDERVOLT ||
+         id == SND_FAULT_OVERVOLT;
 }
 
 static inline bool startupMuteActive() {
@@ -187,11 +200,13 @@ static void soundLoop() {
 
   const TonePattern& p = PATTERNS[s_activeId];
   const uint32_t now = millis();
+
   if (s_t0 == 0) {
     s_t0 = now;
     pwmTone(p.steps[s_step].hz, p.steps[s_step].duty);
     return;
   }
+
   if ((uint32_t)(now - s_t0) >= p.steps[s_step].dur_ms) {
     s_step++;
     if (s_step >= p.count) {
@@ -203,14 +218,6 @@ static void soundLoop() {
     }
     s_t0 = 0;
   }
-}
-
-static inline float heatAlarmTempC() {
-#ifdef DATA_COLLECTION_MODE
-  return TEMP_DATA_WARN_C;
-#else
-  return TEMP_TRIP_C;
-#endif
 }
 
 void Actuators::begin(int pinRelay, int pinBuzzer, OLED_NOTIF* oled) {
@@ -238,24 +245,38 @@ void Actuators::notify(SoundEvent ev) {
 
 void Actuators::apply(FaultState st, float vDisplay, float vProtect, float i, float t) {
   (void)vDisplay;
-  const bool surge = (vProtect >= VOLT_SURGE_TRIP_V);
-  const bool heatWarn = (t >= heatAlarmTempC()) || (st == STATE_HEATING);
-  const bool hardOver = (i >= OVERLOAD_HARD_TRIP_A);
+
+#if COLLECTION_ONLY_MODE
+  const float heatCutoffC = TEMP_DATA_WARN_C; // 80 C in collection mode
+#else
+  const float heatCutoffC = TEMP_TRIP_C;      // 70 C in normal mode
+#endif
+
+  const bool heatActive      = (st == STATE_HEATING) || (t >= heatCutoffC);
+  const bool arcActive       = (st == STATE_ARCING);
+  const bool underVoltActive = (st == STATE_UNDERVOLTAGE);
+  const bool overVoltActive  = (st == STATE_OVERVOLTAGE);
+  const bool overloadActive  = (st == STATE_OVERLOAD) || (i >= OVERLOAD_WARN_A);
 
   bool relayOn = true;
-#ifdef DATA_COLLECTION_MODE
-  relayOn = !(surge || (t >= TEMP_DATA_HARD_C));
-#else
-  if (surge || hardOver || heatWarn || st == STATE_ARCING) relayOn = false;
+
+  if (heatActive || underVoltActive || overVoltActive) {
+    relayOn = false;
+  }
+#if !COLLECTION_ONLY_MODE
+  else if (arcActive) {
+    relayOn = false;
+  }
 #endif
+
   setRelay(relayOn);
 
   uint8_t wantedFaultSound = 255;
-  if (surge) wantedFaultSound = SND_FAULT_OVER_HARD;
-  else if (heatWarn) wantedFaultSound = SND_FAULT_HEAT;
-  else if (st == STATE_ARCING) wantedFaultSound = SND_FAULT_ARC;
-  else if (hardOver) wantedFaultSound = SND_FAULT_OVER_HARD;
-  else if (st == STATE_OVERLOAD || i >= OVERLOAD_WARN_A) wantedFaultSound = SND_FAULT_OVER;
+  if (heatActive) wantedFaultSound = SND_FAULT_HEAT;
+  else if (arcActive) wantedFaultSound = SND_FAULT_ARC;
+  else if (overVoltActive) wantedFaultSound = SND_FAULT_OVERVOLT;
+  else if (underVoltActive) wantedFaultSound = SND_FAULT_UNDERVOLT;
+  else if (overloadActive) wantedFaultSound = SND_FAULT_OVER;
 
   if (wantedFaultSound != s_lastFaultSound) {
     s_lastFaultSound = wantedFaultSound;

@@ -20,6 +20,8 @@ enum class OledOverlay : uint8_t {
   FAULT_ARC,
   FAULT_HEAT,
   FAULT_OVERLOAD,
+  FAULT_UNDERVOLT,
+  FAULT_OVERVOLT,
   FAULT_SURGE,
   FAULT_TEMP_CRITICAL,
   UNPLUGGED
@@ -36,11 +38,11 @@ public:
   void setState(FaultState state);
   void setWiFi(bool connected, int rssi, bool blocking, bool inPortal);
   void triggerCollecting(uint32_t durMs = 1000UL);
+  void triggerConnected(uint32_t durMs = 900UL);
+  void startBootSequence(uint32_t durMs = 3000UL);
   void setOta(bool active, uint8_t progress = 0);
   void setOverlay(OledOverlay overlay);
   void clearOverlay();
-  void startBootSplash(uint32_t durMs = 3000UL);
-  void triggerConnected(uint32_t durMs = 900UL);
   void render();
   void showStatus(const char* title, const char* msg);
   void clear();
@@ -63,28 +65,26 @@ private:
   bool _otaActive = false;
   uint8_t _otaProgress = 0;
   uint32_t _collectUntilMs = 0;
-  uint32_t _noPowerSinceMs = 0;
   uint32_t _bootUntilMs = 0;
-  uint32_t _bootStartedMs = 0;
+  uint32_t _bootStartMs = 0;
   uint32_t _connectedUntilMs = 0;
+  uint32_t _connectedStartMs = 0;
+  uint32_t _noPowerSinceMs = 0;
   OledOverlay _overlay = OledOverlay::NONE;
 
   void drawDashboard(uint32_t nowMs);
-  void drawWiFiWait(uint32_t nowMs, bool portal);
+  void drawBootSequence(uint32_t nowMs);
   void drawConnected(uint32_t nowMs);
-  void drawStartup(uint32_t nowMs);
+  void drawWiFiWait(uint32_t nowMs, bool portal);
   void drawCollecting(uint32_t nowMs);
   void drawOta(uint32_t nowMs);
   void drawUnplugged(uint32_t nowMs);
   void drawFaultSlide(uint32_t nowMs, OledOverlay ov);
 
   void drawWiFiBars(int x, int y, int bars, bool crossed);
-  void drawLogoBitmap(int x, int y, bool invert = false);
-  void drawBoltIcon(int x, int y, int phase);
-  void drawArrowUpIcon(int x, int y, int phase);
-  void drawFireIcon(int x, int y, int phase);
-  void drawTextRight(int rightX, int y, const char* txt, uint8_t size = 1);
-  void drawTextCentered(int cx, int y, const char* txt, uint8_t size = 1);
+  void drawLogo(int x, int y, bool invert = false);
+  void drawCenteredText(const char* txt, int y, uint8_t size = 1);
+  void drawRightText(const char* txt, int xRight, int y, uint8_t size = 1);
 };
 
 #endif

@@ -9,11 +9,16 @@ class DataLogger {
 public:
   void begin(CloudHandler* cloud);
 
-  void setEnabled(bool en);
-  bool enabled() const { return _enabled; }
+  void setEnabled(bool en);                 // manual logger enable
+  bool enabled() const { return _manualEnabled || _autoEnabled; }
+  bool manualEnabled() const { return _manualEnabled; }
+  bool autoCaptureActive() const { return _autoEnabled; }
 
-  void setDurationSeconds(uint16_t sec);
+  void setDurationSeconds(uint16_t sec);    // manual logger duration
   void setSession(const String& sessionId, const String& loadType, int labelOverride);
+
+  bool startAutoCapture(const String& reason, uint16_t sec = AUTO_ARC_CAPTURE_DURATION_S);
+  void stopAutoCapture();
 
   void ingest(const FeatureFrame& f, FaultState st, int arcCounter);
   void loop();
@@ -37,18 +42,32 @@ private:
     float v_rms;
     float i_rms;
     float temp_c;
-    uint8_t label_arc;
+
+    int8_t  label_arc;
+    uint8_t model_pred;
+    uint8_t feat_valid;
+    uint8_t current_valid;
+    uint8_t fault_state;
+    int16_t arc_counter;
+    float   adc_fs_hz;
+    uint8_t auto_capture;
+  };
+
+  struct SessionSpec {
+    String sessionId = "";
+    String loadType = "unknown";
+    int8_t labelOverride = ML_UNKNOWN_LABEL;
+    uint16_t durationS = ML_LOG_DURATION_S;
   };
 
   CloudHandler* _cloud = nullptr;
-  bool _enabled = false;
+  bool _manualEnabled = false;
+  bool _autoEnabled = false;
   bool _wasEnabled = false;
 
-  String _sessionId = "";
-  String _loadType = "unknown";
-  int8_t _labelOverride = -1;
+  SessionSpec _manual;
+  SessionSpec _auto;
 
-  uint16_t _durationS = ML_LOG_DURATION_S;
   uint32_t _chunkStartMs = 0;
   uint32_t _lastFlushAttemptMs = 0;
 
@@ -56,14 +75,13 @@ private:
   static constexpr uint16_t MAX_REC = 600;
   Rec _buf[MAX_REC];
 
+  const SessionSpec& activeSpec() const;
+  bool activeIsAuto() const { return (!_manualEnabled && _autoEnabled); }
   bool flushToFirebase(bool finalFlush);
   static String sanitizeToken(const String& s);
 #else
   CloudHandler* _cloud = nullptr;
-  bool _enabled = false;
-  String _sessionId = "";
-  String _loadType = "unknown";
-  int8_t _labelOverride = -1;
-  uint16_t _durationS = ML_LOG_DURATION_S;
+  bool _manualEnabled = false;
+  bool _autoEnabled = false;
 #endif
 };

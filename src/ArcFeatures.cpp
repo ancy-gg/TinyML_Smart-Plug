@@ -1,4 +1,3 @@
-
 #include "ArcFeatures.h"
 #include <math.h>
 #include <string.h>
@@ -21,14 +20,10 @@ static inline int clampi(int x, int lo, int hi) {
   return (x < lo) ? lo : (x > hi) ? hi : x;
 }
 
-static inline int absi(int x) {
-  return (x < 0) ? -x : x;
-}
-
-static inline uint16_t median3u16(uint16_t a, uint16_t b, uint16_t c) {
-  if (a > b) { uint16_t t = a; a = b; b = t; }
-  if (b > c) { uint16_t t = b; b = c; c = t; }
-  if (a > b) { uint16_t t = a; a = b; b = t; }
+static inline float median3f(float a, float b, float c) {
+  if (a > b) { const float t = a; a = b; b = t; }
+  if (b > c) { const float t = b; b = c; c = t; }
+  if (a > b) { const float t = a; a = b; b = t; }
   return b;
 }
 
@@ -87,32 +82,6 @@ static inline ZcRegion classifyRegion(float x, float hys) {
   return ZC_MID;
 }
 
-static bool fftPowerFromSignal(const float* src, size_t n, float* fft_cf, float* pwr) {
-  static float win[N_SAMP];
-  static bool winReady = false;
-
-  if (!winReady) {
-    dsps_wind_hann_f32(win, (int)n);
-    winReady = true;
-  }
-
-  for (size_t i = 0; i < n; ++i) {
-    fft_cf[2 * i + 0] = src[i] * win[i];
-    fft_cf[2 * i + 1] = 0.0f;
-  }
-
-  if (dsps_fft2r_fc32(fft_cf, (int)n) != ESP_OK) return false;
-  if (dsps_bit_rev_fc32(fft_cf, (int)n) != ESP_OK) return false;
-
-  const int half = (int)(n / 2);
-  for (int k = 0; k < half; ++k) {
-    const float re = fft_cf[2 * k + 0];
-    const float im = fft_cf[2 * k + 1];
-    pwr[k] = re * re + im * im;
-  }
-  return true;
-}
-
 bool ArcFeatures::compute(const uint16_t* raw, size_t n, float fs_hz,
                           const CurrentCalib& cal, float mainsHz,
                           ArcFeatOut& out) {
@@ -123,58 +92,45 @@ bool ArcFeatures::compute(const uint16_t* raw, size_t n, float fs_hz,
   if (!dsp_is_power_of_two((int)n)) return false;
   if ((int)n > CONFIG_DSP_MAX_FFT_SIZE) return false;
 
-  static bool dspReady = false;
-  if (!dspReady) {
-    if (dsps_fft2r_init_fc32(NULL, CONFIG_DSP_MAX_FFT_SIZE) != ESP_OK) {
-      return false;
-    }
-    dspReady = true;
-  }
-
-  static uint16_t rawFix[N_SAMP];
   static float sig[N_SAMP];
+  static float sigMed[N_SAMP];
   static float sigClean[N_SAMP];
   static float sigBase[N_SAMP];
   static float resid[N_SAMP];
   static float fft_cf[2 * N_SAMP];
-
-  for (size_t i = 0; i < n; ++i) rawFix[i] = raw[i];
-
-  for (size_t i = 1; i + 1 < n; ++i) {
-    const uint16_t a = raw[i - 1];
-    const uint16_t b = raw[i];
-    const uint16_t c = raw[i + 1];
-    const uint16_t med = median3u16(a, b, c);
-    if (absi((int)a - (int)c) <= (int)RAW_GLITCH_NEIGHBOR_LSB &&
-        absi((int)b - (int)med) >= (int)RAW_GLITCH_ISOLATED_LSB) {
-      rawFix[i] = med;
-    }
-  }
+  static float win[N_SAMP];
+  static bool dspReady = false;
+  static bool winReady = false;
 
   double mean = 0.0;
   int changes = 0;
   uint16_t mnCode = 0xFFFF;
   uint16_t mxCode = 0;
-  uint16_t prev = rawFix[0];
+  uint16_t prev = raw[0];
 
   for (size_t i = 0; i < n; ++i) {
-    const uint16_t c = rawFix[i];
+    const uint16_t c = raw[i];
     if (c < mnCode) mnCode = c;
     if (c > mxCode) mxCode = c;
     if (i && c != prev) changes++;
     prev = c;
-
-    const float a = codeToCurrentA(c, cal);
-    sig[i] = a;
-    mean += a;
+    sig[i] = codeToCurrentA(c, cal);
   }
-  mean /= (double)n;
 
   if (changes < CURRENT_MIN_ACTIVITY_CHANGES || (uint16_t)(mxCode - mnCode) < CURRENT_MIN_CODE_SPAN) {
     return false;
   }
 
-  for (size_t i = 0; i < n; ++i) sig[i] -= (float)mean;
+  sigMed[0] = sig[0];
+  for (size_t i = 1; i + 1 < n; ++i) {
+    sigMed[i] = median3f(sig[i - 1], sig[i], sig[i + 1]);
+  }
+  sigMed[n - 1] = sig[n - 1];
+
+  for (size_t i = 0; i < n; ++i) mean += sigMed[i];
+  mean /= (double)n;
+
+  for (size_t i = 0; i < n; ++i) sig[i] = sigMed[i] - (float)mean;
 
   const float dt = 1.0f / fs_hz;
   const float rcClean = 1.0f / (6.2831853f * CURRENT_LPF_HZ);
@@ -187,7 +143,6 @@ bool ArcFeatures::compute(const uint16_t* raw, size_t n, float fs_hz,
   double accIrmsClean = 0.0;
   double accIrmsWide  = 0.0;
   double accResidSq   = 0.0;
-  double accResidAbs  = 0.0;
 
   for (size_t i = 0; i < n; ++i) {
     yClean += aClean * (sig[i] - yClean);
@@ -198,13 +153,10 @@ bool ArcFeatures::compute(const uint16_t* raw, size_t n, float fs_hz,
     accIrmsClean += (double)yClean * (double)yClean;
     accIrmsWide  += (double)sig[i] * (double)sig[i];
     accResidSq   += (double)resid[i] * (double)resid[i];
-    accResidAbs  += fabs((double)resid[i]);
   }
 
   const float irmsClean = sqrtf((float)(accIrmsClean / (double)n));
   const float irmsWide  = sqrtf((float)(accIrmsWide / (double)n));
-  const float residRms  = sqrtf((float)(accResidSq / (double)n));
-  const float residAbsMean = (float)(accResidAbs / (double)n);
 
   float irms = fmaxf(irmsClean, irmsWide * 0.92f);
   const uint16_t codeSpan = (uint16_t)(mxCode - mnCode);
@@ -218,14 +170,22 @@ bool ArcFeatures::compute(const uint16_t* raw, size_t n, float fs_hz,
   out.irms_a = irms;
   out.current_valid = true;
 
-  if (fs_hz < FEATURE_FRAME_MIN_FS_HZ) {
+  if (irms < FEATURE_MIN_IRMS_A) {
     out.feat_valid = false;
     return true;
   }
 
-  if (irms < FEATURE_MIN_IRMS_A) {
-    out.feat_valid = false;
-    return true;
+  if (!dspReady) {
+    if (dsps_fft2r_init_fc32(NULL, CONFIG_DSP_MAX_FFT_SIZE) != ESP_OK) {
+      out.feat_valid = false;
+      return true;
+    }
+    dspReady = true;
+  }
+
+  if (!winReady) {
+    dsps_wind_hann_f32(win, (int)n);
+    winReady = true;
   }
 
   float crossAll[128];
@@ -233,7 +193,7 @@ bool ArcFeatures::compute(const uint16_t* raw, size_t n, float fs_hz,
   float crossPos[64];
   int crossPosN = 0;
 
-  const float zcHys = fmaxf(ZC_HYS_MIN_A, ZC_HYS_FRAC * fmaxf(irms, 0.08f));
+  const float zcHys = fmaxf(ZC_HYS_MIN_A, ZC_HYS_FRAC * fmaxf(irms, 0.1f));
   ZcRegion armedSide = classifyRegion(sigClean[0], zcHys);
 
   for (size_t i = 1; i < n && crossAllN < 128; ++i) {
@@ -278,7 +238,7 @@ bool ArcFeatures::compute(const uint16_t* raw, size_t n, float fs_hz,
     out.zcv = (float)(sqrt(vv) * (1000.0 / fs_hz));
   }
 
-  const float dwellThr = fmaxf(ZC_DWELL_THR_MIN_A, ZC_DWELL_THR_FRAC * fmaxf(irms, 0.08f));
+  const float dwellThr = fmaxf(ZC_DWELL_THR_MIN_A, ZC_DWELL_THR_FRAC * fmaxf(irms, 0.10f));
   const float avgHalfSamp = (crossAllN >= 4)
     ? (float)((crossAll[crossAllN - 1] - crossAll[0]) / (float)(crossAllN - 1))
     : (fs_hz / (mainsHz * 2.0f));
@@ -314,10 +274,11 @@ bool ArcFeatures::compute(const uint16_t* raw, size_t n, float fs_hz,
   float prevCycle[RSZ];
   bool havePrevCycle = false;
 
-  float pulseThr = fmaxf(PULSE_THRESH_MIN_A, PULSE_THRESH_RMS_MUL * residAbsMean);
-  const float pulseCap = PULSE_THRESH_MAX_IRMS_FRAC * fmaxf(irms, 0.08f);
-  if (pulseCap > PULSE_THRESH_MIN_A) pulseThr = fminf(pulseThr, pulseCap);
-  pulseThr = fmaxf(pulseThr, PULSE_THRESH_MIN_A);
+  const float residRms = sqrtf((float)(accResidSq / (double)n));
+  const bool pulseEligible = (irms >= PULSE_ANALYSIS_MIN_IRMS_A) &&
+                             (residRms >= PULSE_ANALYSIS_MIN_RESID_A);
+  float pulseThr = fmaxf(PULSE_THRESH_MIN_A, PULSE_THRESH_RMS_MUL * residRms);
+  pulseThr = fmaxf(pulseThr, 0.10f * irms);
 
   const int pulseMinW = clampi((int)lroundf((PULSE_MIN_WIDTH_US * 1e-6f) * fs_hz), 1, 32);
   const int pulseMaxW = clampi((int)lroundf((PULSE_MAX_WIDTH_US * 1e-6f) * fs_hz), pulseMinW, 512);
@@ -337,7 +298,7 @@ bool ArcFeatures::compute(const uint16_t* raw, size_t n, float fs_hz,
       const float av = fabsf(sigClean[i]);
       if (av > peak) peak = av;
 
-      const bool over = fabsf(resid[i]) >= pulseThr;
+      const bool over = pulseEligible && (fabsf(resid[i]) >= pulseThr);
       if (over && !inPulse) {
         inPulse = true;
         pulseStart = i;
@@ -400,17 +361,31 @@ bool ArcFeatures::compute(const uint16_t* raw, size_t n, float fs_hz,
 
   if (nmsePairs > 0) out.cycle_nmse = nmseAcc / (float)nmsePairs;
 
-  if (!fftPowerFromSignal(sigClean, n, fft_cf, sig)) {
+  for (size_t i = 0; i < n; ++i) {
+    fft_cf[2 * i + 0] = sig[i] * win[i];
+    fft_cf[2 * i + 1] = 0.0f;
+  }
+
+  if (dsps_fft2r_fc32(fft_cf, (int)n) != ESP_OK) {
+    out.feat_valid = false;
+    return true;
+  }
+  if (dsps_bit_rev_fc32(fft_cf, (int)n) != ESP_OK) {
     out.feat_valid = false;
     return true;
   }
 
   const int half = (int)(n / 2);
-  const float binHz = fs_hz / (float)n;
-
   double pTotNoDc = 0.0;
-  for (int k = 1; k < half; ++k) pTotNoDc += sig[k];
+  for (int k = 0; k < half; ++k) {
+    const float re = fft_cf[2 * k + 0];
+    const float im = fft_cf[2 * k + 1];
+    const float P = re * re + im * im;
+    sig[k] = P;
+    if (k > 0) pTotNoDc += P;
+  }
 
+  const float binHz = fs_hz / (float)n;
   int kNom = (int)lroundf(mainsHz / binHz);
   kNom = clampi(kNom, 1, half - 2);
 
@@ -450,11 +425,6 @@ bool ArcFeatures::compute(const uint16_t* raw, size_t n, float fs_hz,
     out.thd_i = 0.0f;
   }
 
-  if (!fftPowerFromSignal(resid, n, fft_cf, sig)) {
-    out.feat_valid = false;
-    return true;
-  }
-
   int kSpec0 = 0, kSpec1 = 0;
   if (makeBandBins(SPEC_ENT_LO_HZ, SPEC_ENT_HI_HZ, binHz, half, kSpec0, kSpec1)) {
     double psum = 0.0;
@@ -486,7 +456,20 @@ bool ArcFeatures::compute(const uint16_t* raw, size_t n, float fs_hz,
   int kMb0 = 0, kMb1 = 0;
   if (makeBandBins(MIDBAND_LO_HZ, MIDBAND_HI_HZ, binHz, half, kMb0, kMb1)) {
     double pResidual = 0.0;
-    for (int k = kMb0; k <= kMb1; ++k) pResidual += (double)sig[k];
+    for (int k = kMb0; k <= kMb1; ++k) {
+      bool skip = false;
+      if (haveFund) {
+        for (int h = 1; h <= 3; ++h) {
+          const int kh = h * k1;
+          if (kh >= half) break;
+          if (abs(k - kh) <= 2) {
+            skip = true;
+            break;
+          }
+        }
+      }
+      if (!skip) pResidual += (double)sig[k];
+    }
     out.midband_residual_rms = (float)(sqrt(pResidual + 1e-12) / (double)n);
   } else {
     out.midband_residual_rms = 0.0f;
@@ -500,7 +483,7 @@ bool ArcFeatures::compute(const uint16_t* raw, size_t n, float fs_hz,
   if (step < 1) step = 1;
   for (int i = 0; i < WP_N; ++i) {
     const int idx = clampi(i * step, 0, (int)n - 1);
-    wpA[i] = resid[idx];
+    wpA[i] = sigClean[idx];
   }
 
   float* in = wpA;
@@ -531,9 +514,6 @@ bool ArcFeatures::compute(const uint16_t* raw, size_t n, float fs_hz,
     }
   }
   out.wpe_entropy = computeEntropyFromBands(leafE, 8);
-
-  if (out.pulse_count_per_cycle < 0.0f) out.pulse_count_per_cycle = 0.0f;
-  if (residRms < 1e-6f && out.midband_residual_rms < 1e-6f) out.pulse_count_per_cycle = 0.0f;
 
   out.feat_valid = true;
   return true;
