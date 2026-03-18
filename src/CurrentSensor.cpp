@@ -120,6 +120,12 @@ size_t CurrentSensor::capture(uint16_t* dst, size_t n, float* measuredFsHz) {
     warmupBurstsRemaining--;
   }
 
+  // Throw away a few first conversions on every burst.
+  // This helps the temporary MCP path settle after long idle gaps.
+  for (uint8_t i = 0; i < MCP3204_BURST_DISCARD; ++i) {
+    (void)spi_device_polling_transmit(_dev, &t);
+  }
+
   while (count < n) {
     uint32_t acc = 0;
     uint8_t good = 0;

@@ -81,7 +81,7 @@ bool ArcFeatures::compute(const uint16_t* raw, size_t n, float fs_hz,
   out = ArcFeatOut{};
   out.fs_hz = fs_hz;
 
-  if (!raw || n != N_SAMP || fs_hz < 1000.0f) return false;
+  if (!raw || n != N_SAMP) return false;
   if (!dsp_is_power_of_two((int)n)) return false;
   if ((int)n > CONFIG_DSP_MAX_FFT_SIZE) return false;
 
@@ -113,9 +113,6 @@ bool ArcFeatures::compute(const uint16_t* raw, size_t n, float fs_hz,
   }
   mean /= (double)n;
 
-  if (changes < CURRENT_MIN_ACTIVITY_CHANGES || (uint16_t)(mxCode - mnCode) < CURRENT_MIN_CODE_SPAN) {
-    return false;
-  }
 
   for (size_t i = 0; i < n; ++i) sig[i] -= (float)mean;
 
@@ -148,6 +145,12 @@ bool ArcFeatures::compute(const uint16_t* raw, size_t n, float fs_hz,
   float irms = fmaxf(irmsClean, irmsWide * 0.92f);
   const uint16_t codeSpan = (uint16_t)(mxCode - mnCode);
 
+  if (changes == 0 && codeSpan == 0) {
+    out.current_valid = false;
+    out.feat_valid = false;
+    return false;
+  }
+
   if (irms < CURRENT_IDLE_SUPPRESS_A && codeSpan < LOW_CURRENT_CODE_SPAN) {
     irms = 0.0f;
   } else if (irms < IRMS_GATE_OFF_A) {
@@ -158,6 +161,16 @@ bool ArcFeatures::compute(const uint16_t* raw, size_t n, float fs_hz,
   out.current_valid = true;
 
   if (irms < FEATURE_MIN_IRMS_A) {
+    out.feat_valid = false;
+    return true;
+  }
+
+  if (fs_hz < FEATURE_FRAME_MIN_FS_HZ) {
+    out.feat_valid = false;
+    return true;
+  }
+
+  if (changes < CURRENT_MIN_ACTIVITY_CHANGES || codeSpan < CURRENT_MIN_CODE_SPAN) {
     out.feat_valid = false;
     return true;
   }

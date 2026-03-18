@@ -136,6 +136,32 @@ function parseTsIsoToEpoch(tsIso) {
   return new Date(Number(Y), Number(Mo) - 1, Number(D), Number(H), Number(Mi), Number(S), ms).getTime();
 }
 
+function clearLiveData(toZero = true) {
+  const zero = toZero ? "0" : "—";
+  const z1 = toZero ? "0.0" : "—";
+  const z2 = toZero ? "0.00" : "—";
+  const z3 = toZero ? "0.000" : "—";
+
+  if (vVal) vVal.textContent = z1;
+  if (iVal) iVal.textContent = z2;
+  if (pVal) pVal.textContent = z1;
+  if (tVal) tVal.textContent = z1;
+
+  if (cycleNmseVal) cycleNmseVal.textContent = z3;
+  if (zcvVal) zcvVal.textContent = z3;
+  if (zcDwellVal) zcDwellVal.textContent = z3;
+  if (pulseCountVal) pulseCountVal.textContent = z3;
+  if (peakFluctVal) peakFluctVal.textContent = z3;
+  if (midbandResidVal) midbandResidVal.textContent = z3;
+  if (hfEnergyVal) hfEnergyVal.textContent = z3;
+  if (wpeEntropyVal) wpeEntropyVal.textContent = z3;
+  if (specEntropyVal) specEntropyVal.textContent = z3;
+  if (thdVal) thdVal.textContent = z3;
+
+  if (deviceIpLine) deviceIpLine.style.display = "none";
+  if (deviceIpText) deviceIpText.textContent = "—";
+}
+
 function getRecordEpochMs(r) {
   if (!r || typeof r !== "object") return 0;
   if (typeof r.server_ts === "number" && r.server_ts > 0) return r.server_ts;
@@ -335,7 +361,10 @@ async function showFaultNotification(title, body){
 // ---------- LIVE DATA ----------
 db.ref("live_data").on("value", (snap) => {
   const data = snap.val();
-  if (!data) return;
+  if (!data) {
+    clearLiveData(true);
+    return;
+  }
 
   lastSeenMs = Date.now();
 
@@ -416,8 +445,8 @@ db.ref("live_data").on("value", (snap) => {
 }, (err) => {
   console.error(err);
   setTopStatus("DISCONNECTED");
+  clearLiveData(true);
   if (lastUpdateText) lastUpdateText.textContent = "—";
-  if (deviceIpLine) deviceIpLine.style.display = "none";
 });
 
 // ---------- HISTORY ----------
@@ -542,11 +571,12 @@ if (btnClearHistory) {
 setInterval(() => {
   if (!lastSeenMs) {
     setTopStatus("DISCONNECTED");
+    clearLiveData(true);
     return;
   }
   if (Date.now() - lastSeenMs > STALE_MS) {
     setTopStatus("DISCONNECTED");
-    if (deviceIpLine) deviceIpLine.style.display = "none";
+    clearLiveData(true);
   }
 }, 500);
 

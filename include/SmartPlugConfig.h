@@ -121,10 +121,13 @@ static constexpr int   ADS_SPI_FALLBACK_HZ = 2000000;
 
 // MCP3204 temporary backend
 static constexpr uint8_t  MCP3204_CHANNEL        = 0;
-static constexpr uint32_t MCP3204_SPI_HZ         = 1200000UL;
-static constexpr uint8_t  MCP3204_OVERSAMPLE     = 4;
-static constexpr uint16_t MCP3204_STARTUP_FLUSH  = 768;
-static constexpr uint8_t  MCP3204_WARMUP_BURSTS  = 8;
+static constexpr uint32_t MCP3204_SPI_HZ         = 2000000UL;
+// Keep raw rate high on the temporary MCP path.
+// MCP oversampling reduces *effective* sample rate, so default to 1x here.
+static constexpr uint8_t  MCP3204_OVERSAMPLE     = 1;
+static constexpr uint16_t MCP3204_STARTUP_FLUSH  = 512;
+static constexpr uint8_t  MCP3204_WARMUP_BURSTS  = 4;
+static constexpr uint8_t  MCP3204_BURST_DISCARD  = 8;
 
 // Direct ESP32 ADC fallback
 static constexpr uint8_t  ESP32_ADC_OVERSAMPLE   = 2;
@@ -173,22 +176,23 @@ static constexpr int CURRENT_MIN_ACTIVITY_CHANGES = 8;
 static constexpr uint16_t CURRENT_MIN_CODE_SPAN   = 6;
 static constexpr uint16_t LOW_CURRENT_CODE_SPAN   = 16;
 
-static constexpr float CURRENT_FRAME_MIN_FS_HZ    = 20000.0f;
+static constexpr float CURRENT_MEASURE_MIN_FS_HZ  = 20000.0f;
+static constexpr float FEATURE_FRAME_MIN_FS_HZ    = 20000.0f;
 static constexpr uint32_t CURRENT_BOOT_SETTLE_MS  = 300UL;
 
 #elif CURRENT_CAPTURE_BACKEND == CUR_BACKEND_MCP3204
 
 // Temporary MCP3204 profile: prioritize stability and medium/large loads
-static constexpr float IRMS_GATE_ON_A             = 0.040f;
-static constexpr float IRMS_GATE_OFF_A            = 0.025f;
-static constexpr float CURRENT_IDLE_SUPPRESS_A    = 0.030f;
+static constexpr float IRMS_GATE_ON_A             = 0.100f;
+static constexpr float IRMS_GATE_OFF_A            = 0.070f;
+static constexpr float CURRENT_IDLE_SUPPRESS_A    = 0.090f;
 static constexpr float FEATURE_MIN_VRMS           = 70.0f;
-static constexpr float FEATURE_MIN_IRMS_A         = 0.120f;
-static constexpr float ARC_MIN_IRMS_A             = 0.250f;
-static constexpr float FEATURE_REQUIRE_FUND_BELOW_A = 0.350f;
+static constexpr float FEATURE_MIN_IRMS_A         = 0.100f;
+static constexpr float ARC_MIN_IRMS_A             = 0.200f;
+static constexpr float FEATURE_REQUIRE_FUND_BELOW_A = 0.220f;
 
-static constexpr float CURRENT_LPF_HZ             = 1400.0f;
-static constexpr float CURRENT_BASE_LPF_HZ        = 240.0f;
+static constexpr float CURRENT_LPF_HZ             = 1200.0f;
+static constexpr float CURRENT_BASE_LPF_HZ        = 200.0f;
 
 static constexpr float ZC_HYS_MIN_A               = 0.030f;
 static constexpr float ZC_HYS_FRAC                = 0.16f;
@@ -213,11 +217,12 @@ static constexpr float FUND_SNR_MIN               = 6.5f;
 static constexpr float FUND_MAG_MIN               = 1e-5f;
 static constexpr float SF_EPS                     = 1e-12f;
 
-static constexpr int CURRENT_MIN_ACTIVITY_CHANGES = 10;
-static constexpr uint16_t CURRENT_MIN_CODE_SPAN   = 10;
-static constexpr uint16_t LOW_CURRENT_CODE_SPAN   = 30;
+static constexpr int CURRENT_MIN_ACTIVITY_CHANGES = 4;
+static constexpr uint16_t CURRENT_MIN_CODE_SPAN   = 6;
+static constexpr uint16_t LOW_CURRENT_CODE_SPAN   = 18;
 
-static constexpr float CURRENT_FRAME_MIN_FS_HZ    = 7000.0f;
+static constexpr float CURRENT_MEASURE_MIN_FS_HZ  = 1500.0f;
+static constexpr float FEATURE_FRAME_MIN_FS_HZ    = 8000.0f;
 static constexpr uint32_t CURRENT_BOOT_SETTLE_MS  = 400UL;
 
 #else
@@ -261,7 +266,8 @@ static constexpr int CURRENT_MIN_ACTIVITY_CHANGES = 12;
 static constexpr uint16_t CURRENT_MIN_CODE_SPAN   = 16;
 static constexpr uint16_t LOW_CURRENT_CODE_SPAN   = 44;
 
-static constexpr float CURRENT_FRAME_MIN_FS_HZ    = 3000.0f;
+static constexpr float CURRENT_MEASURE_MIN_FS_HZ  = 1000.0f;
+static constexpr float FEATURE_FRAME_MIN_FS_HZ    = 3000.0f;
 static constexpr uint32_t CURRENT_BOOT_SETTLE_MS  = 300UL;
 
 #endif

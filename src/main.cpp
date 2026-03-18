@@ -31,7 +31,7 @@
 
 #define API_KEY "AIzaSyAmJlZZszyWPJFgIkTAAl_TbIySys1nvEw"
 #define DATABASE_URL "tinyml-smart-plug-default-rtdb.asia-southeast1.firebasedatabase.app"
-static const char* FW_VERSION = "TSP-v0.6.4";
+static const char* FW_VERSION = "TSP-v0.6.5";
 
 static const char* OTA_DESIRED_VERSION_PATH = "/ota/desired_version";
 static const char* OTA_FIRMWARE_URL_PATH    = "/ota/firmware_url";
@@ -162,14 +162,14 @@ static void Core0Task(void* pv) {
 
     float fs_hz = FS_TARGET_HZ;
     size_t got = curSensor.capture(s_raw, N_SAMP, &fs_hz);
-    if (got != N_SAMP || fs_hz < CURRENT_FRAME_MIN_FS_HZ) {
+    if (got != N_SAMP) {
       vTaskDelay(1);
       fs_hz = FS_TARGET_HZ;
       got = curSensor.capture(s_raw, N_SAMP, &fs_hz);
     }
 
     bool ok = false;
-    if (got == N_SAMP && fs_hz >= CURRENT_FRAME_MIN_FS_HZ) {
+    if (got == N_SAMP && fs_hz >= CURRENT_MEASURE_MIN_FS_HZ) {
       ok = arcFeat.compute(s_raw, N_SAMP, fs_hz, curCalib, MAINS_F0_HZ, out);
     }
 

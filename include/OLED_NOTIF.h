@@ -70,10 +70,13 @@ private:
   void drawOta(uint32_t nowMs);
   void drawUnplugged(uint32_t nowMs);
   void drawFaultSlide(uint32_t nowMs, OledOverlay ov);
-  void drawBottomWiFiBar(uint32_t nowMs);
-  void drawWiFiIcon(int x, int y, int bars, bool crossed);
-  void drawUploadArrow(int x, int y, int phase);
-  void drawStatusBand(const char* txt, bool invert = true);
+
+  void drawWiFiBars(int x, int y, int bars, bool crossed);
+  void drawCenteredText(const char* txt, int y, uint8_t size, int minX = 0);
+  void drawPlugXIcon(int cx, int cy, bool blinkOn);
+  void drawArcIcon(int x, int y, bool blinkOn);
+  void drawUpArrow(int x, int y, int phase);
+  void drawFireIcon(int x, int y, int sway);
 };
 
 #endif
