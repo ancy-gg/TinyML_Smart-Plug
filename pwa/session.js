@@ -1068,12 +1068,133 @@
     }
   }
 
+
   function openSessionViewer(targetSid, metaOverride = null) {
     plotDrawer.classList.remove("collapsed");
     setTimeout(() => {
       plotDrawer.scrollIntoView({ behavior: "smooth", block: "start" });
     }, 10);
     loadSession(targetSid, metaOverride);
+  }
+
+  function openSessionViewerFromCsv(name, csvText, metaOverride = null) {
+    plotDrawer.classList.remove("collapsed");
+    setTimeout(() => {
+      plotDrawer.scrollIntoView({ behavior: "smooth", block: "start" });
+    }, 10);
+
+    sid = (name || "uploaded_csv").replace(/[^a-zA-Z0-9_.-]/g, "_");
+    resetState();
+    titleEl.textContent = `CSV: ${sid}`;
+    const meta = metaOverride || {};
+    metaEl.textContent = `load=${meta?.load_type ?? "uploaded_csv"}  duration=${meta?.duration_s ?? "—"}s`;
+    currentCsv = csvText || "";
+
+    try {
+      if (!currentCsv.trim()) {
+        setStatus("Uploaded CSV is empty.");
+        clearValueReadout();
+        return;
+      }
+
+      btnDownload.onclick = () => downloadTextFile(`TSP_ML_${sid}`, currentCsv);
+
+      setStatus("Parsing uploaded CSV…");
+      const parsed = Papa.parse(currentCsv.trim(), { header: true, dynamicTyping: true, skipEmptyLines: true });
+      ROWS = (parsed.data || []).filter((r) => r && Object.keys(r).length);
+
+      if (!ROWS.length) {
+        setStatus("Parsed 0 rows from uploaded CSV.");
+        clearValueReadout();
+        return;
+      }
+
+      X = pickTimeAxis(ROWS);
+      KEYS = buildSeriesKeys(ROWS);
+
+      if (!KEYS.length) {
+        setStatus("No numeric series found in uploaded CSV.");
+        clearValueReadout();
+        return;
+      }
+
+      DATA_RAW = makeData(ROWS, X, KEYS);
+
+      const win0 = Number(rngSmooth?.value) || 15;
+      if (smoothReadout) smoothReadout.textContent = `win=${win0}`;
+      DATA_SMOOTH = makeSmoothedData(DATA_RAW, win0);
+
+      DATA_NORM = normalizeData(DATA_RAW);
+      DATA_SMOOTH_NORM = normalizeData(DATA_SMOOTH);
+
+      buildArcIndexes();
+
+      KEYS.forEach((k) => {
+        showPref.set(k, DEFAULT_ON.has(k));
+        axisPref.set(k, DEFAULT_Y2.has(k) ? "y2" : "y");
+      });
+
+      toggleList.innerHTML = "";
+      KEYS.forEach((k, i) => {
+        const wrap = document.createElement("div");
+        wrap.className = "row";
+        wrap.dataset.key = k;
+
+        const cb = document.createElement("input");
+        cb.type = "checkbox";
+        cb.checked = !!showPref.get(k);
+        cb.onchange = () => {
+          const on = !!cb.checked;
+          showPref.set(k, on);
+          if (plot) {
+            plot.setSeries(i + 1, { show: on });
+            plot.setData(plot.data, false);
+          }
+          updateValueReadout();
+          updateStats();
+        };
+
+        const nameEl = document.createElement("div");
+        nameEl.textContent = k;
+
+        const sel = document.createElement("select");
+        sel.className = "axisSel";
+        sel.innerHTML = `<option value="y">Y1</option><option value="y2">Y2</option>`;
+        sel.value = axisPref.get(k) || "y";
+        sel.onchange = () => {
+          axisPref.set(k, sel.value);
+          rebuildForDataMode();
+        };
+
+        wrap.appendChild(cb);
+        wrap.appendChild(nameEl);
+        wrap.appendChild(sel);
+        toggleList.appendChild(wrap);
+      });
+
+      applySeriesFilter();
+
+      scrub.max = String(Math.max(0, X.length - 1));
+      speed = Number(selSpeed.value) || 1.0;
+
+      if (chkEvents) {
+        chkEvents.disabled = ARC_SERIES_INDEX < 0;
+        if (ARC_SERIES_INDEX < 0) chkEvents.checked = false;
+      }
+
+      setStatus(`Rows: ${ROWS.length} | Uploaded CSV ready`);
+      clearValueReadout();
+
+      requestAnimationFrame(() => {
+        buildPlot();
+        setPlayIdx(0, true);
+        updateStats();
+      });
+    } catch (e) {
+      console.error(e);
+      setStatus("Failed to parse uploaded CSV.");
+      clearValueReadout();
+    }
   }
 
   function closeSessionViewer() {
@@ -1091,6 +1212,7 @@
   };
 
   window.openSessionViewer = openSessionViewer;
+  window.openSessionViewerFromCsv = openSessionViewerFromCsv;
   window.closeSessionViewer = closeSessionViewer;
 
   const sidFromQuery = new URLSearchParams(location.search).get("sid") || "";

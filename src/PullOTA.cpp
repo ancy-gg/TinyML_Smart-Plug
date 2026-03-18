@@ -9,6 +9,7 @@
 
 static const uint32_t OTA_HTTP_TIMEOUT_MS = 60000;
 static const uint32_t OTA_STREAM_IDLE_MS  = 12000;
+static const uint32_t OTA_RESTART_DELAY_MS = 1200;
 
 void PullOTA::begin(const char* currentVersion, CloudHandler* cloud) {
   _currentVersion = currentVersion ? currentVersion : "TSP-v0.0.0";
@@ -47,7 +48,7 @@ void PullOTA::loop() {
   if (_cb) _cb(OtaEvent::START, 0);
   if (performUpdateFromUrl(fwUrl)) {
     if (_cb) _cb(OtaEvent::SUCCESS, 100);
-    delay(300);
+    delay(OTA_RESTART_DELAY_MS);
     ESP.restart();
   } else {
     if (_cb) _cb(OtaEvent::FAIL, 0);

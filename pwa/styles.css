@@ -668,3 +668,21 @@ body.showSeries{ overflow:hidden; }
   .wave-grid{ grid-template-columns: 1fr; }
   .feature-grid-2col{ grid-template-columns: 1fr; }
 }
+
+
+.status-UNPLUGGED{ background: rgba(255,116,82,0.18); color:#ffb9a5; border-color:rgba(255,116,82,0.35); }
+.status-FW{ background: rgba(155,89,182,0.22); color:#eed8ff; border-color:rgba(155,89,182,0.38); }
+
+.pill-UNPLUG{ background:rgba(255,116,82,0.18); color:#ffd2c6; }
+.pill-FW{ background:rgba(155,89,182,0.20); color:#eed8ff; }
+
+.btn-primary{
+  background:linear-gradient(180deg, rgba(46,204,113,0.22), rgba(46,204,113,0.12));
+  border-color:rgba(46,204,113,0.34);
+  color:#c8ffd9;
+}
+.session-actions{
+  display:flex;
+  gap:8px;
+  flex-wrap:wrap;
+}

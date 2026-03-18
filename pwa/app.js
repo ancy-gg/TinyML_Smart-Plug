@@ -136,32 +136,6 @@ function parseTsIsoToEpoch(tsIso) {
   return new Date(Number(Y), Number(Mo) - 1, Number(D), Number(H), Number(Mi), Number(S), ms).getTime();
 }
 
-function clearLiveData(toZero = true) {
-  const zero = toZero ? "0" : "—";
-  const z1 = toZero ? "0.0" : "—";
-  const z2 = toZero ? "0.00" : "—";
-  const z3 = toZero ? "0.000" : "—";
-
-  if (vVal) vVal.textContent = z1;
-  if (iVal) iVal.textContent = z2;
-  if (pVal) pVal.textContent = z1;
-  if (tVal) tVal.textContent = z1;
-
-  if (cycleNmseVal) cycleNmseVal.textContent = z3;
-  if (zcvVal) zcvVal.textContent = z3;
-  if (zcDwellVal) zcDwellVal.textContent = z3;
-  if (pulseCountVal) pulseCountVal.textContent = z3;
-  if (peakFluctVal) peakFluctVal.textContent = z3;
-  if (midbandResidVal) midbandResidVal.textContent = z3;
-  if (hfEnergyVal) hfEnergyVal.textContent = z3;
-  if (wpeEntropyVal) wpeEntropyVal.textContent = z3;
-  if (specEntropyVal) specEntropyVal.textContent = z3;
-  if (thdVal) thdVal.textContent = z3;
-
-  if (deviceIpLine) deviceIpLine.style.display = "none";
-  if (deviceIpText) deviceIpText.textContent = "—";
-}
-
 function getRecordEpochMs(r) {
   if (!r || typeof r !== "object") return 0;
   if (typeof r.server_ts === "number" && r.server_ts > 0) return r.server_ts;
@@ -173,8 +147,13 @@ function getRecordEpochMs(r) {
 
 // ---------- Status mapping ----------
 function classifyStatus(s) {
-  const u = (s || "").toUpperCase();
-  if (u.includes("DISCON")) return "DISCONNECTED";
+  const u = (s || "").toUpperCase().trim();
+  if (u === "DEVICE DISCONNECTED") return "DEVICE_DISCONNECTED";
+  if (u === "DEVICE UNPLUGGED" || u === "UNPLUGGED") return "UNPLUGGED";
+  if (u === "DEVICE ON") return "DEVICE_ON";
+  if (u === "FIRMWARE UPDATED") return "FIRMWARE_UPDATED";
+  if (u.includes("DISCON")) return "DEVICE_DISCONNECTED";
+  if (u.includes("UNPLUG")) return "UNPLUGGED";
   if (u.includes("ARC")) return "ARCING";
   if (u.includes("HEAT")) return "HEATING";
   if (u.includes("OVER")) return "OVERLOAD";
@@ -185,10 +164,13 @@ function classifyStatus(s) {
 
 function statusBadgeHTML(kind) {
   switch (kind) {
-    case "OVERLOAD": return `OVERLOAD <span class="emoji blink">⚠️</span>`;
+    case "OVERLOAD": return `OVERLOAD <span class="emoji blink">⬆️</span>`;
     case "HEATING":  return `HEATING <span class="emoji flicker">🔥</span>`;
     case "ARCING":   return `ARCING <span class="emoji zap">⚡</span>`;
-    case "DISCONNECTED": return `DISCONNECTED`;
+    case "UNPLUGGED": return `UNPLUGGED`;
+    case "DEVICE_DISCONNECTED": return `DISCONNECTED`;
+    case "DEVICE_ON": return `DEVICE ON`;
+    case "FIRMWARE_UPDATED": return `FIRMWARE UPDATED`;
     case "NORMAL": return `NORMAL`;
     default: return `${kind}`;
   }
@@ -200,16 +182,19 @@ function setTopStatus(kind) {
   const k = classifyStatus(kind);
   statusBadge.className = "status";
 
-  if (k === "DISCONNECTED") statusBadge.classList.add("status-DISCONNECTED");
+  if (k === "DEVICE_DISCONNECTED") statusBadge.classList.add("status-DISCONNECTED");
+  else if (k === "UNPLUGGED") statusBadge.classList.add("status-UNPLUGGED");
   else if (k === "OVERLOAD") statusBadge.classList.add("status-OVERLOAD");
   else if (k === "HEATING") statusBadge.classList.add("status-HEATING");
   else if (k === "ARCING") statusBadge.classList.add("status-ARCING");
+  else if (k === "FIRMWARE_UPDATED") statusBadge.classList.add("status-FW");
+  else if (k === "DEVICE_ON") statusBadge.classList.add("status-OK");
   else if (k === "WARNING") statusBadge.classList.add("status-WARN");
   else statusBadge.classList.add("status-OK");
 
   statusBadge.innerHTML = statusBadgeHTML(k);
 
-  if (k !== "DISCONNECTED") {
+  if (k !== "DEVICE_DISCONNECTED") {
     statusBadge.classList.remove("bump");
     void statusBadge.offsetWidth;
     statusBadge.classList.add("bump");
@@ -218,12 +203,15 @@ function setTopStatus(kind) {
 
 function pillHTML(kind) {
   const k = classifyStatus(kind);
-  if (k === "OVERLOAD") return `<span class="pill pill-OVERLOAD">OVERLOAD <span class="emoji blink">⚠️</span></span>`;
+  if (k === "OVERLOAD") return `<span class="pill pill-OVERLOAD">OVERLOAD <span class="emoji blink">⬆️</span></span>`;
   if (k === "HEATING")  return `<span class="pill pill-HEATING">HEATING <span class="emoji flicker">🔥</span></span>`;
   if (k === "ARCING")   return `<span class="pill pill-ARCING">ARCING <span class="emoji zap">⚡</span></span>`;
-  if (k === "DISCONNECTED") return `<span class="pill pill-DIS">DISCONNECTED</span>`;
+  if (k === "UNPLUGGED") return `<span class="pill pill-UNPLUG">DEVICE UNPLUGGED</span>`;
+  if (k === "DEVICE_DISCONNECTED") return `<span class="pill pill-DIS">DEVICE DISCONNECTED</span>`;
+  if (k === "DEVICE_ON") return `<span class="pill pill-OK">DEVICE ON</span>`;
+  if (k === "FIRMWARE_UPDATED") return `<span class="pill pill-FW">FIRMWARE UPDATED</span>`;
   if (k === "NORMAL") return `<span class="pill pill-OK">NORMAL</span>`;
-  return `<span class="pill pill-OK">${k}</span>`;
+  return `<span class="pill pill-OK">${k.replaceAll("_"," ")}</span>`;
 }
 
 function animateNumber(node) {
@@ -231,6 +219,30 @@ function animateNumber(node) {
   node.classList.remove("tick");
   void node.offsetWidth;
   node.classList.add("tick");
+}
+
+function setLiveZeroes() {
+  const zeroMap = [
+    [vVal, "0.0"], [iVal, "0.000"], [pVal, "0.0"], [tVal, "0.0"],
+    [cycleNmseVal, "0.000"], [zcvVal, "0.000"], [zcDwellVal, "0.000"],
+    [pulseCountVal, "0.000"], [peakFluctVal, "0.000"], [midbandResidVal, "0.000"],
+    [hfEnergyVal, "0.000"], [wpeEntropyVal, "0.000"], [specEntropyVal, "0.000"], [thdVal, "0.000"]
+  ];
+  zeroMap.forEach(([node, text]) => { if (node) node.textContent = text; });
+}
+
+let syntheticDisconnectActive = false;
+function injectSyntheticDisconnect() {
+  if (syntheticDisconnectActive) return;
+  syntheticDisconnectActive = true;
+  historyCache = (historyCache || []).slice();
+  historyCache.push({
+    status: "DEVICE DISCONNECTED",
+    voltage: 0, current: 0, temp: 0,
+    cycle_nmse: 0, zcv: 0, thd_i: 0,
+    ts_epoch_ms: Date.now()
+  });
+  applyHistoryFilter();
 }
 
 // ---------- Range filter ----------
@@ -272,7 +284,7 @@ function applyHistoryFilter() {
   if (historyHint) historyHint.textContent = `Showing: ${rangeLabel(key)} (${filtered.length})`;
 
   if (!filtered.length) {
-    historyBody.innerHTML = `<tr><td colspan="8" class="muted">No fault history in this range.</td></tr>`;
+    historyBody.innerHTML = `<tr><td colspan="8" class="muted">No history in this range.</td></tr>`;
     return;
   }
 
@@ -361,11 +373,9 @@ async function showFaultNotification(title, body){
 // ---------- LIVE DATA ----------
 db.ref("live_data").on("value", (snap) => {
   const data = snap.val();
-  if (!data) {
-    clearLiveData(true);
-    return;
-  }
+  if (!data) return;
 
+  syntheticDisconnectActive = false;
   lastSeenMs = Date.now();
 
   // device IP line
@@ -444,10 +454,21 @@ db.ref("live_data").on("value", (snap) => {
 
 }, (err) => {
   console.error(err);
-  setTopStatus("DISCONNECTED");
-  clearLiveData(true);
+  setTopStatus("DEVICE DISCONNECTED");
   if (lastUpdateText) lastUpdateText.textContent = "—";
+  if (deviceIpLine) deviceIpLine.style.display = "none";
 });
+
+setInterval(() => {
+  if (!lastSeenMs) return;
+  if ((Date.now() - lastSeenMs) > STALE_MS) {
+    setTopStatus("DEVICE DISCONNECTED");
+    if (lastUpdateText) lastUpdateText.textContent = "—";
+    if (deviceIpLine) deviceIpLine.style.display = "none";
+    setLiveZeroes();
+    injectSyntheticDisconnect();
+  }
+}, 1000);
 
 // ---------- HISTORY ----------
 db.ref("history")
@@ -570,13 +591,12 @@ if (btnClearHistory) {
 // ---------- Disconnected watchdog ----------
 setInterval(() => {
   if (!lastSeenMs) {
-    setTopStatus("DISCONNECTED");
-    clearLiveData(true);
+    setTopStatus("DEVICE DISCONNECTED");
     return;
   }
   if (Date.now() - lastSeenMs > STALE_MS) {
-    setTopStatus("DISCONNECTED");
-    clearLiveData(true);
+    setTopStatus("DEVICE DISCONNECTED");
+    if (deviceIpLine) deviceIpLine.style.display = "none";
   }
 }, 500);
 
@@ -655,6 +675,8 @@ const mlLabelOverride = el("mlLabelOverride");
 const btnDownloadSessionMl = el("btnDownloadSessionMl");
 const btnDownloadAllMl = el("btnDownloadAllMl");
 const btnClearMlLogs = el("btnClearMlLogs");
+const btnUploadCsv = el("btnUploadCsv");
+const mlCsvUpload = el("mlCsvUpload");
 
 const mlLogStatus = el("mlLogStatus");
 const mlSessionBody = el("mlSessionBody");
@@ -680,6 +702,14 @@ function labelText(v) {
   if (String(v) === "1") return "ARC";
   if (String(v) === "0") return "NORMAL";
   return "AUTO";
+}
+function durationText(meta) {
+  const st = Number(meta?.start_ms || 0);
+  const en = Number(meta?.end_ms || 0);
+  if (!st) return "—";
+  const durMs = (en > st ? en : Date.now()) - st;
+  const sec = Math.max(0, Math.round(durMs / 1000));
+  return `${sec}s`;
 }
 
 async function fetchSessionCsv(sessionId) {
@@ -814,11 +844,13 @@ if (mlSessionBody) {
           <td class="mono">${sid}</td>
           <td class="mono">${st}</td>
           <td class="mono">${en}</td>
+          <td class="mono">${durationText(meta)}</td>
           <td class="mono">${String(load)}</td>
           <td class="mono">${lab}</td>
-          <td>
+          <td class="session-actions">
             <button class="btn btn-small" data-view-sid="${sid}">View</button>
             <button class="btn btn-small" data-sid="${sid}">Download</button>
+            <button class="btn btn-small btn-danger" data-del-sid="${sid}">Delete</button>
           </td>
         </tr>
       `;
@@ -844,6 +876,22 @@ if (mlSessionBody) {
           window.openSessionViewer(sid, meta);
         } else {
           window.location.href = `session.html?sid=${encodeURIComponent(sid)}`;
+        }
+      });
+    });
+
+    mlSessionBody.querySelectorAll("button[data-del-sid]").forEach(btn => {
+      btn.addEventListener("click", async () => {
+        const sid = btn.getAttribute("data-del-sid");
+        if (!sid) return;
+        if (!confirm(`Delete session ${sid}? This will remove both metadata and CSV chunks.`)) return;
+        try {
+          await db.ref(`ml_logs/${sid}`).remove();
+          await db.ref(`ml_sessions/${sid}`).remove();
+          toast("Session deleted.", "ok");
+        } catch (e) {
+          console.error(e);
+          toast("Failed to delete this session.", "err");
         }
       });
     });
@@ -914,6 +962,28 @@ btnClearMlLogs?.addEventListener("click", async () => {
   } catch (e) {
     console.error(e);
     toast("Failed to clear ML logs (rules may block).", "err");
+  }
+});
+
+btnUploadCsv?.addEventListener("click", () => mlCsvUpload?.click());
+mlCsvUpload?.addEventListener("change", async (ev) => {
+  const file = ev.target?.files?.[0];
+  if (!file) return;
+  try {
+    const text = await file.text();
+    if (!text || text.indexOf(",") < 0) throw new Error("Invalid CSV");
+    const meta = { load_type: "uploaded_csv", duration_s: "—", start_ms: Date.now(), end_ms: Date.now() };
+    if (typeof window.openSessionViewerFromCsv === "function") {
+      window.openSessionViewerFromCsv(file.name, text, meta);
+      toast("CSV loaded into plot viewer.", "ok");
+    } else {
+      toast("CSV viewer is not ready yet.", "err");
+    }
+  } catch (e) {
+    console.error(e);
+    toast("Failed to load CSV.", "err");
+  } finally {
+    if (mlCsvUpload) mlCsvUpload.value = "";
   }
 });
 

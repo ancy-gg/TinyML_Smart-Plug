@@ -31,13 +31,13 @@
 
 #define API_KEY "AIzaSyAmJlZZszyWPJFgIkTAAl_TbIySys1nvEw"
 #define DATABASE_URL "tinyml-smart-plug-default-rtdb.asia-southeast1.firebasedatabase.app"
-static const char* FW_VERSION = "TSP-v0.6.5";
+static const char* FW_VERSION = "TSP-v0.6.6";
 
 static const char* OTA_DESIRED_VERSION_PATH = "/ota/desired_version";
 static const char* OTA_FIRMWARE_URL_PATH    = "/ota/firmware_url";
 static const uint32_t OTA_CHECK_INTERVAL_MS = 60000;
 static constexpr uint32_t SENSOR_BOOT_SETTLE_MS = CURRENT_BOOT_SETTLE_MS;
-static constexpr uint32_t PROTECTION_INHIBIT_MS = 5000UL;
+static constexpr uint32_t PROTECTION_INHIBIT_MS = 2500UL;
 
 OLED_NOTIF       oled(0x3C);
 NetworkManager   net;
@@ -65,6 +65,12 @@ static QueueHandle_t qFeat = nullptr;
 
 static bool gSafeMode = false;
 static volatile bool gPauseByOta = false;
+
+static float gVrms = 0.0f;
+static float gVFast = 0.0f;
+static float gTempC = 0.0f;
+static bool gBootEventLogged = false;
+static uint32_t gUnpluggedSinceMs = 0;
 
 static void handleCueEvents(float vProtect, float irms, bool paused) {
   static bool mainsPresentLast = false;
@@ -140,11 +146,46 @@ static void onOtaEvent(OtaEvent ev, int progress) {
     oled.setOta(true, (uint8_t)constrain(progress, 0, 100));
   } else if (ev == OtaEvent::SUCCESS) {
     oled.setOta(true, 100);
+    cloud.logStatusEvent("FIRMWARE UPDATED", gVrms, 0.0f, 0.0f, gTempC, &timeSync);
     actuators.notify(SND_OTA_OK);
   } else if (ev == OtaEvent::FAIL) {
     gPauseByOta = false;
     oled.setOta(false, 0);
     actuators.notify(SND_OTA_FAIL);
+  }
+}
+
+static void runStartupSequence() {
+  const uint32_t t0 = millis();
+  uint32_t lastTempMs = 0;
+  uint32_t lastRenderMs = 0;
+
+  oled.startBootSplash(STARTUP_SPLASH_MS);
+  actuators.notify(SND_BOOT);
+
+  while ((millis() - t0) < STARTUP_SPLASH_MS) {
+    float newV = voltSensor.update();
+    if (newV >= 0.0f) {
+      gVrms = newV;
+      gVFast = voltSensor.protectVrms();
+    }
+
+    if (millis() - lastTempMs >= 250U) {
+      lastTempMs = millis();
+      float newT = tempSensor.readTempC();
+      if (newT > -50.0f && newT < 150.0f) gTempC = newT;
+    }
+
+    powerHold.update(gVFast);
+
+    oled.setMeasurements(gVrms, 0.0f, 0.0f, gTempC);
+    oled.setWiFi(false, -127, false, false);
+
+    if (millis() - lastRenderMs >= 40U) {
+      lastRenderMs = millis();
+      oled.render();
+    }
+    delay(4);
   }
 }
 
@@ -162,14 +203,14 @@ static void Core0Task(void* pv) {
 
     float fs_hz = FS_TARGET_HZ;
     size_t got = curSensor.capture(s_raw, N_SAMP, &fs_hz);
-    if (got != N_SAMP) {
+    if (got != N_SAMP || fs_hz < CURRENT_FRAME_MIN_FS_HZ) {
       vTaskDelay(1);
       fs_hz = FS_TARGET_HZ;
       got = curSensor.capture(s_raw, N_SAMP, &fs_hz);
     }
 
     bool ok = false;
-    if (got == N_SAMP && fs_hz >= CURRENT_MEASURE_MIN_FS_HZ) {
+    if (got == N_SAMP && fs_hz >= CURRENT_FRAME_MIN_FS_HZ) {
       ok = arcFeat.compute(s_raw, N_SAMP, fs_hz, curCalib, MAINS_F0_HZ, out);
     }
 
@@ -267,19 +308,10 @@ void setup() {
     if (curSensor.begin()) {
       qFeat = xQueueCreate(1, sizeof(FeatureFrame));
       xTaskCreatePinnedToCore(Core0Task, "Core0Sense", 16384, nullptr, 3, nullptr, 0);
-
-      char msg[24];
-      snprintf(msg, sizeof(msg), "%s ready", currentBackendName());
-      oled.showStatus("Sensors", msg);
-    } else {
-      char msg[24];
-      snprintf(msg, sizeof(msg), "No %s", currentBackendName());
-      oled.showStatus("WARN", msg);
-      delay(700);
     }
-  } else {
-    oled.showStatus("SAFE MODE", "OTA only");
   }
+
+  runStartupSequence();
 
   net.begin([](WiFiManager* wm) {
     (void)wm;
@@ -302,14 +334,11 @@ void setup() {
   ota.setEventCallback(onOtaEvent);
   ota.setPaths(OTA_DESIRED_VERSION_PATH, OTA_FIRMWARE_URL_PATH);
   ota.setCheckInterval(OTA_CHECK_INTERVAL_MS);
-
-  oled.showStatus("System", gSafeMode ? "Safe mode" : "Ready");
 }
 
 void loop() {
   BootGuard::loop();
   net.update();
-  ota.loop();
   timeSync.update();
 
   const bool networkBlocking = net.isBlockingPhase();
@@ -318,9 +347,30 @@ void loop() {
   const bool protectionInhibit = (millis() < (SENSOR_BOOT_SETTLE_MS + PROTECTION_INHIBIT_MS));
 
   static bool lastWiFiConnected = false;
+  static uint32_t wifiConnectedAtMs = 0;
+  static bool otaCheckPending = false;
+
   const bool wifiConnected = net.isConnected();
-  if (wifiConnected && !lastWiFiConnected) actuators.notify(SND_WIFI_OK);
+  if (wifiConnected && !lastWiFiConnected) {
+    actuators.notify(SND_WIFI_OK);
+    oled.triggerConnected(WIFI_CONNECTED_HOLD_MS);
+    wifiConnectedAtMs = millis();
+    otaCheckPending = true;
+    if (!gBootEventLogged) {
+      cloud.logStatusEvent("DEVICE ON", gVrms, 0.0f, 0.0f, gTempC, &timeSync);
+      gBootEventLogged = true;
+    }
+  }
+  if (!wifiConnected) otaCheckPending = false;
   lastWiFiConnected = wifiConnected;
+
+  const bool otaWindowOpen = wifiConnected &&
+                             ((millis() - wifiConnectedAtMs) >= WIFI_CONNECTED_HOLD_MS);
+  if (otaCheckPending && otaWindowOpen) {
+    ota.requestCheckNow();
+    otaCheckPending = false;
+  }
+  if (otaWindowOpen) ota.loop();
 
   static FeatureFrame lastF = {};
   static bool hasLast = false;
@@ -335,29 +385,33 @@ void loop() {
     f.uptime_ms = millis();
   }
 
-  static float vRms = 0.0f;
-  static float vFast = 0.0f;
-  static float tC = 0.0f;
   static uint32_t tTemp = 0;
 
   float newV = voltSensor.update();
   if (newV >= 0.0f) {
-    vRms = newV;
-    vFast = voltSensor.protectVrms();
+    gVrms = newV;
+    gVFast = voltSensor.protectVrms();
   }
 
   if (millis() - tTemp >= 500) {
     tTemp = millis();
     float newT = tempSensor.readTempC();
-    if (newT > -50.0f && newT < 150.0f) tC = newT;
+    if (newT > -50.0f && newT < 150.0f) gTempC = newT;
   }
 
-  powerHold.update(vFast);
+  powerHold.update(gVFast);
 
-  f.vrms = vRms;
-  f.temp_c = tC;
+  const bool mainsGoneNow = (gVFast < MAINS_PRESENT_OFF_V);
+  if (mainsGoneNow) {
+    if (gUnpluggedSinceMs == 0) gUnpluggedSinceMs = millis();
+  } else {
+    gUnpluggedSinceMs = 0;
+  }
+  const bool unplugged = (gUnpluggedSinceMs != 0) && ((millis() - gUnpluggedSinceMs) >= 10000UL);
 
-  // Display current can remain visible, but noisy low-current feature analytics are disabled.
+  f.vrms = gVrms;
+  f.temp_c = gTempC;
+
   if (f.irms < CURRENT_IDLE_SUPPRESS_A) {
     f.irms = 0.0f;
   }
@@ -377,7 +431,7 @@ void loop() {
   }
 
   float apparentPowerVa = 0.0f;
-  if (vRms > 0.10f && f.irms > 0.001f) apparentPowerVa = vRms * f.irms;
+  if (gVrms > 0.10f && f.irms > 0.001f) apparentPowerVa = gVrms * f.irms;
 
   int pred = 0;
   if (!gSafeMode && !paused && !bootSettling && !protectionInhibit &&
@@ -394,13 +448,13 @@ void loop() {
 
   FaultState st = STATE_NORMAL;
   if (!bootSettling && !protectionInhibit && f.irms >= ARC_MIN_IRMS_A) {
-    st = faultLogic.update(tC, f.irms, f.model_pred);
+    st = faultLogic.update(gTempC, f.irms, f.model_pred);
   }
 
-  if (gSafeMode) st = STATE_NORMAL;
+  if (gSafeMode || unplugged) st = STATE_NORMAL;
 
-  actuators.apply(st, vRms, vFast, f.irms, tC);
-  handleCueEvents(vFast, f.irms, paused || gSafeMode || protectionInhibit);
+  actuators.apply(st, gVrms, gVFast, f.irms, gTempC);
+  handleCueEvents(gVFast, f.irms, paused || gSafeMode || protectionInhibit || unplugged);
 
 #if ENABLE_ML_LOGGER
   if (!paused && !gSafeMode) pollMlControl(cloud, logger, oled);
@@ -422,8 +476,8 @@ void loop() {
 
   OledOverlay ov = OledOverlay::NONE;
   if (!gPauseByOta) {
-    if (vFast >= VOLT_SURGE_TRIP_V) ov = OledOverlay::FAULT_SURGE;
-    else if (tC >= TEMP_DATA_HARD_C) ov = OledOverlay::FAULT_TEMP_CRITICAL;
+    if (gVFast >= VOLT_SURGE_TRIP_V) ov = OledOverlay::FAULT_SURGE;
+    else if (gTempC >= TEMP_DATA_HARD_C) ov = OledOverlay::FAULT_TEMP_CRITICAL;
     else if (!protectionInhibit && st == STATE_ARCING) ov = OledOverlay::FAULT_ARC;
     else if (!protectionInhibit && st == STATE_HEATING) ov = OledOverlay::FAULT_HEAT;
     else if (!protectionInhibit && (st == STATE_OVERLOAD || f.irms >= OVERLOAD_WARN_A)) ov = OledOverlay::FAULT_OVERLOAD;
@@ -431,7 +485,7 @@ void loop() {
 
   oled.setOverlay(ov);
   oled.setState(st);
-  oled.setMeasurements(vRms, f.irms, apparentPowerVa, tC);
+  oled.setMeasurements(gVrms, f.irms, apparentPowerVa, gTempC);
   oled.setWiFi(wifiConnected, net.rssi(), networkBlocking, net.inConfigPortal());
 
   static uint32_t lastOled = 0;
@@ -449,13 +503,14 @@ void loop() {
     else if (net.inConfigPortal()) stateStr = "CONFIG_PORTAL";
     else if (networkBlocking) stateStr = "WIFI_CONNECTING";
     else if (bootSettling || protectionInhibit) stateStr = "STARTUP_STABILIZING";
-    else if (vFast >= VOLT_SURGE_TRIP_V) stateStr = "SURGE";
-    else if (tC >= TEMP_DATA_HARD_C) stateStr = "TEMP_CRITICAL";
+    else if (unplugged) stateStr = "UNPLUGGED";
+    else if (gVFast >= VOLT_SURGE_TRIP_V) stateStr = "SURGE";
+    else if (gTempC >= TEMP_DATA_HARD_C) stateStr = "TEMP_CRITICAL";
     else if (f.irms >= OVERLOAD_HARD_TRIP_A) stateStr = "OVERLOAD_HARD";
     else if (gSafeMode) stateStr = "SAFE_MODE";
     else stateStr = String(stateToCstr(st));
 
-    cloud.update(vRms, f.irms, apparentPowerVa, tC,
+    cloud.update(gVrms, f.irms, apparentPowerVa, gTempC,
                  f.cycle_nmse, f.zcv, f.zc_dwell_ratio,
                  f.pulse_count_per_cycle, f.peak_fluct_cv,
                  f.midband_residual_rms, f.hf_band_energy_ratio,

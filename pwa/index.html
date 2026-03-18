@@ -117,7 +117,7 @@
     <section class="history">
       <div class="history-head">
         <div>
-          <h2 class="history-title">Fault History</h2>
+          <h2 class="history-title">History</h2>
           <div class="history-hint" id="historyHint">Showing: Last 7 days</div>
         </div>
 
@@ -149,7 +149,7 @@
             </tr>
           </thead>
           <tbody id="historyBody">
-            <tr><td colspan="8" class="muted">No fault history yet.</td></tr>
+            <tr><td colspan="8" class="muted">No history yet.</td></tr>
           </tbody>
         </table>
       </div>
@@ -231,6 +231,8 @@
 
           <button id="btnDownloadSessionMl" class="btn" type="button">Current Session</button>
           <button id="btnDownloadAllMl" class="btn" type="button">Compile</button>
+          <button id="btnUploadCsv" class="btn btn-primary" type="button">Upload CSV</button>
+          <input id="mlCsvUpload" type="file" accept=".csv,text/csv" hidden />
           <button id="btnClearMlLogs" class="btn" type="button">Clear</button>
         </div>
       </div>
@@ -244,6 +246,7 @@
               <th>Session</th>
               <th>Start</th>
               <th>End</th>
+              <th>Duration</th>
               <th>Load</th>
               <th>Label</th>
               <th>Action</th>

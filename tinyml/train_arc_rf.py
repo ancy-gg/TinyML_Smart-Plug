@@ -16,7 +16,9 @@ DEFAULT_CSV = r"tinyml/Arcfault_dataset.csv"
 OUT_HEADER = r"tinyml/TinyML_RF.h"
 OUT_JOBLIB = r"tinyml/TinyML_RF.joblib"
 
-# Must exactly match firmware order in ArcModel.h and DataLogger.csv header.
+# Must exactly match firmware order in ArcModel.h.
+# Context columns such as v_rms, i_rms, and temp_c may remain in the CSV for analysis,
+# but the RF model is trained only on the main 10 arc features.
 FEATURES = [
     "cycle_nmse",
     "zcv",
@@ -28,9 +30,6 @@ FEATURES = [
     "wpe_entropy",
     "spec_entropy",
     "thd_i",
-    "v_rms",
-    "i_rms",
-    "temp_c",
 ]
 TARGET = "label_arc"
 GROUP_COL_CANDIDATES = ["session_id", "session", "sid"]

@@ -17,7 +17,7 @@ static inline int ArcPredict(float cycle_nmse, float zcv, float zc_dwell_ratio,
                              float v_rms, float i_rms, float temp_c) {
 #if defined(USE_M2CGEN_RF) && !defined(DATA_COLLECTION_MODE)
   (void)temp_c;
-  double input_features[13] = {
+  double input_features[10] = {
     (double)cycle_nmse,
     (double)zcv,
     (double)zc_dwell_ratio,
@@ -27,10 +27,7 @@ static inline int ArcPredict(float cycle_nmse, float zcv, float zc_dwell_ratio,
     (double)hf_band_energy_ratio,
     (double)wpe_entropy,
     (double)spec_entropy,
-    (double)thd_i,
-    (double)v_rms,
-    (double)i_rms,
-    (double)temp_c
+    (double)thd_i
   };
   double output_probs[2];
   arc_rf_predict(input_features, output_probs);
@@ -40,34 +37,54 @@ static inline int ArcPredict(float cycle_nmse, float zcv, float zc_dwell_ratio,
   if (v_rms < FEATURE_MIN_VRMS) return 0;
   if (i_rms < ARC_MIN_IRMS_A) return 0;
 
-  // Distorted but steady charger/SMPS guard.
-  if (thd_i >= THD_STEADY_GUARD_PCT &&
-      cycle_nmse < LOW_UNCERT_CYCLE_NMSE &&
-      zcv < LOW_UNCERT_ZCV_MS &&
-      pulse_count_per_cycle < LOW_UNCERT_PULSE_DENS) {
-    return 0;
-  }
+  const bool nmseH  = (cycle_nmse >= CYCLE_NMSE_ARC_H);
+  const bool zcvH   = (zcv >= ZCV_ARC_H_MS);
+  const bool dwellH = (zc_dwell_ratio >= ZC_DWELL_ARC_H);
+  const bool pulseH = (pulse_count_per_cycle >= PULSE_DENS_ARC_H);
+
+  const bool peakH  = (peak_fluct_cv >= PEAK_FLUCT_ARC_H);
+  const bool midH   = (midband_residual_rms >= MIDBAND_RESID_ARC_H);
+  const bool hfH    = (hf_band_energy_ratio >= HF_ENERGY_ARC_H);
+  const bool wpeH   = (wpe_entropy >= WPE_ENT_ARC_H);
+  const bool specH  = (spec_entropy >= SPEC_ENT_ARC_H);
+
+  // Steady distorted switching loads are allowed to look "ugly" in THD
+  // as long as they are not also pulse-rich and broadband-erratic.
+  const bool smpsSteadyGuard =
+      (thd_i >= THD_STEADY_GUARD_PCT) &&
+      (zc_dwell_ratio >= SMPS_GUARD_ZC_DWELL_H) &&
+      (pulse_count_per_cycle <= SMPS_GUARD_PULSE_MAX) &&
+      (peak_fluct_cv <= SMPS_GUARD_PEAK_FLUCT_H) &&
+      (hf_band_energy_ratio <= SMPS_GUARD_HF_MAX) &&
+      (spec_entropy <= SMPS_GUARD_SPEC_MAX) &&
+      (midband_residual_rms <= SMPS_GUARD_MIDBAND_MAX) &&
+      (zcv <= SMPS_GUARD_ZCV_MAX_MS) &&
+      (cycle_nmse <= SMPS_GUARD_NMSE_MAX);
+
+  if (smpsSteadyGuard) return 0;
+
+  const bool temporalAbnormal = nmseH || zcvH || peakH;
+  const bool zeroCrossAbnormal = zcvH || dwellH;
+  const bool broadbandAbnormal = pulseH || midH || hfH || wpeH || specH;
 
   int mainScore = 0;
   int supportScore = 0;
 
-  if (cycle_nmse >= CYCLE_NMSE_ARC_H)        mainScore++;
-  if (zcv >= ZCV_ARC_H_MS)                   mainScore++;
-  if (zc_dwell_ratio >= ZC_DWELL_ARC_H)      mainScore++;
-  if (pulse_count_per_cycle >= PULSE_DENS_ARC_H) mainScore++;
+  if (nmseH)  mainScore += 2;
+  if (zcvH)   mainScore += 2;
+  if (dwellH) mainScore += 1;
+  if (pulseH) mainScore += 2;
 
-  if (peak_fluct_cv >= PEAK_FLUCT_ARC_H)         supportScore++;
-  if (midband_residual_rms >= MIDBAND_RESID_ARC_H) supportScore++;
-  if (hf_band_energy_ratio >= HF_ENERGY_ARC_H)     supportScore++;
-  if (wpe_entropy >= WPE_ENT_ARC_H)                supportScore++;
-  if (spec_entropy >= SPEC_ENT_ARC_H)              supportScore++;
+  if (peakH) supportScore++;
+  if (midH)  supportScore++;
+  if (hfH)   supportScore++;
+  if (wpeH)  supportScore++;
+  if (specH) supportScore++;
 
-  const bool strongMain = (mainScore >= 3);
-  const bool broadSupport = (supportScore >= 2);
-  const bool pulsePlusSpectrum =
-      (pulse_count_per_cycle >= PULSE_DENS_ARC_H) &&
-      ((hf_band_energy_ratio >= HF_ENERGY_ARC_H) || (midband_residual_rms >= MIDBAND_RESID_ARC_H));
+  const bool pulseSpectralCombo = pulseH && (midH || hfH || specH);
+  const bool broadConsensus = temporalAbnormal && zeroCrossAbnormal && broadbandAbnormal;
+  const bool strongWeighted = (mainScore >= 4) && (supportScore >= 2);
 
-  return (strongMain && (broadSupport || pulsePlusSpectrum)) ? 1 : 0;
+  return (broadConsensus && (strongWeighted || pulseSpectralCombo)) ? 1 : 0;
 #endif
 }

@@ -27,6 +27,7 @@ public:
   bool getInt(const char* path, int& out);
 
   bool pushJSON(const char* path, FirebaseJson& json);
+  bool logStatusEvent(const String& status, float v, float c, float apparentPower, float t, TimeSync* time);
 
 private:
   FirebaseData fbdo;
@@ -39,7 +40,16 @@ private:
 
   String _lastSentLiveState = "";
   String _lastLoggedFaultState = "";
+  String _lastHourlyNormalKey = "";
   String _fwVersion = "—";
+
+  bool pushHistoryRecord(const String& status, float v, float c, float apparentPower, float t,
+                         float cycle_nmse, float zcv, float zc_dwell_ratio,
+                         float pulse_count_per_cycle, float peak_fluct_cv,
+                         float midband_residual_rms, float hf_band_energy_ratio,
+                         float wpe_entropy, float spec_entropy, float thd_i,
+                         uint8_t model_pred,
+                         TimeSync* time);
 };
 
 #endif

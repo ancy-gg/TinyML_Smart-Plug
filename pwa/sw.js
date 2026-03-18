@@ -1,4 +1,4 @@
-const BUILD_VERSION = "TSPweb-v1.1.3";
+const BUILD_VERSION = "TSPweb-v1.6.0";
 
 const CACHE_NAME = BUILD_VERSION;
 

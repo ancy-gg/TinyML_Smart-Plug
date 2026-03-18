@@ -39,6 +39,8 @@ public:
   void setOta(bool active, uint8_t progress = 0);
   void setOverlay(OledOverlay overlay);
   void clearOverlay();
+  void startBootSplash(uint32_t durMs = 3000UL);
+  void triggerConnected(uint32_t durMs = 900UL);
   void render();
   void showStatus(const char* title, const char* msg);
   void clear();
@@ -62,21 +64,27 @@ private:
   uint8_t _otaProgress = 0;
   uint32_t _collectUntilMs = 0;
   uint32_t _noPowerSinceMs = 0;
+  uint32_t _bootUntilMs = 0;
+  uint32_t _bootStartedMs = 0;
+  uint32_t _connectedUntilMs = 0;
   OledOverlay _overlay = OledOverlay::NONE;
 
   void drawDashboard(uint32_t nowMs);
   void drawWiFiWait(uint32_t nowMs, bool portal);
+  void drawConnected(uint32_t nowMs);
+  void drawStartup(uint32_t nowMs);
   void drawCollecting(uint32_t nowMs);
   void drawOta(uint32_t nowMs);
   void drawUnplugged(uint32_t nowMs);
   void drawFaultSlide(uint32_t nowMs, OledOverlay ov);
 
   void drawWiFiBars(int x, int y, int bars, bool crossed);
-  void drawCenteredText(const char* txt, int y, uint8_t size, int minX = 0);
-  void drawPlugXIcon(int cx, int cy, bool blinkOn);
-  void drawArcIcon(int x, int y, bool blinkOn);
-  void drawUpArrow(int x, int y, int phase);
-  void drawFireIcon(int x, int y, int sway);
+  void drawLogoBitmap(int x, int y, bool invert = false);
+  void drawBoltIcon(int x, int y, int phase);
+  void drawArrowUpIcon(int x, int y, int phase);
+  void drawFireIcon(int x, int y, int phase);
+  void drawTextRight(int rightX, int y, const char* txt, uint8_t size = 1);
+  void drawTextCentered(int cx, int y, const char* txt, uint8_t size = 1);
 };
 
 #endif

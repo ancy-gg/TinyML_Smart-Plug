@@ -87,7 +87,7 @@ bool CurrentSensor::begin() {
 
   (void)spi_device_acquire_bus(_dev, portMAX_DELAY);
   digitalWrite(PIN_ADC_CS, HIGH);
-  delayMicroseconds(100);
+  delayMicroseconds(80);
 
   for (uint16_t i = 0; i < MCP3204_STARTUP_FLUSH; ++i) {
     (void)spi_device_polling_transmit(_dev, &t);
@@ -113,16 +113,14 @@ size_t CurrentSensor::capture(uint16_t* dst, size_t n, float* measuredFsHz) {
 
   if (warmupBurstsRemaining > 0) {
     digitalWrite(PIN_ADC_CS, HIGH);
-    delayMicroseconds(40);
-    for (int i = 0; i < 128; ++i) {
+    delayMicroseconds(25);
+    for (uint8_t i = 0; i < MCP3204_BURST_FLUSH; ++i) {
       (void)spi_device_polling_transmit(_dev, &t);
     }
     warmupBurstsRemaining--;
   }
 
-  // Throw away a few first conversions on every burst.
-  // This helps the temporary MCP path settle after long idle gaps.
-  for (uint8_t i = 0; i < MCP3204_BURST_DISCARD; ++i) {
+  for (uint8_t i = 0; i < MCP3204_BURST_FLUSH; ++i) {
     (void)spi_device_polling_transmit(_dev, &t);
   }
 
@@ -131,7 +129,7 @@ size_t CurrentSensor::capture(uint16_t* dst, size_t n, float* measuredFsHz) {
     uint8_t good = 0;
 
     for (uint8_t o = 0; o < overs; ++o) {
-      esp_err_t e = spi_device_polling_transmit(_dev, &t);
+      const esp_err_t e = spi_device_polling_transmit(_dev, &t);
       if (e != ESP_OK) break;
       acc += (uint32_t)mcpExtract12(t);
       good++;
