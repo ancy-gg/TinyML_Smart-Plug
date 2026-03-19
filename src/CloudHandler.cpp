@@ -2,6 +2,18 @@
 #include "SmartPlugConfig.h"
 #include <time.h>
 
+static String powerConditionForState(const String& state, float v) {
+  if (state == "UNPLUGGED" || v < MAINS_PRESENT_ON_V) return "UNPLUGGED";
+  if (state == "OVERVOLTAGE" || v >= VOLT_OVERVOLT_TRIP_V) return "OVERVOLTAGE";
+  if (state == "UNDERVOLTAGE" || (v > VOLT_UNDERVOLT_MIN_V && v < VOLT_UNDERVOLT_MAX_V)) return "UNDERVOLTAGE";
+  return "NORMAL";
+}
+
+static bool isTransitionState(const String& state) {
+  return state == "STARTUP_STABILIZING" || state == "WIFI_CONNECTING" || state == "CONFIG_PORTAL" ||
+         state == "OTA_UPDATING" || state == "SAFE_MODE";
+}
+
 void CloudHandler::begin(const char* apiKey, const char* dbUrl) {
   (void)apiKey;
   config.database_url = dbUrl;
@@ -65,6 +77,7 @@ bool CloudHandler::pushHistoryRecord(const String& status, float v, float c, flo
 
   FirebaseJson json;
   json.set("wifi_connected", WiFi.status() == WL_CONNECTED);
+  json.set("wifi_rssi", (int)WiFi.RSSI());
   json.set("ip", WiFi.localIP().toString());
   json.set("mdns", "tinyml-smart-plug.local");
   json.set("ota_ready", WiFi.status() == WL_CONNECTED);
@@ -89,6 +102,8 @@ bool CloudHandler::pushHistoryRecord(const String& status, float v, float c, flo
   json.set("model_pred", (int)model_pred);
   json.set("status", status);
 
+  json.set("mains_present", v >= MAINS_PRESENT_ON_V);
+  json.set("power_condition", powerConditionForState(status, v));
   json.set("ts_epoch_ms", (double)epochMs);
   json.set("ts_iso", iso);
   json.set("uptime_ms", (int)millis());
@@ -135,8 +150,15 @@ void CloudHandler::update(float v, float c, float apparentPower, float t,
     iso = time->nowISO8601Ms();
   }
 
+  const bool mainsPresent = (v >= MAINS_PRESENT_ON_V);
+  const String powerCondition = powerConditionForState(state, v);
+  String devicePhase = "ACTIVE";
+  if (isTransitionState(state)) devicePhase = state;
+  else if (state == "UNPLUGGED") devicePhase = "UNPLUGGED";
+
   FirebaseJson json;
   json.set("wifi_connected", WiFi.status() == WL_CONNECTED);
+  json.set("wifi_rssi", (int)WiFi.RSSI());
   json.set("ip", WiFi.localIP().toString());
   json.set("mdns", "tinyml-smart-plug.local");
   json.set("ota_ready", WiFi.status() == WL_CONNECTED);
@@ -160,6 +182,12 @@ void CloudHandler::update(float v, float c, float apparentPower, float t,
 
   json.set("model_pred", (int)model_pred);
   json.set("status", state);
+  json.set("device_online", true);
+  json.set("mains_present", mainsPresent);
+  json.set("power_condition", powerCondition);
+  json.set("device_phase", devicePhase);
+  json.set("last_transition", _lastTransitionEvent);
+  json.set("last_transition_epoch_ms", (double)_lastTransitionEpochMs);
 
   json.set("ts_epoch_ms", (double)epochMs);
   json.set("ts_iso", iso);
@@ -170,6 +198,17 @@ void CloudHandler::update(float v, float c, float apparentPower, float t,
 
   String historyStatus = "";
   bool pushHistory = false;
+
+  if (!_bootEventLogged && mainsPresent && !isTransitionState(state) && state != "UNPLUGGED") {
+    _bootEventLogged = true;
+    _lastTransitionEvent = "DEVICE ON";
+    _lastTransitionEpochMs = epochMs;
+    logStatusEvent(_lastTransitionEvent, v, c, apparentPower, t, time);
+  } else if (_haveLastMains && !_lastMainsPresent && mainsPresent && !isTransitionState(state) && state != "UNPLUGGED") {
+    _lastTransitionEvent = "DEVICE PLUGGED IN";
+    _lastTransitionEpochMs = epochMs;
+    logStatusEvent(_lastTransitionEvent, v, c, apparentPower, t, time);
+  }
 
   if (state == "ARCING" || state == "HEATING" || state == "OVERLOAD" ||
       state == "UNDERVOLTAGE" || state == "OVERVOLTAGE" ||
@@ -199,8 +238,6 @@ void CloudHandler::update(float v, float c, float apparentPower, float t,
         pushHistory = true;
       }
     }
-  } else {
-    // Startup / Wi-Fi transitional states stay live-only.
   }
 
   if (pushHistory && historyStatus.length()) {
@@ -211,4 +248,7 @@ void CloudHandler::update(float v, float c, float apparentPower, float t,
                       wpe_entropy, spec_entropy, thd_i,
                       model_pred, time);
   }
+
+  _haveLastMains = true;
+  _lastMainsPresent = mainsPresent;
 }

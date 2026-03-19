@@ -43,6 +43,12 @@ private:
   String _lastHourlyNormalKey = "";
   String _fwVersion = "—";
 
+  bool _bootEventLogged = false;
+  bool _haveLastMains = false;
+  bool _lastMainsPresent = false;
+  String _lastTransitionEvent = "";
+  uint64_t _lastTransitionEpochMs = 0;
+
   bool pushHistoryRecord(const String& status, float v, float c, float apparentPower, float t,
                          float cycle_nmse, float zcv, float zc_dwell_ratio,
                          float pulse_count_per_cycle, float peak_fluct_cv,

@@ -16,7 +16,7 @@
 #endif
 
 #ifndef COLLECTION_ONLY_MODE
-#define COLLECTION_ONLY_MODE 0
+#define COLLECTION_ONLY_MODE 0    //0 for Relay Trips, 1 for No Trips
 #endif
 
 #ifndef ENABLE_AUTO_ARC_CAPTURE

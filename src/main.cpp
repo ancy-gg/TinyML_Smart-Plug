@@ -31,7 +31,7 @@
 
 #define API_KEY "AIzaSyAmJlZZszyWPJFgIkTAAl_TbIySys1nvEw"
 #define DATABASE_URL "tinyml-smart-plug-default-rtdb.asia-southeast1.firebasedatabase.app"
-static const char* FW_VERSION = "TSP-v0.6.7";
+static const char* FW_VERSION = "TSP-v1.0.0-protect";
 
 static const char* OTA_DESIRED_VERSION_PATH = "/ota/desired_version";
 static const char* OTA_FIRMWARE_URL_PATH    = "/ota/firmware_url";
@@ -141,6 +141,7 @@ static void onOtaEvent(OtaEvent ev, int progress) {
   } else if (ev == OtaEvent::SUCCESS) {
     oled.setOta(true, 100);
     actuators.notify(SND_OTA_OK);
+    cloud.logStatusEvent("FIRMWARE UPDATED", 0.0f, 0.0f, 0.0f, 0.0f, &timeSync);
   } else if (ev == OtaEvent::FAIL) {
     gPauseByOta = false;
     oled.setOta(false, 0);

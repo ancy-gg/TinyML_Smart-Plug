@@ -234,7 +234,7 @@ void OLED_NOTIF::drawUnplugged(uint32_t nowMs) {
     display->drawLine(12, 28, 36, 4, SSD1306_WHITE);
   }
   display->setCursor(50, 12);
-  display->print("UNPLUG");
+  display->print("UNPLUGGED");
 }
 
 void OLED_NOTIF::drawFaultSlide(uint32_t nowMs, OledOverlay ov) {
