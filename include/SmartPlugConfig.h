@@ -1,5 +1,6 @@
 #pragma once
 #include <Arduino.h>
+#include <math.h>
 
 #define USE_M2CGEN_RF
 
@@ -16,7 +17,7 @@
 #endif
 
 #ifndef COLLECTION_ONLY_MODE
-#define COLLECTION_ONLY_MODE 0    //0 for Relay Trip Protection, 1 for No Trips
+#define COLLECTION_ONLY_MODE 0    //0 for Relay Trips, 1 for No Trips
 #endif
 
 #ifndef ENABLE_AUTO_ARC_CAPTURE
@@ -49,12 +50,7 @@ static constexpr float    MAINS_F0_HZ  = 60.0f;
 static constexpr uint32_t WIFI_BOOT_BLOCK_MS      = 10000UL;
 static constexpr uint32_t WIFI_CONNECT_TIMEOUT_MS = 10000UL;
 static constexpr uint32_t WIFI_PORTAL_TIMEOUT_MS  = 180000UL;
-static constexpr uint8_t  WIFI_TRIPLE_TAP_COUNT   = 3;
-
-// Relay / alarm behavior with external hardware fault latch.
-// The MCU may request a trip, but it must not behave like a user relay toggle.
-static constexpr bool HARDWARE_FAULT_LATCH = true;
-static constexpr uint32_t FAULT_ALERT_MIN_MS = 2000UL;
+static constexpr uint8_t  WIFI_TRIPLE_TAP_COUNT   = 2;
 
 // =========================
 // Protection thresholds
@@ -80,6 +76,8 @@ static constexpr float VOLT_SURGE_TRIP_V    = VOLT_OVERVOLT_TRIP_V;
 
 static constexpr float MAINS_PRESENT_OFF_V  = 12.0f;
 static constexpr float MAINS_PRESENT_ON_V   = 25.0f;
+static constexpr uint32_t MAINS_EDGE_DEBOUNCE_MS = 1000UL;
+
 
 // Battery hold / outage shutdown
 static constexpr uint32_t OUTAGE_SHUTDOWN_MS         = 10UL * 60UL * 1000UL;
@@ -96,6 +94,7 @@ static constexpr int ARC_CNT_TRIP = 10;
 static constexpr int ARC_CNT_MAX  = 20;
 static constexpr uint32_t ARC_HOLD_MS  = 800;
 static constexpr uint32_t HEAT_HOLD_MS = 1200;
+static constexpr uint32_t FAULT_ALERT_MIN_MS = 2000UL;
 
 static constexpr int HEAT_FRAMES_TRIP = 6;
 static constexpr int HEAT_FRAMES_DEC  = 1;
@@ -341,6 +340,23 @@ static inline float eval_cubic_horner(float x, float c3, float c2, float c1, flo
   return (((c3 * x) + c2) * x + c1) * x + c0;
 }
 
+static inline float eval_cubic_signed_mag(float x, float c3, float c2, float c1, float c0) {
+  const float mag = fabsf(x);
+  float y = eval_cubic_horner(mag, c3, c2, c1, c0);
+  if (y < 0.0f) y = 0.0f;
+  return (x < 0.0f) ? -y : y;
+}
+
+static constexpr float CURRENT_CAL_C3 = 0.00368415f;
+static constexpr float CURRENT_CAL_C2 = -0.0399220f;
+static constexpr float CURRENT_CAL_C1 = 1.3402f;
+static constexpr float CURRENT_CAL_C0 = -0.0433349f;
+
+static constexpr float VOLTAGE_CAL_C3 = 0.00000122081f;
+static constexpr float VOLTAGE_CAL_C2 = -0.000503178f;
+static constexpr float VOLTAGE_CAL_C1 = 1.05726f;
+static constexpr float VOLTAGE_CAL_C0 = -0.495263f;
+
 // =========================
 // Current calibration
 // =========================
@@ -357,18 +373,18 @@ struct CurrentCalib {
   float voltsPerAmp  = 0.100f;
   float ampsScale    = 0.790f;
 
-  float cubic3 = 0.0f;
-  float cubic2 = 0.0f;
-  float cubic1 = 1.0f;
-  float cubic0 = 0.0f;
+  float cubic3 = CURRENT_CAL_C3;
+  float cubic2 = CURRENT_CAL_C2;
+  float cubic1 = CURRENT_CAL_C1;
+  float cubic0 = CURRENT_CAL_C0;
 };
 
 struct VoltageCalib {
   float sensitivity  = 580.0f;
-  float cubic3 = 0.0f;
-  float cubic2 = 0.0f;
-  float cubic1 = 1.0f;
-  float cubic0 = 0.0f;
+  float cubic3 = VOLTAGE_CAL_C3;
+  float cubic2 = VOLTAGE_CAL_C2;
+  float cubic1 = VOLTAGE_CAL_C1;
+  float cubic0 = VOLTAGE_CAL_C0;
 };
 
 // =========================

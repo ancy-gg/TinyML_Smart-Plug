@@ -1,5 +1,4 @@
 #include "OLED_NOTIF.h"
-#include "SmartPlugConfig.h"
 #include <math.h>
 
 static const uint8_t PROGMEM kBootLogo24x24[] = {
@@ -205,9 +204,15 @@ void OLED_NOTIF::drawConnected(uint32_t nowMs) {
 
 void OLED_NOTIF::drawWiFiWait(uint32_t nowMs, bool portal) {
   const int phase = (nowMs / 200U) % 4;
+  if (portal) {
+    drawCenteredText("SETTING", 6, 1);
+    drawCenteredText("WIFI", 18, 1);
+    drawWiFiBars(102, 10, phase + 1, false);
+    return;
+  }
   drawWiFiBars(6, 2, phase + 1, false);
   drawCenteredText("WIFI", 9, 1);
-  drawCenteredText(portal ? "PORTAL" : "CONNECTING", 19, 1);
+  drawCenteredText("CONNECTING", 19, 1);
 }
 
 void OLED_NOTIF::drawCollecting(uint32_t nowMs) {
@@ -283,7 +288,7 @@ void OLED_NOTIF::drawFaultSlide(uint32_t nowMs, OledOverlay ov) {
 
 void OLED_NOTIF::render() {
   const uint32_t now = millis();
-  if (_voltage <= MAINS_PRESENT_OFF_V) {
+  if (_voltage <= 0.2f) {
     if (_noPowerSinceMs == 0) _noPowerSinceMs = now;
   } else {
     _noPowerSinceMs = 0;

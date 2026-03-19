@@ -35,9 +35,8 @@ private:
   bool _tapCleared = false;
   uint32_t _phaseStartMs = 0;
   uint32_t _portalStartMs = 0;
-  void (*_userApCb)(WiFiManager*) = nullptr;
-
   void startPortal_();
+  void (*_userApCb)(WiFiManager*) = nullptr;
 
   static NetworkManager* s_inst;
   static void apTrampoline(WiFiManager* wmgr);

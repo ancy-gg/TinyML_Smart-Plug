@@ -3,9 +3,11 @@
 #include <time.h>
 
 static String powerConditionForState(const String& state, float v) {
-  if (state == "UNPLUGGED" || v < MAINS_PRESENT_ON_V) return "UNPLUGGED";
+  if (state == "ARCING" || state == "HEATING" || state == "OVERLOAD") return state;
+  if (state == "UNPLUGGED") return "UNPLUGGED";
   if (state == "OVERVOLTAGE" || v >= VOLT_OVERVOLT_TRIP_V) return "OVERVOLTAGE";
   if (state == "UNDERVOLTAGE" || (v > VOLT_UNDERVOLT_MIN_V && v < VOLT_UNDERVOLT_MAX_V)) return "UNDERVOLTAGE";
+  if (v <= MAINS_PRESENT_OFF_V) return "UNPLUGGED";
   return "NORMAL";
 }
 

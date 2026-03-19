@@ -8,7 +8,8 @@ NetworkManager* NetworkManager::s_inst = nullptr;
 
 void NetworkManager::startPortal_() {
   WiFi.mode(WIFI_AP_STA);
-  wm.startConfigPortal("TinyML SmartPlug");
+  _portalStarted = false;
+  wm.startConfigPortal("TinyML-SmartPlug");
   _phase = PHASE_PORTAL_ACTIVE;
   _portalStarted = true;
   _portalStartMs = millis();
@@ -42,14 +43,16 @@ void NetworkManager::begin(void (*apCallback)(WiFiManager*)) {
 
   WiFi.persistent(true);
   WiFi.setSleep(false);
+  WiFi.setAutoReconnect(true);
 
   if (_portalRequested) {
     startPortal_();
-  } else {
-    WiFi.mode(WIFI_STA);
-    WiFi.begin(); // use stored credentials only; do not start portal here
-    _phase = PHASE_CONNECTING;
+    return;
   }
+
+  WiFi.mode(WIFI_STA);
+  WiFi.begin();
+  _phase = PHASE_CONNECTING;
 }
 
 void NetworkManager::update() {
@@ -69,8 +72,23 @@ void NetworkManager::update() {
       return;
     }
     if ((now - _phaseStartMs) >= WIFI_CONNECT_TIMEOUT_MS) {
-      startPortal_();
+      _phase = PHASE_TIMEOUT;
+      _phaseStartMs = now;
       return;
+    }
+    return;
+  }
+
+  if (_phase == PHASE_TIMEOUT) {
+    if (WiFi.status() == WL_CONNECTED) {
+      _phase = PHASE_CONNECTED;
+      return;
+    }
+    if ((now - _phaseStartMs) >= 15000UL) {
+      WiFi.mode(WIFI_STA);
+      WiFi.begin();
+      _phase = PHASE_CONNECTING;
+      _phaseStartMs = now;
     }
     return;
   }
@@ -86,6 +104,7 @@ void NetworkManager::update() {
 
     if (_portalStartMs && (now - _portalStartMs) >= WIFI_PORTAL_TIMEOUT_MS) {
       _phase = PHASE_TIMEOUT;
+      _phaseStartMs = now;
       WiFi.softAPdisconnect(true);
       return;
     }
@@ -97,8 +116,6 @@ bool NetworkManager::isConnected() const {
 }
 
 bool NetworkManager::isBlockingPhase() const {
-  // Do not permanently block the device while merely waiting for someone to join the AP.
-  // Only the initial STA connect window and an active portal should block normal logic.
   return (_phase == PHASE_CONNECTING) || (_phase == PHASE_PORTAL_ACTIVE);
 }
 

@@ -282,32 +282,56 @@ void Actuators::apply(FaultState st, float vDisplay, float vProtect, float i, fl
   else if (overloadActive) wantedFaultSound = SND_FAULT_OVER;
 
   if (wantedFaultSound != 255) {
-    if (wantedFaultSound != s_lastFaultSound) {
-      s_lastFaultSound = wantedFaultSound;
+    if (wantedFaultSound != s_faultHoldSound) {
       s_faultHoldSound = wantedFaultSound;
       s_faultHoldUntil = now + FAULT_ALERT_MIN_MS;
-      soundStart(wantedFaultSound);
-    } else {
-      s_faultHoldSound = wantedFaultSound;
-      if (s_activeId == 255 || !isFaultPattern(s_activeId)) soundStart(wantedFaultSound);
+    } else if ((int32_t)(s_faultHoldUntil - now) < 0) {
+      s_faultHoldUntil = now + FAULT_ALERT_MIN_MS;
     }
+    s_lastFaultSound = wantedFaultSound;
+    soundStart(wantedFaultSound);
   } else {
     s_lastFaultSound = 255;
-    if (s_faultHoldSound != 255 && now >= s_faultHoldUntil) {
+    if (s_faultHoldSound != 255 && (int32_t)(s_faultHoldUntil - now) > 0) {
+      soundStart(s_faultHoldSound);
+    } else {
       s_faultHoldSound = 255;
+      s_faultHoldUntil = 0;
       if (isFaultPattern(s_activeId)) soundStop();
     }
   }
 
-  soundLoop();
+  static bool mainsStable = false;
+  static bool mainsInit = false;
+  static int8_t mainsCandidate = -1;
+  static uint32_t mainsCandidateSince = 0;
 
-  if (s_faultHoldSound != 255 && s_activeId == 255 && (wantedFaultSound != 255 || now < s_faultHoldUntil)) {
-    soundStart(s_faultHoldSound);
+  const bool rawOn = (vProtect >= MAINS_PRESENT_ON_V);
+  const bool rawOff = (vProtect <= MAINS_PRESENT_OFF_V);
+
+  if (!mainsInit) {
+    mainsStable = rawOn;
+    mainsInit = true;
   }
 
-  static bool mainsWasOn = false;
-  const bool mainsOn = (vProtect >= MAINS_PRESENT_ON_V);
-  if (mainsWasOn && !mainsOn) notify(SND_MAINS_LOST);
-  mainsWasOn = mainsOn;
+  int8_t target = -1;
+  if (rawOn) target = 1;
+  else if (rawOff) target = 0;
 
+  if (target >= 0 && target != (mainsStable ? 1 : 0)) {
+    if (mainsCandidate != target) {
+      mainsCandidate = target;
+      mainsCandidateSince = now;
+    } else if ((now - mainsCandidateSince) >= MAINS_EDGE_DEBOUNCE_MS) {
+      mainsStable = (target != 0);
+      mainsCandidate = -1;
+      mainsCandidateSince = 0;
+      notify(mainsStable ? SND_MAINS_RESTORED : SND_MAINS_LOST);
+    }
+  } else if (target == (mainsStable ? 1 : 0)) {
+    mainsCandidate = -1;
+    mainsCandidateSince = 0;
+  }
+
+  soundLoop();
 }

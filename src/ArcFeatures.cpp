@@ -31,7 +31,7 @@ static inline float codeToCurrentA(uint16_t code, const CurrentCalib& cal) {
   const float v_adc = (float(code) * cal.adcFullScaleV) / 65535.0f;
   const float v_sensor = (cal.dividerRatio > 1e-9f) ? (v_adc / cal.dividerRatio) : 0.0f;
   const float amps_uncal = ((v_sensor - cal.offsetV) / cal.voltsPerAmp) * cal.ampsScale;
-  return eval_cubic_horner(amps_uncal, cal.cubic3, cal.cubic2, cal.cubic1, cal.cubic0);
+  return eval_cubic_signed_mag(amps_uncal, cal.cubic3, cal.cubic2, cal.cubic1, cal.cubic0);
 }
 
 static inline float computeEntropyFromBands(const float* e, int n) {

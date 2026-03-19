@@ -31,7 +31,7 @@
 
 #define API_KEY "AIzaSyAmJlZZszyWPJFgIkTAAl_TbIySys1nvEw"
 #define DATABASE_URL "tinyml-smart-plug-default-rtdb.asia-southeast1.firebasedatabase.app"
-static const char* FW_VERSION = "TSP-v1.0.1-protect";
+static const char* FW_VERSION = "TSP-v1.0.2-protect";
 
 static const char* OTA_DESIRED_VERSION_PATH = "/ota/desired_version";
 static const char* OTA_FIRMWARE_URL_PATH    = "/ota/firmware_url";
@@ -66,8 +66,43 @@ static QueueHandle_t qFeat = nullptr;
 static bool gSafeMode = false;
 static volatile bool gPauseByOta = false;
 
-static void handleCueEvents(float vProtect, float irms, bool paused) {
-  static bool mainsPresentLast = false;
+static bool debouncedMainsPresentForState(float vProtect) {
+  static bool init = false;
+  static bool stable = false;
+  static int8_t pending = -1;
+  static uint32_t pendingSince = 0;
+
+  const uint32_t now = millis();
+  const bool rawOn = (vProtect >= MAINS_PRESENT_ON_V);
+  const bool rawOff = (vProtect <= MAINS_PRESENT_OFF_V);
+
+  if (!init) {
+    stable = rawOn;
+    init = true;
+  }
+
+  int8_t target = -1;
+  if (rawOn) target = 1;
+  else if (rawOff) target = 0;
+
+  if (target >= 0 && target != (stable ? 1 : 0)) {
+    if (pending != target) {
+      pending = target;
+      pendingSince = now;
+    } else if ((now - pendingSince) >= MAINS_EDGE_DEBOUNCE_MS) {
+      stable = (target != 0);
+      pending = -1;
+      pendingSince = 0;
+    }
+  } else if (target == (stable ? 1 : 0)) {
+    pending = -1;
+    pendingSince = 0;
+  }
+
+  return stable;
+}
+
+static void handleCueEvents(float vProtect, float irms, bool mainsPresent, bool paused) {
   static uint32_t lowSinceMs = 0;
   static uint32_t highSinceMs = 0;
   static uint32_t lastVoltWarnMs = 0;
@@ -80,9 +115,6 @@ static void handleCueEvents(float vProtect, float irms, bool paused) {
   const uint32_t now = millis();
   if (paused) return;
 
-  const bool mainsPresent = (vProtect >= MAINS_PRESENT_ON_V);
-  if (!mainsPresentLast && vProtect >= 200.0f) actuators.notify(SND_MAINS_RESTORED);
-  mainsPresentLast = mainsPresent;
 
   const bool lowWarn  = (vProtect > VOLT_UNDERVOLT_MIN_V && vProtect < VOLT_UNDERVOLT_MAX_V);
   const bool highWarn = (vProtect >= VOLT_OVERVOLT_TRIP_V);
@@ -283,7 +315,13 @@ void setup() {
   voltSensor.setWindowMs(220);
   voltSensor.setClampHysteresis(15.0f, 25.0f);
   voltSensor.setLongAverage(18.0f, 25.0f);
-  voltSensor.setCubicCalib(0.0f, 0.0f, 1.0f, 0.0f);
+  voltSensor.setCubicCalib(VOLTAGE_CAL_C3, VOLTAGE_CAL_C2, VOLTAGE_CAL_C1, VOLTAGE_CAL_C0);
+
+  curCalib.cubic3 = CURRENT_CAL_C3;
+  curCalib.cubic2 = CURRENT_CAL_C2;
+  curCalib.cubic1 = CURRENT_CAL_C1;
+  curCalib.cubic0 = CURRENT_CAL_C0;
+  curSensor.setCalib(curCalib);
 
   tempSensor.begin();
   tempSensor.setLongAverage(8.0f, 1.0f);
@@ -431,7 +469,8 @@ void loop() {
   if (gSafeMode) st = STATE_NORMAL;
 
   actuators.apply(st, vRms, vFast, f.irms, tC);
-  handleCueEvents(vFast, f.irms, paused || gSafeMode || protectionInhibit);
+  const bool mainsPresentStable = debouncedMainsPresentForState(vFast);
+  handleCueEvents(vFast, f.irms, mainsPresentStable, paused || gSafeMode || protectionInhibit);
 
 #if ENABLE_ML_LOGGER
   maybeStartAutoArcCapture(logger, oled, paused || protectionInhibit, gSafeMode, (arcEligible && f.model_pred == 1));
@@ -477,7 +516,7 @@ void loop() {
     lastLive = millis();
 
     static uint32_t noPowerSinceMs = 0;
-    if (vFast <= MAINS_PRESENT_OFF_V) {
+    if (!mainsPresentStable) {
       if (noPowerSinceMs == 0) noPowerSinceMs = millis();
     } else {
       noPowerSinceMs = 0;

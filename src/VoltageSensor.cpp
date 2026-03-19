@@ -91,7 +91,7 @@ float VoltageSensor::update() {
   const float vrmsCounts = (float)sqrt(var);
   const float vrmsAdcV   = vrmsCounts * (_adcFullScaleV / 4095.0f);
   const float vrmsUncal  = vrmsAdcV * _cal.sensitivity;
-  float vrmsMain = eval_cubic_horner(vrmsUncal, _cal.cubic3, _cal.cubic2, _cal.cubic1, _cal.cubic0);
+  float vrmsMain = eval_cubic_horner(fabsf(vrmsUncal), _cal.cubic3, _cal.cubic2, _cal.cubic1, _cal.cubic0);
   if (vrmsMain < 0.0f) vrmsMain = 0.0f;
 
   if (_vActive) {
