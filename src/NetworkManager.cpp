@@ -1,14 +1,39 @@
 #include "NetworkManager.h"
 #include "SmartPlugConfig.h"
+#include <Preferences.h>
 
-RTC_DATA_ATTR static uint8_t s_bootTapCount = 0;
-RTC_DATA_ATTR static uint8_t s_bootTapArmed = 0;
+static constexpr const char* NVS_NS_WIFI = "wifi_boot";
+static constexpr const char* NVS_KEY_ARM = "armed";
+static constexpr const char* NVS_KEY_CNT = "count";
+
+static void loadBootWindow(bool& armed, uint8_t& count) {
+  Preferences prefs;
+  prefs.begin(NVS_NS_WIFI, false);
+  armed = prefs.getBool(NVS_KEY_ARM, false);
+  count = prefs.getUChar(NVS_KEY_CNT, 0);
+  prefs.end();
+}
+
+static void saveBootWindow(bool armed, uint8_t count) {
+  Preferences prefs;
+  prefs.begin(NVS_NS_WIFI, false);
+  prefs.putBool(NVS_KEY_ARM, armed);
+  prefs.putUChar(NVS_KEY_CNT, count);
+  prefs.end();
+}
 
 NetworkManager* NetworkManager::s_inst = nullptr;
 
+void NetworkManager::clearBootWindow_() {
+  saveBootWindow(false, 0);
+  _bootWindowCleared = true;
+}
+
 void NetworkManager::startPortal_() {
   WiFi.mode(WIFI_AP_STA);
+  delay(50);
   _portalStarted = false;
+  wm.setConfigPortalTimeout((int)(WIFI_PORTAL_TIMEOUT_MS / 1000UL));
   wm.startConfigPortal("TinyML-SmartPlug");
   _phase = PHASE_PORTAL_ACTIVE;
   _portalStarted = true;
@@ -28,13 +53,12 @@ void NetworkManager::begin(void (*apCallback)(WiFiManager*)) {
   _userApCb = apCallback;
   _phaseStartMs = millis();
 
-  if (s_bootTapArmed) {
-    if (s_bootTapCount < 255) s_bootTapCount++;
-  } else {
-    s_bootTapCount = 1;
-  }
-  s_bootTapArmed = 1;
-  _portalRequested = (s_bootTapCount >= WIFI_TRIPLE_TAP_COUNT);
+  bool armed = false;
+  uint8_t count = 0;
+  loadBootWindow(armed, count);
+  count = armed ? (uint8_t)((count < 255) ? (count + 1) : 255) : 1;
+  saveBootWindow(true, count);
+  _portalRequested = (count >= WIFI_TRIPLE_TAP_COUNT);
 
   wm.setDebugOutput(false);
   wm.setConfigPortalBlocking(false);
@@ -44,34 +68,48 @@ void NetworkManager::begin(void (*apCallback)(WiFiManager*)) {
   WiFi.persistent(true);
   WiFi.setSleep(false);
   WiFi.setAutoReconnect(true);
-
-  if (_portalRequested) {
-    startPortal_();
-    return;
-  }
-
   WiFi.mode(WIFI_STA);
   WiFi.begin();
   _phase = PHASE_CONNECTING;
+
+  if (_portalRequested) {
+    startPortal_();
+  }
 }
 
 void NetworkManager::update() {
   const uint32_t now = millis();
 
-  if (!_tapCleared && now >= WIFI_BOOT_BLOCK_MS) {
-    s_bootTapCount = 0;
-    s_bootTapArmed = 0;
-    _tapCleared = true;
+  if (!_bootWindowCleared && now >= WIFI_BOOT_BLOCK_MS) {
+    clearBootWindow_();
   }
 
   wm.process();
 
-  if (_phase == PHASE_CONNECTING) {
-    if (WiFi.status() == WL_CONNECTED) {
-      _phase = PHASE_CONNECTED;
+  if (_phase == PHASE_PORTAL_ACTIVE) {
+    const bool apActive = ((int)WiFi.getMode() & (int)WIFI_AP) != 0;
+
+    if (_portalStartMs && (now - _portalStartMs) >= WIFI_PORTAL_TIMEOUT_MS) {
+      WiFi.softAPdisconnect(true);
+      _portalStarted = false;
+      _portalStartMs = 0;
+      _phase = (WiFi.status() == WL_CONNECTED) ? PHASE_CONNECTED : PHASE_TIMEOUT;
+      _phaseStartMs = now;
+      if (WiFi.status() == WL_CONNECTED) clearBootWindow_();
       return;
     }
-    if ((now - _phaseStartMs) >= WIFI_CONNECT_TIMEOUT_MS) {
+
+    if (!apActive && WiFi.status() == WL_CONNECTED) {
+      _portalStarted = false;
+      _portalStartMs = 0;
+      _phase = PHASE_CONNECTED;
+      clearBootWindow_();
+      return;
+    }
+
+    if (!apActive && WiFi.status() != WL_CONNECTED) {
+      _portalStarted = false;
+      _portalStartMs = 0;
       _phase = PHASE_TIMEOUT;
       _phaseStartMs = now;
       return;
@@ -79,11 +117,21 @@ void NetworkManager::update() {
     return;
   }
 
-  if (_phase == PHASE_TIMEOUT) {
-    if (WiFi.status() == WL_CONNECTED) {
-      _phase = PHASE_CONNECTED;
-      return;
+  if (WiFi.status() == WL_CONNECTED) {
+    _phase = PHASE_CONNECTED;
+    if (!_bootWindowCleared) clearBootWindow_();
+    return;
+  }
+
+  if (_phase == PHASE_CONNECTING) {
+    if ((now - _phaseStartMs) >= WIFI_CONNECT_TIMEOUT_MS) {
+      _phase = PHASE_TIMEOUT;
+      _phaseStartMs = now;
     }
+    return;
+  }
+
+  if (_phase == PHASE_TIMEOUT || _phase == PHASE_CONNECTED) {
     if ((now - _phaseStartMs) >= 15000UL) {
       WiFi.mode(WIFI_STA);
       WiFi.begin();
@@ -92,23 +140,6 @@ void NetworkManager::update() {
     }
     return;
   }
-
-  if (_phase == PHASE_PORTAL_ACTIVE) {
-    if (WiFi.status() == WL_CONNECTED) {
-      _phase = PHASE_CONNECTED;
-      s_bootTapCount = 0;
-      s_bootTapArmed = 0;
-      _tapCleared = true;
-      return;
-    }
-
-    if (_portalStartMs && (now - _portalStartMs) >= WIFI_PORTAL_TIMEOUT_MS) {
-      _phase = PHASE_TIMEOUT;
-      _phaseStartMs = now;
-      WiFi.softAPdisconnect(true);
-      return;
-    }
-  }
 }
 
 bool NetworkManager::isConnected() const {
@@ -116,7 +147,7 @@ bool NetworkManager::isConnected() const {
 }
 
 bool NetworkManager::isBlockingPhase() const {
-  return (_phase == PHASE_CONNECTING) || (_phase == PHASE_PORTAL_ACTIVE);
+  return (_phase == PHASE_PORTAL_ACTIVE);
 }
 
 void NetworkManager::resetSettings() {
@@ -131,7 +162,7 @@ const char* NetworkManager::phaseText() const {
   switch (_phase) {
     case PHASE_CONNECTING:    return "CONNECTING";
     case PHASE_CONNECTED:     return "CONNECTED";
-    case PHASE_TIMEOUT:       return "TIMEOUT";
+    case PHASE_TIMEOUT:       return "DISCONNECTED";
     case PHASE_AP_WAIT_CLIENT:return "AP_WAIT";
     case PHASE_PORTAL_ACTIVE: return "PORTAL";
     default:                  return "BOOT";

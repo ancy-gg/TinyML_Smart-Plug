@@ -27,11 +27,17 @@
 <body>
   <main class="app">
     <header class="top">
-      <div class="brand">
-        <img class="logo" src="icons/icon-512.png" alt="TinyML Smart Plug Logo" />
-        <div>
-          <h1 class="title">TinyML Smart Plug</h1>
-          <div class="title-sub">Protection-aware monitoring for daily appliance use</div>
+      <div class="topbar">
+        <div class="brand brand-centered">
+          <img class="logo" src="icons/icon-512.png" alt="TinyML Smart Plug Logo" />
+          <div class="brand-copy">
+            <h1 class="title">TinyML Smart Plug</h1>
+            <div class="title-sub">Clean protection monitoring for daily appliance use</div>
+          </div>
+        </div>
+
+        <div class="top-actions top-actions-floating">
+          <a class="icon-link" href="guide.html" aria-label="Open dashboard guide" title="Dashboard guide">?</a>
         </div>
       </div>
 
@@ -39,14 +45,14 @@
         <div id="statusBadge" class="status status-DISCONNECTED">DISCONNECTED</div>
 
         <div class="subline">
-          <span class="label">Last update:</span>
+          <span class="label">Last update</span>
           <span id="lastUpdateText" class="mono">—</span>
           <span class="dot-sep">•</span>
           <span id="freshnessText">Waiting for device…</span>
         </div>
 
         <div id="deviceIpLine" class="subline" style="display:none;">
-          <span class="label">Device IP:</span>
+          <span class="label">Device</span>
           <span id="deviceIpText" class="mono">—</span>
           <span class="dot-sep">•</span>
           <span id="deviceMdnsText" class="mono">tinyml-smart-plug.local</span>
@@ -55,11 +61,11 @@
         <div class="alertbar">
           <label class="toggle">
             <input type="checkbox" id="alertEnable" />
-            Notification Alerts
+            Alerts
           </label>
           <label class="toggle">
             <input type="checkbox" id="soundEnable" />
-            Enable Sound
+            Sound
           </label>
         </div>
       </div>
@@ -69,15 +75,14 @@
       <div class="section-head">
         <div>
           <h2 class="section-title">System Overview</h2>
-          
         </div>
         <div class="section-actions">
           <button id="btnRefreshNow" class="btn btn-small" type="button">Refresh</button>
         </div>
       </div>
 
-      <div class="overview-grid">
-        <div class="summary-card summary-card-wide">
+      <div class="overview-grid overview-grid-3x3">
+        <div class="summary-card summary-card-primary summary-card-wide">
           <div class="summary-head">
             <div class="summary-kicker">Overall Health</div>
             <div id="overviewHealthBadge" class="mini-badge mini-badge-OK">Healthy</div>
@@ -88,43 +93,68 @@
           </div>
         </div>
 
-        <div class="summary-card">
+        <div class="summary-card summary-card-connectivity">
           <div class="summary-kicker">Connectivity</div>
-          <div id="ovConnectivity" class="summary-value">Offline</div>
+          <div id="ovConnectivity" class="summary-value">Disconnected</div>
           <div id="ovConnectivitySub" class="summary-copy">No fresh live data yet.</div>
         </div>
 
-        <div class="summary-card">
+        <div class="summary-card summary-card-power">
           <div class="summary-kicker">Power Condition</div>
           <div id="ovPowerCondition" class="summary-value">Unknown</div>
           <div id="ovPowerSub" class="summary-copy">Voltage state not available yet.</div>
         </div>
 
-        <div class="summary-card">
+        <div class="summary-card summary-card-protection">
           <div class="summary-kicker">Protection</div>
           <div id="ovProtection" class="summary-value">Monitoring</div>
           <div id="ovProtectionSub" class="summary-copy">Trips and alarms will be summarized here.</div>
         </div>
 
-        <div class="summary-card">
-          <div class="summary-kicker">Firmware</div>
-          <div id="ovFirmware" class="summary-value">—</div>
-          <div id="ovFirmwareSub" class="summary-copy">Version and OTA readiness.</div>
-        </div>
-
-        <div class="summary-card">
+        <div class="summary-card summary-card-last-event">
           <div class="summary-kicker">Last Event</div>
           <div id="ovLastEvent" class="summary-value">—</div>
           <div id="ovLastEventSub" class="summary-copy">Recent device event will appear here.</div>
         </div>
 
-        <div class="summary-card summary-card-wide">
+        <div class="summary-card summary-card-rules">
           <div class="summary-kicker">Protection Rules</div>
           <div class="rules-grid">
-            <div class="rule-pill">Overload warning: 10 A</div>
-            <div class="rule-pill">Undervoltage: 100–200 V</div>
-            <div class="rule-pill">Overvoltage: 250 V+</div>
-            <div class="rule-pill">Thermal cutoff: 70 °C normal / 80 °C collection</div>
+            <div class="rule-chip" tabindex="0">
+              <span>Arc Fault</span>
+              <span class="rule-q">?</span>
+              <div class="rule-tip">Trip when the AI model detects a high probability of arcing from waveform features.</div>
+            </div>
+
+            <div class="rule-chip" tabindex="0">
+              <span>Overload</span>
+              <span class="rule-q">?</span>
+              <div class="rule-tip">Alarm when measured current reaches 10 A or above.</div>
+            </div>
+
+            <div class="rule-chip" tabindex="0">
+              <span>Socket Heating</span>
+              <span class="rule-q">?</span>
+              <div class="rule-tip">Trip when socket temperature reaches 70 °C or higher.</div>
+            </div>
+
+            <div class="rule-chip" tabindex="0">
+              <span>Short Circuit</span>
+              <span class="rule-q">?</span>
+              <div class="rule-tip">Trip when the current sensor detects more than 20 A.</div>
+            </div>
+
+            <div class="rule-chip" tabindex="0">
+              <span>Undervoltage</span>
+              <span class="rule-q">?</span>
+              <div class="rule-tip">Trip when voltage drops below 200 V.</div>
+            </div>
+
+            <div class="rule-chip" tabindex="0">
+              <span>Overvoltage</span>
+              <span class="rule-q">?</span>
+              <div class="rule-tip">Trip when voltage rises above 250 V.</div>
+            </div>
           </div>
         </div>
       </div>
@@ -134,34 +164,53 @@
       <div class="section-head">
         <div>
           <h2 class="section-title">Live Electrical Data</h2>
-          
         </div>
-        <div class="section-hint" id="liveStateHint">LIVE</div>
+        <div class="section-hint" data-live-state-hint>LIVE</div>
       </div>
 
       <div class="metric-grid-top">
         <div class="card live-card">
-          <div class="card-label">Voltage</div>
+          <div class="card-topline">
+            <div class="card-label">Voltage</div>
+            <div class="metric-help">
+              <button class="help-trigger" type="button" aria-label="Voltage help">?</button>
+              <div id="vHint" class="help-pop">Line voltage state</div>
+            </div>
+          </div>
           <div class="card-value"><span id="vVal">—</span><span class="unit">V</span></div>
-          <div id="vHint" class="metric-note">Power line condition</div>
         </div>
 
         <div class="card live-card">
-          <div class="card-label">Current</div>
+          <div class="card-topline">
+            <div class="card-label">Current</div>
+            <div class="metric-help">
+              <button class="help-trigger" type="button" aria-label="Current help">?</button>
+              <div id="iHint" class="help-pop">Load draw state</div>
+            </div>
+          </div>
           <div class="card-value"><span id="iVal">—</span><span class="unit">A</span></div>
-          <div id="iHint" class="metric-note">Load draw</div>
         </div>
 
         <div class="card live-card">
-          <div class="card-label">Apparent Power</div>
+          <div class="card-topline">
+            <div class="card-label">Apparent Power</div>
+            <div class="metric-help">
+              <button class="help-trigger" type="button" aria-label="Apparent power help">?</button>
+              <div id="pHint" class="help-pop">Estimated demand</div>
+            </div>
+          </div>
           <div class="card-value"><span id="pVal">—</span><span class="unit">VA</span></div>
-          <div id="pHint" class="metric-note">Estimated demand</div>
         </div>
 
         <div class="card live-card">
-          <div class="card-label">Temperature</div>
+          <div class="card-topline">
+            <div class="card-label">Temperature</div>
+            <div class="metric-help">
+              <button class="help-trigger" type="button" aria-label="Temperature help">?</button>
+              <div id="tHint" class="help-pop">Socket thermal state</div>
+            </div>
+          </div>
           <div class="card-value"><span id="tVal">—</span><span class="unit">°C</span></div>
-          <div id="tHint" class="metric-note">Socket thermal state</div>
         </div>
       </div>
     </section>
@@ -170,16 +219,15 @@
       <div class="section-head">
         <div>
           <h2 class="section-title">Waveform Data</h2>
-          
         </div>
-        <div class="section-hint" id="liveStateHint">LIVE</div>
+        <div class="section-hint" data-live-state-hint>LIVE</div>
       </div>
 
       <div class="wave-grid">
         <div class="feature-group-card">
           <div class="group-head">
             <h3 class="group-title">Time and Cycle Domain</h3>
-            <div class="muted small">Primary discriminants</div>
+            <div class="muted small">Primary</div>
           </div>
           <div class="feature-grid feature-grid-2col">
             <div class="card feature-card"><div class="card-label">Cycle NMSE</div><div class="card-value"><span id="cycleNmseVal">—</span></div></div>
@@ -194,7 +242,7 @@
         <div class="feature-group-card">
           <div class="group-head">
             <h3 class="group-title">Frequency and Energy Domain</h3>
-            <div class="muted small">Context features</div>
+            <div class="muted small">Context</div>
           </div>
           <div class="feature-grid feature-grid-2col">
             <div class="card feature-card"><div class="card-label">HF Band Energy Ratio</div><div class="card-value"><span id="hfEnergyVal">—</span></div></div>
@@ -247,62 +295,64 @@
       </div>
     </section>
 
-    <section class="history ota-panel">
+    <section class="history ota-panel collapsible-section" id="otaSection">
       <div class="history-head">
         <div>
           <h2 class="history-title">Over-the-Air (OTA) Updates</h2>
-          <div class="history-hint">Publish a version and firmware URL for the device to pull</div>
+          <div class="history-hint">Publish a version and firmware link for the device to pull</div>
         </div>
 
         <div class="history-actions">
+          <button class="btn btn-small collapse-toggle" type="button" data-collapse-target="otaBody" aria-expanded="false">Expand</button>
           <button id="btnPublishOta" class="btn btn-primary" type="button">Update</button>
         </div>
       </div>
 
-      <div class="ota-grid">
-        <div class="ota-box">
-          <div class="ota-label">Current Published OTA</div>
-          <div class="ota-line"><span class="muted">Version:</span> <span class="mono" id="otaCurVer">—</span></div>
-          <div class="ota-line"><span class="muted">URL:</span> <span class="mono ota-url" id="otaCurUrl">—</span></div>
-        </div>
-
-        <div class="ota-box">
-          <label class="ota-field">
-            <span class="muted">Version</span>
-            <input id="otaDesiredVer" class="ota-input" placeholder="TSP-v0.0.0" />
-          </label>
-
-          <label class="ota-field">
-            <span class="muted">Bin</span>
-            <input id="otaBinName" class="ota-input" value="firmware_version.bin" />
-          </label>
-
-          <div class="ota-row">
-            <button id="btnFillRepoUrl" class="btn" type="button">Apply</button>
+      <div id="otaBody" class="collapsible-body is-collapsed">
+        <div class="ota-grid">
+          <div class="ota-box">
+            <div class="ota-label">Current Published OTA</div>
+            <div class="ota-line"><span class="muted">Version:</span> <span class="mono" id="otaCurVer">—</span></div>
+            <div class="ota-line"><span class="muted">URL:</span> <span class="mono ota-url" id="otaCurUrl">—</span></div>
           </div>
 
-          <label class="ota-field">
-            <span class="muted">Link</span>
-            <input
-              id="otaFirmwareUrl"
-              class="ota-input mono"
-              placeholder="https://raw.githubusercontent.com/ancy-gg/TinyML_Smart-Plug/main/firmware/firmware.bin"
-            />
-          </label>
+          <div class="ota-box">
+            <label class="ota-field">
+              <span class="muted">Version</span>
+              <input id="otaDesiredVer" class="ota-input" placeholder="TSP-v0.0.0" />
+            </label>
+
+            <label class="ota-field">
+              <span class="muted">Bin</span>
+              <input id="otaBinName" class="ota-input" value="firmware_version.bin" />
+            </label>
+
+            <div class="ota-row">
+              <button id="btnFillRepoUrl" class="btn" type="button">Apply</button>
+            </div>
+
+            <label class="ota-field">
+              <span class="muted">Link</span>
+              <input
+                id="otaFirmwareUrl"
+                class="ota-input mono"
+                placeholder="https://raw.githubusercontent.com/ancy-gg/TinyML_Smart-Plug/main/firmware/firmware.bin"
+              />
+            </label>
+          </div>
         </div>
       </div>
     </section>
 
-    <section class="history">
+    <section class="history collapsible-section" id="loggerSection">
       <div class="history-head">
         <div>
           <h2 class="history-title">Data Logger</h2>
-          <div class="history-hint muted">
-            Data for Machine Learning Model Training and Waveform Analysis
-          </div>
+          <div class="history-hint muted">For model training and waveform review</div>
         </div>
 
         <div class="history-actions">
+          <button class="btn btn-small collapse-toggle" type="button" data-collapse-target="loggerBody" aria-expanded="false">Expand</button>
           <label class="muted">
             <input type="checkbox" id="mlLogEnable" />
             Collect Data
@@ -331,9 +381,10 @@
         </div>
       </div>
 
-      <div class="muted small" id="mlLogStatus">—</div>
+      <div id="loggerBody" class="collapsible-body is-collapsed">
+        <div class="muted small" id="mlLogStatus">—</div>
 
-      <div class="history-table-wrap" style="margin-top:12px;">
+        <div class="history-table-wrap" style="margin-top:12px;">
         <table class="history-table">
           <thead>
             <tr>
@@ -348,6 +399,7 @@
           </thead>
           <tbody id="mlSessionBody"></tbody>
         </table>
+      </div>
       </div>
     </section>
 

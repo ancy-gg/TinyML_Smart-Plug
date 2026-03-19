@@ -31,7 +31,7 @@
 
 #define API_KEY "AIzaSyAmJlZZszyWPJFgIkTAAl_TbIySys1nvEw"
 #define DATABASE_URL "tinyml-smart-plug-default-rtdb.asia-southeast1.firebasedatabase.app"
-static const char* FW_VERSION = "TSP-v1.0.2-protect";
+static const char* FW_VERSION = "TSP-v3.3.0-protect";
 
 static const char* OTA_DESIRED_VERSION_PATH = "/ota/desired_version";
 static const char* OTA_FIRMWARE_URL_PATH    = "/ota/firmware_url";
@@ -376,8 +376,8 @@ void loop() {
   ota.loop();
   timeSync.update();
 
-  const bool networkBlocking = net.isBlockingPhase();
-  const bool paused = networkBlocking || gPauseByOta;
+  const bool portalActive = net.inConfigPortal();
+  const bool paused = gPauseByOta;
   const bool bootSettling = (millis() < SENSOR_BOOT_SETTLE_MS);
   const bool protectionInhibit = (millis() < (SENSOR_BOOT_SETTLE_MS + PROTECTION_INHIBIT_MS));
 
@@ -503,7 +503,7 @@ void loop() {
   oled.setOverlay(ov);
   oled.setState(st);
   oled.setMeasurements(vRms, f.irms, apparentPowerVa, tC);
-  oled.setWiFi(wifiConnected, net.rssi(), networkBlocking, net.inConfigPortal());
+  oled.setWiFi(wifiConnected, net.rssi(), portalActive, portalActive);
 
   static uint32_t lastOled = 0;
   if (millis() - lastOled >= 80) {
@@ -525,8 +525,7 @@ void loop() {
 
     String stateStr;
     if (gPauseByOta) stateStr = "OTA_UPDATING";
-    else if (net.inConfigPortal()) stateStr = "CONFIG_PORTAL";
-    else if (networkBlocking) stateStr = "WIFI_CONNECTING";
+    else if (portalActive) stateStr = "CONFIG_PORTAL";
     else if (bootSettling || protectionInhibit) stateStr = "STARTUP_STABILIZING";
     else if (unpluggedLive) stateStr = "UNPLUGGED";
     else if (gSafeMode) stateStr = "SAFE_MODE";

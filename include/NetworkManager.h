@@ -32,10 +32,11 @@ private:
   Phase _phase = PHASE_BOOT_BLOCK;
   volatile bool _portalRequested = false;
   bool _portalStarted = false;
-  bool _tapCleared = false;
+  bool _bootWindowCleared = false;
   uint32_t _phaseStartMs = 0;
   uint32_t _portalStartMs = 0;
   void startPortal_();
+  void clearBootWindow_();
   void (*_userApCb)(WiFiManager*) = nullptr;
 
   static NetworkManager* s_inst;

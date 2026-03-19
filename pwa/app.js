@@ -39,7 +39,7 @@ const installHelp = el("installHelp");
 const installCopy = el("installCopy");
 const btnDismissInstall = el("btnDismissInstall");
 const btnRefreshNow = el("btnRefreshNow");
-const liveStateHint = el("liveStateHint");
+const liveStateHints = Array.from(document.querySelectorAll("[data-live-state-hint]"));
 
 const vVal   = el("vVal");
 const iVal   = el("iVal");
@@ -72,18 +72,35 @@ const btnClearHistory = el("btnClearHistory");
 const toastEl = el("toast");
 
 const DISPLAY_TZ = "Asia/Manila";
-const STALE_MS = 12000;
-const HISTORY_LIMIT = 400;
-const MAX_RENDER_ROWS = 120;
+const STALE_MS = 15000;
+const HISTORY_LIMIT = 5000;
+const MAX_RENDER_ROWS = 300;
+
+const UI_MAINS_ABSENT_V = 20;
+const UI_UNDERVOLTAGE_V = 200;
+const UI_OVERVOLTAGE_V = 250;
+const UI_NORMAL_V_MIN = 200;
+const UI_NORMAL_V_MAX = 250;
+const UI_ACTIVE_CURRENT_A = 0.08;
+const UI_ACTIVE_POWER_VA = 15;
+const UI_TEMP_COLD_ABNORMAL_C = 10;
+const UI_TEMP_WARM_C = 55;
+const UI_TEMP_HOT_C = 70;
+const OVERLOAD_WARN_A = 10;
+const SHORT_CIRCUIT_TRIP_A = 20;
 
 const OTA_REPO_RAW_BASE = "https://raw.githubusercontent.com/ancy-gg/TinyML_Smart-Plug/main/firmware/";
 const OTA_DEFAULT_BIN   = "firmware.bin";
 
 let lastSeenMs = 0;
+let lastReceiptMs = 0;
 let historyCache = [];
 let currentFilteredHistory = [];
+let localHistoryEvents = [];
 let syntheticDisconnectActive = false;
 let latestHistoryRecord = null;
+let lastSyntheticHistoryKey = "";
+let lastEffectiveHistoryStatus = "";
 let lastLiveData = null;
 let lastAlertStatus = null;
 let lastNotifiedAt = 0;
@@ -98,7 +115,6 @@ const isIOS = /iphone|ipad|ipod/i.test(navigator.userAgent || "");
 const isStandalone = window.matchMedia?.("(display-mode: standalone)")?.matches || window.navigator.standalone === true;
 if (isIOS) document.body.classList.add("ios");
 if (isStandalone) document.body.classList.add("standalone");
-if (installHelp) installHelp.classList.add("hidden");
 
 function buildRepoFirmwareUrl(binName) {
   const name = (binName || OTA_DEFAULT_BIN).trim();
@@ -210,7 +226,27 @@ async function showFaultNotification(title, body){
   }
   if (Notification.permission !== "granted") return;
 
-  if ("serviceWorker" in navigator) {
+  document.querySelectorAll(".collapse-toggle").forEach((btn) => {
+  const targetId = btn.getAttribute("data-collapse-target");
+  const body = targetId ? document.getElementById(targetId) : null;
+  if (!body) return;
+  const sync = () => {
+    const collapsed = body.classList.contains("is-collapsed");
+    btn.textContent = collapsed ? "Expand" : "Collapse";
+    btn.setAttribute("aria-expanded", collapsed ? "false" : "true");
+    body.style.maxHeight = collapsed ? "0px" : `${body.scrollHeight + 8}px`;
+  };
+  sync();
+  btn.addEventListener("click", () => {
+    body.classList.toggle("is-collapsed");
+    sync();
+  });
+  window.addEventListener("resize", () => {
+    if (!body.classList.contains("is-collapsed")) body.style.maxHeight = `${body.scrollHeight + 8}px`;
+  });
+});
+
+if ("serviceWorker" in navigator) {
     const reg = await navigator.serviceWorker.ready.catch(()=>null);
     if (reg) {
       reg.showNotification(title, {
@@ -237,6 +273,7 @@ function classifyStatus(s) {
   if (u === "FIRMWARE UPDATED") return "FIRMWARE_UPDATED";
   if (u.includes("DISCON")) return "DEVICE_DISCONNECTED";
   if (u.includes("UNPLUG")) return "UNPLUGGED";
+  if (u.includes("SHORT")) return "SHORT_CIRCUIT";
   if (u.includes("ARC")) return "ARCING";
   if (u.includes("HEAT")) return "HEATING";
   if (u.includes("OVERVOLT")) return "OVERVOLTAGE";
@@ -260,8 +297,9 @@ function prettyStatus(kind) {
 function statusBadgeHTML(kind) {
   switch (kind) {
     case "OVERLOAD": return `OVERLOAD <span class="emoji blink">⬆️</span>`;
-    case "HEATING":  return `HEATING <span class="emoji flicker">🔥</span>`;
-    case "ARCING":   return `ARCING <span class="emoji zap">⚡</span>`;
+    case "SHORT_CIRCUIT": return `SHORT CIRCUIT`;
+    case "HEATING":  return `SOCKET HEATING <span class="emoji flicker">🔥</span>`;
+    case "ARCING":   return `ARC FAULT <span class="emoji zap">⚡</span>`;
     case "OVERVOLTAGE": return `OVERVOLTAGE`;
     case "UNDERVOLTAGE": return `UNDERVOLTAGE`;
     case "UNPLUGGED": return `UNPLUGGED`;
@@ -271,12 +309,12 @@ function statusBadgeHTML(kind) {
     case "DEVICE_PLUGGED_IN": return `PLUGGED IN`;
     case "FIRMWARE_UPDATED": return `FIRMWARE UPDATED`;
     case "SAFE_MODE": return `SAFE MODE`;
-    case "CONFIG_PORTAL": return `CONFIG PORTAL`;
+    case "CONFIG_PORTAL": return `WIFI SETUP`;
     case "WIFI_CONNECTING": return `WIFI CONNECTING`;
     case "STARTUP_STABILIZING": return `STARTUP STABILIZING`;
     case "OTA_UPDATING": return `OTA UPDATING`;
-    case "NORMAL": return `NORMAL`;
-    default: return prettyStatus(k);
+    case "NORMAL": return `MONITORING`;
+    default: return prettyStatus(kind);
   }
 }
 
@@ -288,6 +326,7 @@ function setTopStatus(kind) {
   if (k === "DEVICE_DISCONNECTED") statusBadge.classList.add("status-DISCONNECTED");
   else if (k === "UNPLUGGED") statusBadge.classList.add("status-UNPLUGGED");
   else if (k === "OVERLOAD") statusBadge.classList.add("status-OVERLOAD");
+  else if (k === "SHORT_CIRCUIT") statusBadge.classList.add("status-SHORT");
   else if (k === "HEATING") statusBadge.classList.add("status-HEATING");
   else if (k === "ARCING") statusBadge.classList.add("status-ARCING");
   else if (k === "OVERVOLTAGE") statusBadge.classList.add("status-OVERVOLTAGE");
@@ -307,8 +346,9 @@ function setTopStatus(kind) {
 function pillHTML(kind) {
   const k = classifyStatus(kind);
   if (k === "OVERLOAD") return `<span class="pill pill-OVERLOAD">OVERLOAD <span class="emoji blink">⬆️</span></span>`;
-  if (k === "HEATING")  return `<span class="pill pill-HEATING">HEATING <span class="emoji flicker">🔥</span></span>`;
-  if (k === "ARCING")   return `<span class="pill pill-ARCING">ARCING <span class="emoji zap">⚡</span></span>`;
+  if (k === "SHORT_CIRCUIT") return `<span class="pill pill-SHORT">SHORT CIRCUIT</span>`;
+  if (k === "HEATING")  return `<span class="pill pill-HEATING">SOCKET HEATING <span class="emoji flicker">🔥</span></span>`;
+  if (k === "ARCING")   return `<span class="pill pill-ARCING">ARC FAULT <span class="emoji zap">⚡</span></span>`;
   if (k === "OVERVOLTAGE") return `<span class="pill pill-OVERVOLTAGE">OVERVOLTAGE</span>`;
   if (k === "UNDERVOLTAGE") return `<span class="pill pill-UNDERVOLTAGE">UNDERVOLTAGE</span>`;
   if (k === "UNPLUGGED") return `<span class="pill pill-UNPLUG">DEVICE UNPLUGGED</span>`;
@@ -317,7 +357,7 @@ function pillHTML(kind) {
   if (k === "DEVICE_PLUGGED_IN") return `<span class="pill pill-ONLINE">DEVICE PLUGGED IN</span>`;
   if (k === "DEVICE_ONLINE") return `<span class="pill pill-ONLINE">DEVICE ONLINE</span>`;
   if (k === "FIRMWARE_UPDATED") return `<span class="pill pill-FW">FIRMWARE UPDATED</span>`;
-  if (k === "NORMAL") return `<span class="pill pill-OK">NORMAL</span>`;
+  if (k === "NORMAL") return `<span class="pill pill-OK">MONITORING</span>`;
   return `<span class="pill pill-OK">${prettyStatus(k)}</span>`;
 }
 
@@ -339,17 +379,7 @@ function setLiveZeroes() {
 }
 
 function injectSyntheticDisconnect() {
-  if (syntheticDisconnectActive) return;
   syntheticDisconnectActive = true;
-  historyCache = (historyCache || []).slice();
-  historyCache.push({
-    status: "DEVICE DISCONNECTED",
-    voltage: 0, current: 0, temp: 0,
-    cycle_nmse: 0, zcv: 0, thd_i: 0,
-    ts_epoch_ms: Date.now()
-  });
-  applyHistoryFilter();
-  renderOverview();
 }
 
 function liveIsFresh() {
@@ -360,31 +390,58 @@ function latestLiveEpoch() {
   return getRecordEpochMs(lastLiveData || {});
 }
 
+function derivePowerConditionFromLive(data) {
+  const v = Number(data?.voltage ?? 0);
+  const raw = classifyStatus(data?.power_condition || data?.status || "NORMAL");
+  if (raw === "UNPLUGGED" || v < UI_MAINS_ABSENT_V) return "UNPLUGGED";
+  if (raw === "OVERVOLTAGE" || v > UI_OVERVOLTAGE_V) return "OVERVOLTAGE";
+  if (raw === "UNDERVOLTAGE" || (v >= UI_MAINS_ABSENT_V && v < UI_UNDERVOLTAGE_V)) return "UNDERVOLTAGE";
+  if (v >= UI_NORMAL_V_MIN && v <= UI_NORMAL_V_MAX) return "NORMAL";
+  return "UNKNOWN";
+}
+
+function isLiveLoadActive(data) {
+  const i = Number(data?.current ?? 0);
+  const p = Number(data?.apparent_power ?? 0);
+  return i >= UI_ACTIVE_CURRENT_A || p >= UI_ACTIVE_POWER_VA;
+}
+
+function deriveLiveStatus(data) {
+  const raw = classifyStatus(data?.status || "NORMAL");
+  const i = Number(data?.current ?? 0);
+  if (["DEVICE_DISCONNECTED", "SHORT_CIRCUIT", "OVERLOAD", "HEATING", "ARCING", "OVERVOLTAGE", "UNDERVOLTAGE", "UNPLUGGED", "SAFE_MODE", "CONFIG_PORTAL", "WIFI_CONNECTING", "STARTUP_STABILIZING", "OTA_UPDATING", "FIRMWARE_UPDATED"].includes(raw)) return raw;
+  if (i > SHORT_CIRCUIT_TRIP_A) return "SHORT_CIRCUIT";
+  if (i >= OVERLOAD_WARN_A) return "OVERLOAD";
+  const power = derivePowerConditionFromLive(data);
+  if (power === "OVERVOLTAGE") return "OVERVOLTAGE";
+  if (power === "UNDERVOLTAGE") return "UNDERVOLTAGE";
+  if (power === "UNPLUGGED") return "UNPLUGGED";
+  return "NORMAL";
+}
+
+function setLiveUnavailable() {
+  const unavailableMap = [
+    vVal, iVal, pVal, tVal,
+    cycleNmseVal, zcvVal, zcDwellVal, pulseCountVal, peakFluctVal, midbandResidVal,
+    hfEnergyVal, wpeEntropyVal, specEntropyVal, thdVal
+  ];
+  unavailableMap.forEach((node) => { if (node) node.textContent = "—"; });
+}
+
 function effectiveStatusKind() {
-  if (liveIsFresh() && lastLiveData) return classifyStatus(lastLiveData.status || "NORMAL");
-  if (latestHistoryRecord) return classifyStatus(latestHistoryRecord.status || "DEVICE_DISCONNECTED");
+  if (liveIsFresh() && lastLiveData) return deriveLiveStatus(lastLiveData);
   return "DEVICE_DISCONNECTED";
 }
 
 function effectiveTimestamp() {
-  if (liveIsFresh() && lastLiveData) return latestLiveEpoch();
+  const liveEpoch = latestLiveEpoch();
+  if (liveEpoch > 0) return liveEpoch;
   return getRecordEpochMs(latestHistoryRecord || {});
 }
 
 function effectivePowerCondition() {
-  if (liveIsFresh() && lastLiveData) {
-    const explicit = (lastLiveData.power_condition || "").toString().trim();
-    if (explicit) return classifyStatus(explicit);
-    const st = classifyStatus(lastLiveData.status || "NORMAL");
-    if (st === "UNPLUGGED" || Number(lastLiveData.voltage) < 25) return "UNPLUGGED";
-    if (st === "OVERVOLTAGE") return "OVERVOLTAGE";
-    if (st === "UNDERVOLTAGE") return "UNDERVOLTAGE";
-    return "NORMAL";
-  }
-  const st = effectiveStatusKind();
-  if (["UNPLUGGED", "OVERVOLTAGE", "UNDERVOLTAGE"].includes(st)) return st;
-  if (st === "DEVICE_DISCONNECTED") return "DEVICE_DISCONNECTED";
-  return "UNKNOWN";
+  if (liveIsFresh() && lastLiveData) return derivePowerConditionFromLive(lastLiveData);
+  return "DEVICE_DISCONNECTED";
 }
 
 function updateFreshnessText() {
@@ -393,40 +450,53 @@ function updateFreshnessText() {
     freshnessText.textContent = "Waiting for device…";
     return;
   }
-  const age = Date.now() - lastSeenMs;
-  if (age <= STALE_MS) freshnessText.textContent = `Live • ${Math.max(0, Math.round(age / 1000))}s ago`;
-  else freshnessText.textContent = `Stale • ${Math.round(age / 1000)}s ago`;
+  const ageSec = Math.max(0, Math.round((Date.now() - lastSeenMs) / 1000));
+  freshnessText.textContent = liveIsFresh() ? `Live • ${ageSec}s ago` : `Disconnected • ${ageSec}s ago`;
 }
 
 function applyMetricHints(data) {
-  const v = Number(data?.voltage ?? 0);
+  if (!liveIsFresh()) {
+    if (vHint) vHint.textContent = "Disconnected. No fresh voltage data.";
+    if (iHint) iHint.textContent = "Disconnected. No fresh current data.";
+    if (pHint) pHint.textContent = "Disconnected. No fresh power data.";
+    if (tHint) tHint.textContent = "Disconnected. No fresh temperature data.";
+    return;
+  }
+
   const i = Number(data?.current ?? 0);
   const p = Number(data?.apparent_power ?? 0);
   const t = Number(data?.temp ?? 0);
   const powerKind = effectivePowerCondition();
 
   if (vHint) {
-    if (powerKind === "UNPLUGGED") vHint.textContent = "No mains detected.";
-    else if (powerKind === "UNDERVOLTAGE") vHint.textContent = "Input below normal operating range.";
-    else if (powerKind === "OVERVOLTAGE") vHint.textContent = "Input above safe operating range.";
-    else vHint.textContent = v >= 200 ? "Within expected mains range." : "Monitoring line condition.";
+    if (powerKind === "UNPLUGGED") vHint.textContent = "Outlet input missing.";
+    else if (powerKind === "UNDERVOLTAGE") vHint.textContent = "Below 200 V.";
+    else if (powerKind === "OVERVOLTAGE") vHint.textContent = "Above 250 V.";
+    else if (powerKind === "NORMAL") vHint.textContent = "Within 200–250 V.";
+    else vHint.textContent = "Checking voltage.";
   }
+
   if (iHint) {
-    if (i >= 10) iHint.textContent = "Overload warning level reached.";
-    else if (i >= 5) iHint.textContent = "Moderate to high appliance draw.";
-    else if (i > 0.1) iHint.textContent = "Appliance appears active.";
-    else iHint.textContent = "Very low or idle load.";
+    if (powerKind === "UNPLUGGED") iHint.textContent = "No load while unplugged.";
+    else if (i > SHORT_CIRCUIT_TRIP_A) iHint.textContent = "Short-circuit trip zone.";
+    else if (i >= OVERLOAD_WARN_A) iHint.textContent = "Overload alarm zone.";
+    else if (isLiveLoadActive(data)) iHint.textContent = "Load is active.";
+    else iHint.textContent = "Idle load.";
   }
+
   if (pHint) {
-    if (p >= 1500) pHint.textContent = "Heavy apparent power demand.";
-    else if (p >= 300) pHint.textContent = "Typical active appliance demand.";
-    else if (p > 1) pHint.textContent = "Light demand detected.";
-    else pHint.textContent = "Near zero power draw.";
+    if (powerKind === "UNPLUGGED") pHint.textContent = "No apparent power.";
+    else if (p >= 1500) pHint.textContent = "Heavy apparent demand.";
+    else if (p >= 300) pHint.textContent = "Active appliance demand.";
+    else if (p >= UI_ACTIVE_POWER_VA) pHint.textContent = "Light demand.";
+    else pHint.textContent = "Near zero demand.";
   }
+
   if (tHint) {
-    if (t >= 70) tHint.textContent = "Critical thermal condition.";
-    else if (t >= 55) tHint.textContent = "Elevated temperature; observe load.";
-    else tHint.textContent = "Thermal state appears normal.";
+    if (t >= UI_TEMP_HOT_C) tHint.textContent = "Trip zone: socket heating.";
+    else if (t >= UI_TEMP_WARM_C) tHint.textContent = "Socket warming.";
+    else if (t < UI_TEMP_COLD_ABNORMAL_C) tHint.textContent = "Cold environment.";
+    else tHint.textContent = "Thermal state normal.";
   }
 }
 
@@ -444,73 +514,89 @@ function renderOverview() {
   const status = effectiveStatusKind();
   const live = lastLiveData || {};
   const powerCondition = effectivePowerCondition();
-  const fw = (live.fw_version || "—").toString();
-  const otaReady = !!live.ota_ready;
   const ip = (live.ip || "").toString().trim();
   const mdns = (live.mdns || "tinyml-smart-plug.local").toString();
   const lastEventStatus = latestHistoryRecord ? prettyStatus(latestHistoryRecord.status || "") : "—";
   const lastEventTime = latestHistoryRecord ? formatEpochMsTZ(getRecordEpochMs(latestHistoryRecord)) : "—";
+  const loadActive = fresh && isLiveLoadActive(live);
+  const ageSec = lastSeenMs ? Math.max(0, Math.round((Date.now() - lastSeenMs) / 1000)) : null;
 
   if (overviewPrimary) {
-    if (!fresh && status === "DEVICE_DISCONNECTED") overviewPrimary.textContent = "Device is offline";
-    else if (status === "UNPLUGGED") overviewPrimary.textContent = "Plug is online, mains is absent";
-    else if (status === "NORMAL") overviewPrimary.textContent = "System healthy and monitoring";
-    else if (status === "STARTUP_STABILIZING") overviewPrimary.textContent = "System is stabilizing after startup";
+    if (!fresh) overviewPrimary.textContent = "Device disconnected";
+    else if (status === "UNPLUGGED") overviewPrimary.textContent = "Device unplugged";
+    else if (status === "NORMAL") overviewPrimary.textContent = loadActive ? "System healthy" : "System idle";
+    else if (status === "OVERLOAD") overviewPrimary.textContent = "Overload warning";
+    else if (status === "SHORT_CIRCUIT") overviewPrimary.textContent = "Short circuit detected";
+    else if (status === "HEATING") overviewPrimary.textContent = "Socket heating detected";
+    else if (status === "ARCING") overviewPrimary.textContent = "Arc fault detected";
+    else if (status === "UNDERVOLTAGE") overviewPrimary.textContent = "Undervoltage detected";
+    else if (status === "OVERVOLTAGE") overviewPrimary.textContent = "Overvoltage detected";
+    else if (status === "STARTUP_STABILIZING") overviewPrimary.textContent = "Startup stabilizing";
     else if (status === "WIFI_CONNECTING") overviewPrimary.textContent = "Connecting to Wi-Fi";
-    else if (status === "CONFIG_PORTAL") overviewPrimary.textContent = "Waiting for Wi-Fi credentials";
-    else if (status === "OTA_UPDATING") overviewPrimary.textContent = "Firmware update in progress";
+    else if (status === "CONFIG_PORTAL") overviewPrimary.textContent = "Wi-Fi setup mode";
+    else if (status === "OTA_UPDATING") overviewPrimary.textContent = "OTA update in progress";
     else overviewPrimary.textContent = prettyStatus(status);
   }
 
   if (overviewSecondary) {
-    if (!fresh && status === "DEVICE_DISCONNECTED") overviewSecondary.textContent = "No fresh live packet is reaching the dashboard. The PWA is keeping the last known history visible.";
-    else if (status === "UNPLUGGED") overviewSecondary.textContent = "The smart plug is reachable, but input voltage has been absent long enough to classify mains as unplugged.";
-    else if (status === "OVERLOAD") overviewSecondary.textContent = "Current is above the overload warning threshold. Relay remains on unless temperature or another higher-priority fault trips protection.";
-    else if (status === "HEATING") overviewSecondary.textContent = "Thermal protection is active. Relay cutoff should already be engaged on the device side.";
-    else if (status === "ARCING") overviewSecondary.textContent = "The TinyML model is currently detecting an arc-like signature from the measured waveform.";
-    else if (status === "UNDERVOLTAGE" || status === "OVERVOLTAGE") overviewSecondary.textContent = "Input voltage is outside the allowed operating window, so the device should isolate the relay for protection.";
-    else overviewSecondary.textContent = "The dashboard now prioritizes fresh live data over history so status recovery is faster after reconnection or power return.";
+    if (!fresh) overviewSecondary.textContent = "No fresh live packet has reached the dashboard for 15 seconds, so the current state is treated as disconnected.";
+    else if (status === "UNPLUGGED") overviewSecondary.textContent = "The smart plug is reachable, but the input line is absent or near zero.";
+    else if (status === "NORMAL" && !loadActive) overviewSecondary.textContent = "Input is healthy and the connected appliance appears idle.";
+    else if (status === "NORMAL" && loadActive) overviewSecondary.textContent = "Input is healthy and the connected appliance is drawing load.";
+    else if (status === "OVERLOAD") overviewSecondary.textContent = "Measured current has reached the overload alarm threshold of 10 A.";
+    else if (status === "SHORT_CIRCUIT") overviewSecondary.textContent = "Measured current has exceeded the short-circuit threshold of 20 A.";
+    else if (status === "HEATING") overviewSecondary.textContent = "Socket temperature has reached the heating trip threshold of 70 °C.";
+    else if (status === "ARCING") overviewSecondary.textContent = "The AI model is detecting a waveform pattern consistent with arcing.";
+    else if (status === "UNDERVOLTAGE") overviewSecondary.textContent = "Input voltage is below the 200 V protection threshold.";
+    else if (status === "OVERVOLTAGE") overviewSecondary.textContent = "Input voltage is above the 250 V protection threshold.";
+    else overviewSecondary.textContent = "The dashboard prioritizes fresh live data so stale packets are not mistaken for a current condition.";
   }
 
-  if (ovConnectivity) ovConnectivity.textContent = fresh ? (classifyStatus(live.status || "") === "CONFIG_PORTAL" ? "Config Portal" : "Online") : "Offline";
+  if (ovConnectivity) ovConnectivity.textContent = fresh ? (classifyStatus(live.status || "") === "CONFIG_PORTAL" ? "Setup Mode" : "Online") : "Disconnected";
   if (ovConnectivitySub) {
-    const pieces = [];
-    if (fresh) pieces.push(`Last packet ${Math.max(0, Math.round((Date.now() - lastSeenMs) / 1000))}s ago`);
-    if (ip) pieces.push(ip);
-    if (mdns) pieces.push(mdns);
-    ovConnectivitySub.textContent = pieces.join(" • ") || "No live connectivity details available.";
+    if (!lastSeenMs) ovConnectivitySub.textContent = "Waiting for the first live packet.";
+    else if (fresh) {
+      const pieces = [`Fresh packet ${ageSec}s ago`];
+      if (ip) pieces.push(ip);
+      if (mdns) pieces.push(mdns);
+      ovConnectivitySub.textContent = pieces.join(" • ");
+    } else {
+      ovConnectivitySub.textContent = `No fresh live packet for ${ageSec}s.`;
+    }
   }
 
-  if (ovPowerCondition) ovPowerCondition.textContent = prettyStatus(powerCondition === "UNKNOWN" ? status : powerCondition);
+  if (ovPowerCondition) ovPowerCondition.textContent = powerCondition === "DEVICE_DISCONNECTED" ? "Unknown" : prettyStatus(powerCondition === "UNKNOWN" ? status : powerCondition);
   if (ovPowerSub) {
-    if (powerCondition === "UNPLUGGED") ovPowerSub.textContent = "Mains absent or below the presence threshold.";
-    else if (powerCondition === "UNDERVOLTAGE") ovPowerSub.textContent = "Input in the undervoltage band; relay protection should be active.";
-    else if (powerCondition === "OVERVOLTAGE") ovPowerSub.textContent = "Input at or above the overvoltage trip threshold.";
-    else if (powerCondition === "DEVICE_DISCONNECTED") ovPowerSub.textContent = "Cannot confirm mains while the dashboard is offline.";
-    else ovPowerSub.textContent = "Input appears to be within the expected operating window.";
+    if (powerCondition === "UNPLUGGED") ovPowerSub.textContent = "Input line is missing or below the presence threshold.";
+    else if (powerCondition === "UNDERVOLTAGE") ovPowerSub.textContent = "Below the 200 V trip threshold.";
+    else if (powerCondition === "OVERVOLTAGE") ovPowerSub.textContent = "Above the 250 V trip threshold.";
+    else if (powerCondition === "DEVICE_DISCONNECTED") ovPowerSub.textContent = "Waiting for fresh live data.";
+    else if (powerCondition === "NORMAL") ovPowerSub.textContent = "Within the expected 200–250 V window.";
+    else ovPowerSub.textContent = "Checking line condition.";
   }
 
-  if (ovProtection) ovProtection.textContent = prettyStatus(status === "NORMAL" ? "MONITORING" : status);
+  if (ovProtection) ovProtection.textContent = status === "NORMAL" ? "Monitoring" : prettyStatus(status);
   if (ovProtectionSub) {
-    if (status === "OVERLOAD") ovProtectionSub.textContent = "Warning only. Temperature or higher-priority faults are responsible for relay cutoff.";
-    else if (status === "HEATING") ovProtectionSub.textContent = "Highest-priority fault in your current protection hierarchy.";
-    else if (status === "ARCING") ovProtectionSub.textContent = "RF model-positive event. In normal mode this should open the relay.";
-    else if (status === "UNDERVOLTAGE" || status === "OVERVOLTAGE") ovProtectionSub.textContent = "Voltage protection outranks overload but not heating or arcing.";
-    else ovProtectionSub.textContent = "Monitoring with no active protection trip from the latest live state.";
+    if (status === "ARCING") ovProtectionSub.textContent = "AI model-positive arc event based on waveform features.";
+    else if (status === "HEATING") ovProtectionSub.textContent = "Socket temperature is at or above 70 °C.";
+    else if (status === "SHORT_CIRCUIT") ovProtectionSub.textContent = "Measured current is above 20 A.";
+    else if (status === "OVERLOAD") ovProtectionSub.textContent = "Measured current is at or above 10 A.";
+    else if (status === "UNDERVOLTAGE") ovProtectionSub.textContent = "Voltage is below 200 V.";
+    else if (status === "OVERVOLTAGE") ovProtectionSub.textContent = "Voltage is above 250 V.";
+    else if (status === "UNPLUGGED") ovProtectionSub.textContent = "No mains input detected.";
+    else if (status === "DEVICE_DISCONNECTED") ovProtectionSub.textContent = "No fresh live data from the device.";
+    else ovProtectionSub.textContent = "No active protection trip from the latest live data.";
   }
-
-  if (ovFirmware) ovFirmware.textContent = fw;
-  if (ovFirmwareSub) ovFirmwareSub.textContent = `OTA ${otaReady ? "ready" : "not ready"} • ${fresh ? "device reachable" : "live data stale"}`;
 
   if (ovLastEvent) ovLastEvent.textContent = lastEventStatus;
   if (ovLastEventSub) ovLastEventSub.textContent = lastEventStatus === "—" ? "No history event yet." : `${lastEventTime}`;
 
-  if (status === "HEATING" || status === "ARCING") setMiniBadge("fault", "Critical");
-  else if (["OVERLOAD", "UNDERVOLTAGE", "OVERVOLTAGE", "UNPLUGGED", "WIFI_CONNECTING", "STARTUP_STABILIZING", "CONFIG_PORTAL", "OTA_UPDATING"].includes(status)) setMiniBadge("warn", "Attention");
-  else if (fresh) setMiniBadge("ok", "Healthy");
+  if (["HEATING", "ARCING", "SHORT_CIRCUIT"].includes(status)) setMiniBadge("fault", "Critical");
+  else if (["OVERLOAD", "UNDERVOLTAGE", "OVERVOLTAGE", "UNPLUGGED", "WIFI_CONNECTING", "STARTUP_STABILIZING", "CONFIG_PORTAL", "OTA_UPDATING", "DEVICE_DISCONNECTED"].includes(status)) setMiniBadge("warn", fresh ? "Attention" : "Offline");
+  else if (fresh) setMiniBadge("ok", loadActive ? "Active" : "Idle");
   else setMiniBadge("warn", "Offline");
 
-  if (liveStateHint) liveStateHint.textContent = fresh ? "LIVE" : "STALE";
+  liveStateHints.forEach((node) => { node.textContent = fresh ? "LIVE" : "DISCONNECTED"; });
   if (deviceMdnsText) deviceMdnsText.textContent = mdns || "tinyml-smart-plug.local";
 }
 
@@ -526,23 +612,30 @@ function renderTopState() {
 function transitionNotice(newLive) {
   const nowFresh = liveIsFresh();
   const powerCondition = effectivePowerCondition();
-  const freshChanged = nowFresh && !previousFresh;
+  const statusStr = deriveLiveStatus(newLive || {});
+  const statusForHistory = statusStr === "NORMAL" ? "DEVICE_ON" : statusStr;
+  const cameOnline = nowFresh && !previousFresh;
+  const wentOffline = !nowFresh && previousFresh;
   const powerRestored = previousPowerCondition === "UNPLUGGED" && powerCondition !== "UNPLUGGED" && nowFresh;
 
-  if (freshChanged) toast("Device is online again.", "info");
+  if (cameOnline) toast("Device reconnected.", "info");
+  if (wentOffline) toast("Device disconnected after 15s without fresh data.", "warn");
   if (powerRestored) toast("Power restored. Device plugged back in detected.", "ok");
+
+  if (cameOnline) recordEffectiveHistoryTransition(statusForHistory, newLive || {}, latestLiveEpoch() || Date.now());
+  else if (nowFresh) recordEffectiveHistoryTransition(statusForHistory, newLive || {}, latestLiveEpoch() || Date.now());
 
   previousFresh = nowFresh;
   previousPowerCondition = powerCondition;
 
-  const statusStr = classifyStatus(newLive?.status || "NORMAL");
-  const notifySet = new Set(["ARCING", "HEATING", "OVERLOAD", "UNDERVOLTAGE", "OVERVOLTAGE", "UNPLUGGED"]);
+  const notifySet = new Set(["ARCING", "HEATING", "SHORT_CIRCUIT", "OVERLOAD", "UNDERVOLTAGE", "OVERVOLTAGE", "UNPLUGGED"]);
   const isInteresting = notifySet.has(statusStr);
   const wasInteresting = notifySet.has(classifyStatus(lastAlertStatus || ""));
   const shouldNotify = isInteresting && (!wasInteresting || statusStr !== classifyStatus(lastAlertStatus || ""));
 
   if (shouldNotify && (Date.now() - lastNotifiedAt) > 4000) {
-    const body = `Status: ${prettyStatus(statusStr)}\nV=${toFixedOrDash(newLive?.voltage,1)}V  I=${toFixedOrDash(newLive?.current,2)}A  T=${toFixedOrDash(newLive?.temp,1)}°C`;
+    const body = `Status: ${prettyStatus(statusStr)}
+V=${toFixedOrDash(newLive?.voltage,1)}V  I=${toFixedOrDash(newLive?.current,2)}A  T=${toFixedOrDash(newLive?.temp,1)}°C`;
     showFaultNotification("TinyML Smart Plug Alert", body);
     if ((soundEnable?.checked ?? false)) playBeep();
     lastNotifiedAt = Date.now();
@@ -572,11 +665,68 @@ function rangeLabel(key) {
   return "Last 7 days";
 }
 
+function makeHistoryEvent(kind, payload = {}, epoch = Date.now()) {
+  const src = payload || {};
+  return {
+    status: classifyStatus(kind),
+    voltage: Number(src.voltage ?? lastLiveData?.voltage ?? 0),
+    current: Number(src.current ?? lastLiveData?.current ?? 0),
+    temp: Number(src.temp ?? lastLiveData?.temp ?? 0),
+    apparent_power: Number(src.apparent_power ?? lastLiveData?.apparent_power ?? 0),
+    cycle_nmse: src.cycle_nmse ?? lastLiveData?.cycle_nmse ?? null,
+    zcv: src.zcv ?? lastLiveData?.zcv ?? null,
+    zc_dwell_ratio: src.zc_dwell_ratio ?? lastLiveData?.zc_dwell_ratio ?? null,
+    pulse_count_per_cycle: src.pulse_count_per_cycle ?? lastLiveData?.pulse_count_per_cycle ?? null,
+    peak_fluct_cv: src.peak_fluct_cv ?? lastLiveData?.peak_fluct_cv ?? null,
+    midband_residual_rms: src.midband_residual_rms ?? lastLiveData?.midband_residual_rms ?? null,
+    hf_band_energy_ratio: src.hf_band_energy_ratio ?? lastLiveData?.hf_band_energy_ratio ?? null,
+    wpe_entropy: src.wpe_entropy ?? lastLiveData?.wpe_entropy ?? null,
+    spec_entropy: src.spec_entropy ?? lastLiveData?.spec_entropy ?? null,
+    thd_i: src.thd_i ?? lastLiveData?.thd_i ?? null,
+    server_ts: epoch,
+    ts_epoch_ms: epoch,
+    _local: true
+  };
+}
+
+function pushLocalHistoryEvent(kind, payload = {}, epoch = Date.now()) {
+  const status = classifyStatus(kind);
+  const bucket = Math.floor(epoch / 1000);
+  const key = `${status}|${bucket}`;
+  if (lastSyntheticHistoryKey === key) return;
+  lastSyntheticHistoryKey = key;
+  localHistoryEvents.push(makeHistoryEvent(status, payload, epoch));
+  if (localHistoryEvents.length > 120) localHistoryEvents = localHistoryEvents.slice(-120);
+}
+
+function getMergedHistory() {
+  return [...historyCache, ...localHistoryEvents];
+}
+
+function refreshLatestHistoryRecord() {
+  const merged = getMergedHistory();
+  latestHistoryRecord = merged.reduce((best, rec) => {
+    if (!best) return rec;
+    return getRecordEpochMs(rec) > getRecordEpochMs(best) ? rec : best;
+  }, null);
+}
+
+function recordEffectiveHistoryTransition(kind, payload = {}, epoch = Date.now()) {
+  const normalized = classifyStatus(kind);
+  if (!normalized || normalized === lastEffectiveHistoryStatus) return;
+  lastEffectiveHistoryStatus = normalized;
+  const loggable = new Set(["DEVICE_ON","DEVICE_ONLINE","DEVICE_DISCONNECTED","UNPLUGGED","OVERLOAD","SHORT_CIRCUIT","HEATING","ARCING","UNDERVOLTAGE","OVERVOLTAGE","CONFIG_PORTAL","WIFI_CONNECTING","STARTUP_STABILIZING","OTA_UPDATING","FIRMWARE_UPDATED"]);
+  if (!loggable.has(normalized)) return;
+  pushLocalHistoryEvent(normalized, payload, epoch);
+  refreshLatestHistoryRecord();
+  applyHistoryFilter();
+}
+
 function applyHistoryFilter() {
   const key = rangeSelect?.value || "7d";
   const { start, end } = getRangeBounds(key);
 
-  const filtered = historyCache.filter(r => {
+  const filtered = getMergedHistory().filter(r => {
     const epoch = getRecordEpochMs(r);
     return epoch && epoch >= start && epoch < end;
   });
@@ -749,7 +899,8 @@ db.ref("live_data").on("value", (snap) => {
   if (!data) return;
 
   syntheticDisconnectActive = false;
-  lastSeenMs = Date.now();
+  lastReceiptMs = Date.now();
+  lastSeenMs = getRecordEpochMs(data) || lastReceiptMs;
   lastLiveData = data;
 
   const wifi = !!data.wifi_connected;
@@ -780,7 +931,7 @@ db.ref("history")
     const obj = snap.val();
     if (!obj) {
       historyCache = [];
-      latestHistoryRecord = null;
+      refreshLatestHistoryRecord();
       applyHistoryFilter();
       renderOverview();
       renderTopState();
@@ -788,10 +939,7 @@ db.ref("history")
     }
 
     historyCache = Object.values(obj);
-    latestHistoryRecord = historyCache.reduce((best, rec) => {
-      if (!best) return rec;
-      return getRecordEpochMs(rec) > getRecordEpochMs(best) ? rec : best;
-    }, null);
+    refreshLatestHistoryRecord();
 
     applyHistoryFilter();
     renderOverview();
@@ -805,8 +953,12 @@ setInterval(() => {
   }
   if ((Date.now() - lastSeenMs) > STALE_MS) {
     if (deviceIpLine) deviceIpLine.style.display = "none";
-    setLiveZeroes();
-    injectSyntheticDisconnect();
+    setLiveUnavailable();
+    applyMetricHints(lastLiveData || {});
+    if (previousFresh) {
+      recordEffectiveHistoryTransition("DEVICE_DISCONNECTED", lastLiveData || {}, Date.now());
+      previousFresh = false;
+    }
   }
   renderTopState();
 }, 1000);
@@ -1135,6 +1287,26 @@ mlCsvUpload?.addEventListener("change", async (ev) => {
   } finally {
     if (mlCsvUpload) mlCsvUpload.value = "";
   }
+});
+
+document.querySelectorAll(".collapse-toggle").forEach((btn) => {
+  const targetId = btn.getAttribute("data-collapse-target");
+  const body = targetId ? document.getElementById(targetId) : null;
+  if (!body) return;
+  const sync = () => {
+    const collapsed = body.classList.contains("is-collapsed");
+    btn.textContent = collapsed ? "Expand" : "Collapse";
+    btn.setAttribute("aria-expanded", collapsed ? "false" : "true");
+    body.style.maxHeight = collapsed ? "0px" : `${body.scrollHeight + 8}px`;
+  };
+  sync();
+  btn.addEventListener("click", () => {
+    body.classList.toggle("is-collapsed");
+    sync();
+  });
+  window.addEventListener("resize", () => {
+    if (!body.classList.contains("is-collapsed")) body.style.maxHeight = `${body.scrollHeight + 8}px`;
+  });
 });
 
 if ("serviceWorker" in navigator) {
