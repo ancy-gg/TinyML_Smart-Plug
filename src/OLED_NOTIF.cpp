@@ -1,4 +1,5 @@
 #include "OLED_NOTIF.h"
+#include "SmartPlugConfig.h"
 #include <math.h>
 
 static const uint8_t PROGMEM kBootLogo24x24[] = {
@@ -282,7 +283,7 @@ void OLED_NOTIF::drawFaultSlide(uint32_t nowMs, OledOverlay ov) {
 
 void OLED_NOTIF::render() {
   const uint32_t now = millis();
-  if (_voltage <= 0.2f) {
+  if (_voltage <= MAINS_PRESENT_OFF_V) {
     if (_noPowerSinceMs == 0) _noPowerSinceMs = now;
   } else {
     _noPowerSinceMs = 0;

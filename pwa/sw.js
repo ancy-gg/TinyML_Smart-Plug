@@ -1,4 +1,4 @@
-const BUILD_VERSION = "TSPweb-v2.0.0";
+const BUILD_VERSION = "TSPweb-v2.0.1";
 const CACHE_NAME = BUILD_VERSION;
 const APP_SHELL = [
   "./",

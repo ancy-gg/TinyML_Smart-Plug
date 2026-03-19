@@ -37,6 +37,8 @@ private:
   uint32_t _portalStartMs = 0;
   void (*_userApCb)(WiFiManager*) = nullptr;
 
+  void startPortal_();
+
   static NetworkManager* s_inst;
   static void apTrampoline(WiFiManager* wmgr);
 };

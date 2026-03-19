@@ -74,6 +74,7 @@ body.ios .ota-input{ font-size:16px; }
   font-size:12px;
   text-align:left;
 }
+.section-hint:empty{ display:none; }
 
 .status-wrap{
   display:flex;

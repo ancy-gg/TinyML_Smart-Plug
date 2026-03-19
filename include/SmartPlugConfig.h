@@ -16,7 +16,7 @@
 #endif
 
 #ifndef COLLECTION_ONLY_MODE
-#define COLLECTION_ONLY_MODE 0    //0 for Relay Trips, 1 for No Trips
+#define COLLECTION_ONLY_MODE 0    //0 for Relay Trip Protection, 1 for No Trips
 #endif
 
 #ifndef ENABLE_AUTO_ARC_CAPTURE
@@ -50,6 +50,11 @@ static constexpr uint32_t WIFI_BOOT_BLOCK_MS      = 10000UL;
 static constexpr uint32_t WIFI_CONNECT_TIMEOUT_MS = 10000UL;
 static constexpr uint32_t WIFI_PORTAL_TIMEOUT_MS  = 180000UL;
 static constexpr uint8_t  WIFI_TRIPLE_TAP_COUNT   = 3;
+
+// Relay / alarm behavior with external hardware fault latch.
+// The MCU may request a trip, but it must not behave like a user relay toggle.
+static constexpr bool HARDWARE_FAULT_LATCH = true;
+static constexpr uint32_t FAULT_ALERT_MIN_MS = 2000UL;
 
 // =========================
 // Protection thresholds

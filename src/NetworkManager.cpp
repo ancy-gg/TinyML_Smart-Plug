@@ -6,6 +6,14 @@ RTC_DATA_ATTR static uint8_t s_bootTapArmed = 0;
 
 NetworkManager* NetworkManager::s_inst = nullptr;
 
+void NetworkManager::startPortal_() {
+  WiFi.mode(WIFI_AP_STA);
+  wm.startConfigPortal("TinyML SmartPlug");
+  _phase = PHASE_PORTAL_ACTIVE;
+  _portalStarted = true;
+  _portalStartMs = millis();
+}
+
 void NetworkManager::apTrampoline(WiFiManager* wmgr) {
   if (!s_inst) return;
   s_inst->_phase = PHASE_PORTAL_ACTIVE;
@@ -36,9 +44,7 @@ void NetworkManager::begin(void (*apCallback)(WiFiManager*)) {
   WiFi.setSleep(false);
 
   if (_portalRequested) {
-    WiFi.mode(WIFI_AP_STA);
-    WiFi.softAP("TinyML SmartPlug");
-    _phase = PHASE_AP_WAIT_CLIENT;
+    startPortal_();
   } else {
     WiFi.mode(WIFI_STA);
     WiFi.begin(); // use stored credentials only; do not start portal here
@@ -63,17 +69,7 @@ void NetworkManager::update() {
       return;
     }
     if ((now - _phaseStartMs) >= WIFI_CONNECT_TIMEOUT_MS) {
-      _phase = PHASE_TIMEOUT;
-    }
-    return;
-  }
-
-  if (_phase == PHASE_AP_WAIT_CLIENT) {
-    if (!_portalStarted && WiFi.softAPgetStationNum() > 0) {
-      _portalStarted = true;
-      wm.startConfigPortal("TinyML SmartPlug");
-      _portalStartMs = millis();
-      _phase = PHASE_PORTAL_ACTIVE;
+      startPortal_();
       return;
     }
     return;

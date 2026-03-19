@@ -31,7 +31,7 @@
 
 #define API_KEY "AIzaSyAmJlZZszyWPJFgIkTAAl_TbIySys1nvEw"
 #define DATABASE_URL "tinyml-smart-plug-default-rtdb.asia-southeast1.firebasedatabase.app"
-static const char* FW_VERSION = "TSP-v1.0.0-protect";
+static const char* FW_VERSION = "TSP-v1.0.1-protect";
 
 static const char* OTA_DESIRED_VERSION_PATH = "/ota/desired_version";
 static const char* OTA_FIRMWARE_URL_PATH    = "/ota/firmware_url";
@@ -477,7 +477,7 @@ void loop() {
     lastLive = millis();
 
     static uint32_t noPowerSinceMs = 0;
-    if (vFast <= 0.2f) {
+    if (vFast <= MAINS_PRESENT_OFF_V) {
       if (noPowerSinceMs == 0) noPowerSinceMs = millis();
     } else {
       noPowerSinceMs = 0;

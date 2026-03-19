@@ -73,8 +73,8 @@ const toastEl = el("toast");
 
 const DISPLAY_TZ = "Asia/Manila";
 const STALE_MS = 12000;
-const HISTORY_LIMIT = 5000;
-const MAX_RENDER_ROWS = 300;
+const HISTORY_LIMIT = 400;
+const MAX_RENDER_ROWS = 120;
 
 const OTA_REPO_RAW_BASE = "https://raw.githubusercontent.com/ancy-gg/TinyML_Smart-Plug/main/firmware/";
 const OTA_DEFAULT_BIN   = "firmware.bin";
@@ -98,6 +98,7 @@ const isIOS = /iphone|ipad|ipod/i.test(navigator.userAgent || "");
 const isStandalone = window.matchMedia?.("(display-mode: standalone)")?.matches || window.navigator.standalone === true;
 if (isIOS) document.body.classList.add("ios");
 if (isStandalone) document.body.classList.add("standalone");
+if (installHelp) installHelp.classList.add("hidden");
 
 function buildRepoFirmwareUrl(binName) {
   const name = (binName || OTA_DEFAULT_BIN).trim();

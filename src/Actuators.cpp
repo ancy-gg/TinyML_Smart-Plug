@@ -106,6 +106,8 @@ static uint8_t s_step = 0;
 static uint32_t s_t0 = 0;
 static uint8_t s_activePrio = 0;
 static uint8_t s_lastFaultSound = 255;
+static uint8_t s_faultHoldSound = 255;
+static uint32_t s_faultHoldUntil = 0;
 
 static inline bool isFaultPattern(uint8_t id) {
   return id == SND_FAULT_ARC ||
@@ -245,6 +247,7 @@ void Actuators::notify(SoundEvent ev) {
 
 void Actuators::apply(FaultState st, float vDisplay, float vProtect, float i, float t) {
   (void)vDisplay;
+  const uint32_t now = millis();
 
 #if COLLECTION_ONLY_MODE
   const float heatCutoffC = TEMP_DATA_WARN_C; // 80 C in collection mode
@@ -278,13 +281,28 @@ void Actuators::apply(FaultState st, float vDisplay, float vProtect, float i, fl
   else if (underVoltActive) wantedFaultSound = SND_FAULT_UNDERVOLT;
   else if (overloadActive) wantedFaultSound = SND_FAULT_OVER;
 
-  if (wantedFaultSound != s_lastFaultSound) {
-    s_lastFaultSound = wantedFaultSound;
-    if (wantedFaultSound == 255) {
-      if (isFaultPattern(s_activeId)) soundStop();
-    } else {
+  if (wantedFaultSound != 255) {
+    if (wantedFaultSound != s_lastFaultSound) {
+      s_lastFaultSound = wantedFaultSound;
+      s_faultHoldSound = wantedFaultSound;
+      s_faultHoldUntil = now + FAULT_ALERT_MIN_MS;
       soundStart(wantedFaultSound);
+    } else {
+      s_faultHoldSound = wantedFaultSound;
+      if (s_activeId == 255 || !isFaultPattern(s_activeId)) soundStart(wantedFaultSound);
     }
+  } else {
+    s_lastFaultSound = 255;
+    if (s_faultHoldSound != 255 && now >= s_faultHoldUntil) {
+      s_faultHoldSound = 255;
+      if (isFaultPattern(s_activeId)) soundStop();
+    }
+  }
+
+  soundLoop();
+
+  if (s_faultHoldSound != 255 && s_activeId == 255 && (wantedFaultSound != 255 || now < s_faultHoldUntil)) {
+    soundStart(s_faultHoldSound);
   }
 
   static bool mainsWasOn = false;
@@ -292,5 +310,4 @@ void Actuators::apply(FaultState st, float vDisplay, float vProtect, float i, fl
   if (mainsWasOn && !mainsOn) notify(SND_MAINS_LOST);
   mainsWasOn = mainsOn;
 
-  soundLoop();
 }
