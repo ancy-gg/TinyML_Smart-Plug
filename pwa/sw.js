@@ -1,18 +1,16 @@
-const BUILD_VERSION = "TSPweb-v1.6.0";
-
+const BUILD_VERSION = "TSPweb-v2.0.0";
 const CACHE_NAME = BUILD_VERSION;
-
-const CORE_ASSETS = [
-  "/",
-  "/index.html",
-  "/session.html",
-  "/styles.css",
-  "/app.js",
-  "/session.js",
-  "/manifest.json",
-  "/icons/icon-192.png",
-  "/icons/icon-512.png",
-  "/404.html"
+const APP_SHELL = [
+  "./",
+  "./index.html",
+  "./session.html",
+  "./styles.css",
+  "./app.js",
+  "./session.js",
+  "./manifest.json",
+  "./icons/icon-192.png",
+  "./icons/icon-512.png",
+  "./404.html"
 ];
 
 self.addEventListener("message", (event) => {
@@ -21,7 +19,7 @@ self.addEventListener("message", (event) => {
 
 self.addEventListener("install", (event) => {
   self.skipWaiting();
-  event.waitUntil(caches.open(CACHE_NAME).then((cache) => cache.addAll(CORE_ASSETS)));
+  event.waitUntil(caches.open(CACHE_NAME).then((cache) => cache.addAll(APP_SHELL)));
 });
 
 self.addEventListener("activate", (event) => {
@@ -32,28 +30,51 @@ self.addEventListener("activate", (event) => {
   })());
 });
 
+async function networkFirst(request, fallbackUrl = "./index.html") {
+  try {
+    const fresh = await fetch(request, { cache: "no-store" });
+    const cache = await caches.open(CACHE_NAME);
+    cache.put(request, fresh.clone());
+    return fresh;
+  } catch {
+    const cached = await caches.match(request, { ignoreSearch: true });
+    return cached || caches.match(fallbackUrl, { ignoreSearch: true }) || caches.match("./404.html");
+  }
+}
+
+async function staleWhileRevalidate(request) {
+  const cache = await caches.open(CACHE_NAME);
+  const cached = await cache.match(request, { ignoreSearch: true });
+  const fetchPromise = fetch(request).then((fresh) => {
+    cache.put(request, fresh.clone());
+    return fresh;
+  }).catch(() => cached);
+  return cached || fetchPromise;
+}
+
 self.addEventListener("fetch", (event) => {
   const req = event.request;
   if (req.method !== "GET") return;
 
   const url = new URL(req.url);
+  const sameOrigin = url.origin === self.location.origin;
 
-  if (url.origin === self.location.origin) {
-    event.respondWith((async () => {
-      try {
-        const fresh = await fetch(req, { cache: "no-store" });
-        const cache = await caches.open(CACHE_NAME);
-        cache.put(req, fresh.clone());
-        return fresh;
-      } catch {
-        const cached = await caches.match(req);
-        return cached || caches.match("/404.html");
-      }
-    })());
+  if (req.mode === "navigate") {
+    event.respondWith(networkFirst(req, "./index.html"));
     return;
   }
 
-  event.respondWith(caches.match(req).then((cached) => cached || fetch(req)));
+  if (sameOrigin && ["style", "script", "image", "font"].includes(req.destination)) {
+    event.respondWith(staleWhileRevalidate(req));
+    return;
+  }
+
+  if (sameOrigin) {
+    event.respondWith(networkFirst(req, "./404.html"));
+    return;
+  }
+
+  event.respondWith(fetch(req).catch(() => caches.match(req)));
 });
 
 self.addEventListener("notificationclick", (event) => {
@@ -63,6 +84,6 @@ self.addEventListener("notificationclick", (event) => {
     for (const c of all) {
       if ("focus" in c) return c.focus();
     }
-    if (clients.openWindow) return clients.openWindow("/");
+    if (clients.openWindow) return clients.openWindow("./index.html");
   })());
 });

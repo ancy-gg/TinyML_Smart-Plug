@@ -2,11 +2,21 @@
 <html lang="en">
 <head>
   <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <meta
+    name="viewport"
+    content="width=device-width,initial-scale=1,viewport-fit=cover,maximum-scale=1"
+  />
   <title>TinyML Smart Plug</title>
+  <meta name="description" content="Elegant real-time monitoring and protection dashboard for the TinyML Smart Plug." />
+  <meta name="theme-color" content="#111111" />
+  <meta name="mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <meta name="apple-mobile-web-app-title" content="TinyML Plug" />
+  <meta name="format-detection" content="telephone=no,email=no,address=no" />
+  <meta name="color-scheme" content="dark" />
 
   <link rel="manifest" href="manifest.json">
-  <meta name="theme-color" content="#111111" />
   <link rel="apple-touch-icon" href="icons/icon-192.png">
   <link rel="icon" type="image/png" href="icons/icon-512.png">
 
@@ -19,7 +29,10 @@
     <header class="top">
       <div class="brand">
         <img class="logo" src="icons/icon-512.png" alt="TinyML Smart Plug Logo" />
-        <h1 class="title">TinyML Smart Plug</h1>
+        <div>
+          <h1 class="title">TinyML Smart Plug</h1>
+          <div class="title-sub">Protection-aware monitoring for daily appliance use</div>
+        </div>
       </div>
 
       <div class="status-wrap">
@@ -28,11 +41,15 @@
         <div class="subline">
           <span class="label">Last update:</span>
           <span id="lastUpdateText" class="mono">—</span>
+          <span class="dot-sep">•</span>
+          <span id="freshnessText">Waiting for device…</span>
         </div>
 
         <div id="deviceIpLine" class="subline" style="display:none;">
           <span class="label">Device IP:</span>
           <span id="deviceIpText" class="mono">—</span>
+          <span class="dot-sep">•</span>
+          <span id="deviceMdnsText" class="mono">tinyml-smart-plug.local</span>
         </div>
 
         <div class="alertbar">
@@ -48,38 +65,125 @@
       </div>
     </header>
 
+    <section id="installHelp" class="install-help hidden" aria-live="polite">
+      <div class="install-help-head">
+        <div>
+          <div class="install-title">Install the app</div>
+          <div class="install-copy" id="installCopy">
+            Save this dashboard to your Home Screen for a faster full-screen experience.
+          </div>
+        </div>
+        <button id="btnDismissInstall" class="btn btn-small" type="button">Dismiss</button>
+      </div>
+    </section>
+
+    <section class="overview-block">
+      <div class="section-head">
+        <div>
+          <h2 class="section-title">System Overview</h2>
+          <div class="section-hint">Consumer-friendly summary</div>
+        </div>
+        <div class="section-actions">
+          <button id="btnRefreshNow" class="btn btn-small" type="button">Refresh</button>
+        </div>
+      </div>
+
+      <div class="overview-grid">
+        <div class="summary-card summary-card-wide">
+          <div class="summary-head">
+            <div class="summary-kicker">Overall Health</div>
+            <div id="overviewHealthBadge" class="mini-badge mini-badge-OK">Healthy</div>
+          </div>
+          <div id="overviewPrimary" class="summary-title">Waiting for device…</div>
+          <div id="overviewSecondary" class="summary-copy">
+            Live device data will appear here as soon as the smart plug publishes to Firebase.
+          </div>
+        </div>
+
+        <div class="summary-card">
+          <div class="summary-kicker">Connectivity</div>
+          <div id="ovConnectivity" class="summary-value">Offline</div>
+          <div id="ovConnectivitySub" class="summary-copy">No fresh live data yet.</div>
+        </div>
+
+        <div class="summary-card">
+          <div class="summary-kicker">Power Condition</div>
+          <div id="ovPowerCondition" class="summary-value">Unknown</div>
+          <div id="ovPowerSub" class="summary-copy">Voltage state not available yet.</div>
+        </div>
+
+        <div class="summary-card">
+          <div class="summary-kicker">Protection</div>
+          <div id="ovProtection" class="summary-value">Monitoring</div>
+          <div id="ovProtectionSub" class="summary-copy">Trips and alarms will be summarized here.</div>
+        </div>
+
+        <div class="summary-card">
+          <div class="summary-kicker">Firmware</div>
+          <div id="ovFirmware" class="summary-value">—</div>
+          <div id="ovFirmwareSub" class="summary-copy">Version and OTA readiness.</div>
+        </div>
+
+        <div class="summary-card">
+          <div class="summary-kicker">Last Event</div>
+          <div id="ovLastEvent" class="summary-value">—</div>
+          <div id="ovLastEventSub" class="summary-copy">Recent device event will appear here.</div>
+        </div>
+
+        <div class="summary-card summary-card-wide">
+          <div class="summary-kicker">Protection Rules</div>
+          <div class="rules-grid">
+            <div class="rule-pill">Overload warning: 10 A</div>
+            <div class="rule-pill">Undervoltage: 100–200 V</div>
+            <div class="rule-pill">Overvoltage: 250 V+</div>
+            <div class="rule-pill">Thermal cutoff: 70 °C normal / 80 °C collection</div>
+          </div>
+        </div>
+      </div>
+    </section>
+
     <section class="metrics-block">
       <div class="section-head">
-        <h2 class="section-title">Live Electrical Data</h2>
-        <div class="section-hint">LIVE</div>
+        <div>
+          <h2 class="section-title">Live Electrical Data</h2>
+          <div class="section-hint">Realtime measurements</div>
+        </div>
+        <div class="section-hint" id="liveStateHint">LIVE</div>
       </div>
 
       <div class="metric-grid-top">
         <div class="card live-card">
           <div class="card-label">Voltage</div>
           <div class="card-value"><span id="vVal">—</span><span class="unit">V</span></div>
+          <div id="vHint" class="metric-note">Power line condition</div>
         </div>
 
         <div class="card live-card">
           <div class="card-label">Current</div>
           <div class="card-value"><span id="iVal">—</span><span class="unit">A</span></div>
+          <div id="iHint" class="metric-note">Load draw</div>
         </div>
 
         <div class="card live-card">
           <div class="card-label">Apparent Power</div>
           <div class="card-value"><span id="pVal">—</span><span class="unit">VA</span></div>
+          <div id="pHint" class="metric-note">Estimated demand</div>
         </div>
 
         <div class="card live-card">
           <div class="card-label">Temperature</div>
           <div class="card-value"><span id="tVal">—</span><span class="unit">°C</span></div>
+          <div id="tHint" class="metric-note">Socket thermal state</div>
         </div>
       </div>
     </section>
 
     <section class="features-block">
       <div class="section-head">
-        <h2 class="section-title">Waveform Data</h2>
+        <div>
+          <h2 class="section-title">Waveform Data</h2>
+          <div class="section-hint">Arc-discriminating features</div>
+        </div>
         <div class="section-hint">LIVE</div>
       </div>
 
@@ -87,7 +191,7 @@
         <div class="feature-group-card">
           <div class="group-head">
             <h3 class="group-title">Time and Cycle Domain</h3>
-            <div class="muted small">Main Discriminants</div>
+            <div class="muted small">Primary discriminants</div>
           </div>
           <div class="feature-grid feature-grid-2col">
             <div class="card feature-card"><div class="card-label">Cycle NMSE</div><div class="card-value"><span id="cycleNmseVal">—</span></div></div>
@@ -102,7 +206,7 @@
         <div class="feature-group-card">
           <div class="group-head">
             <h3 class="group-title">Frequency and Energy Domain</h3>
-            <div class="muted small">Context Features</div>
+            <div class="muted small">Context features</div>
           </div>
           <div class="feature-grid feature-grid-2col">
             <div class="card feature-card"><div class="card-label">HF Band Energy Ratio</div><div class="card-value"><span id="hfEnergyVal">—</span></div></div>
@@ -159,6 +263,7 @@
       <div class="history-head">
         <div>
           <h2 class="history-title">Over-the-Air (OTA) Updates</h2>
+          <div class="history-hint">Publish a version and firmware URL for the device to pull</div>
         </div>
 
         <div class="history-actions">
@@ -168,8 +273,9 @@
 
       <div class="ota-grid">
         <div class="ota-box">
-          <div class="ota-label">Current Version</div>
+          <div class="ota-label">Current Published OTA</div>
           <div class="ota-line"><span class="muted">Version:</span> <span class="mono" id="otaCurVer">—</span></div>
+          <div class="ota-line"><span class="muted">URL:</span> <span class="mono ota-url" id="otaCurUrl">—</span></div>
         </div>
 
         <div class="ota-box">

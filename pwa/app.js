@@ -12,19 +12,43 @@ const firebaseConfig = {
 firebase.initializeApp(firebaseConfig);
 const db = firebase.database();
 
-// ---------- DOM helpers ----------
 const el = (id) => document.getElementById(id);
 
 const statusBadge = el("statusBadge");
 const lastUpdateText = el("lastUpdateText");
-
+const freshnessText = el("freshnessText");
 const deviceIpLine = el("deviceIpLine");
 const deviceIpText = el("deviceIpText");
+const deviceMdnsText = el("deviceMdnsText");
+
+const overviewHealthBadge = el("overviewHealthBadge");
+const overviewPrimary = el("overviewPrimary");
+const overviewSecondary = el("overviewSecondary");
+const ovConnectivity = el("ovConnectivity");
+const ovConnectivitySub = el("ovConnectivitySub");
+const ovPowerCondition = el("ovPowerCondition");
+const ovPowerSub = el("ovPowerSub");
+const ovProtection = el("ovProtection");
+const ovProtectionSub = el("ovProtectionSub");
+const ovFirmware = el("ovFirmware");
+const ovFirmwareSub = el("ovFirmwareSub");
+const ovLastEvent = el("ovLastEvent");
+const ovLastEventSub = el("ovLastEventSub");
+
+const installHelp = el("installHelp");
+const installCopy = el("installCopy");
+const btnDismissInstall = el("btnDismissInstall");
+const btnRefreshNow = el("btnRefreshNow");
+const liveStateHint = el("liveStateHint");
 
 const vVal   = el("vVal");
 const iVal   = el("iVal");
 const pVal   = el("pVal");
 const tVal   = el("tVal");
+const vHint  = el("vHint");
+const iHint  = el("iHint");
+const pHint  = el("pHint");
+const tHint  = el("tHint");
 
 const cycleNmseVal = el("cycleNmseVal");
 const zcvVal       = el("zcvVal");
@@ -43,30 +67,38 @@ const soundEnable = el("soundEnable");
 const historyBody = el("historyBody");
 const rangeSelect = el("rangeSelect");
 const historyHint = el("historyHint");
-
 const btnDownloadCSV = el("btnDownloadCSV");
 const btnClearHistory = el("btnClearHistory");
 const toastEl = el("toast");
 
-// ---------- Settings ----------
 const DISPLAY_TZ = "Asia/Manila";
 const STALE_MS = 12000;
 const HISTORY_LIMIT = 5000;
 const MAX_RENDER_ROWS = 300;
 
-// ---------- OTA repo host (your GitHub firmware folder) ----------
 const OTA_REPO_RAW_BASE = "https://raw.githubusercontent.com/ancy-gg/TinyML_Smart-Plug/main/firmware/";
 const OTA_DEFAULT_BIN   = "firmware.bin";
 
-// ---------- State ----------
 let lastSeenMs = 0;
-let lastEpochMs = 0;
-let topStatusSourceEpoch = 0;
-
 let historyCache = [];
 let currentFilteredHistory = [];
+let syntheticDisconnectActive = false;
+let latestHistoryRecord = null;
+let lastLiveData = null;
+let lastAlertStatus = null;
+let lastNotifiedAt = 0;
+let previousPowerCondition = "UNKNOWN";
+let previousFresh = false;
 
-// ---------- OTA helpers ----------
+const LS_ALERT = "tsp_alert_enabled";
+const LS_SOUND = "tsp_sound_enabled";
+const LS_INSTALL_DISMISS = "tsp_install_help_dismissed";
+
+const isIOS = /iphone|ipad|ipod/i.test(navigator.userAgent || "");
+const isStandalone = window.matchMedia?.("(display-mode: standalone)")?.matches || window.navigator.standalone === true;
+if (isIOS) document.body.classList.add("ios");
+if (isStandalone) document.body.classList.add("standalone");
+
 function buildRepoFirmwareUrl(binName) {
   const name = (binName || OTA_DEFAULT_BIN).trim();
   return OTA_REPO_RAW_BASE + encodeURIComponent(name);
@@ -83,7 +115,6 @@ function isHttpsUrl(u) {
   }
 }
 
-// ---------- Toast ----------
 function toast(msg, kind = "ok") {
   if (!toastEl) return;
   toastEl.textContent = msg;
@@ -91,10 +122,9 @@ function toast(msg, kind = "ok") {
   clearTimeout(toastEl._t);
   toastEl._t = setTimeout(() => {
     toastEl.className = `toast toast-${kind}`;
-  }, 2400);
+  }, 2600);
 }
 
-// ---------- Formatting ----------
 function toFixedOrDash(x, digits = 2) {
   if (x === null || x === undefined || x === "" || Number.isNaN(Number(x))) return "—";
   return Number(x).toFixed(digits);
@@ -103,7 +133,6 @@ function toFixedOrDash(x, digits = 2) {
 function formatEpochMsTZ(ms, tz = DISPLAY_TZ) {
   if (!ms || ms <= 0) return "—";
   const d = new Date(ms);
-
   const parts = new Intl.DateTimeFormat("en-CA", {
     timeZone: tz,
     year: "numeric",
@@ -145,12 +174,65 @@ function getRecordEpochMs(r) {
   return 0;
 }
 
-// ---------- Status mapping ----------
+function loadBool(k, def=false){
+  const v = localStorage.getItem(k);
+  if (v === null) return def;
+  return v === "1";
+}
+function saveBool(k, v){ localStorage.setItem(k, v ? "1" : "0"); }
+
+if (alertEnable) alertEnable.checked = loadBool(LS_ALERT, true);
+if (soundEnable) soundEnable.checked = loadBool(LS_SOUND, false);
+alertEnable?.addEventListener("change", () => saveBool(LS_ALERT, alertEnable.checked));
+soundEnable?.addEventListener("change", () => saveBool(LS_SOUND, soundEnable.checked));
+
+function playBeep(){
+  try{
+    const ctx = new (window.AudioContext || window.webkitAudioContext)();
+    const o = ctx.createOscillator();
+    const g = ctx.createGain();
+    o.type = "sine";
+    o.frequency.value = 880;
+    g.gain.value = 0.08;
+    o.connect(g);
+    g.connect(ctx.destination);
+    o.start();
+    setTimeout(() => { o.stop(); ctx.close(); }, 180);
+  }catch(e){}
+}
+
+async function showFaultNotification(title, body){
+  if (!(alertEnable?.checked ?? true)) return;
+  if (!("Notification" in window)) return;
+  if (Notification.permission === "default") {
+    try { await Notification.requestPermission(); } catch {}
+  }
+  if (Notification.permission !== "granted") return;
+
+  if ("serviceWorker" in navigator) {
+    const reg = await navigator.serviceWorker.ready.catch(()=>null);
+    if (reg) {
+      reg.showNotification(title, {
+        body,
+        icon: "icons/icon-192.png",
+        badge: "icons/icon-192.png",
+        tag: "tsp-fault",
+        renotify: true
+      });
+      return;
+    }
+  }
+  new Notification(title, { body, icon: "icons/icon-192.png" });
+}
+
 function classifyStatus(s) {
   const u = (s || "").toUpperCase().trim();
+  if (!u) return "NORMAL";
   if (u === "DEVICE DISCONNECTED") return "DEVICE_DISCONNECTED";
   if (u === "DEVICE UNPLUGGED" || u === "UNPLUGGED") return "UNPLUGGED";
   if (u === "DEVICE ON") return "DEVICE_ON";
+  if (u === "DEVICE PLUGGED IN") return "DEVICE_PLUGGED_IN";
+  if (u === "DEVICE ONLINE") return "DEVICE_ONLINE";
   if (u === "FIRMWARE UPDATED") return "FIRMWARE_UPDATED";
   if (u.includes("DISCON")) return "DEVICE_DISCONNECTED";
   if (u.includes("UNPLUG")) return "UNPLUGGED";
@@ -159,9 +241,19 @@ function classifyStatus(s) {
   if (u.includes("OVERVOLT")) return "OVERVOLTAGE";
   if (u.includes("UNDERVOLT")) return "UNDERVOLTAGE";
   if (u === "OVERLOAD" || u.includes("OVERLOAD")) return "OVERLOAD";
+  if (u.includes("SAFE")) return "SAFE_MODE";
+  if (u.includes("OTA")) return "OTA_UPDATING";
+  if (u.includes("CONFIG")) return "CONFIG_PORTAL";
+  if (u.includes("CONNECTING")) return "WIFI_CONNECTING";
+  if (u.includes("STARTUP")) return "STARTUP_STABILIZING";
   if (u.includes("WARN")) return "WARNING";
   if (u.includes("NORM")) return "NORMAL";
-  return u || "OK";
+  return u.replace(/\s+/g, "_");
+}
+
+function prettyStatus(kind) {
+  const k = classifyStatus(kind);
+  return k.replaceAll("_", " ");
 }
 
 function statusBadgeHTML(kind) {
@@ -174,15 +266,21 @@ function statusBadgeHTML(kind) {
     case "UNPLUGGED": return `UNPLUGGED`;
     case "DEVICE_DISCONNECTED": return `DISCONNECTED`;
     case "DEVICE_ON": return `DEVICE ON`;
+    case "DEVICE_ONLINE": return `ONLINE`;
+    case "DEVICE_PLUGGED_IN": return `PLUGGED IN`;
     case "FIRMWARE_UPDATED": return `FIRMWARE UPDATED`;
+    case "SAFE_MODE": return `SAFE MODE`;
+    case "CONFIG_PORTAL": return `CONFIG PORTAL`;
+    case "WIFI_CONNECTING": return `WIFI CONNECTING`;
+    case "STARTUP_STABILIZING": return `STARTUP STABILIZING`;
+    case "OTA_UPDATING": return `OTA UPDATING`;
     case "NORMAL": return `NORMAL`;
-    default: return `${kind}`;
+    default: return prettyStatus(k);
   }
 }
 
 function setTopStatus(kind) {
   if (!statusBadge) return;
-
   const k = classifyStatus(kind);
   statusBadge.className = "status";
 
@@ -194,12 +292,10 @@ function setTopStatus(kind) {
   else if (k === "OVERVOLTAGE") statusBadge.classList.add("status-OVERVOLTAGE");
   else if (k === "UNDERVOLTAGE") statusBadge.classList.add("status-UNDERVOLTAGE");
   else if (k === "FIRMWARE_UPDATED") statusBadge.classList.add("status-FW");
-  else if (k === "DEVICE_ON") statusBadge.classList.add("status-OK");
-  else if (k === "WARNING") statusBadge.classList.add("status-WARN");
+  else if (k === "SAFE_MODE" || k === "CONFIG_PORTAL" || k === "WIFI_CONNECTING" || k === "STARTUP_STABILIZING" || k === "OTA_UPDATING") statusBadge.classList.add("status-WARN");
   else statusBadge.classList.add("status-OK");
 
   statusBadge.innerHTML = statusBadgeHTML(k);
-
   if (k !== "DEVICE_DISCONNECTED") {
     statusBadge.classList.remove("bump");
     void statusBadge.offsetWidth;
@@ -217,9 +313,11 @@ function pillHTML(kind) {
   if (k === "UNPLUGGED") return `<span class="pill pill-UNPLUG">DEVICE UNPLUGGED</span>`;
   if (k === "DEVICE_DISCONNECTED") return `<span class="pill pill-DIS">DEVICE DISCONNECTED</span>`;
   if (k === "DEVICE_ON") return `<span class="pill pill-OK">DEVICE ON</span>`;
+  if (k === "DEVICE_PLUGGED_IN") return `<span class="pill pill-ONLINE">DEVICE PLUGGED IN</span>`;
+  if (k === "DEVICE_ONLINE") return `<span class="pill pill-ONLINE">DEVICE ONLINE</span>`;
   if (k === "FIRMWARE_UPDATED") return `<span class="pill pill-FW">FIRMWARE UPDATED</span>`;
   if (k === "NORMAL") return `<span class="pill pill-OK">NORMAL</span>`;
-  return `<span class="pill pill-OK">${k.replaceAll("_"," ")}</span>`;
+  return `<span class="pill pill-OK">${prettyStatus(k)}</span>`;
 }
 
 function animateNumber(node) {
@@ -239,7 +337,6 @@ function setLiveZeroes() {
   zeroMap.forEach(([node, text]) => { if (node) node.textContent = text; });
 }
 
-let syntheticDisconnectActive = false;
 function injectSyntheticDisconnect() {
   if (syntheticDisconnectActive) return;
   syntheticDisconnectActive = true;
@@ -251,21 +348,216 @@ function injectSyntheticDisconnect() {
     ts_epoch_ms: Date.now()
   });
   applyHistoryFilter();
+  renderOverview();
 }
 
-// ---------- Range filter ----------
+function liveIsFresh() {
+  return !!lastSeenMs && (Date.now() - lastSeenMs) <= STALE_MS;
+}
+
+function latestLiveEpoch() {
+  return getRecordEpochMs(lastLiveData || {});
+}
+
+function effectiveStatusKind() {
+  if (liveIsFresh() && lastLiveData) return classifyStatus(lastLiveData.status || "NORMAL");
+  if (latestHistoryRecord) return classifyStatus(latestHistoryRecord.status || "DEVICE_DISCONNECTED");
+  return "DEVICE_DISCONNECTED";
+}
+
+function effectiveTimestamp() {
+  if (liveIsFresh() && lastLiveData) return latestLiveEpoch();
+  return getRecordEpochMs(latestHistoryRecord || {});
+}
+
+function effectivePowerCondition() {
+  if (liveIsFresh() && lastLiveData) {
+    const explicit = (lastLiveData.power_condition || "").toString().trim();
+    if (explicit) return classifyStatus(explicit);
+    const st = classifyStatus(lastLiveData.status || "NORMAL");
+    if (st === "UNPLUGGED" || Number(lastLiveData.voltage) < 25) return "UNPLUGGED";
+    if (st === "OVERVOLTAGE") return "OVERVOLTAGE";
+    if (st === "UNDERVOLTAGE") return "UNDERVOLTAGE";
+    return "NORMAL";
+  }
+  const st = effectiveStatusKind();
+  if (["UNPLUGGED", "OVERVOLTAGE", "UNDERVOLTAGE"].includes(st)) return st;
+  if (st === "DEVICE_DISCONNECTED") return "DEVICE_DISCONNECTED";
+  return "UNKNOWN";
+}
+
+function updateFreshnessText() {
+  if (!freshnessText) return;
+  if (!lastSeenMs) {
+    freshnessText.textContent = "Waiting for device…";
+    return;
+  }
+  const age = Date.now() - lastSeenMs;
+  if (age <= STALE_MS) freshnessText.textContent = `Live • ${Math.max(0, Math.round(age / 1000))}s ago`;
+  else freshnessText.textContent = `Stale • ${Math.round(age / 1000)}s ago`;
+}
+
+function applyMetricHints(data) {
+  const v = Number(data?.voltage ?? 0);
+  const i = Number(data?.current ?? 0);
+  const p = Number(data?.apparent_power ?? 0);
+  const t = Number(data?.temp ?? 0);
+  const powerKind = effectivePowerCondition();
+
+  if (vHint) {
+    if (powerKind === "UNPLUGGED") vHint.textContent = "No mains detected.";
+    else if (powerKind === "UNDERVOLTAGE") vHint.textContent = "Input below normal operating range.";
+    else if (powerKind === "OVERVOLTAGE") vHint.textContent = "Input above safe operating range.";
+    else vHint.textContent = v >= 200 ? "Within expected mains range." : "Monitoring line condition.";
+  }
+  if (iHint) {
+    if (i >= 10) iHint.textContent = "Overload warning level reached.";
+    else if (i >= 5) iHint.textContent = "Moderate to high appliance draw.";
+    else if (i > 0.1) iHint.textContent = "Appliance appears active.";
+    else iHint.textContent = "Very low or idle load.";
+  }
+  if (pHint) {
+    if (p >= 1500) pHint.textContent = "Heavy apparent power demand.";
+    else if (p >= 300) pHint.textContent = "Typical active appliance demand.";
+    else if (p > 1) pHint.textContent = "Light demand detected.";
+    else pHint.textContent = "Near zero power draw.";
+  }
+  if (tHint) {
+    if (t >= 70) tHint.textContent = "Critical thermal condition.";
+    else if (t >= 55) tHint.textContent = "Elevated temperature; observe load.";
+    else tHint.textContent = "Thermal state appears normal.";
+  }
+}
+
+function setMiniBadge(kind, text) {
+  if (!overviewHealthBadge) return;
+  overviewHealthBadge.className = "mini-badge";
+  if (kind === "fault") overviewHealthBadge.classList.add("mini-badge-FAULT");
+  else if (kind === "warn") overviewHealthBadge.classList.add("mini-badge-WARN");
+  else overviewHealthBadge.classList.add("mini-badge-OK");
+  overviewHealthBadge.textContent = text;
+}
+
+function renderOverview() {
+  const fresh = liveIsFresh();
+  const status = effectiveStatusKind();
+  const live = lastLiveData || {};
+  const powerCondition = effectivePowerCondition();
+  const fw = (live.fw_version || "—").toString();
+  const otaReady = !!live.ota_ready;
+  const ip = (live.ip || "").toString().trim();
+  const mdns = (live.mdns || "tinyml-smart-plug.local").toString();
+  const lastEventStatus = latestHistoryRecord ? prettyStatus(latestHistoryRecord.status || "") : "—";
+  const lastEventTime = latestHistoryRecord ? formatEpochMsTZ(getRecordEpochMs(latestHistoryRecord)) : "—";
+
+  if (overviewPrimary) {
+    if (!fresh && status === "DEVICE_DISCONNECTED") overviewPrimary.textContent = "Device is offline";
+    else if (status === "UNPLUGGED") overviewPrimary.textContent = "Plug is online, mains is absent";
+    else if (status === "NORMAL") overviewPrimary.textContent = "System healthy and monitoring";
+    else if (status === "STARTUP_STABILIZING") overviewPrimary.textContent = "System is stabilizing after startup";
+    else if (status === "WIFI_CONNECTING") overviewPrimary.textContent = "Connecting to Wi-Fi";
+    else if (status === "CONFIG_PORTAL") overviewPrimary.textContent = "Waiting for Wi-Fi credentials";
+    else if (status === "OTA_UPDATING") overviewPrimary.textContent = "Firmware update in progress";
+    else overviewPrimary.textContent = prettyStatus(status);
+  }
+
+  if (overviewSecondary) {
+    if (!fresh && status === "DEVICE_DISCONNECTED") overviewSecondary.textContent = "No fresh live packet is reaching the dashboard. The PWA is keeping the last known history visible.";
+    else if (status === "UNPLUGGED") overviewSecondary.textContent = "The smart plug is reachable, but input voltage has been absent long enough to classify mains as unplugged.";
+    else if (status === "OVERLOAD") overviewSecondary.textContent = "Current is above the overload warning threshold. Relay remains on unless temperature or another higher-priority fault trips protection.";
+    else if (status === "HEATING") overviewSecondary.textContent = "Thermal protection is active. Relay cutoff should already be engaged on the device side.";
+    else if (status === "ARCING") overviewSecondary.textContent = "The TinyML model is currently detecting an arc-like signature from the measured waveform.";
+    else if (status === "UNDERVOLTAGE" || status === "OVERVOLTAGE") overviewSecondary.textContent = "Input voltage is outside the allowed operating window, so the device should isolate the relay for protection.";
+    else overviewSecondary.textContent = "The dashboard now prioritizes fresh live data over history so status recovery is faster after reconnection or power return.";
+  }
+
+  if (ovConnectivity) ovConnectivity.textContent = fresh ? (classifyStatus(live.status || "") === "CONFIG_PORTAL" ? "Config Portal" : "Online") : "Offline";
+  if (ovConnectivitySub) {
+    const pieces = [];
+    if (fresh) pieces.push(`Last packet ${Math.max(0, Math.round((Date.now() - lastSeenMs) / 1000))}s ago`);
+    if (ip) pieces.push(ip);
+    if (mdns) pieces.push(mdns);
+    ovConnectivitySub.textContent = pieces.join(" • ") || "No live connectivity details available.";
+  }
+
+  if (ovPowerCondition) ovPowerCondition.textContent = prettyStatus(powerCondition === "UNKNOWN" ? status : powerCondition);
+  if (ovPowerSub) {
+    if (powerCondition === "UNPLUGGED") ovPowerSub.textContent = "Mains absent or below the presence threshold.";
+    else if (powerCondition === "UNDERVOLTAGE") ovPowerSub.textContent = "Input in the undervoltage band; relay protection should be active.";
+    else if (powerCondition === "OVERVOLTAGE") ovPowerSub.textContent = "Input at or above the overvoltage trip threshold.";
+    else if (powerCondition === "DEVICE_DISCONNECTED") ovPowerSub.textContent = "Cannot confirm mains while the dashboard is offline.";
+    else ovPowerSub.textContent = "Input appears to be within the expected operating window.";
+  }
+
+  if (ovProtection) ovProtection.textContent = prettyStatus(status === "NORMAL" ? "MONITORING" : status);
+  if (ovProtectionSub) {
+    if (status === "OVERLOAD") ovProtectionSub.textContent = "Warning only. Temperature or higher-priority faults are responsible for relay cutoff.";
+    else if (status === "HEATING") ovProtectionSub.textContent = "Highest-priority fault in your current protection hierarchy.";
+    else if (status === "ARCING") ovProtectionSub.textContent = "RF model-positive event. In normal mode this should open the relay.";
+    else if (status === "UNDERVOLTAGE" || status === "OVERVOLTAGE") ovProtectionSub.textContent = "Voltage protection outranks overload but not heating or arcing.";
+    else ovProtectionSub.textContent = "Monitoring with no active protection trip from the latest live state.";
+  }
+
+  if (ovFirmware) ovFirmware.textContent = fw;
+  if (ovFirmwareSub) ovFirmwareSub.textContent = `OTA ${otaReady ? "ready" : "not ready"} • ${fresh ? "device reachable" : "live data stale"}`;
+
+  if (ovLastEvent) ovLastEvent.textContent = lastEventStatus;
+  if (ovLastEventSub) ovLastEventSub.textContent = lastEventStatus === "—" ? "No history event yet." : `${lastEventTime}`;
+
+  if (status === "HEATING" || status === "ARCING") setMiniBadge("fault", "Critical");
+  else if (["OVERLOAD", "UNDERVOLTAGE", "OVERVOLTAGE", "UNPLUGGED", "WIFI_CONNECTING", "STARTUP_STABILIZING", "CONFIG_PORTAL", "OTA_UPDATING"].includes(status)) setMiniBadge("warn", "Attention");
+  else if (fresh) setMiniBadge("ok", "Healthy");
+  else setMiniBadge("warn", "Offline");
+
+  if (liveStateHint) liveStateHint.textContent = fresh ? "LIVE" : "STALE";
+  if (deviceMdnsText) deviceMdnsText.textContent = mdns || "tinyml-smart-plug.local";
+}
+
+function renderTopState() {
+  const status = effectiveStatusKind();
+  setTopStatus(status);
+  const ts = effectiveTimestamp();
+  if (lastUpdateText) lastUpdateText.textContent = ts ? formatEpochMsTZ(ts) : "—";
+  updateFreshnessText();
+  renderOverview();
+}
+
+function transitionNotice(newLive) {
+  const nowFresh = liveIsFresh();
+  const powerCondition = effectivePowerCondition();
+  const freshChanged = nowFresh && !previousFresh;
+  const powerRestored = previousPowerCondition === "UNPLUGGED" && powerCondition !== "UNPLUGGED" && nowFresh;
+
+  if (freshChanged) toast("Device is online again.", "info");
+  if (powerRestored) toast("Power restored. Device plugged back in detected.", "ok");
+
+  previousFresh = nowFresh;
+  previousPowerCondition = powerCondition;
+
+  const statusStr = classifyStatus(newLive?.status || "NORMAL");
+  const notifySet = new Set(["ARCING", "HEATING", "OVERLOAD", "UNDERVOLTAGE", "OVERVOLTAGE", "UNPLUGGED"]);
+  const isInteresting = notifySet.has(statusStr);
+  const wasInteresting = notifySet.has(classifyStatus(lastAlertStatus || ""));
+  const shouldNotify = isInteresting && (!wasInteresting || statusStr !== classifyStatus(lastAlertStatus || ""));
+
+  if (shouldNotify && (Date.now() - lastNotifiedAt) > 4000) {
+    const body = `Status: ${prettyStatus(statusStr)}\nV=${toFixedOrDash(newLive?.voltage,1)}V  I=${toFixedOrDash(newLive?.current,2)}A  T=${toFixedOrDash(newLive?.temp,1)}°C`;
+    showFaultNotification("TinyML Smart Plug Alert", body);
+    if ((soundEnable?.checked ?? false)) playBeep();
+    lastNotifiedAt = Date.now();
+  }
+  lastAlertStatus = statusStr;
+}
+
 function getRangeBounds(rangeKey) {
   const now = Date.now();
-
   const todayStr = new Intl.DateTimeFormat("en-CA", {
     timeZone: DISPLAY_TZ,
     year: "numeric",
     month: "2-digit",
     day: "2-digit"
   }).format(new Date(now));
-
   const todayMidnight = new Date(`${todayStr}T00:00:00`).getTime();
-
   if (rangeKey === "today") return { start: todayMidnight, end: todayMidnight + 86400000 };
   if (rangeKey === "yesterday") return { start: todayMidnight - 86400000, end: todayMidnight };
   if (rangeKey === "30d") return { start: now - 30 * 86400000, end: now + 1 };
@@ -297,11 +589,9 @@ function applyHistoryFilter() {
   }
 
   filtered.sort((a, b) => getRecordEpochMs(b) - getRecordEpochMs(a));
-
   const rows = filtered.slice(0, MAX_RENDER_ROWS).map((r, idx) => {
     const epoch = getRecordEpochMs(r);
     const timeStr = formatEpochMsTZ(epoch);
-
     return `
       <tr class="row-in" style="animation-delay:${Math.min(idx, 10) * 25}ms">
         <td class="mono">${timeStr}</td>
@@ -315,99 +605,111 @@ function applyHistoryFilter() {
       </tr>
     `;
   }).join("");
-
   historyBody.innerHTML = rows;
 }
-if (rangeSelect) rangeSelect.addEventListener("change", applyHistoryFilter);
+rangeSelect?.addEventListener("change", applyHistoryFilter);
 
-let lastAlertStatus = null;
-
-const LS_ALERT = "tsp_alert_enabled";
-const LS_SOUND = "tsp_sound_enabled";
-
-function loadBool(k, def=false){
-  const v = localStorage.getItem(k);
-  if (v === null) return def;
-  return v === "1";
-}
-function saveBool(k, v){ localStorage.setItem(k, v ? "1" : "0"); }
-
-if (alertEnable) alertEnable.checked = loadBool(LS_ALERT, true);
-if (soundEnable) soundEnable.checked = loadBool(LS_SOUND, false);
-
-alertEnable?.addEventListener("change", () => saveBool(LS_ALERT, alertEnable.checked));
-soundEnable?.addEventListener("change", () => saveBool(LS_SOUND, soundEnable.checked));
-
-// Foreground sound (browser restriction: needs a user gesture at least once)
-function playBeep(){
-  try{
-    const ctx = new (window.AudioContext || window.webkitAudioContext)();
-    const o = ctx.createOscillator();
-    const g = ctx.createGain();
-    o.type = "sine";
-    o.frequency.value = 880;
-    g.gain.value = 0.08;
-    o.connect(g);
-    g.connect(ctx.destination);
-    o.start();
-    setTimeout(() => { o.stop(); ctx.close(); }, 180);
-  }catch(e){}
+function csvEscape(v) {
+  const s = String(v ?? "");
+  return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
 }
 
-async function showFaultNotification(title, body){
-  if (!("Notification" in window)) return;
-  if (Notification.permission === "default") {
-    try { await Notification.requestPermission(); } catch {}
-  }
-  if (Notification.permission !== "granted") return;
-
-  // Prefer service worker notification if available
-  if ("serviceWorker" in navigator) {
-    const reg = await navigator.serviceWorker.ready.catch(()=>null);
-    if (reg) {
-      reg.showNotification(title, {
-        body,
-        icon: "icons/icon-192.png",
-        badge: "icons/icon-192.png",
-        tag: "tsp-fault",
-        renotify: true
-      });
-      return;
-    }
-  }
-  new Notification(title, { body, icon: "icons/icon-192.png" });
+function downloadTextFile(filename, text) {
+  const blob = new Blob([text], { type: "text/csv;charset=utf-8" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
 }
 
-// ---------- LIVE DATA ----------
-db.ref("live_data").on("value", (snap) => {
-  const data = snap.val();
-  if (!data) return;
-
-  syntheticDisconnectActive = false;
-  lastSeenMs = Date.now();
-
-  // device IP line
-  const wifi = !!data.wifi_connected;
-  const ip = (data.ip || "").toString().trim();
-  if (deviceIpLine && deviceIpText) {
-    if (wifi && ip) {
-      deviceIpLine.style.display = "";
-      deviceIpText.textContent = ip;
-    } else {
-      deviceIpLine.style.display = "none";
-      deviceIpText.textContent = "—";
-    }
+btnDownloadCSV?.addEventListener("click", () => {
+  if (!currentFilteredHistory.length) {
+    toast("No data to export in this range.", "err");
+    return;
   }
 
-  // timestamps
-  const liveEpoch =
-    (typeof data.server_ts === "number" && data.server_ts > 0) ? data.server_ts :
-    (typeof data.ts_epoch_ms === "number" && data.ts_epoch_ms > 0) ? data.ts_epoch_ms :
-    (typeof data.ts_iso === "string") ? parseTsIsoToEpoch(data.ts_iso) : 0;
+  const rows = currentFilteredHistory
+    .slice()
+    .sort((a, b) => getRecordEpochMs(a) - getRecordEpochMs(b));
 
-  if (liveEpoch > 0) lastEpochMs = liveEpoch;
+  const header = ["timestamp","epoch_ms","status","voltage","current","temp","cycle_nmse","zcv","zc_dwell_ratio","pulse_count_per_cycle","peak_fluct_cv","midband_residual_rms","hf_band_energy_ratio","wpe_entropy","spec_entropy","thd_i"];
+  const lines = [header.join(",")];
 
-  // values
+  for (const r of rows) {
+    const epoch = getRecordEpochMs(r);
+    const ts = formatEpochMsTZ(epoch);
+    lines.push([
+      csvEscape(ts),
+      csvEscape(epoch),
+      csvEscape(r.status ?? ""),
+      csvEscape(r.voltage ?? ""),
+      csvEscape(r.current ?? ""),
+      csvEscape(r.temp ?? ""),
+      csvEscape(r.cycle_nmse ?? ""),
+      csvEscape(r.zcv ?? ""),
+      csvEscape(r.zc_dwell_ratio ?? ""),
+      csvEscape(r.pulse_count_per_cycle ?? ""),
+      csvEscape(r.peak_fluct_cv ?? ""),
+      csvEscape(r.midband_residual_rms ?? ""),
+      csvEscape(r.hf_band_energy_ratio ?? ""),
+      csvEscape(r.wpe_entropy ?? ""),
+      csvEscape(r.spec_entropy ?? ""),
+      csvEscape(r.thd_i ?? "")
+    ].join(","));
+  }
+
+  const key = rangeSelect?.value || "range";
+  downloadTextFile(`TSP_faults_${key}_${new Date().toISOString().slice(0,10)}.csv`, lines.join("\n"));
+  toast("CSV downloaded.", "ok");
+});
+
+btnClearHistory?.addEventListener("click", async () => {
+  const ok = confirm("Clear ALL fault history in Firebase? This cannot be undone.");
+  if (!ok) return;
+  btnClearHistory.disabled = true;
+  btnClearHistory.textContent = "Clearing...";
+  try {
+    await db.ref("history").remove();
+    toast("History cleared.", "ok");
+  } catch (e) {
+    console.error(e);
+    toast("Failed to clear history (rules may block write).", "err");
+  } finally {
+    btnClearHistory.disabled = false;
+    btnClearHistory.textContent = "Clear";
+  }
+});
+
+function updateInstallHelp() {
+  if (!installHelp) return;
+  if (loadBool(LS_INSTALL_DISMISS, false)) {
+    installHelp.classList.add("hidden");
+    return;
+  }
+  const showIOSHelp = isIOS && !isStandalone;
+  const showGeneric = !isIOS && !isStandalone;
+  if (!(showIOSHelp || showGeneric)) {
+    installHelp.classList.add("hidden");
+    return;
+  }
+  if (installCopy) {
+    if (showIOSHelp) installCopy.textContent = "On iPhone or iPad, tap Share, then Add to Home Screen for the best app-like experience.";
+    else installCopy.textContent = "Install this dashboard for a faster launch, a cleaner full-screen layout, and offline shell support.";
+  }
+  installHelp.classList.remove("hidden");
+}
+btnDismissInstall?.addEventListener("click", () => {
+  saveBool(LS_INSTALL_DISMISS, true);
+  installHelp?.classList.add("hidden");
+});
+btnRefreshNow?.addEventListener("click", () => window.location.reload());
+updateInstallHelp();
+
+function updateLiveDom(data) {
   const v   = toFixedOrDash(data.voltage, 1);
   const i   = toFixedOrDash(data.current, 3);
   const p   = toFixedOrDash(data.apparent_power, 1);
@@ -438,47 +740,38 @@ db.ref("live_data").on("value", (snap) => {
   if (specEntropyVal && specEntropyVal.textContent !== se) { specEntropyVal.textContent = se; animateNumber(specEntropyVal); }
   if (thdVal && thdVal.textContent !== th) { thdVal.textContent = th; animateNumber(thdVal); }
 
-  // NO LAG: only update top status if this live update is newer than what we've shown
-  if (liveEpoch >= topStatusSourceEpoch) {
-    topStatusSourceEpoch = liveEpoch;
-    setTopStatus((data.status ?? "OK").toString());
-    if (lastUpdateText) lastUpdateText.textContent = formatEpochMsTZ(liveEpoch);
-  } else {
-    if (lastUpdateText && topStatusSourceEpoch > 0) lastUpdateText.textContent = formatEpochMsTZ(topStatusSourceEpoch);
+  applyMetricHints(data);
+}
+
+db.ref("live_data").on("value", (snap) => {
+  const data = snap.val();
+  if (!data) return;
+
+  syntheticDisconnectActive = false;
+  lastSeenMs = Date.now();
+  lastLiveData = data;
+
+  const wifi = !!data.wifi_connected;
+  const ip = (data.ip || "").toString().trim();
+  if (deviceIpLine && deviceIpText) {
+    if (wifi && ip) {
+      deviceIpLine.style.display = "";
+      deviceIpText.textContent = ip;
+    } else {
+      deviceIpLine.style.display = "none";
+      deviceIpText.textContent = "—";
+    }
   }
+  if (deviceMdnsText) deviceMdnsText.textContent = (data.mdns || "tinyml-smart-plug.local").toString();
 
-  const statusStr = (data.status ?? "NORMAL").toString();
-  const wantAlert = alertEnable?.checked ?? true;
-
-  const isFault = (statusStr === "ARCING" || statusStr === "HEATING");
-  const wasFault = (lastAlertStatus === "ARCING" || lastAlertStatus === "HEATING");
-
-  if (wantAlert && isFault && !wasFault) {
-    const body = `Status: ${statusStr}\nV=${toFixedOrDash(data.voltage,1)}V  I=${toFixedOrDash(data.current,2)}A  T=${toFixedOrDash(data.temp,1)}°C`;
-    showFaultNotification("TinyML Smart Plug Fault", body);
-    if ((soundEnable?.checked ?? false)) playBeep();
-  }
-  lastAlertStatus = statusStr;
-
+  updateLiveDom(data);
+  renderTopState();
+  transitionNotice(data);
 }, (err) => {
   console.error(err);
-  setTopStatus("DEVICE DISCONNECTED");
-  if (lastUpdateText) lastUpdateText.textContent = "—";
-  if (deviceIpLine) deviceIpLine.style.display = "none";
+  renderTopState();
 });
 
-setInterval(() => {
-  if (!lastSeenMs) return;
-  if ((Date.now() - lastSeenMs) > STALE_MS) {
-    setTopStatus("DEVICE DISCONNECTED");
-    if (lastUpdateText) lastUpdateText.textContent = "—";
-    if (deviceIpLine) deviceIpLine.style.display = "none";
-    setLiveZeroes();
-    injectSyntheticDisconnect();
-  }
-}, 1000);
-
-// ---------- HISTORY ----------
 db.ref("history")
   .orderByChild("server_ts")
   .limitToLast(HISTORY_LIMIT)
@@ -486,144 +779,51 @@ db.ref("history")
     const obj = snap.val();
     if (!obj) {
       historyCache = [];
+      latestHistoryRecord = null;
       applyHistoryFilter();
+      renderOverview();
+      renderTopState();
       return;
     }
 
     historyCache = Object.values(obj);
-
-    // NO LAG: find most recent history item and, if newer than top, drive top badge
-    let bestEpoch = 0;
-    let bestRec = null;
-    for (const r of historyCache) {
-      const ep = getRecordEpochMs(r);
-      if (ep > bestEpoch) {
-        bestEpoch = ep;
-        bestRec = r;
-      }
-    }
-
-    if (bestRec && bestEpoch > topStatusSourceEpoch) {
-      topStatusSourceEpoch = bestEpoch;
-      setTopStatus((bestRec.status ?? "OK").toString());
-      if (lastUpdateText) lastUpdateText.textContent = formatEpochMsTZ(bestEpoch);
-    }
+    latestHistoryRecord = historyCache.reduce((best, rec) => {
+      if (!best) return rec;
+      return getRecordEpochMs(rec) > getRecordEpochMs(best) ? rec : best;
+    }, null);
 
     applyHistoryFilter();
+    renderOverview();
+    if (!liveIsFresh()) renderTopState();
   });
 
-// ---------- CSV ----------
-function csvEscape(v) {
-  const s = String(v ?? "");
-  return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
-}
-
-function downloadTextFile(filename, text) {
-  const blob = new Blob([text], { type: "text/csv;charset=utf-8" });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement("a");
-  a.href = url;
-  a.download = filename;
-  document.body.appendChild(a);
-  a.click();
-  a.remove();
-  URL.revokeObjectURL(url);
-}
-
-if (btnDownloadCSV) {
-  btnDownloadCSV.addEventListener("click", () => {
-    if (!currentFilteredHistory.length) {
-      toast("No data to export in this range.", "err");
-      return;
-    }
-
-    const rows = currentFilteredHistory
-      .slice()
-      .sort((a, b) => getRecordEpochMs(a) - getRecordEpochMs(b)); // oldest->newest
-
-    const header = ["timestamp","epoch_ms","status","voltage","current","temp","cycle_nmse","zcv","zc_dwell_ratio","pulse_count_per_cycle","peak_fluct_cv","midband_residual_rms","hf_band_energy_ratio","wpe_entropy","spec_entropy","thd_i"];
-    const lines = [header.join(",")];
-
-    for (const r of rows) {
-      const epoch = getRecordEpochMs(r);
-      const ts = formatEpochMsTZ(epoch);
-
-      lines.push([
-        csvEscape(ts),
-        csvEscape(epoch),
-        csvEscape(r.status ?? ""),
-        csvEscape(r.voltage ?? ""),
-        csvEscape(r.current ?? ""),
-        csvEscape(r.temp ?? ""),
-        csvEscape(r.cycle_nmse ?? ""),
-        csvEscape(r.zcv ?? ""),
-        csvEscape(r.zc_dwell_ratio ?? ""),
-        csvEscape(r.pulse_count_per_cycle ?? ""),
-        csvEscape(r.peak_fluct_cv ?? ""),
-        csvEscape(r.midband_residual_rms ?? ""),
-        csvEscape(r.hf_band_energy_ratio ?? ""),
-        csvEscape(r.wpe_entropy ?? ""),
-        csvEscape(r.spec_entropy ?? ""),
-        csvEscape(r.thd_i ?? "")
-      ].join(","));
-    }
-
-    const key = rangeSelect?.value || "range";
-    downloadTextFile(`TSP_faults_${key}_${new Date().toISOString().slice(0,10)}.csv`, lines.join("\n"));
-    toast("CSV downloaded.", "ok");
-  });
-}
-
-// ---------- Clear history ----------
-if (btnClearHistory) {
-  btnClearHistory.addEventListener("click", async () => {
-    const ok = confirm("Clear ALL fault history in Firebase? This cannot be undone.");
-    if (!ok) return;
-
-    btnClearHistory.disabled = true;
-    btnClearHistory.textContent = "Clearing...";
-
-    try {
-      await db.ref("history").remove();
-      toast("History cleared.", "ok");
-    } catch (e) {
-      console.error(e);
-      toast("Failed to clear history (rules may block write).", "err");
-    } finally {
-      btnClearHistory.disabled = false;
-      btnClearHistory.textContent = "Clear history";
-    }
-  });
-}
-
-// ---------- Disconnected watchdog ----------
 setInterval(() => {
   if (!lastSeenMs) {
-    setTopStatus("DEVICE DISCONNECTED");
+    renderTopState();
     return;
   }
-  if (Date.now() - lastSeenMs > STALE_MS) {
-    setTopStatus("DEVICE DISCONNECTED");
+  if ((Date.now() - lastSeenMs) > STALE_MS) {
     if (deviceIpLine) deviceIpLine.style.display = "none";
+    setLiveZeroes();
+    injectSyntheticDisconnect();
   }
-}, 500);
+  renderTopState();
+}, 1000);
 
-// ---------- OTA (Option B: PWA writes /ota/*) ----------
+document.addEventListener("visibilitychange", () => {
+  if (document.visibilityState === "visible") renderTopState();
+});
+
 (function initOta() {
   const otaCurVer = el("otaCurVer");
   const otaCurUrl = el("otaCurUrl");
-
   const otaDesiredVer = el("otaDesiredVer");
   const otaBinName = el("otaBinName");
   const otaFirmwareUrl = el("otaFirmwareUrl");
-
   const btnFillRepoUrl = el("btnFillRepoUrl");
   const btnPublishOta = el("btnPublishOta");
-
-  // If panel isn't present, do nothing (prevents console errors)
   if (!btnPublishOta || !otaDesiredVer) return;
 
-  // Live read current RTDB values
   db.ref("ota").on("value", (snap) => {
     const v = snap.val() || {};
     if (otaCurVer) otaCurVer.textContent = (v.desired_version || "—").toString();
@@ -639,9 +839,7 @@ setInterval(() => {
   btnPublishOta.addEventListener("click", async () => {
     const desired = (otaDesiredVer.value || "").trim();
     let url = (otaFirmwareUrl?.value || "").trim();
-
     if (!url) url = buildRepoFirmwareUrl(otaBinName?.value || OTA_DEFAULT_BIN);
-
     if (!isLikelyVersion(desired)) {
       toast("Enter a valid desired version (e.g., TSP-v0.1.1).", "err");
       return;
@@ -661,34 +859,28 @@ setInterval(() => {
         firmware_url: url,
         published_at: firebase.database.ServerValue.TIMESTAMP
       });
-
-      // After this, you'll see "ota" appear in Firebase console.
       toast("OTA published. Devices will pull on next check.", "ok");
     } catch (e) {
       console.error(e);
       toast("Publish failed (Firebase rules may block writes).", "err");
     } finally {
       btnPublishOta.disabled = false;
-      btnPublishOta.textContent = oldText || "Publish OTA";
+      btnPublishOta.textContent = oldText || "Update";
     }
   });
 })();
 
-// ---------- TinyML Logger (Session-based) ----------
 const mlLogEnable = el("mlLogEnable");
 const mlLogDur = el("mlLogDur");
 const mlLoadType = el("mlLoadType");
 const mlLabelOverride = el("mlLabelOverride");
-
 const btnDownloadSessionMl = el("btnDownloadSessionMl");
 const btnDownloadAllMl = el("btnDownloadAllMl");
 const btnClearMlLogs = el("btnClearMlLogs");
 const btnUploadCsv = el("btnUploadCsv");
 const mlCsvUpload = el("mlCsvUpload");
-
 const mlLogStatus = el("mlLogStatus");
 const mlSessionBody = el("mlSessionBody");
-
 let currentSessionId = "";
 
 function downloadTextFileGeneric(filename, text, mime="text/csv;charset=utf-8") {
@@ -703,9 +895,7 @@ function downloadTextFileGeneric(filename, text, mime="text/csv;charset=utf-8") 
   URL.revokeObjectURL(url);
 }
 
-function makeSessionId() {
-  return "sess_" + Date.now();
-}
+function makeSessionId() { return "sess_" + Date.now(); }
 function labelText(v) {
   if (String(v) === "1") return "ARC";
   if (String(v) === "0") return "NORMAL";
@@ -716,29 +906,21 @@ function durationText(meta) {
   const en = Number(meta?.end_ms || 0);
   if (!st) return "—";
   const durMs = (en > st ? en : Date.now()) - st;
-  const sec = Math.max(0, Math.round(durMs / 1000));
-  return `${sec}s`;
+  return `${Math.max(0, Math.round(durMs / 1000))}s`;
 }
 
 async function fetchSessionCsv(sessionId) {
   const snap = await db.ref(`ml_logs/${sessionId}`).get();
   if (!snap.exists()) return "";
-
   const chunksObj = snap.val() || {};
-  const keys = Object.keys(chunksObj);
-
-  keys.sort((a,b) => (chunksObj[a]?.created_at || 0) - (chunksObj[b]?.created_at || 0));
-
+  const keys = Object.keys(chunksObj).sort((a,b) => (chunksObj[a]?.created_at || 0) - (chunksObj[b]?.created_at || 0));
   let header = "";
   let rows = [];
-
   for (const k of keys) {
     const csv = chunksObj[k]?.csv || "";
     if (!csv) continue;
-
     const lines = csv.split("\n").filter(x => x.trim().length);
     if (lines.length === 0) continue;
-
     if (!header) {
       header = lines[0];
       rows.push(...lines.slice(1));
@@ -747,7 +929,6 @@ async function fetchSessionCsv(sessionId) {
       rows.push(...lines.slice(startIdx));
     }
   }
-
   if (!header) return "";
   return header + "\n" + rows.join("\n") + "\n";
 }
@@ -755,15 +936,12 @@ async function fetchSessionCsv(sessionId) {
 function sessionFilename(meta, sessionId) {
   const start = meta?.start_ms || 0;
   const end = meta?.end_ms || 0;
-
   const startStr = start ? formatEpochMsTZ(start).replace(/[ :.]/g,"-") : "START";
   const endStr   = end ? formatEpochMsTZ(end).replace(/[ :.]/g,"-") : "OPEN";
   const load = (meta?.load_type || "unknown").toString().replace(/[^a-zA-Z0-9_-]/g,"_");
-
   return `TSP_ML_${startStr}__${endStr}__${load}__${sessionId}.csv`;
 }
 
-// Sync control state
 if (mlLogEnable) {
   db.ref("ml_log").on("value", (s) => {
     const v = s.val() || {};
@@ -783,15 +961,7 @@ if (mlLogEnable) {
     if (enabled) {
       const sid = makeSessionId();
       currentSessionId = sid;
-
-      await db.ref("ml_log").update({
-        enabled: true,
-        duration_s: dur,
-        session_id: sid,
-        load_type: load,
-        label_override: labelOv
-      });
-
+      await db.ref("ml_log").update({ enabled: true, duration_s: dur, session_id: sid, load_type: load, label_override: labelOv });
       await db.ref(`ml_sessions/${sid}`).set({
         start_ms: firebase.database.ServerValue.TIMESTAMP,
         end_ms: null,
@@ -799,20 +969,12 @@ if (mlLogEnable) {
         duration_s: dur,
         label_override: labelOv
       });
-
       if (mlLogStatus) mlLogStatus.textContent = `Logging enabled. Session: ${sid}`;
       toast("Logger enabled (session created).", "ok");
     } else {
       const sid = currentSessionId;
-
       await db.ref("ml_log").update({ enabled: false });
-
-      if (sid) {
-        await db.ref(`ml_sessions/${sid}`).update({
-          end_ms: firebase.database.ServerValue.TIMESTAMP
-        });
-      }
-
+      if (sid) await db.ref(`ml_sessions/${sid}`).update({ end_ms: firebase.database.ServerValue.TIMESTAMP });
       if (mlLogStatus) mlLogStatus.textContent = `Logging disabled. Session closed: ${sid || "—"}`;
       toast("Logger disabled.", "ok");
     }
@@ -824,29 +986,24 @@ mlLogDur?.addEventListener("change", async () => {
   await db.ref("ml_log").update({ duration_s: dur });
   toast("Duration updated.", "ok");
 });
-
 mlLoadType?.addEventListener("change", async () => {
   await db.ref("ml_log").update({ load_type: (mlLoadType.value || "unknown").trim() || "unknown" });
 });
-
 mlLabelOverride?.addEventListener("change", async () => {
   const v = parseInt(mlLabelOverride.value || "-1", 10);
   await db.ref("ml_log").update({ label_override: v });
 });
 
-// Session list UI
 if (mlSessionBody) {
   db.ref("ml_sessions").limitToLast(50).on("value", (s) => {
     const obj = s.val() || {};
     const ids = Object.keys(obj).sort((a,b) => (obj[b]?.start_ms||0) - (obj[a]?.start_ms||0));
-
     mlSessionBody.innerHTML = ids.map((sid) => {
       const meta = obj[sid] || {};
       const st = meta.start_ms ? formatEpochMsTZ(meta.start_ms) : "—";
       const en = meta.end_ms ? formatEpochMsTZ(meta.end_ms) : "—";
       const load = meta.load_type || "unknown";
       const lab  = labelText(meta.label_override);
-
       return `
         <tr>
           <td class="mono">${sid}</td>
@@ -880,11 +1037,8 @@ if (mlSessionBody) {
       btn.addEventListener("click", () => {
         const sid = btn.getAttribute("data-view-sid");
         const meta = obj[sid] || {};
-        if (typeof window.openSessionViewer === "function") {
-          window.openSessionViewer(sid, meta);
-        } else {
-          window.location.href = `session.html?sid=${encodeURIComponent(sid)}`;
-        }
+        if (typeof window.openSessionViewer === "function") window.openSessionViewer(sid, meta);
+        else window.location.href = `session.html?sid=${encodeURIComponent(sid)}`;
       });
     });
 
@@ -906,40 +1060,31 @@ if (mlSessionBody) {
   });
 }
 
-// Download current session
 btnDownloadSessionMl?.addEventListener("click", async () => {
   const sid = currentSessionId;
   if (!sid) { toast("No active session_id.", "err"); return; }
-
   const metaSnap = await db.ref(`ml_sessions/${sid}`).get();
   const meta = metaSnap.exists() ? metaSnap.val() : {};
-
   const csv = await fetchSessionCsv(sid);
   if (!csv) { toast("No session logs yet.", "err"); return; }
-
   downloadTextFileGeneric(sessionFilename(meta, sid), csv);
   if (mlLogStatus) mlLogStatus.textContent = `Downloaded session: ${sid}`;
   toast("Session CSV downloaded.", "ok");
 });
 
-// Download ALL sessions combined
 btnDownloadAllMl?.addEventListener("click", async () => {
   const metaSnap = await db.ref("ml_sessions").get();
   const sessions = metaSnap.exists() ? metaSnap.val() : {};
   const ids = Object.keys(sessions || {});
   if (ids.length === 0) { toast("No sessions yet.", "err"); return; }
-
   ids.sort((a,b) => (sessions[a]?.start_ms||0) - (sessions[b]?.start_ms||0));
-
   let header = "";
   let rows = [];
-
   for (const sid of ids) {
     const csv = await fetchSessionCsv(sid);
     if (!csv) continue;
     const lines = csv.split("\n").filter(x => x.trim().length);
     if (lines.length === 0) continue;
-
     if (!header) {
       header = lines[0];
       rows.push(...lines.slice(1));
@@ -948,19 +1093,15 @@ btnDownloadAllMl?.addEventListener("click", async () => {
       rows.push(...lines.slice(startIdx));
     }
   }
-
   if (!header || rows.length === 0) { toast("No session rows found.", "err"); return; }
-
   const ts = new Date().toISOString().slice(0,19).replace(/[:T]/g,"-");
   downloadTextFileGeneric(`TSP_ML_ALL_${ts}.csv`, header + "\n" + rows.join("\n") + "\n");
   if (mlLogStatus) mlLogStatus.textContent = `Downloaded ALL sessions (${rows.length} rows)`;
   toast("All sessions downloaded.", "ok");
 });
 
-// Clear logs button
 btnClearMlLogs?.addEventListener("click", async () => {
   if (!confirm("Delete ALL ML logs and sessions? This cannot be undone.")) return;
-
   try {
     await db.ref("ml_log").update({ enabled: false });
     await db.ref("ml_logs").remove();
@@ -995,7 +1136,6 @@ mlCsvUpload?.addEventListener("change", async (ev) => {
   }
 });
 
-// ---------- Service worker ----------
 if ("serviceWorker" in navigator) {
   navigator.serviceWorker.register("sw.js").then((reg) => {
     reg.update();
@@ -1005,5 +1145,10 @@ if ("serviceWorker" in navigator) {
       refreshing = true;
       window.location.reload();
     });
+    document.addEventListener("visibilitychange", () => {
+      if (document.visibilityState === "visible") reg.update();
+    });
   }).catch(console.error);
 }
+
+renderTopState();
