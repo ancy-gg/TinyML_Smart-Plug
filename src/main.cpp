@@ -31,7 +31,9 @@
 
 #define API_KEY "AIzaSyAmJlZZszyWPJFgIkTAAl_TbIySys1nvEw"
 #define DATABASE_URL "tinyml-smart-plug-default-rtdb.asia-southeast1.firebasedatabase.app"
-static const char* FW_VERSION = "TSP-v3.3.1-protect";
+static const char* FW_VERSION = "TSP-v3.4.0-protect"; //protect - change 0 relay, with calib
+                                                      //collect - change 1 relay, with calib
+                                                      //measure - set calib to 0 (1 for first-order var)
 
 static const char* OTA_DESIRED_VERSION_PATH = "/ota/desired_version";
 static const char* OTA_FIRMWARE_URL_PATH    = "/ota/firmware_url";
@@ -102,7 +104,7 @@ static bool debouncedMainsPresentForState(float vProtect) {
   return stable;
 }
 
-static void handleCueEvents(float vProtect, float irms, bool mainsPresent, bool paused) {
+static void handleCueEvents(float vProtect, float irms, bool mainsPresent, bool paused, FaultState st) {
   static uint32_t lowSinceMs = 0;
   static uint32_t highSinceMs = 0;
   static uint32_t lastVoltWarnMs = 0;
@@ -115,6 +117,7 @@ static void handleCueEvents(float vProtect, float irms, bool mainsPresent, bool 
   const uint32_t now = millis();
   if (paused) return;
 
+  const bool stateNormal = (st == STATE_NORMAL);
 
   const bool lowWarn  = (vProtect > VOLT_UNDERVOLT_MIN_V && vProtect < VOLT_UNDERVOLT_MAX_V);
   const bool highWarn = (vProtect >= VOLT_OVERVOLT_TRIP_V);
@@ -136,12 +139,17 @@ static void handleCueEvents(float vProtect, float irms, bool mainsPresent, bool 
     actuators.notify(SND_VOLT_HIGH);
   }
 
-  if (!mainsPresent || vProtect < 200.0f) {
+  static uint32_t mainsStableSinceMs = 0;
+
+  if (!mainsPresent || vProtect < 200.0f || !stateNormal) {
     loadBaseA = 0.0f;
     prevIrms = irms;
     stableSinceMs = 0;
+    mainsStableSinceMs = 0;
     return;
   }
+
+  if (mainsStableSinceMs == 0) mainsStableSinceMs = now;
 
   const float dI = fabsf(irms - prevIrms);
   prevIrms = irms;
@@ -149,18 +157,38 @@ static void handleCueEvents(float vProtect, float irms, bool mainsPresent, bool 
     if (stableSinceMs == 0) stableSinceMs = now;
   } else stableSinceMs = 0;
 
-  if (stableSinceMs && (now - stableSinceMs >= 1200U)) {
+  if (stableSinceMs && (now - stableSinceMs >= DEVICE_PLUG_STABLE_MS)) {
     loadBaseA += 0.02f * (irms - loadBaseA);
   }
 
+  const bool cueAllowed = ((now - mainsStableSinceMs) >= DEVICE_PLUG_CUE_INHIBIT_MS);
   const bool firstLoad = (loadBaseA < 0.15f && irms >= 0.35f);
   const bool addedLoad = (loadBaseA >= 0.15f && (irms - loadBaseA) >= 0.45f && dI < 0.15f);
-  if ((firstLoad || addedLoad) && (now - lastLoadCueMs >= 6000U)) {
+  if (cueAllowed && (firstLoad || addedLoad) && (now - lastLoadCueMs >= DEVICE_PLUG_CUE_COOLDOWN_MS)) {
     actuators.notify(SND_DEVICE_PLUG);
     lastLoadCueMs = now;
     loadBaseA = irms;
     stableSinceMs = 0;
   }
+}
+
+
+static void pollPortalControl(CloudHandler& cloud, NetworkManager& net, bool paused, bool portalActive) {
+  static uint32_t lastPoll = 0;
+  static String lastToken = "";
+
+  if (paused || portalActive || !net.isConnected() || !cloud.isReady()) return;
+  if (millis() - lastPoll < 1500UL) return;
+  lastPoll = millis();
+
+  String token;
+  if (!cloud.getString("/controls/open_portal_token", token)) return;
+  token.trim();
+  if (!token.length()) return;
+  if (token == lastToken) return;
+
+  lastToken = token;
+  net.requestPortal(true);
 }
 
 static void onOtaEvent(OtaEvent ev, int progress) {
@@ -309,7 +337,7 @@ void setup() {
   gSafeMode = BootGuard::safeMode();
 
   oled.begin();
-  oled.startBootSequence(3000);
+  oled.startBootSequence(3600);
   actuators.begin(PIN_RELAY, PIN_BUZZER_PWM, &oled);
   actuators.notify(SND_BOOT);
 
@@ -349,7 +377,6 @@ void setup() {
 
   net.begin([](WiFiManager* wm) {
     (void)wm;
-    actuators.notify(SND_WIFI_PORTAL);
   });
 
   cloud.begin(API_KEY, DATABASE_URL);
@@ -401,7 +428,11 @@ void loop() {
     } else if (wifiPhase == NetworkManager::PHASE_CONNECTED) {
       wifiBannerUntilMs = 0;
       wifiTimedOutUi = false;
-      oled.triggerConnected(1200UL);
+      oled.triggerConnected(1500UL);
+    } else if (wifiPhase == NetworkManager::PHASE_AP_WAIT_CLIENT) {
+      wifiBannerUntilMs = 0;
+      wifiTimedOutUi = false;
+      actuators.notify(SND_WIFI_PORTAL);
     } else if (wifiPhase == NetworkManager::PHASE_PORTAL_ACTIVE) {
       wifiBannerUntilMs = 0;
       wifiTimedOutUi = false;
@@ -411,6 +442,8 @@ void loop() {
 
   if (wifiConnected && !lastWiFiConnected) actuators.notify(SND_WIFI_OK);
   lastWiFiConnected = wifiConnected;
+
+  if (!gSafeMode) pollPortalControl(cloud, net, paused, portalActive);
 
   static FeatureFrame lastF = {};
   static bool hasLast = false;
@@ -496,7 +529,7 @@ void loop() {
 
   actuators.apply(st, vRms, vFast, f.irms, tC);
   const bool mainsPresentStable = debouncedMainsPresentForState(vFast);
-  handleCueEvents(vFast, f.irms, mainsPresentStable, paused || gSafeMode || protectionInhibit);
+  handleCueEvents(vFast, f.irms, mainsPresentStable, paused || gSafeMode || protectionInhibit, st);
 
 #if ENABLE_ML_LOGGER
   maybeStartAutoArcCapture(logger, oled, paused || protectionInhibit, gSafeMode, (arcEligible && f.model_pred == 1));
@@ -529,8 +562,9 @@ void loop() {
   oled.setOverlay(ov);
   oled.setState(st);
   oled.setMeasurements(vRms, f.irms, apparentPowerVa, tC);
-  const bool showWifiBanner = portalActive || ((int32_t)(wifiBannerUntilMs - millis()) > 0);
-  oled.setWiFi(wifiConnected, net.rssi(), showWifiBanner, portalActive, wifiTimedOutUi);
+  const bool apWindowActive = (wifiPhase == NetworkManager::PHASE_AP_WAIT_CLIENT);
+  const bool showWifiBanner = portalActive || apWindowActive || ((int32_t)(wifiBannerUntilMs - millis()) > 0);
+  oled.setWiFi(wifiConnected, net.rssi(), showWifiBanner, portalActive, wifiTimedOutUi, apWindowActive);
 
   static uint32_t lastOled = 0;
   if (millis() - lastOled >= 80) {
@@ -543,12 +577,12 @@ void loop() {
     lastLive = millis();
 
     static uint32_t noPowerSinceMs = 0;
-    if (!mainsPresentStable) {
+    if (vFast <= MAINS_PRESENT_OFF_V) {
       if (noPowerSinceMs == 0) noPowerSinceMs = millis();
-    } else {
+    } else if (vFast >= MAINS_PRESENT_ON_V) {
       noPowerSinceMs = 0;
     }
-    const bool unpluggedLive = (noPowerSinceMs != 0) && ((millis() - noPowerSinceMs) >= 10000UL);
+    const bool unpluggedLive = (noPowerSinceMs != 0) && ((millis() - noPowerSinceMs) >= UNPLUGGED_STATE_DELAY_MS);
 
     String stateStr;
     if (gPauseByOta) stateStr = "OTA_UPDATING";

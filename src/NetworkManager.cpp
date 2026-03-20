@@ -1,48 +1,93 @@
 #include "NetworkManager.h"
 #include "SmartPlugConfig.h"
-#include <Preferences.h>
 
-static constexpr const char* NVS_NS_WIFI  = "wifi_boot";
-static constexpr const char* NVS_KEY_ARM  = "armed";
-static constexpr const char* NVS_KEY_CNT  = "count";
-
-static void loadBootWindow(bool& armed, uint8_t& count) {
-  Preferences prefs;
-  prefs.begin(NVS_NS_WIFI, false);
-  armed = prefs.getBool(NVS_KEY_ARM, false);
-  count = prefs.getUChar(NVS_KEY_CNT, 0);
-  prefs.end();
-}
-
-static void saveBootWindow(bool armed, uint8_t count) {
-  Preferences prefs;
-  prefs.begin(NVS_NS_WIFI, false);
-  prefs.putBool(NVS_KEY_ARM, armed);
-  prefs.putUChar(NVS_KEY_CNT, count);
-  prefs.end();
-}
+static constexpr uint32_t WIFI_AP_DISCOVERY_WINDOW_MS = 15000UL;
 
 NetworkManager* NetworkManager::s_inst = nullptr;
 
-void NetworkManager::clearBootWindow_() {
-  saveBootWindow(false, 0);
-  _bootWindowCleared = true;
+uint8_t NetworkManager::apStations_() const {
+#if defined(ARDUINO_ARCH_ESP32)
+  if ((((int)WiFi.getMode()) & (int)WIFI_AP) == 0) return 0;
+  return (uint8_t)WiFi.softAPgetStationNum();
+#else
+  return 0;
+#endif
+}
+
+void NetworkManager::startStaConnect_() {
+  WiFi.setSleep(false);
+  WiFi.setAutoReconnect(true);
+
+  WiFi.softAPdisconnect(true);
+  delay(60);
+  WiFi.mode(WIFI_STA);
+  delay(60);
+  WiFi.begin();
+
+  _portalRequested = false;
+  _portalStarted = false;
+  _portalDisconnectSta = false;
+  _portalStartMs = 0;
+  _apWindowUntilMs = 0;
+  _lastApStations = 0;
+
+  _phase = PHASE_CONNECTING;
+  _phaseStartMs = millis();
+}
+
+void NetworkManager::startApWait_(bool disconnectSta, bool manualRequest) {
+  _portalRequested = manualRequest;
+  _portalDisconnectSta = disconnectSta;
+  _portalStarted = false;
+  _portalStartMs = 0;
+
+  WiFi.setSleep(false);
+  WiFi.setAutoReconnect(false);
+
+  if (disconnectSta) {
+    WiFi.disconnect(true, false);
+    delay(100);
+    WiFi.mode(WIFI_AP);
+    delay(120);
+  } else {
+    WiFi.disconnect(false, false);
+    delay(60);
+    WiFi.mode(WIFI_AP_STA);
+    delay(120);
+  }
+
+  WiFi.softAPdisconnect(true);
+  delay(40);
+  WiFi.softAP(WIFI_PORTAL_SSID);
+  delay(120);
+
+  _lastApStations = apStations_();
+  _apWindowUntilMs = millis() + WIFI_AP_DISCOVERY_WINDOW_MS;
+  _phase = PHASE_AP_WAIT_CLIENT;
+  _phaseStartMs = millis();
 }
 
 void NetworkManager::startPortal_() {
-  WiFi.disconnect(false, false);
-  delay(80);
-  WiFi.mode(WIFI_AP_STA);
-  delay(120);
-
-  _portalStarted = false;
+  wm.setDebugOutput(false);
+  wm.setConfigPortalBlocking(false);
+  wm.setBreakAfterConfig(true);
   wm.setConfigPortalTimeout((int)(WIFI_PORTAL_TIMEOUT_MS / 1000UL));
-  wm.startConfigPortal("TinyML-SmartPlug");
 
   _phase = PHASE_PORTAL_ACTIVE;
   _phaseStartMs = millis();
-  _portalStarted = true;
   _portalStartMs = _phaseStartMs;
+  _portalStarted = true;
+
+  wm.startConfigPortal(WIFI_PORTAL_SSID);
+}
+
+void NetworkManager::closeApAndReconnect_(uint32_t now) {
+  (void)now;
+  startStaConnect_();
+}
+
+void NetworkManager::requestPortal(bool disconnectSta) {
+  startApWait_(disconnectSta, true);
 }
 
 void NetworkManager::apTrampoline(WiFiManager* wmgr) {
@@ -56,17 +101,16 @@ void NetworkManager::apTrampoline(WiFiManager* wmgr) {
 void NetworkManager::begin(void (*apCallback)(WiFiManager*)) {
   s_inst = this;
   _userApCb = apCallback;
-  _phaseStartMs = millis();
-  _portalStarted = false;
-  _portalStartMs = 0;
-  _bootWindowCleared = false;
 
-  bool armed = false;
-  uint8_t count = 0;
-  loadBootWindow(armed, count);
-  count = armed ? (uint8_t)((count < 255) ? (count + 1) : 255) : 1;
-  saveBootWindow(true, count);
-  _portalRequested = (count >= WIFI_TRIPLE_TAP_COUNT);
+  _phase = PHASE_BOOT_BLOCK;
+  _phaseStartMs = millis();
+  _portalRequested = false;
+  _portalStarted = false;
+  _portalDisconnectSta = false;
+  _autoApWindowOffered = false;
+  _portalStartMs = 0;
+  _apWindowUntilMs = 0;
+  _lastApStations = 0;
 
   wm.setDebugOutput(false);
   wm.setConfigPortalBlocking(false);
@@ -77,92 +121,89 @@ void NetworkManager::begin(void (*apCallback)(WiFiManager*)) {
   WiFi.setSleep(false);
   WiFi.setAutoReconnect(true);
 
-  if (_portalRequested) {
-    startPortal_();
-    return;
-  }
-
-  WiFi.mode(WIFI_STA);
-  delay(50);
-  WiFi.begin();
-  _phase = PHASE_CONNECTING;
+  startStaConnect_();
 }
 
 void NetworkManager::update() {
   const uint32_t now = millis();
-
-  if (!_bootWindowCleared && now >= WIFI_BOOT_BLOCK_MS) {
-    clearBootWindow_();
-  }
-
   wm.process();
 
   if (_phase == PHASE_PORTAL_ACTIVE) {
-    const bool apMode = (((int)WiFi.getMode() & (int)WIFI_AP) != 0);
-    const bool apRunning = apMode && (WiFi.softAPIP() != IPAddress((uint32_t)0));
+    if (WiFi.status() == WL_CONNECTED) {
+      WiFi.softAPdisconnect(true);
+      delay(50);
+      WiFi.mode(WIFI_STA);
+      delay(50);
+
+      _portalRequested = false;
+      _portalStarted = false;
+      _portalDisconnectSta = false;
+      _portalStartMs = 0;
+      _apWindowUntilMs = 0;
+      _lastApStations = 0;
+      _autoApWindowOffered = false;
+
+      _phase = PHASE_CONNECTED;
+      _phaseStartMs = now;
+      return;
+    }
 
     if (_portalStartMs && (now - _portalStartMs) >= WIFI_PORTAL_TIMEOUT_MS) {
-      WiFi.softAPdisconnect(true);
-      _portalStarted = false;
-      _portalStartMs = 0;
-
-      if (WiFi.status() == WL_CONNECTED) {
-        _phase = PHASE_CONNECTED;
-        _phaseStartMs = now;
-        clearBootWindow_();
-      } else {
-        WiFi.mode(WIFI_STA);
-        delay(50);
-        WiFi.begin();
-        _phase = PHASE_CONNECTING;
-        _phaseStartMs = now;
-      }
+      closeApAndReconnect_(now);
       return;
     }
+    return;
+  }
 
-    if (!apRunning) {
-      _portalStarted = false;
-      _portalStartMs = 0;
-
-      if (WiFi.status() == WL_CONNECTED) {
-        _phase = PHASE_CONNECTED;
-        _phaseStartMs = now;
-        clearBootWindow_();
-      } else {
-        WiFi.mode(WIFI_STA);
-        delay(50);
-        WiFi.begin();
-        _phase = PHASE_CONNECTING;
-        _phaseStartMs = now;
-      }
+  if (_phase == PHASE_AP_WAIT_CLIENT) {
+    const uint8_t stations = apStations_();
+    if (stations > 0 || stations > _lastApStations) {
+      startPortal_();
       return;
     }
+    _lastApStations = stations;
 
+    if ((int32_t)(_apWindowUntilMs - now) <= 0) {
+      closeApAndReconnect_(now);
+      return;
+    }
     return;
   }
 
   if (WiFi.status() == WL_CONNECTED) {
     if (_phase != PHASE_CONNECTED) _phaseStartMs = now;
     _phase = PHASE_CONNECTED;
-    if (!_bootWindowCleared) clearBootWindow_();
+    _autoApWindowOffered = false;
     return;
   }
 
   if (_phase == PHASE_CONNECTING) {
     if ((now - _phaseStartMs) >= WIFI_CONNECT_TIMEOUT_MS) {
+#if WIFI_OPEN_PORTAL_ON_TIMEOUT
+      if (!_autoApWindowOffered) {
+        _autoApWindowOffered = true;
+        startApWait_(true, false);
+      } else {
+        _phase = PHASE_TIMEOUT;
+        _phaseStartMs = now;
+      }
+#else
       _phase = PHASE_TIMEOUT;
       _phaseStartMs = now;
+#endif
     }
     return;
   }
 
-  if (_phase == PHASE_TIMEOUT || _phase == PHASE_CONNECTED) {
-    if ((now - _phaseStartMs) >= 15000UL) {
-      WiFi.mode(WIFI_STA);
-      delay(50);
-      WiFi.begin();
-      _phase = PHASE_CONNECTING;
-      _phaseStartMs = now;
+  if (_phase == PHASE_CONNECTED) {
+    _phase = PHASE_TIMEOUT;
+    _phaseStartMs = now;
+    return;
+  }
+
+  if (_phase == PHASE_TIMEOUT || _phase == PHASE_BOOT_BLOCK) {
+    if ((now - _phaseStartMs) >= WIFI_RETRY_INTERVAL_MS) {
+      startStaConnect_();
     }
     return;
   }
@@ -186,11 +227,11 @@ int NetworkManager::rssi() const {
 
 const char* NetworkManager::phaseText() const {
   switch (_phase) {
-    case PHASE_CONNECTING:    return "CONNECTING";
-    case PHASE_CONNECTED:     return "CONNECTED";
-    case PHASE_TIMEOUT:       return "DISCONNECTED";
-    case PHASE_AP_WAIT_CLIENT:return "AP_WAIT";
-    case PHASE_PORTAL_ACTIVE: return "PORTAL";
-    default:                  return "BOOT";
+    case PHASE_CONNECTING:     return "CONNECTING";
+    case PHASE_CONNECTED:      return "CONNECTED";
+    case PHASE_TIMEOUT:        return "DISCONNECTED";
+    case PHASE_AP_WAIT_CLIENT: return "AP_WAIT";
+    case PHASE_PORTAL_ACTIVE:  return "PORTAL";
+    default:                   return "BOOT";
   }
 }

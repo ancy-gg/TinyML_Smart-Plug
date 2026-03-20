@@ -74,26 +74,25 @@ static constexpr ToneStep P_RESET_ACK[] = {
   {1200, 80, 110}, {0, 40, 0}, {1200, 80, 110}
 };
 
-// IMPORTANT: this table must follow the exact order of SoundEvent in Actuators.h
 static constexpr TonePattern PATTERNS[] = {
-  { P_BOOT,            (uint8_t)(sizeof(P_BOOT) / sizeof(P_BOOT[0])),                   false, 1 }, // SND_BOOT
-  { P_WIFI_PORTAL,     (uint8_t)(sizeof(P_WIFI_PORTAL) / sizeof(P_WIFI_PORTAL[0])),     false, 1 }, // SND_WIFI_PORTAL
-  { P_WIFI_OK,         (uint8_t)(sizeof(P_WIFI_OK) / sizeof(P_WIFI_OK[0])),             false, 1 }, // SND_WIFI_OK
-  { P_LOGGER_ON,       (uint8_t)(sizeof(P_LOGGER_ON) / sizeof(P_LOGGER_ON[0])),         false, 1 }, // SND_LOGGER_ON
-  { P_OTA_START,       (uint8_t)(sizeof(P_OTA_START) / sizeof(P_OTA_START[0])),         false, 2 }, // SND_OTA_START
-  { P_OTA_OK,          (uint8_t)(sizeof(P_OTA_OK) / sizeof(P_OTA_OK[0])),               false, 2 }, // SND_OTA_OK
-  { P_OTA_FAIL,        (uint8_t)(sizeof(P_OTA_FAIL) / sizeof(P_OTA_FAIL[0])),           false, 2 }, // SND_OTA_FAIL
-  { P_MAINS_LOST,      (uint8_t)(sizeof(P_MAINS_LOST) / sizeof(P_MAINS_LOST[0])),       false, 2 }, // SND_MAINS_LOST
-  { P_MAINS_RESTORED,  (uint8_t)(sizeof(P_MAINS_RESTORED) / sizeof(P_MAINS_RESTORED[0])), false, 2 }, // SND_MAINS_RESTORED
-  { P_VOLT_LOW,        (uint8_t)(sizeof(P_VOLT_LOW) / sizeof(P_VOLT_LOW[0])),           false, 2 }, // SND_VOLT_LOW
-  { P_VOLT_HIGH,       (uint8_t)(sizeof(P_VOLT_HIGH) / sizeof(P_VOLT_HIGH[0])),         false, 2 }, // SND_VOLT_HIGH
-  { P_DEVICE_PLUG,     (uint8_t)(sizeof(P_DEVICE_PLUG) / sizeof(P_DEVICE_PLUG[0])),     false, 1 }, // SND_DEVICE_PLUG
-  { P_FAULT_ARC,       (uint8_t)(sizeof(P_FAULT_ARC) / sizeof(P_FAULT_ARC[0])),         true,  4 }, // SND_FAULT_ARC
-  { P_FAULT_HEAT,      (uint8_t)(sizeof(P_FAULT_HEAT) / sizeof(P_FAULT_HEAT[0])),       true,  5 }, // SND_FAULT_HEAT
-  { P_FAULT_OVER,      (uint8_t)(sizeof(P_FAULT_OVER) / sizeof(P_FAULT_OVER[0])),       true,  3 }, // SND_FAULT_OVER
-  { P_FAULT_UNDERVOLT, (uint8_t)(sizeof(P_FAULT_UNDERVOLT) / sizeof(P_FAULT_UNDERVOLT[0])), true, 3 }, // SND_FAULT_UNDERVOLT
-  { P_FAULT_OVERVOLT,  (uint8_t)(sizeof(P_FAULT_OVERVOLT) / sizeof(P_FAULT_OVERVOLT[0])), true, 4 }, // SND_FAULT_OVERVOLT
-  { P_RESET_ACK,       (uint8_t)(sizeof(P_RESET_ACK) / sizeof(P_RESET_ACK[0])),         false, 1 }  // SND_RESET_ACK
+  { P_BOOT,            (uint8_t)(sizeof(P_BOOT) / sizeof(P_BOOT[0])),                   false, 1 },
+  { P_WIFI_PORTAL,     (uint8_t)(sizeof(P_WIFI_PORTAL) / sizeof(P_WIFI_PORTAL[0])),     false, 1 },
+  { P_WIFI_OK,         (uint8_t)(sizeof(P_WIFI_OK) / sizeof(P_WIFI_OK[0])),             false, 1 },
+  { P_LOGGER_ON,       (uint8_t)(sizeof(P_LOGGER_ON) / sizeof(P_LOGGER_ON[0])),         false, 1 },
+  { P_OTA_START,       (uint8_t)(sizeof(P_OTA_START) / sizeof(P_OTA_START[0])),         false, 2 },
+  { P_OTA_OK,          (uint8_t)(sizeof(P_OTA_OK) / sizeof(P_OTA_OK[0])),               false, 2 },
+  { P_OTA_FAIL,        (uint8_t)(sizeof(P_OTA_FAIL) / sizeof(P_OTA_FAIL[0])),           false, 2 },
+  { P_MAINS_LOST,      (uint8_t)(sizeof(P_MAINS_LOST) / sizeof(P_MAINS_LOST[0])),       false, 2 },
+  { P_MAINS_RESTORED,  (uint8_t)(sizeof(P_MAINS_RESTORED) / sizeof(P_MAINS_RESTORED[0])), false, 2 },
+  { P_VOLT_LOW,        (uint8_t)(sizeof(P_VOLT_LOW) / sizeof(P_VOLT_LOW[0])),           false, 2 },
+  { P_VOLT_HIGH,       (uint8_t)(sizeof(P_VOLT_HIGH) / sizeof(P_VOLT_HIGH[0])),         false, 2 },
+  { P_DEVICE_PLUG,     (uint8_t)(sizeof(P_DEVICE_PLUG) / sizeof(P_DEVICE_PLUG[0])),     false, 1 },
+  { P_FAULT_ARC,       (uint8_t)(sizeof(P_FAULT_ARC) / sizeof(P_FAULT_ARC[0])),         true,  4 },
+  { P_FAULT_HEAT,      (uint8_t)(sizeof(P_FAULT_HEAT) / sizeof(P_FAULT_HEAT[0])),       true,  5 },
+  { P_FAULT_OVER,      (uint8_t)(sizeof(P_FAULT_OVER) / sizeof(P_FAULT_OVER[0])),       true,  3 },
+  { P_FAULT_UNDERVOLT, (uint8_t)(sizeof(P_FAULT_UNDERVOLT) / sizeof(P_FAULT_UNDERVOLT[0])), true, 3 },
+  { P_FAULT_OVERVOLT,  (uint8_t)(sizeof(P_FAULT_OVERVOLT) / sizeof(P_FAULT_OVERVOLT[0])), true, 4 },
+  { P_RESET_ACK,       (uint8_t)(sizeof(P_RESET_ACK) / sizeof(P_RESET_ACK[0])),         false, 1 }
 };
 
 static_assert((sizeof(PATTERNS) / sizeof(PATTERNS[0])) == (SND_RESET_ACK + 1),
@@ -250,9 +249,9 @@ void Actuators::apply(FaultState st, float vDisplay, float vProtect, float i, fl
   const uint32_t now = millis();
 
 #if COLLECTION_ONLY_MODE
-  const float heatCutoffC = TEMP_DATA_WARN_C; // 80 C in collection mode
+  const float heatCutoffC = TEMP_DATA_WARN_C;
 #else
-  const float heatCutoffC = TEMP_TRIP_C;      // 70 C in normal mode
+  const float heatCutoffC = TEMP_TRIP_C;
 #endif
 
   const bool heatActive      = (st == STATE_HEATING) || (t >= heatCutoffC);
@@ -263,7 +262,7 @@ void Actuators::apply(FaultState st, float vDisplay, float vProtect, float i, fl
 
   bool relayOn = true;
 
-  if (heatActive || underVoltActive || overVoltActive) {
+  if (heatActive || underVoltActive || overVoltActive || overloadActive) {
     relayOn = false;
   }
 #if !COLLECTION_ONLY_MODE
@@ -303,8 +302,8 @@ void Actuators::apply(FaultState st, float vDisplay, float vProtect, float i, fl
 
   static bool mainsStable = false;
   static bool mainsInit = false;
-  static int8_t mainsCandidate = -1;
-  static uint32_t mainsCandidateSince = 0;
+  static uint32_t mainsOffSince = 0;
+  static uint32_t mainsOnSince = 0;
 
   const bool rawOn = (vProtect >= MAINS_PRESENT_ON_V);
   const bool rawOff = (vProtect <= MAINS_PRESENT_OFF_V);
@@ -314,23 +313,23 @@ void Actuators::apply(FaultState st, float vDisplay, float vProtect, float i, fl
     mainsInit = true;
   }
 
-  int8_t target = -1;
-  if (rawOn) target = 1;
-  else if (rawOff) target = 0;
-
-  if (target >= 0 && target != (mainsStable ? 1 : 0)) {
-    if (mainsCandidate != target) {
-      mainsCandidate = target;
-      mainsCandidateSince = now;
-    } else if ((now - mainsCandidateSince) >= MAINS_EDGE_DEBOUNCE_MS) {
-      mainsStable = (target != 0);
-      mainsCandidate = -1;
-      mainsCandidateSince = 0;
-      notify(mainsStable ? SND_MAINS_RESTORED : SND_MAINS_LOST);
+  if (rawOff) {
+    if (mainsOffSince == 0) mainsOffSince = now;
+    mainsOnSince = 0;
+    if (mainsStable && (now - mainsOffSince) >= UNPLUGGED_BUZZ_DELAY_MS) {
+      mainsStable = false;
+      notify(SND_MAINS_LOST);
     }
-  } else if (target == (mainsStable ? 1 : 0)) {
-    mainsCandidate = -1;
-    mainsCandidateSince = 0;
+  } else if (rawOn) {
+    if (mainsOnSince == 0) mainsOnSince = now;
+    mainsOffSince = 0;
+    if (!mainsStable && (now - mainsOnSince) >= MAINS_EDGE_DEBOUNCE_MS) {
+      mainsStable = true;
+      notify(SND_MAINS_RESTORED);
+    }
+  } else {
+    mainsOffSince = 0;
+    mainsOnSince = 0;
   }
 
   soundLoop();

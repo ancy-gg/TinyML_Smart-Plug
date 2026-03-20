@@ -1,4 +1,5 @@
 #include "OLED_NOTIF.h"
+#include "SmartPlugConfig.h"
 #include <math.h>
 
 static const uint8_t PROGMEM kBootLogo24x24[] = {
@@ -15,7 +16,6 @@ static void formatMeasure(char* dst, size_t n, float v, uint8_t decimals, const 
   char num[16];
   snprintf(num, sizeof(num), "%.*f", (int)decimals, v);
 
-  // Trim leading zeros but preserve one before the decimal point.
   char* p = num;
   while (p[0] == '0' && p[1] != '\0' && p[1] != '.') p++;
   if (p[0] == '\0') p = num;
@@ -51,12 +51,13 @@ void OLED_NOTIF::setState(FaultState state) {
   _state = state;
 }
 
-void OLED_NOTIF::setWiFi(bool connected, int rssi, bool blocking, bool inPortal, bool timedOut) {
+void OLED_NOTIF::setWiFi(bool connected, int rssi, bool blocking, bool inPortal, bool timedOut, bool apWindow) {
   _wifiConnected = connected;
   _wifiRssi = rssi;
   _wifiBlocking = blocking;
   _wifiPortal = inPortal;
   _wifiTimedOut = timedOut;
+  _wifiApWindow = apWindow;
 }
 
 void OLED_NOTIF::triggerCollecting(uint32_t durMs) {
@@ -64,8 +65,10 @@ void OLED_NOTIF::triggerCollecting(uint32_t durMs) {
 }
 
 void OLED_NOTIF::triggerConnected(uint32_t durMs) {
-  _connectedStartMs = millis();
-  _connectedUntilMs = _connectedStartMs + durMs;
+  uint32_t start = millis();
+  if (_bootUntilMs && (int32_t)(_bootUntilMs - start) > 0) start = _bootUntilMs + 120UL;
+  _connectedStartMs = start;
+  _connectedUntilMs = start + durMs;
 }
 
 void OLED_NOTIF::startBootSequence(uint32_t durMs) {
@@ -171,19 +174,23 @@ void OLED_NOTIF::drawBootSequence(uint32_t nowMs) {
   int tinyY = 6;
   int plugY = 18;
 
-  if (t < total / 3U) {
-    const float u = (float)t / (float)(total / 3U);
+  const uint32_t intro = (total * 40U) / 100U;
+  const uint32_t hold  = (total * 28U) / 100U;
+  const uint32_t outro = total - intro - hold;
+
+  if (t < intro) {
+    const float u = (float)t / (float)((intro == 0U) ? 1U : intro);
     logoX = -24 + (int)lroundf((logoTargetX + 24) * u);
     tinyY = -8 + (int)lroundf((6 + 8) * u);
     plugY = 32 - (int)lroundf((32 - 18) * u);
-  } else if (t < (2U * total) / 3U) {
-    const float phase = (float)(t - total / 3U) / (float)(total / 3U);
+  } else if (t < (intro + hold)) {
+    const float phase = (float)(t - intro) / (float)((hold == 0U) ? 1U : hold);
     const int bop = (phase < 0.5f) ? (int)lroundf(2.0f * phase) : (int)lroundf(2.0f * (1.0f - phase));
     logoX = logoTargetX;
     tinyY = 6 - bop;
     plugY = 18 + bop;
   } else {
-    const float u = (float)(t - (2U * total) / 3U) / (float)(total / 3U);
+    const float u = (float)(t - intro - hold) / (float)((outro == 0U) ? 1U : outro);
     logoX = logoTargetX - (int)lroundf((logoTargetX + 28) * u);
     tinyY = 6 - (int)lroundf(10.0f * u);
     plugY = 18 + (int)lroundf(14.0f * u);
@@ -200,21 +207,34 @@ void OLED_NOTIF::drawBootSequence(uint32_t nowMs) {
 
 void OLED_NOTIF::drawConnected(uint32_t nowMs) {
   (void)nowMs;
-  drawCenteredText("CONNECTED", 10, 1);
+  drawCenteredText("WIFI", 7, 1);
+  drawCenteredText("CONNECTED", 19, 1);
 }
 
 void OLED_NOTIF::drawWiFiWait(uint32_t nowMs, bool portal) {
   const int phase = (nowMs / 200U) % 4;
+
   if (portal) {
-    drawCenteredText("SETTING", 6, 1);
-    drawCenteredText("WIFI", 18, 1);
-    drawWiFiBars(102, 10, phase + 1, false);
+    drawCenteredText("ENTERING", 7, 1);
+    drawCenteredText("CREDENTIALS", 19, 1);
     return;
   }
 
-  drawWiFiBars(6, 2, phase + 1, _wifiTimedOut);
+  if (_wifiApWindow) {
+    drawCenteredText("AP OPEN", 7, 1);
+    drawCenteredText("CONNECT NOW", 19, 1);
+    return;
+  }
+
+  if (_wifiTimedOut) {
+    drawCenteredText("NETWORK", 7, 1);
+    drawCenteredText("FAILED", 19, 1);
+    return;
+  }
+
+  drawWiFiBars(6, 2, phase + 1, false);
   drawCenteredText("WIFI", 9, 1);
-  drawCenteredText(_wifiTimedOut ? "UNCONNECTED" : "CONNECTING", 19, 1);
+  drawCenteredText("CONNECTING", 19, 1);
 }
 
 void OLED_NOTIF::drawCollecting(uint32_t nowMs) {
@@ -232,19 +252,13 @@ void OLED_NOTIF::drawOta(uint32_t nowMs) {
 }
 
 void OLED_NOTIF::drawUnplugged(uint32_t nowMs) {
-  const int phase = (nowMs / 220U) % 8;
-  const int slide = phase;
-  const bool blink = ((nowMs / 280U) & 1U) == 0U;
-
-  drawLogo(16 - slide, 4);
-  if (blink) {
-    display->drawLine(12, 4, 36, 28, SSD1306_WHITE);
-    display->drawLine(12, 28, 36, 4, SSD1306_WHITE);
-  }
-  display->setCursor(50, 12);
+  (void)nowMs;
+  drawLogo(8, 4);
+  display->drawLine(6, 4, 30, 28, SSD1306_WHITE);
+  display->drawLine(6, 28, 30, 4, SSD1306_WHITE);
+  display->setCursor(44, 12);
   display->print("UNPLUGGED");
 }
-
 void OLED_NOTIF::drawFaultSlide(uint32_t nowMs, OledOverlay ov) {
   const bool blink = ((nowMs / 200U) & 1U) == 0U;
   if (ov == OledOverlay::FAULT_ARC) {
@@ -304,7 +318,7 @@ void OLED_NOTIF::render() {
     drawBootSequence(now);
   } else if (_otaActive) {
     drawOta(now);
-  } else if (_connectedUntilMs && now < _connectedUntilMs) {
+  } else if (_connectedUntilMs && now >= _connectedStartMs && now < _connectedUntilMs) {
     drawConnected(now);
   } else if (_overlay != OledOverlay::NONE) {
     if (_overlay == OledOverlay::UNPLUGGED) drawUnplugged(now);
@@ -313,7 +327,7 @@ void OLED_NOTIF::render() {
     drawCollecting(now);
   } else if (_wifiBlocking) {
     drawWiFiWait(now, _wifiPortal);
-  } else if (_noPowerSinceMs && (now - _noPowerSinceMs) >= 10000UL) {
+  } else if (_noPowerSinceMs && (now - _noPowerSinceMs) >= UNPLUGGED_STATE_DELAY_MS) {
     drawUnplugged(now);
   } else {
     drawDashboard(now);

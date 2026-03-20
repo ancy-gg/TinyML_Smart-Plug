@@ -17,6 +17,9 @@ void FaultLogic::resetLatch() {
   _heatFrames = 0;
   _arcHoldUntil = 0;
   _heatHoldUntil = 0;
+  _underVoltSince = 0;
+  _overVoltSince = 0;
+  _overloadSince = 0;
 }
 
 FaultState FaultLogic::update(float vProtect, float tempC, float irmsA, int arcModelOut, bool arcEligible) {
@@ -38,11 +41,34 @@ FaultState FaultLogic::update(float vProtect, float tempC, float irmsA, int arcM
   if (arcTrip)  _arcHoldUntil  = now + ARC_HOLD_MS;
   if (heatTrip) _heatHoldUntil = now + HEAT_HOLD_MS;
 
-  const bool arcActive       = arcTrip  || (now < _arcHoldUntil);
-  const bool heatActive      = heatTrip || (now < _heatHoldUntil);
-  const bool overVoltActive  = (vProtect >= VOLT_OVERVOLT_TRIP_V);
-  const bool underVoltActive = (vProtect > VOLT_UNDERVOLT_MIN_V && vProtect < VOLT_UNDERVOLT_MAX_V);
-  const bool overloadActive  = (irmsA >= OVERLOAD_WARN_A);
+  const bool arcActive  = arcTrip  || (now < _arcHoldUntil);
+  const bool heatActive = heatTrip || (now < _heatHoldUntil);
+
+  const bool underVoltRaw = (vProtect > VOLT_UNDERVOLT_MIN_V && vProtect < VOLT_UNDERVOLT_MAX_V);
+  const bool overVoltRaw  = (vProtect >= VOLT_OVERVOLT_TRIP_V);
+  const bool overloadRaw  = (irmsA >= OVERLOAD_WARN_A);
+
+  if (underVoltRaw) {
+    if (_underVoltSince == 0) _underVoltSince = now;
+  } else {
+    _underVoltSince = 0;
+  }
+
+  if (overVoltRaw) {
+    if (_overVoltSince == 0) _overVoltSince = now;
+  } else {
+    _overVoltSince = 0;
+  }
+
+  if (overloadRaw) {
+    if (_overloadSince == 0) _overloadSince = now;
+  } else {
+    _overloadSince = 0;
+  }
+
+  const bool underVoltActive = underVoltRaw && ((now - _underVoltSince) >= UNDERVOLT_TRIP_MS);
+  const bool overVoltActive  = overVoltRaw  && ((now - _overVoltSince)  >= OVERVOLT_TRIP_MS);
+  const bool overloadActive  = overloadRaw  && ((now - _overloadSince)  >= OVERLOAD_TRIP_MS);
 
   if (heatActive)      return STATE_HEATING;
   if (arcActive)       return STATE_ARCING;

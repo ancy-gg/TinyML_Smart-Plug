@@ -50,7 +50,12 @@ static constexpr float    MAINS_F0_HZ  = 60.0f;
 static constexpr uint32_t WIFI_BOOT_BLOCK_MS      = 10000UL;
 static constexpr uint32_t WIFI_CONNECT_TIMEOUT_MS = 10000UL;
 static constexpr uint32_t WIFI_PORTAL_TIMEOUT_MS  = 180000UL;
+static constexpr uint32_t WIFI_RETRY_INTERVAL_MS  = 15000UL;
+static constexpr uint32_t WIFI_PORTAL_AP_GRACE_MS = 1500UL;
+static constexpr uint32_t WIFI_CONTROL_POLL_MS    = 5000UL;
 static constexpr uint8_t  WIFI_TRIPLE_TAP_COUNT   = 2;
+static constexpr bool     WIFI_OPEN_PORTAL_ON_TIMEOUT = true;
+static constexpr const char* WIFI_PORTAL_SSID = "TinyML-SmartPlug";
 
 // =========================
 // Protection thresholds
@@ -77,6 +82,8 @@ static constexpr float VOLT_SURGE_TRIP_V    = VOLT_OVERVOLT_TRIP_V;
 static constexpr float MAINS_PRESENT_OFF_V  = 12.0f;
 static constexpr float MAINS_PRESENT_ON_V   = 25.0f;
 static constexpr uint32_t MAINS_EDGE_DEBOUNCE_MS = 1000UL;
+static constexpr uint32_t UNPLUGGED_BUZZ_DELAY_MS = 2000UL;
+static constexpr uint32_t UNPLUGGED_STATE_DELAY_MS = 3000UL;
 
 
 // Battery hold / outage shutdown
@@ -95,6 +102,9 @@ static constexpr int ARC_CNT_MAX  = 20;
 static constexpr uint32_t ARC_HOLD_MS  = 800;
 static constexpr uint32_t HEAT_HOLD_MS = 1200;
 static constexpr uint32_t FAULT_ALERT_MIN_MS = 2000UL;
+static constexpr uint32_t UNDERVOLT_TRIP_MS = 350UL;
+static constexpr uint32_t OVERVOLT_TRIP_MS  = 120UL;
+static constexpr uint32_t OVERLOAD_TRIP_MS  = 250UL;
 
 static constexpr int HEAT_FRAMES_TRIP = 6;
 static constexpr int HEAT_FRAMES_DEC  = 1;
@@ -153,11 +163,11 @@ static constexpr uint8_t  MCP3204_OVERSAMPLE      = 1;
 // 1 = single sample, 2 = average of 2, 3 = median-of-3.
 // For MCP3204, 3 is the best default to suppress impulsive junk
 // without washing out arc-like detail too much.
-static constexpr uint8_t  MCP3204_MEDIAN_SAMPLES  = 3;
+static constexpr uint8_t  MCP3204_MEDIAN_SAMPLES  = 1;
 
-static constexpr uint16_t MCP3204_STARTUP_FLUSH   = 512;
-static constexpr uint8_t  MCP3204_WARMUP_BURSTS   = 4;
-static constexpr uint8_t  MCP3204_BURST_FLUSH     = 8;
+static constexpr uint16_t MCP3204_STARTUP_FLUSH   = 256;
+static constexpr uint8_t  MCP3204_WARMUP_BURSTS   = 2;
+static constexpr uint8_t  MCP3204_BURST_FLUSH     = 4;
 
 // Direct ESP32 ADC fallback
 static constexpr uint8_t  ESP32_ADC_OVERSAMPLE   = 2;
@@ -392,3 +402,7 @@ struct VoltageCalib {
 // =========================
 static constexpr uint16_t ML_LOG_RATE_HZ     = 30;
 static constexpr uint16_t ML_LOG_DURATION_S  = 10;
+
+static constexpr uint32_t DEVICE_PLUG_CUE_INHIBIT_MS = 2000UL;
+static constexpr uint32_t DEVICE_PLUG_CUE_COOLDOWN_MS = 6000UL;
+static constexpr uint32_t DEVICE_PLUG_STABLE_MS = 1200UL;

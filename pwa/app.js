@@ -228,6 +228,7 @@ modeButtons.forEach((btn) => btn.addEventListener("click", () => {
 
 const menuTrigger = el("menuTrigger");
 const headerMenu = el("headerMenu");
+const btnChangeWifi = el("btnChangeWifi");
 
 function setHeaderMenuOpen(open) {
   if (!menuTrigger || !headerMenu) return;
@@ -250,6 +251,30 @@ document.addEventListener("keydown", (ev) => {
 
 densityButtons.forEach((btn) => btn.addEventListener("click", () => setHeaderMenuOpen(false)));
 modeButtons.forEach((btn) => btn.addEventListener("click", () => setHeaderMenuOpen(false)));
+
+btnChangeWifi?.addEventListener("click", async () => {
+  setHeaderMenuOpen(false);
+
+  if (!liveIsFresh() || !lastLiveData || !lastLiveData.wifi_connected) {
+    toast("Device must be online first. If it is offline, reboot it and use the 15s AP window.", "err");
+    return;
+  }
+
+  btnChangeWifi.disabled = true;
+  const oldText = btnChangeWifi.textContent;
+  btnChangeWifi.textContent = "Opening...";
+
+  try {
+    await db.ref("controls/open_portal_token").set(`portal_${Date.now()}`);
+    toast("AP opening for 15s. Connect to TinyML-SmartPlug.", "ok");
+  } catch (e) {
+    console.error(e);
+    toast("Failed to request WiFi change.", "err");
+  } finally {
+    btnChangeWifi.disabled = false;
+    btnChangeWifi.textContent = oldText || "Change WiFi";
+  }
+});
 
 if (alertEnable) alertEnable.checked = loadBool(LS_ALERT, true);
 if (soundEnable) soundEnable.checked = loadBool(LS_SOUND, false);

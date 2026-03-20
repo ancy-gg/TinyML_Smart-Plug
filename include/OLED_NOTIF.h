@@ -36,7 +36,7 @@ public:
 
   void setMeasurements(float voltage, float current, float apparentPower, float temperature);
   void setState(FaultState state);
-  void setWiFi(bool connected, int rssi, bool blocking, bool inPortal, bool timedOut = false);
+  void setWiFi(bool connected, int rssi, bool blocking, bool inPortal, bool timedOut = false, bool apWindow = false);
   void triggerCollecting(uint32_t durMs = 1000UL);
   void triggerConnected(uint32_t durMs = 900UL);
   void startBootSequence(uint32_t durMs = 3000UL);
@@ -61,6 +61,7 @@ private:
   bool _wifiBlocking = false;
   bool _wifiPortal = false;
   bool _wifiTimedOut = false;
+  bool _wifiApWindow = false;
   int  _wifiRssi = -127;
 
   bool _otaActive = false;

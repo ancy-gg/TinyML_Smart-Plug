@@ -20,4 +20,7 @@ private:
 
   uint32_t _arcHoldUntil  = 0;
   uint32_t _heatHoldUntil = 0;
+  uint32_t _underVoltSince = 0;
+  uint32_t _overVoltSince  = 0;
+  uint32_t _overloadSince  = 0;
 };
