@@ -31,7 +31,7 @@
 
 #define API_KEY "AIzaSyAmJlZZszyWPJFgIkTAAl_TbIySys1nvEw"
 #define DATABASE_URL "tinyml-smart-plug-default-rtdb.asia-southeast1.firebasedatabase.app"
-static const char* FW_VERSION = "TSP-v3.3.0-protect";
+static const char* FW_VERSION = "TSP-v3.3.1-protect";
 
 static const char* OTA_DESIRED_VERSION_PATH = "/ota/desired_version";
 static const char* OTA_FIRMWARE_URL_PATH    = "/ota/firmware_url";
@@ -309,7 +309,9 @@ void setup() {
   gSafeMode = BootGuard::safeMode();
 
   oled.begin();
+  oled.startBootSequence(3000);
   actuators.begin(PIN_RELAY, PIN_BUZZER_PWM, &oled);
+  actuators.notify(SND_BOOT);
 
   voltSensor.begin();
   voltSensor.setWindowMs(220);
@@ -367,7 +369,7 @@ void setup() {
   ota.setPaths(OTA_DESIRED_VERSION_PATH, OTA_FIRMWARE_URL_PATH);
   ota.setCheckInterval(OTA_CHECK_INTERVAL_MS);
 
-  oled.showStatus("System", gSafeMode ? "Safe mode" : "Ready");
+  if (gSafeMode) oled.showStatus("SAFE MODE", "OTA only");
 }
 
 void loop() {
@@ -382,7 +384,31 @@ void loop() {
   const bool protectionInhibit = (millis() < (SENSOR_BOOT_SETTLE_MS + PROTECTION_INHIBIT_MS));
 
   static bool lastWiFiConnected = false;
+  static NetworkManager::Phase lastWiFiPhase = NetworkManager::PHASE_BOOT_BLOCK;
+  static uint32_t wifiBannerUntilMs = 0;
+  static bool wifiTimedOutUi = false;
+
+  const NetworkManager::Phase wifiPhase = net.phase();
   const bool wifiConnected = net.isConnected();
+
+  if (wifiPhase != lastWiFiPhase) {
+    if (wifiPhase == NetworkManager::PHASE_CONNECTING) {
+      wifiBannerUntilMs = millis() + 2500UL;
+      wifiTimedOutUi = false;
+    } else if (wifiPhase == NetworkManager::PHASE_TIMEOUT) {
+      wifiBannerUntilMs = millis() + 2500UL;
+      wifiTimedOutUi = true;
+    } else if (wifiPhase == NetworkManager::PHASE_CONNECTED) {
+      wifiBannerUntilMs = 0;
+      wifiTimedOutUi = false;
+      oled.triggerConnected(1200UL);
+    } else if (wifiPhase == NetworkManager::PHASE_PORTAL_ACTIVE) {
+      wifiBannerUntilMs = 0;
+      wifiTimedOutUi = false;
+    }
+    lastWiFiPhase = wifiPhase;
+  }
+
   if (wifiConnected && !lastWiFiConnected) actuators.notify(SND_WIFI_OK);
   lastWiFiConnected = wifiConnected;
 
@@ -503,7 +529,8 @@ void loop() {
   oled.setOverlay(ov);
   oled.setState(st);
   oled.setMeasurements(vRms, f.irms, apparentPowerVa, tC);
-  oled.setWiFi(wifiConnected, net.rssi(), portalActive, portalActive);
+  const bool showWifiBanner = portalActive || ((int32_t)(wifiBannerUntilMs - millis()) > 0);
+  oled.setWiFi(wifiConnected, net.rssi(), showWifiBanner, portalActive, wifiTimedOutUi);
 
   static uint32_t lastOled = 0;
   if (millis() - lastOled >= 80) {

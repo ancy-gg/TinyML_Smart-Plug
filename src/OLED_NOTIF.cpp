@@ -51,11 +51,12 @@ void OLED_NOTIF::setState(FaultState state) {
   _state = state;
 }
 
-void OLED_NOTIF::setWiFi(bool connected, int rssi, bool blocking, bool inPortal) {
+void OLED_NOTIF::setWiFi(bool connected, int rssi, bool blocking, bool inPortal, bool timedOut) {
   _wifiConnected = connected;
   _wifiRssi = rssi;
   _wifiBlocking = blocking;
   _wifiPortal = inPortal;
+  _wifiTimedOut = timedOut;
 }
 
 void OLED_NOTIF::triggerCollecting(uint32_t durMs) {
@@ -210,9 +211,10 @@ void OLED_NOTIF::drawWiFiWait(uint32_t nowMs, bool portal) {
     drawWiFiBars(102, 10, phase + 1, false);
     return;
   }
-  drawWiFiBars(6, 2, phase + 1, false);
+
+  drawWiFiBars(6, 2, phase + 1, _wifiTimedOut);
   drawCenteredText("WIFI", 9, 1);
-  drawCenteredText("CONNECTING", 19, 1);
+  drawCenteredText(_wifiTimedOut ? "UNCONNECTED" : "CONNECTING", 19, 1);
 }
 
 void OLED_NOTIF::drawCollecting(uint32_t nowMs) {

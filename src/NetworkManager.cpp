@@ -2,9 +2,9 @@
 #include "SmartPlugConfig.h"
 #include <Preferences.h>
 
-static constexpr const char* NVS_NS_WIFI = "wifi_boot";
-static constexpr const char* NVS_KEY_ARM = "armed";
-static constexpr const char* NVS_KEY_CNT = "count";
+static constexpr const char* NVS_NS_WIFI  = "wifi_boot";
+static constexpr const char* NVS_KEY_ARM  = "armed";
+static constexpr const char* NVS_KEY_CNT  = "count";
 
 static void loadBootWindow(bool& armed, uint8_t& count) {
   Preferences prefs;
@@ -30,14 +30,19 @@ void NetworkManager::clearBootWindow_() {
 }
 
 void NetworkManager::startPortal_() {
+  WiFi.disconnect(false, false);
+  delay(80);
   WiFi.mode(WIFI_AP_STA);
-  delay(50);
+  delay(120);
+
   _portalStarted = false;
   wm.setConfigPortalTimeout((int)(WIFI_PORTAL_TIMEOUT_MS / 1000UL));
   wm.startConfigPortal("TinyML-SmartPlug");
+
   _phase = PHASE_PORTAL_ACTIVE;
+  _phaseStartMs = millis();
   _portalStarted = true;
-  _portalStartMs = millis();
+  _portalStartMs = _phaseStartMs;
 }
 
 void NetworkManager::apTrampoline(WiFiManager* wmgr) {
@@ -52,6 +57,9 @@ void NetworkManager::begin(void (*apCallback)(WiFiManager*)) {
   s_inst = this;
   _userApCb = apCallback;
   _phaseStartMs = millis();
+  _portalStarted = false;
+  _portalStartMs = 0;
+  _bootWindowCleared = false;
 
   bool armed = false;
   uint8_t count = 0;
@@ -68,13 +76,16 @@ void NetworkManager::begin(void (*apCallback)(WiFiManager*)) {
   WiFi.persistent(true);
   WiFi.setSleep(false);
   WiFi.setAutoReconnect(true);
-  WiFi.mode(WIFI_STA);
-  WiFi.begin();
-  _phase = PHASE_CONNECTING;
 
   if (_portalRequested) {
     startPortal_();
+    return;
   }
+
+  WiFi.mode(WIFI_STA);
+  delay(50);
+  WiFi.begin();
+  _phase = PHASE_CONNECTING;
 }
 
 void NetworkManager::update() {
@@ -87,37 +98,51 @@ void NetworkManager::update() {
   wm.process();
 
   if (_phase == PHASE_PORTAL_ACTIVE) {
-    const bool apActive = ((int)WiFi.getMode() & (int)WIFI_AP) != 0;
+    const bool apMode = (((int)WiFi.getMode() & (int)WIFI_AP) != 0);
+    const bool apRunning = apMode && (WiFi.softAPIP() != IPAddress((uint32_t)0));
 
     if (_portalStartMs && (now - _portalStartMs) >= WIFI_PORTAL_TIMEOUT_MS) {
       WiFi.softAPdisconnect(true);
       _portalStarted = false;
       _portalStartMs = 0;
-      _phase = (WiFi.status() == WL_CONNECTED) ? PHASE_CONNECTED : PHASE_TIMEOUT;
-      _phaseStartMs = now;
-      if (WiFi.status() == WL_CONNECTED) clearBootWindow_();
+
+      if (WiFi.status() == WL_CONNECTED) {
+        _phase = PHASE_CONNECTED;
+        _phaseStartMs = now;
+        clearBootWindow_();
+      } else {
+        WiFi.mode(WIFI_STA);
+        delay(50);
+        WiFi.begin();
+        _phase = PHASE_CONNECTING;
+        _phaseStartMs = now;
+      }
       return;
     }
 
-    if (!apActive && WiFi.status() == WL_CONNECTED) {
+    if (!apRunning) {
       _portalStarted = false;
       _portalStartMs = 0;
-      _phase = PHASE_CONNECTED;
-      clearBootWindow_();
+
+      if (WiFi.status() == WL_CONNECTED) {
+        _phase = PHASE_CONNECTED;
+        _phaseStartMs = now;
+        clearBootWindow_();
+      } else {
+        WiFi.mode(WIFI_STA);
+        delay(50);
+        WiFi.begin();
+        _phase = PHASE_CONNECTING;
+        _phaseStartMs = now;
+      }
       return;
     }
 
-    if (!apActive && WiFi.status() != WL_CONNECTED) {
-      _portalStarted = false;
-      _portalStartMs = 0;
-      _phase = PHASE_TIMEOUT;
-      _phaseStartMs = now;
-      return;
-    }
     return;
   }
 
   if (WiFi.status() == WL_CONNECTED) {
+    if (_phase != PHASE_CONNECTED) _phaseStartMs = now;
     _phase = PHASE_CONNECTED;
     if (!_bootWindowCleared) clearBootWindow_();
     return;
@@ -134,6 +159,7 @@ void NetworkManager::update() {
   if (_phase == PHASE_TIMEOUT || _phase == PHASE_CONNECTED) {
     if ((now - _phaseStartMs) >= 15000UL) {
       WiFi.mode(WIFI_STA);
+      delay(50);
       WiFi.begin();
       _phase = PHASE_CONNECTING;
       _phaseStartMs = now;
