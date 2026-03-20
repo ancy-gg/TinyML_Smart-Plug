@@ -26,44 +26,44 @@
     *{ box-sizing:border-box; }
     html,body{ margin:0; min-height:100%; font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif; color:var(--text); background:radial-gradient(1200px 700px at 50% -240px, #2a2a2d 0%, #121214 60%, #0b0b0c 100%); }
     body{ padding:24px; }
-    .wrap{ width:min(1120px, 100%); margin:0 auto; }
+    .wrap{ width:min(1160px, 100%); margin:0 auto; }
     .hero,.section{ background:var(--panel); border:1px solid var(--border); border-radius:22px; box-shadow:var(--shadow); backdrop-filter:blur(6px); }
     .hero{ padding:24px; margin-bottom:18px; }
     .section{ padding:20px; margin-bottom:14px; }
-    h1,h2,h3,p{ margin:0; }
+    h1,h2,h3,p,ol,li{ margin:0; }
     h1{ font-size:30px; font-weight:950; letter-spacing:.2px; }
     h2{ font-size:18px; font-weight:950; margin-bottom:14px; }
     h3{ font-size:14px; font-weight:900; margin-bottom:6px; }
-    p{ color:var(--muted); line-height:1.6; }
+    p,li{ color:var(--muted); line-height:1.65; }
+    strong{ color:var(--text); }
     .hero-head{ display:flex; align-items:center; gap:16px; margin-bottom:14px; }
-    .hero-logo{ width:72px; height:72px; border-radius:18px; border:1px solid rgba(255,255,255,.12); box-shadow:var(--shadow); }
-    .hero-copy p{ margin-top:6px; max-width:760px; }
+    .hero-logo{ width:78px; height:78px; border-radius:20px; border:1px solid rgba(255,255,255,.12); box-shadow:var(--shadow); }
+    .hero-copy p{ margin-top:6px; max-width:820px; }
     .actions{ display:flex; gap:10px; flex-wrap:wrap; }
     .btn{ display:inline-flex; align-items:center; justify-content:center; min-height:44px; padding:0 14px; border-radius:12px; text-decoration:none; font-weight:900; color:var(--text); border:1px solid rgba(255,255,255,0.12); background:rgba(255,255,255,0.06); }
     .btn-primary{ background:linear-gradient(180deg, rgba(46,204,113,0.22), rgba(46,204,113,0.12)); border-color:rgba(46,204,113,0.34); color:#d8ffe6; }
-    .quick-grid,.card-grid,.rule-grid,.status-grid{ display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:12px; }
-    .intro-grid{ display:grid; grid-template-columns:1.25fr .95fr; gap:14px; }
-    .card,.rule,.status-card,.quick{ padding:14px; border-radius:16px; background:var(--panel-strong); border:1px solid rgba(255,255,255,0.08); }
-    .quick strong,.rule strong,.status-card strong{ color:var(--text); }
-    .list{ display:grid; gap:12px; }
+    .grid-2,.grid-3,.feature-grid,.steps-grid{ display:grid; gap:12px; }
+    .grid-2{ grid-template-columns:repeat(2,minmax(0,1fr)); }
+    .grid-3{ grid-template-columns:repeat(3,minmax(0,1fr)); }
+    .feature-grid{ grid-template-columns:repeat(2,minmax(0,1fr)); }
+    .steps-grid{ grid-template-columns:repeat(4,minmax(0,1fr)); }
+    .card,.rule,.status-card,.feature-card,.step-card,.notice{ padding:14px; border-radius:16px; background:var(--panel-strong); border:1px solid rgba(255,255,255,0.08); }
+    .notice{ border-color:rgba(231,76,60,0.28); background:linear-gradient(180deg, rgba(231,76,60,0.16), rgba(34,16,16,0.92)); }
     .mini{ font-size:12px; color:var(--muted); margin-top:8px; }
-    .rule{ position:relative; overflow:hidden; }
-    .rule::before{ content:""; position:absolute; inset:auto -10% -40% auto; width:140px; height:140px; border-radius:50%; opacity:.08; }
-    .rule-arc::before{ background:var(--blue); }
-    .rule-overload::before{ background:var(--yellow); }
-    .rule-heat::before{ background:var(--orange); }
-    .rule-short::before{ background:var(--red); }
-    .rule-undervolt::before{ background:var(--purple); }
-    .rule-overvolt::before{ background:var(--red); }
     .status-banner{ display:inline-flex; align-items:center; gap:8px; margin-bottom:8px; padding:6px 10px; border-radius:999px; font-size:12px; font-weight:900; border:1px solid rgba(255,255,255,.12); }
     .status-live{ background:rgba(46,204,113,.14); color:#baf7cf; }
     .status-offline{ background:rgba(231,76,60,.14); color:#ffd2cb; }
     .status-warn{ background:rgba(241,196,15,.14); color:#ffe48c; }
     .status-fault{ background:rgba(231,76,60,.18); color:#ffd2cb; }
-    .footer-note{ font-size:12px; color:var(--muted); }
-    @media (max-width: 860px){
+    .step-num{ width:30px; height:30px; border-radius:999px; display:inline-flex; align-items:center; justify-content:center; margin-bottom:10px; font-size:13px; font-weight:950; background:rgba(255,255,255,.10); border:1px solid rgba(255,255,255,.14); }
+    .feature-card p,.step-card p,.card p,.rule p,.status-card p,.notice p{ margin-top:4px; }
+    .footer-note{ font-size:12px; color:var(--muted); text-align:center; padding:6px 0 2px; }
+    @media (max-width: 980px){
       body{ padding:14px; }
-      .intro-grid,.quick-grid,.card-grid,.rule-grid,.status-grid{ grid-template-columns:1fr; }
+      .grid-3,.steps-grid{ grid-template-columns:repeat(2,minmax(0,1fr)); }
+    }
+    @media (max-width: 860px){
+      .grid-2,.grid-3,.feature-grid,.steps-grid{ grid-template-columns:1fr; }
       .hero-head{ align-items:flex-start; }
       h1{ font-size:24px; }
       .actions .btn{ flex:1 1 100%; }
@@ -77,69 +77,71 @@
         <img class="hero-logo" src="icons/icon-512.png" alt="TinyML Smart Plug logo" />
         <div class="hero-copy">
           <h1>TinyML Smart Plug Guide</h1>
-          <p>This guide explains what the device does, what each dashboard section means, how alerts work, and how to use the extra tools such as history, the data logger, the plot viewer, and OTA updates.</p>
         </div>
       </div>
       <div class="actions">
-        <a class="btn btn-primary" href="index.html">Back to dashboard</a>
-        <a class="btn" href="#device">About the device</a>
+        <a class="btn btn-primary" href="index.html">Go back</a>
+        <a class="btn" href="#device">About</a>
         <a class="btn" href="#dashboard">Dashboard</a>
-        <a class="btn" href="#protections">Protection rules</a>
-        <a class="btn" href="#tools">Advanced tools</a>
+        <a class="btn" href="#protections">Protection</a>
+        <a class="btn" href="#features">Analysis</a>
+        <a class="btn" href="#tools">Advanced</a>
+        <a class="btn" href="#reset">Resetting</a>
       </div>
     </section>
 
     <section class="section" id="device">
-      <h2>About the device</h2>
-      <div class="intro-grid">
+      <h2>About</h2>
+      <div class="grid-2">
         <div class="card">
-          <h3>What TinyML Smart Plug is for</h3>
-          <p>The TinyML Smart Plug is a complementary protection device for residential use. It is designed to monitor voltage, current, temperature, and waveform behavior so it can warn or trip on dangerous conditions that normal breakers may not explain clearly to the user, especially progressive fault conditions.</p>
-          <div class="mini">It works as an additional safety layer. It does not replace required electrical protection devices.</div>
+          <h3>TinyML Smart Plug</h3>
+          <p>A <B>complementary</B> protection device for residential use. It monitors voltage, current, temperature, and waveform behavior so that it can warn and/or trip on dangerous conditions that normal breakers may not explain clearly to the user, especially progressive fault conditions.</p>
+          <div class="mini">It is an additional safety layer. It does not replace required electrical protection devices like the Circuit Breakers.</div>
         </div>
         <div class="card">
-          <h3>How it thinks</h3>
-          <p>The device uses a hybrid method. Arc faults are detected by an AI model using waveform features, while overload, temperature, and voltage protection use fixed safety rules for fast decisions.</p>
+          <h3>Fault Detection</h3>
+          <p>The device uses a hybrid method. Arc faults are evaluated by a Random Forest AI model from waveform features, while overload, short-circuit, temperature, and voltage protection use fixed safety rules for quick response.</p>
+          <div class="mini">Fun-fact: TinyML is a mini-AI model that fits in a thumb-sized microcontroller inside the device.</div>
         </div>
       </div>
     </section>
 
     <section class="section" id="dashboard">
-      <h2>What you see on the dashboard</h2>
-      <div class="card-grid">
+      <h2>Dashboard</h2>
+      <div class="grid-3">
         <div class="card">
           <h3>Status banner</h3>
-          <p>This is the fastest summary of the latest device condition. If live data stops updating for 15 seconds, the dashboard changes to <strong>Disconnected</strong> so stale values are not mistaken as current.</p>
+          <p>This is the fastest summary of the latest device condition. If live data stops updating for 15 seconds, the dashboard changes to <strong>Disconnected</strong>.</p>
         </div>
         <div class="card">
-          <h3>System overview</h3>
+          <h3>System Overview</h3>
           <p>This area summarizes overall health, connectivity, power condition, active protection state, and the most recent recorded event.</p>
         </div>
         <div class="card">
-          <h3>Live electrical data</h3>
-          <p>Voltage, current, apparent power, and temperature come from the most recent live packet. Hover the small <strong>?</strong> in each card for a quick explanation.</p>
+          <h3>Live Electrical Data</h3>
+          <p>Voltage, current, apparent power, and temperature come from the latest live packet. Hover the small <strong>?</strong> inside each card for a short explanation.</p>
         </div>
         <div class="card">
-          <h3>Waveform data</h3>
-          <p>These cards show the feature values used for waveform analysis and AI-based arc evaluation. When live data becomes stale, these values also switch to disconnected state.</p>
+          <h3>Waveform Data</h3>
+          <p>These cards show the feature values used for waveform analysis and AI-based arc evaluation.</p>
         </div>
         <div class="card">
           <h3>History</h3>
-          <p>History shows important device states over time. Use the date filter to narrow what you see, and use download when you want a CSV export.</p>
+          <p>History shows important device states over time. Use the date filter to narrow what you see and use download when you want a CSV export.</p>
         </div>
         <div class="card">
           <h3>Guide access</h3>
-          <p>The question mark at the top-right of the dashboard opens this full guide so the main dashboard stays cleaner and less cluttered for daily use.</p>
+          <p>The question mark at the top-right of the dashboard opens this full guide.</p>
         </div>
       </div>
     </section>
 
     <section class="section" id="status">
-      <h2>Alerts and status meanings</h2>
-      <div class="status-grid">
+      <h2>Alerts and Status</h2>
+      <div class="grid-2">
         <div class="status-card">
           <div class="status-banner status-live">Monitoring</div>
-          <p>The device is connected and no active trip condition is being reported from the latest packet.</p>
+          <p>The device is connected and no active trip condition is being reported from the latest live packet.</p>
         </div>
         <div class="status-card">
           <div class="status-banner status-offline">Disconnected</div>
@@ -150,116 +152,96 @@
           <p>The smart plug is still reachable, but mains voltage is absent or near zero.</p>
         </div>
         <div class="status-card">
-          <div class="status-banner status-fault">Critical fault</div>
-          <p>The device is reporting a trip or a severe condition such as arc fault, short circuit, or socket heating.</p>
+          <div class="status-banner status-fault">Critical Fault</div>
+          <p>The device is reporting a serious protective state such as arc fault, short circuit, socket heating, undervoltage, or overvoltage.</p>
         </div>
       </div>
-      <div class="mini">Enable browser alerts if you want system notifications to appear on your phone or computer when important conditions happen.</div>
+      <div class="mini">Enable browser alerts to receive notifications on your phone or computer.</div>
     </section>
 
     <section class="section" id="protections">
       <h2>Protection rules</h2>
-      <div class="rule-grid">
-        <div class="rule rule-arc">
-          <h3>Arc Fault</h3>
-          <p>Trips when the AI model detects a high probability of arcing from waveform features.</p>
-        </div>
-        <div class="rule rule-overload">
-          <h3>Overload</h3>
-          <p>Alarms when current reaches 10 A or above.</p>
-        </div>
-        <div class="rule rule-heat">
-          <h3>Socket Heating</h3>
-          <p>Trips when socket temperature reaches 70 °C or higher.</p>
-        </div>
-        <div class="rule rule-short">
-          <h3>Short Circuit</h3>
-          <p>Trips when measured current goes above 20 A.</p>
-        </div>
-        <div class="rule rule-undervolt">
-          <h3>Undervoltage</h3>
-          <p>Trips when voltage drops below 200 V.</p>
-        </div>
-        <div class="rule rule-overvolt">
-          <h3>Overvoltage</h3>
-          <p>Trips when voltage rises above 250 V.</p>
-        </div>
+      <div class="grid-2">
+        <div class="rule"><h3>Arc Fault</h3><p>Trips when the AI model detects a high probability of arcing based from waveform features.</p></div>
+        <div class="rule"><h3>Overload</h3><p>Alarms when measured current reaches 10A or above.</p></div>
+        <div class="rule"><h3>Socket Heating</h3><p>Trips when socket temperature reaches 70°C or higher.</p></div>
+        <div class="rule"><h3>Short Circuit</h3><p>Trips when measured current goes above 20A.</p></div>
+        <div class="rule"><h3>Undervoltage</h3><p>Trips when voltage drops below 200V.</p></div>
+        <div class="rule"><h3>Overvoltage</h3><p>Trips when voltage rises above 250V.</p></div>
       </div>
     </section>
 
-
-
-    <section class="section" id="waveform-features">
+    <section class="section" id="features">
       <h2>Waveform feature guide</h2>
-      <div class="card-grid">
-        <div class="card">
-          <h3>Cycle NMSE</h3>
-          <p>Compares one electrical cycle against the next. Larger changes can suggest abnormal repeatability.</p>
-        </div>
-        <div class="card">
-          <h3>Zero-Cross Variance</h3>
-          <p>Measures how much the zero-cross timing varies. Higher irregularity can support arc-related detection.</p>
-        </div>
-        <div class="card">
-          <h3>Zero-Cross Dwell Ratio</h3>
-          <p>Shows how much of the waveform lingers near the zero region, which can help separate fault behavior from normal loads.</p>
-        </div>
-        <div class="card">
-          <h3>Pulse Count and Peak Fluctuation</h3>
-          <p>These describe how spiky and unstable the waveform looks across a cycle.</p>
-        </div>
-        <div class="card">
-          <h3>HF Band Energy and Entropy</h3>
-          <p>These values help describe high-frequency noise and randomness, both of which are useful when looking for arc behavior.</p>
-        </div>
-        <div class="card">
-          <h3>THD</h3>
-          <p>Total Harmonic Distortion estimates how much the waveform departs from a cleaner sinusoidal shape.</p>
-        </div>
+      <div class="feature-grid">
+        <div class="feature-card"><h3>Cycle NMSE</h3><p>Measures how different one cycle is from the next cycle. Higher values usually mean poorer cycle-to-cycle repeatability.</p></div>
+        <div class="feature-card"><h3>Zero-Cross Variance</h3><p>Measures how much the zero-cross timing varies. Higher irregularity can support arc-related detection.</p></div>
+        <div class="feature-card"><h3>Zero-Cross Dwell Ratio</h3><p>Shows how much of the waveform stays near the zero region, which helps separate some fault behavior from normal load behavior.</p></div>
+        <div class="feature-card"><h3>Pulse Count per Cycle</h3><p>Counts how many noticeable pulses or burst-like events appear in one cycle. More pulses can indicate a rougher waveform.</p></div>
+        <div class="feature-card"><h3>Peak Fluctuation CV</h3><p>Tracks how unstable peak values are from cycle to cycle. A larger fluctuation suggests less stable waveform peaks.</p></div>
+        <div class="feature-card"><h3>Midband Residual RMS</h3><p>Measures leftover midband content after the expected waveform shape is removed. Larger residual energy suggests extra disturbance or irregularity.</p></div>
+        <div class="feature-card"><h3>HF Band Energy Ratio</h3><p>Shows how much signal energy is concentrated in the higher-frequency band. Arc-like behavior often adds more high-frequency content.</p></div>
+        <div class="feature-card"><h3>Wavelet Packet Energy Entropy</h3><p>Describes how scattered the wavelet packet energy is across bands. Higher entropy usually means the waveform energy is more disordered.</p></div>
+        <div class="feature-card"><h3>Spectral Entropy</h3><p>Measures how spread and random the frequency content is. It helps distinguish cleaner repetitive loads from noisier or more chaotic behavior.</p></div>
+        <div class="feature-card"><h3>THD Current</h3><p>Total Harmonic Distortion estimates how much the current waveform departs from a cleaner sinusoidal form.</p></div>
       </div>
     </section>
 
     <section class="section" id="tools">
-      <h2>Advanced tools in the web app</h2>
-      <div class="quick-grid">
-        <div class="quick">
+      <h2>Advanced</h2>
+      <div class="grid-2">
+        <div class="card">
           <h3>History and CSV export</h3>
-          <p>Use the history table for fault review, event review, and simple record keeping. Download exports the current filtered view as CSV.</p>
+          <p>Use history for event review and basic record keeping. Download exports the currently filtered table as CSV.</p>
         </div>
-        <div class="quick">
+        <div class="card">
           <h3>Data Logger</h3>
-          <p>The Data Logger helps with model training and controlled data gathering. You can set duration, indicate load type, apply a label override, then download one session or compile all sessions.</p>
+          <p>The Data Logger is for model training and controlled data gathering. You can set a duration, enter a load type, choose a label mode, start collection, and later download a single session or compile all sessions.</p>
         </div>
-        <div class="quick">
+        <div class="card">
           <h3>Plot Viewer</h3>
-          <p>The Plot Viewer opens session data for deeper inspection. It lets you review feature curves, move through time, smooth data, normalize values, and inspect recorded events more clearly.</p>
+          <p>The Plot Viewer opens session data for deeper inspection. It can show multiple series, scroll through time, smooth values, normalize values, follow the playhead, and inspect markers and statistics.</p>
         </div>
-        <div class="quick">
+        <div class="card">
           <h3>OTA Updates</h3>
-          <p>OTA lets you publish a target firmware version and firmware link so the device can pull a newer build. Keep this collapsed unless you are actively maintaining firmware.</p>
+          <p>OTA lets the developer, <b>ancy-gg</b>, to update the device firmware.</p>
         </div>
       </div>
     </section>
 
-    <section class="section" id="notifications">
-      <h2>Installation and daily use</h2>
-      <div class="list">
-        <div class="card">
-          <h3>Install the PWA</h3>
-          <p>Add the website to your home screen or install it from your browser so it behaves more like an app and opens faster in daily use.</p>
+    <section class="section" id="reset">
+      <h2>How to reset the device after a protective trip</h2>
+      <div class="notice">
+        <h3>Important safety note</h3>
+        <p>The device does <strong>not</strong> provide automatic or web-based reset of the relay when it trips. Reset requires <strong>physical user confirmation</strong>. This is intentional so that the user can inspect the appliance, the socket, and the surrounding area first before power is restored.</p>
+      </div>
+      <div class="steps-grid" style="margin-top:12px;">
+        <div class="step-card">
+          <div class="step-num">1</div>
+          <h3>Stop using the appliance</h3>
+          <p>Do not continue operation after a trip. Treat the trip as a real protective warning until checked.</p>
         </div>
-        <div class="card">
-          <h3>Keep the dashboard simple</h3>
-          <p>The main dashboard is intentionally compact for consumers. Quick hints stay inside hover help, while the full explanations live here in the guide.</p>
+        <div class="step-card">
+          <div class="step-num">2</div>
+          <h3>Inspect the setup</h3>
+          <p>Check the appliance plug, the smart plug, the wall socket, and the nearby area for heat, odor, discoloration, loose contact, or any sign of damage.</p>
         </div>
-        <div class="card">
-          <h3>Best practice</h3>
-          <p>If the device shows a protection state, stop using the connected appliance until the cause is checked. A smart plug can warn early, but safe inspection still matters.</p>
+        <div class="step-card">
+          <div class="step-num">3</div>
+          <h3>Correct the cause first</h3>
+          <p>Remove the overloaded circuit, unplug the faulty appliance, let the socket cool, or wait for the supply voltage to return to a safe range before trying to reset.</p>
+        </div>
+        <div class="step-card">
+          <div class="step-num">4</div>
+          <h3>Press the physical reset button</h3>
+          <p>Only after you confirm the environment is safe should you press the device’s physical reset button to re-arm the protection latch and restore operation.</p>
         </div>
       </div>
+      <div class="mini" style="margin-top:12px;">If the same protection state returns after reset, stop using that appliance and investigate the fault before trying again.</div>
     </section>
 
-    <div class="footer-note">TinyML Smart Plug dashboard guide</div>
+    <div class="footer-note">TinyML Smart Plug Dashboard Guide</div>
+    <div class="footer-note">Regards, ancy-gg.</div>
   </div>
 </body>
 </html>

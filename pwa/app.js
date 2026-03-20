@@ -198,6 +198,30 @@ function loadBool(k, def=false){
 }
 function saveBool(k, v){ localStorage.setItem(k, v ? "1" : "0"); }
 
+function initCollapsibles() {
+  document.querySelectorAll(".collapse-toggle").forEach((btn) => {
+    const targetId = btn.getAttribute("data-collapse-target");
+    const body = targetId ? document.getElementById(targetId) : null;
+    if (!body) return;
+
+    const setState = (collapsed) => {
+      body.classList.toggle("is-collapsed", collapsed);
+      body.hidden = collapsed;
+      btn.dataset.collapsed = collapsed ? "true" : "false";
+      btn.textContent = collapsed ? "Show" : "Hide";
+      btn.setAttribute("aria-expanded", collapsed ? "false" : "true");
+      body.setAttribute("aria-hidden", collapsed ? "true" : "false");
+    };
+
+    setState(body.classList.contains("is-collapsed") || body.hidden);
+
+    btn.addEventListener("click", () => {
+      const collapsed = btn.dataset.collapsed !== "true";
+      setState(collapsed);
+    });
+  });
+}
+
 if (alertEnable) alertEnable.checked = loadBool(LS_ALERT, true);
 if (soundEnable) soundEnable.checked = loadBool(LS_SOUND, false);
 alertEnable?.addEventListener("change", () => saveBool(LS_ALERT, alertEnable.checked));
@@ -226,27 +250,7 @@ async function showFaultNotification(title, body){
   }
   if (Notification.permission !== "granted") return;
 
-  document.querySelectorAll(".collapse-toggle").forEach((btn) => {
-  const targetId = btn.getAttribute("data-collapse-target");
-  const body = targetId ? document.getElementById(targetId) : null;
-  if (!body) return;
-  const sync = () => {
-    const collapsed = body.classList.contains("is-collapsed");
-    btn.textContent = collapsed ? "Expand" : "Collapse";
-    btn.setAttribute("aria-expanded", collapsed ? "false" : "true");
-    body.style.maxHeight = collapsed ? "0px" : `${body.scrollHeight + 8}px`;
-  };
-  sync();
-  btn.addEventListener("click", () => {
-    body.classList.toggle("is-collapsed");
-    sync();
-  });
-  window.addEventListener("resize", () => {
-    if (!body.classList.contains("is-collapsed")) body.style.maxHeight = `${body.scrollHeight + 8}px`;
-  });
-});
-
-if ("serviceWorker" in navigator) {
+  if ("serviceWorker" in navigator) {
     const reg = await navigator.serviceWorker.ready.catch(()=>null);
     if (reg) {
       reg.showNotification(title, {
@@ -714,9 +718,17 @@ function refreshLatestHistoryRecord() {
 function recordEffectiveHistoryTransition(kind, payload = {}, epoch = Date.now()) {
   const normalized = classifyStatus(kind);
   if (!normalized || normalized === lastEffectiveHistoryStatus) return;
-  lastEffectiveHistoryStatus = normalized;
   const loggable = new Set(["DEVICE_ON","DEVICE_ONLINE","DEVICE_DISCONNECTED","UNPLUGGED","OVERLOAD","SHORT_CIRCUIT","HEATING","ARCING","UNDERVOLTAGE","OVERVOLTAGE","CONFIG_PORTAL","WIFI_CONNECTING","STARTUP_STABILIZING","OTA_UPDATING","FIRMWARE_UPDATED"]);
   if (!loggable.has(normalized)) return;
+
+  const latestStatus = classifyStatus(latestHistoryRecord?.status || "");
+  const latestEpoch = getRecordEpochMs(latestHistoryRecord || {});
+  if (latestStatus === normalized && latestEpoch > 0 && Math.abs(epoch - latestEpoch) < 20000) {
+    lastEffectiveHistoryStatus = normalized;
+    return;
+  }
+
+  lastEffectiveHistoryStatus = normalized;
   pushLocalHistoryEvent(normalized, payload, epoch);
   refreshLatestHistoryRecord();
   applyHistoryFilter();
@@ -955,7 +967,8 @@ setInterval(() => {
     if (deviceIpLine) deviceIpLine.style.display = "none";
     setLiveUnavailable();
     applyMetricHints(lastLiveData || {});
-    if (previousFresh) {
+    const latestStatus = classifyStatus(latestHistoryRecord?.status || "");
+    if (previousFresh || latestStatus !== "DEVICE_DISCONNECTED") {
       recordEffectiveHistoryTransition("DEVICE_DISCONNECTED", lastLiveData || {}, Date.now());
       previousFresh = false;
     }
@@ -1289,25 +1302,7 @@ mlCsvUpload?.addEventListener("change", async (ev) => {
   }
 });
 
-document.querySelectorAll(".collapse-toggle").forEach((btn) => {
-  const targetId = btn.getAttribute("data-collapse-target");
-  const body = targetId ? document.getElementById(targetId) : null;
-  if (!body) return;
-  const sync = () => {
-    const collapsed = body.classList.contains("is-collapsed");
-    btn.textContent = collapsed ? "Expand" : "Collapse";
-    btn.setAttribute("aria-expanded", collapsed ? "false" : "true");
-    body.style.maxHeight = collapsed ? "0px" : `${body.scrollHeight + 8}px`;
-  };
-  sync();
-  btn.addEventListener("click", () => {
-    body.classList.toggle("is-collapsed");
-    sync();
-  });
-  window.addEventListener("resize", () => {
-    if (!body.classList.contains("is-collapsed")) body.style.maxHeight = `${body.scrollHeight + 8}px`;
-  });
-});
+initCollapsibles();
 
 if ("serviceWorker" in navigator) {
   navigator.serviceWorker.register("sw.js").then((reg) => {

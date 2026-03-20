@@ -947,3 +947,119 @@ a{ color:inherit; }
     transform:none;
   }
 }
+
+
+/* ===== Patch v2.3 layout fixes ===== */
+.topbar{
+  display:grid;
+  grid-template-columns:48px minmax(0,1fr) 48px;
+  align-items:center;
+  gap:12px;
+  justify-content:stretch;
+}
+.topbar-spacer{ width:48px; height:48px; }
+.brand-centered{
+  width:auto;
+  margin:0 auto;
+  justify-content:center;
+  text-align:center;
+}
+.brand-copy{
+  align-items:center;
+  text-align:center;
+}
+.top-actions-floating{
+  position:static;
+  transform:none;
+  justify-self:end;
+}
+.overview-grid-3x3{
+  grid-template-columns:minmax(0,1fr) minmax(0,1fr) minmax(300px, .9fr);
+  grid-auto-rows:minmax(120px, auto);
+  align-items:stretch;
+}
+.summary-card{
+  height:100%;
+}
+.summary-card-primary{
+  grid-column:1 / 3;
+  grid-row:1;
+}
+.summary-card-connectivity{
+  grid-column:1;
+  grid-row:2;
+}
+.summary-card-power{
+  grid-column:2;
+  grid-row:2;
+}
+.summary-card-protection{
+  grid-column:1;
+  grid-row:3;
+}
+.summary-card-last-event{
+  grid-column:2;
+  grid-row:3;
+}
+.summary-card-rules{
+  grid-column:3;
+  grid-row:1 / 4;
+  display:flex;
+  flex-direction:column;
+}
+.summary-card-rules .rules-grid{
+  grid-template-columns:1fr;
+  align-content:start;
+  flex:1;
+}
+.rule-chip{
+  width:100%;
+}
+.collapsible-body[hidden]{
+  display:none !important;
+}
+.collapse-toggle[data-collapsed="true"]::after{
+  content:"";
+}
+@media (max-width: 1200px){
+  .overview-grid-3x3{
+    grid-template-columns:repeat(2, minmax(0,1fr));
+    grid-auto-rows:auto;
+  }
+  .summary-card-primary{ grid-column:1 / 3; grid-row:1; }
+  .summary-card-rules{ grid-column:1 / 3; grid-row:2; }
+  .summary-card-connectivity{ grid-column:1; grid-row:3; }
+  .summary-card-power{ grid-column:2; grid-row:3; }
+  .summary-card-protection{ grid-column:1; grid-row:4; }
+  .summary-card-last-event{ grid-column:2; grid-row:4; }
+}
+@media (max-width: 980px){
+  .overview-grid-3x3{
+    grid-template-columns:1fr;
+  }
+  .summary-card-primary,
+  .summary-card-rules,
+  .summary-card-connectivity,
+  .summary-card-power,
+  .summary-card-protection,
+  .summary-card-last-event{
+    grid-column:auto;
+    grid-row:auto;
+  }
+}
+@media (max-width: 640px){
+  .topbar{
+    grid-template-columns:1fr 40px;
+    align-items:start;
+  }
+  .topbar-spacer{ display:none; }
+  .brand-centered{
+    grid-column:1 / 2;
+    width:100%;
+  }
+  .top-actions-floating{
+    grid-column:2 / 3;
+    justify-self:end;
+    align-self:start;
+  }
+}
