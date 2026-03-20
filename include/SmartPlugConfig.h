@@ -357,15 +357,15 @@ static inline float eval_cubic_signed_mag(float x, float c3, float c2, float c1,
   return (x < 0.0f) ? -y : y;
 }
 
-static constexpr float CURRENT_CAL_C3 = 0.00368415f;
-static constexpr float CURRENT_CAL_C2 = -0.0399220f;
-static constexpr float CURRENT_CAL_C1 = 1.3402f;
-static constexpr float CURRENT_CAL_C0 = -0.0433349f;
+static constexpr float CURRENT_CAL_C3 = 0.0f;
+static constexpr float CURRENT_CAL_C2 = 0.0f;
+static constexpr float CURRENT_CAL_C1 = 1.0f;
+static constexpr float CURRENT_CAL_C0 = 0.0f;
 
-static constexpr float VOLTAGE_CAL_C3 = 0.00000122081f;
-static constexpr float VOLTAGE_CAL_C2 = -0.000503178f;
-static constexpr float VOLTAGE_CAL_C1 = 1.05726f;
-static constexpr float VOLTAGE_CAL_C0 = -0.495263f;
+static constexpr float VOLTAGE_CAL_C3 = 0.0f;
+static constexpr float VOLTAGE_CAL_C2 = 0.0f;
+static constexpr float VOLTAGE_CAL_C1 = 1.0f;
+static constexpr float VOLTAGE_CAL_C0 = 0.0f;
 
 // =========================
 // Current calibration

@@ -31,10 +31,10 @@
 
 #define API_KEY "AIzaSyAmJlZZszyWPJFgIkTAAl_TbIySys1nvEw"
 #define DATABASE_URL "tinyml-smart-plug-default-rtdb.asia-southeast1.firebasedatabase.app"
-static const char* FW_VERSION = "TSP-v3.4.0-protect"; //protect - change 0 relay, with calib
-                                                      //collect - change 1 relay, with calib
-                                                      //measure - set calib to 0 (1 for first-order var)
-
+static const char* FW_VERSION = "TSP-v3.4.0-measure"; //measure - set calib to 0.0 (1.0 for first-order var)
+                                                      //protect - change 0 relay, with calibration
+                                                      //collect - change 1 relay, with calibration
+                                                      
 static const char* OTA_DESIRED_VERSION_PATH = "/ota/desired_version";
 static const char* OTA_FIRMWARE_URL_PATH    = "/ota/firmware_url";
 static const uint32_t OTA_CHECK_INTERVAL_MS = 60000;
