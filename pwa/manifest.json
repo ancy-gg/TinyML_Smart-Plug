@@ -2,53 +2,35 @@
   "name": "TinyML Smart Plug Dashboard",
   "short_name": "TinyML Plug",
   "description": "Protection-aware monitoring dashboard for the TinyML Smart Plug.",
-  "id": "./index.html?source=pwa",
-  "start_url": "./index.html?source=pwa",
+  "id": "./",
+  "start_url": "./",
   "scope": "./",
   "display": "standalone",
-  "display_override": ["standalone", "minimal-ui", "browser"],
+  "display_override": [
+    "standalone",
+    "minimal-ui",
+    "browser"
+  ],
   "orientation": "any",
   "background_color": "#111111",
   "theme_color": "#111111",
-  "categories": ["utilities", "productivity", "tools"],
-  "shortcuts": [
-    {
-      "name": "Dashboard",
-      "short_name": "Dashboard",
-      "url": "./index.html",
-      "icons": [
-        {
-          "src": "icons/icon-192.png",
-          "sizes": "192x192",
-          "type": "image/png"
-        }
-      ]
-    },
-    {
-      "name": "Guide",
-      "short_name": "Guide",
-      "url": "./guide.html",
-      "icons": [
-        {
-          "src": "icons/icon-192.png",
-          "sizes": "192x192",
-          "type": "image/png"
-        }
-      ]
-    }
+  "categories": [
+    "utilities",
+    "productivity",
+    "tools"
   ],
   "icons": [
     {
       "src": "icons/icon-192.png",
       "sizes": "192x192",
       "type": "image/png",
-      "purpose": "any maskable"
+      "purpose": "any"
     },
     {
       "src": "icons/icon-512.png",
       "sizes": "512x512",
       "type": "image/png",
-      "purpose": "any maskable"
+      "purpose": "any"
     }
   ]
 }

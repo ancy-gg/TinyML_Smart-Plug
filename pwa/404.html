@@ -3,8 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
-  <title>Page Not Found | TinyML Smart Plug</title>
-  <meta name="theme-color" content="#111111" />
+  <title>TinyML Smart Plug</title>
   <style>
     :root{ color-scheme:dark; }
     *{ box-sizing:border-box; }
@@ -13,51 +12,21 @@
       min-height:100vh;
       display:grid;
       place-items:center;
-      padding:24px;
       font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif;
       color:#f3f3f3;
       background:radial-gradient(1200px 700px at 50% -240px, #2a2a2d 0%, #121214 60%, #0b0b0c 100%);
+      padding:24px;
     }
     .card{
-      width:min(620px, 100%);
+      width:min(520px, 100%);
       padding:28px;
-      border-radius:24px;
+      border-radius:20px;
       border:1px solid rgba(255,255,255,0.10);
-      background:rgba(255,255,255,0.05);
+      background:rgba(255,255,255,0.04);
       box-shadow:0 16px 40px rgba(0,0,0,0.45);
-      backdrop-filter:blur(8px);
     }
-    .eyebrow{
-      display:inline-flex;
-      align-items:center;
-      gap:8px;
-      padding:6px 10px;
-      border-radius:999px;
-      background:rgba(231,76,60,0.16);
-      border:1px solid rgba(231,76,60,0.30);
-      color:#ffd9d4;
-      font-size:12px;
-      font-weight:800;
-      margin-bottom:14px;
-    }
-    h1{ margin:0 0 10px; font-size:32px; line-height:1.1; }
-    p{ margin:0; line-height:1.6; color:rgba(255,255,255,0.72); }
-    .path{
-      margin-top:16px;
-      padding:12px 14px;
-      border-radius:14px;
-      border:1px solid rgba(255,255,255,0.10);
-      background:rgba(0,0,0,0.18);
-      font-family:ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
-      color:rgba(255,255,255,0.88);
-      overflow-wrap:anywhere;
-    }
-    .actions{
-      display:flex;
-      gap:10px;
-      flex-wrap:wrap;
-      margin-top:20px;
-    }
+    h1{ margin:0 0 12px; font-size:28px; }
+    p{ margin:0 0 14px; color:rgba(255,255,255,0.72); line-height:1.6; }
     a{
       display:inline-flex;
       align-items:center;
@@ -65,44 +34,19 @@
       min-height:44px;
       padding:0 14px;
       border-radius:12px;
+      background:rgba(46,204,113,0.16);
+      border:1px solid rgba(46,204,113,0.32);
+      color:#d5ffe4;
       text-decoration:none;
-      font-weight:900;
-      color:#f3f3f3;
-      border:1px solid rgba(255,255,255,0.12);
-      background:rgba(255,255,255,0.06);
-    }
-    .primary{
-      background:linear-gradient(180deg, rgba(46,204,113,0.22), rgba(46,204,113,0.12));
-      border-color:rgba(46,204,113,0.34);
-      color:#d8ffe6;
-    }
-    .foot{ margin-top:14px; font-size:12px; color:rgba(255,255,255,0.52); }
-    @media (max-width: 640px){
-      body{ padding:14px; }
-      h1{ font-size:26px; }
-      .actions a{ width:100%; }
+      font-weight:800;
     }
   </style>
 </head>
 <body>
   <div class="card">
-    <div class="eyebrow">404 • Page not found</div>
-    <h1>This page is not part of the TinyML Smart Plug app.</h1>
-    <p>The dashboard could not find the page you requested. You can return to the main dashboard or open the guide.</p>
-    <div id="requestedPath" class="path">Requested path: —</div>
-    <div class="actions">
-      <a class="primary" href="index.html">Go to dashboard</a>
-      <a href="guide.html">Open guide</a>
-    </div>
-    <div class="foot">If this happened from a stale shortcut or saved link, reopening the main dashboard usually fixes it.</div>
+    <h1>Page not found</h1>
+    <p>The TinyML Smart Plug dashboard could not find that page. Return to the main dashboard to continue monitoring your device.</p>
+    <a href="index.html">Go to dashboard</a>
   </div>
-
-  <script>
-    (function () {
-      var pathEl = document.getElementById('requestedPath');
-      var requested = (location.pathname || '/') + (location.search || '') + (location.hash || '');
-      if (pathEl) pathEl.textContent = 'Requested path: ' + requested;
-    })();
-  </script>
 </body>
 </html>

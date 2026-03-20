@@ -198,6 +198,13 @@
   const DEFAULT_ON = new Set(["i_rms", "v_rms", "thd_i", "cycle_nmse", "zcv", "hf_band_energy_ratio"]);
   const DEFAULT_Y2 = new Set(["thd_i", "v_rms", "temp_c"]);
 
+  function preferredDefaultKeys(keys) {
+    const preferred = ["cycle_nmse", "zcv", "zc_dwell_ratio", "pulse_count_per_cycle", "peak_fluct_cv", "midband_residual_rms", "hf_band_energy_ratio", "wpe_entropy", "spec_entropy", "thd_i", "current", "voltage", "temp", "i_rms", "v_rms"];
+    const picked = preferred.filter((k) => keys.includes(k) && k !== "label_arc");
+    if (picked.length) return picked.slice(0, 8);
+    return keys.filter((k) => k !== "label_arc").slice(0, Math.min(8, keys.length));
+  }
+
   function resetState() {
     pause();
     if (plot) {
@@ -740,12 +747,18 @@
     const t0 = X[i0];
     const t1 = X[i1];
 
-    const selectedKeys = KEYS.filter(k => showPref.get(k) && k !== "label_arc");
+    let selectedKeys = KEYS.filter(k => showPref.get(k) && k !== "label_arc");
+    if (!selectedKeys.length) selectedKeys = preferredDefaultKeys(KEYS).filter((k) => k !== "label_arc");
     const cap = 16;
     const shownKeys = selectedKeys.slice(0, cap);
     const extra = Math.max(0, selectedKeys.length - shownKeys.length);
 
-    statsHint.textContent = `Stats (RAW) | idx ${i0}-${i1} | t=${fmt(t0)}s..${fmt(t1)}s` + (extra ? ` | +${extra} more hidden` : "");
+    statsHint.textContent = `Stats | idx ${i0}-${i1} | t=${fmt(t0)}s..${fmt(t1)}s` + (extra ? ` | +${extra} more hidden` : "");
+
+    if (!shownKeys.length) {
+      statsBody.innerHTML = `<tr><td colspan="6" class="mono">No numeric series selected.</td></tr>`;
+      return;
+    }
 
     statsBody.innerHTML = shownKeys.map((k) => {
       const si = KEYS.indexOf(k) + 1;
@@ -890,8 +903,9 @@
   }
 
   function applyDefaultSelection() {
+    const defaults = new Set(preferredDefaultKeys(KEYS));
     KEYS.forEach((k, i) => {
-      const on = DEFAULT_ON.has(k);
+      const on = defaults.has(k);
       showPref.set(k, on);
       axisPref.set(k, DEFAULT_Y2.has(k) ? "y2" : "y");
 
@@ -1000,8 +1014,9 @@
 
       buildArcIndexes();
 
+      const initialDefaults = new Set(preferredDefaultKeys(KEYS));
       KEYS.forEach((k) => {
-        showPref.set(k, DEFAULT_ON.has(k));
+        showPref.set(k, initialDefaults.has(k));
         axisPref.set(k, DEFAULT_Y2.has(k) ? "y2" : "y");
       });
 
@@ -1129,8 +1144,9 @@
 
       buildArcIndexes();
 
+      const initialDefaults = new Set(preferredDefaultKeys(KEYS));
       KEYS.forEach((k) => {
-        showPref.set(k, DEFAULT_ON.has(k));
+        showPref.set(k, initialDefaults.has(k));
         axisPref.set(k, DEFAULT_Y2.has(k) ? "y2" : "y");
       });
 

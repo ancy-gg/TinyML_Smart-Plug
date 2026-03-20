@@ -1,10 +1,10 @@
-const BUILD_VERSION = "TSPweb-v2.1.0";
+const BUILD_VERSION = "Web-v1.2";
 const CACHE_NAME = BUILD_VERSION;
 const APP_SHELL = [
   "./",
   "./index.html",
-  "./session.html",
   "./guide.html",
+  "./session.html",
   "./styles.css",
   "./app.js",
   "./session.js",
@@ -34,7 +34,6 @@ self.addEventListener("activate", (event) => {
 async function networkFirst(request, fallbackUrl = "./index.html") {
   try {
     const fresh = await fetch(request, { cache: "no-store" });
-    if (!fresh.ok && fresh.type !== "opaque") throw new Error(`HTTP ${fresh.status}`);
     const cache = await caches.open(CACHE_NAME);
     cache.put(request, fresh.clone());
     return fresh;
@@ -48,28 +47,10 @@ async function staleWhileRevalidate(request) {
   const cache = await caches.open(CACHE_NAME);
   const cached = await cache.match(request, { ignoreSearch: true });
   const fetchPromise = fetch(request).then((fresh) => {
-    if (fresh && (fresh.ok || fresh.type === "opaque")) cache.put(request, fresh.clone());
+    cache.put(request, fresh.clone());
     return fresh;
   }).catch(() => cached);
   return cached || fetchPromise;
-}
-
-const SCOPE_PATH = (() => {
-  const p = new URL(self.registration.scope).pathname;
-  if (p === "/") return "";
-  return p.endsWith("/") ? p.slice(0, -1) : p;
-})();
-
-function navigationFallbackFor(url) {
-  const rawPath = url.pathname || "/";
-  const normalizedPath = rawPath !== "/" && rawPath.endsWith("/") ? rawPath.slice(0, -1) : rawPath;
-  const rootPath = SCOPE_PATH || "";
-
-  if (normalizedPath === "/" || normalizedPath === rootPath || normalizedPath === `${rootPath}/index.html`) return "./index.html";
-  if (normalizedPath === `${rootPath}/session.html`) return "./session.html";
-  if (normalizedPath === `${rootPath}/guide.html`) return "./guide.html";
-  if (normalizedPath === `${rootPath}/404.html`) return "./404.html";
-  return "./404.html";
 }
 
 self.addEventListener("fetch", (event) => {
@@ -80,7 +61,7 @@ self.addEventListener("fetch", (event) => {
   const sameOrigin = url.origin === self.location.origin;
 
   if (req.mode === "navigate") {
-    event.respondWith(networkFirst(req, navigationFallbackFor(url)));
+    event.respondWith(networkFirst(req, "./index.html"));
     return;
   }
 

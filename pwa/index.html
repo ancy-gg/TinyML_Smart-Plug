@@ -24,7 +24,7 @@
   <link rel="stylesheet" href="https://unpkg.com/uplot/dist/uPlot.min.css" />
 </head>
 
-<body>
+<body class="density-compact">
   <main class="app">
     <header class="top">
       <div class="topbar">
@@ -34,12 +34,30 @@
           <img class="logo" src="icons/icon-512.png" alt="TinyML Smart Plug Logo" />
           <div class="brand-copy">
             <h1 class="title">TinyML Smart Plug</h1>
-            <div class="subtitle">Monitoring Dashboard</div>
           </div>
         </div>
 
-        <div class="top-actions top-actions-floating">
-          <a class="icon-link" href="guide.html" aria-label="Open dashboard guide" title="Dashboard guide">?</a>
+        <div class="top-actions top-actions-floating" aria-label="Header menu">
+          <button type="button" class="menu-trigger" id="menuTrigger" aria-label="Open display menu" aria-expanded="false" aria-controls="headerMenu" title="Menu">☰</button>
+          <div class="header-menu" id="headerMenu" hidden>
+            <div class="menu-section">
+              <div class="menu-label">Display</div>
+              <div class="menu-row menu-row-split" role="group" aria-label="Display density">
+                <button type="button" class="menu-chip" data-density="compact">Compact</button>
+                <button type="button" class="menu-chip" data-density="comfortable">Comfortable</button>
+              </div>
+            </div>
+            <div class="menu-section">
+              <div class="menu-label">Mode</div>
+              <div class="menu-row menu-row-split" role="group" aria-label="Dashboard mode">
+                <button type="button" class="menu-chip" data-mode="consumer">User</button>
+                <button type="button" class="menu-chip" data-mode="admin">Admin</button>
+              </div>
+            </div>
+            <div class="menu-section menu-section-links">
+              <a class="menu-link" href="guide.html">Guide</a>
+            </div>
+          </div>
         </div>
       </div>
 
@@ -47,14 +65,14 @@
         <div id="statusBadge" class="status status-DISCONNECTED">DISCONNECTED</div>
 
         <div class="subline">
-          <span class="label">Last update</span>
+          <span class="label">Last update:</span>
           <span id="lastUpdateText" class="mono">—</span>
           <span class="dot-sep">•</span>
           <span id="freshnessText">Waiting for device…</span>
         </div>
 
         <div id="deviceIpLine" class="subline" style="display:none;">
-          <span class="label">Device</span>
+          <span class="label">Device IP:</span>
           <span id="deviceIpText" class="mono">—</span>
           <span class="dot-sep">•</span>
           <span id="deviceMdnsText" class="mono">tinyml-smart-plug.local</span>
@@ -63,100 +81,88 @@
         <div class="alertbar">
           <label class="toggle">
             <input type="checkbox" id="alertEnable" />
-            Alerts
+            Notification Alerts
           </label>
           <label class="toggle">
             <input type="checkbox" id="soundEnable" />
-            Sound
+            Enable Sound
           </label>
         </div>
       </div>
     </header>
 
+    <section id="installHelp" class="install-help hidden" aria-live="polite">
+      <div class="install-help-head">
+        <div>
+          <div class="install-title">Install the app</div>
+          <div class="install-copy" id="installCopy">
+            Save this dashboard to your Home Screen for a faster full-screen experience.
+          </div>
+        </div>
+        <button id="btnDismissInstall" class="btn btn-small" type="button">Dismiss</button>
+      </div>
+    </section>
+
     <section class="overview-block">
       <div class="section-head">
         <div>
           <h2 class="section-title">System Overview</h2>
+          
         </div>
         <div class="section-actions">
           <button id="btnRefreshNow" class="btn btn-small" type="button">Refresh</button>
         </div>
       </div>
 
-      <div class="overview-grid overview-grid-3x3">
-        <div class="summary-card summary-card-primary summary-card-wide">
+      <div class="overview-grid">
+        <div class="summary-card summary-card-wide">
           <div class="summary-head">
             <div class="summary-kicker">Overall Health</div>
             <div id="overviewHealthBadge" class="mini-badge mini-badge-OK">Healthy</div>
           </div>
           <div id="overviewPrimary" class="summary-title">Waiting for device…</div>
-          <div id="overviewSecondary" class="summary-copy">
-            Live device data will appear here as soon as the smart plug publishes to Firebase.
-          </div>
+          <div id="overviewSecondary" class="summary-copy">Waiting for data.</div>
         </div>
 
-        <div class="summary-card summary-card-connectivity">
+        <div class="summary-card">
           <div class="summary-kicker">Connectivity</div>
-          <div id="ovConnectivity" class="summary-value">Disconnected</div>
-          <div id="ovConnectivitySub" class="summary-copy">No fresh live data yet.</div>
+          <div id="ovConnectivity" class="summary-value">Offline</div>
+          <div id="ovConnectivitySub" class="summary-copy">No live link.</div>
         </div>
 
-        <div class="summary-card summary-card-power">
+        <div class="summary-card">
           <div class="summary-kicker">Power Condition</div>
           <div id="ovPowerCondition" class="summary-value">Unknown</div>
-          <div id="ovPowerSub" class="summary-copy">Voltage state not available yet.</div>
+          <div id="ovPowerSub" class="summary-copy">Waiting for voltage.</div>
         </div>
 
-        <div class="summary-card summary-card-protection">
+        <div class="summary-card">
           <div class="summary-kicker">Protection</div>
           <div id="ovProtection" class="summary-value">Monitoring</div>
-          <div id="ovProtectionSub" class="summary-copy">Trips and alarms will be summarized here.</div>
+          <div id="ovProtectionSub" class="summary-copy">No active trip.</div>
         </div>
 
-        <div class="summary-card summary-card-last-event">
+        <div class="summary-card">
+          <div class="summary-kicker">Firmware</div>
+          <div id="ovFirmware" class="summary-value">—</div>
+          <div id="ovFirmwareSub" class="summary-copy">—</div>
+        </div>
+
+        <div class="summary-card">
           <div class="summary-kicker">Last Event</div>
           <div id="ovLastEvent" class="summary-value">—</div>
-          <div id="ovLastEventSub" class="summary-copy">Recent device event will appear here.</div>
+          <div id="ovLastEventSub" class="summary-copy">No history.</div>
         </div>
 
-        <div class="summary-card summary-card-rules">
+        <div class="summary-card summary-card-wide">
           <div class="summary-kicker">Protection Rules</div>
-          <div class="rules-grid">
-            <div class="rule-chip" tabindex="0">
-              <span>Arc Fault</span>
-              <span class="rule-q">?</span>
-              <div class="rule-tip">Trip when the AI model detects a high probability of arcing from waveform features.</div>
-            </div>
-
-            <div class="rule-chip" tabindex="0">
-              <span>Overload</span>
-              <span class="rule-q">?</span>
-              <div class="rule-tip">Alarm when measured current reaches 10 A or above.</div>
-            </div>
-
-            <div class="rule-chip" tabindex="0">
-              <span>Socket Heating</span>
-              <span class="rule-q">?</span>
-              <div class="rule-tip">Trip when socket temperature reaches 70 °C or higher.</div>
-            </div>
-
-            <div class="rule-chip" tabindex="0">
-              <span>Short Circuit</span>
-              <span class="rule-q">?</span>
-              <div class="rule-tip">Trip when the current sensor detects more than 20 A.</div>
-            </div>
-
-            <div class="rule-chip" tabindex="0">
-              <span>Undervoltage</span>
-              <span class="rule-q">?</span>
-              <div class="rule-tip">Trip when voltage drops below 200 V.</div>
-            </div>
-
-            <div class="rule-chip" tabindex="0">
-              <span>Overvoltage</span>
-              <span class="rule-q">?</span>
-              <div class="rule-tip">Trip when voltage rises above 250 V.</div>
-            </div>
+          <div class="rules-grid rules-grid-cards">
+            <div class="rule-mini-card"><strong>Arc Fault</strong><span>Trip on AI-detected arcs</span></div>
+            <div class="rule-mini-card"><strong>Overload</strong><span>Alarm at 10 A+</span></div>
+            <div class="rule-mini-card"><strong>Socket Heating</strong><span>Trip at 70 °C+</span></div>
+            <div class="rule-mini-card"><strong>Short Circuit</strong><span>Trip above 20 A</span></div>
+            <div class="rule-mini-card"><strong>Undervoltage</strong><span>Trip below 200 V</span></div>
+            <div class="rule-mini-card"><strong>Overvoltage</strong><span>Trip above 250 V</span></div>
           </div>
         </div>
       </div>
@@ -166,53 +172,34 @@
       <div class="section-head">
         <div>
           <h2 class="section-title">Live Electrical Data</h2>
+          
         </div>
         <div class="section-hint" data-live-state-hint>LIVE</div>
       </div>
 
       <div class="metric-grid-top">
         <div class="card live-card">
-          <div class="card-topline">
-            <div class="card-label">Voltage</div>
-            <div class="metric-help">
-              <button class="help-trigger" type="button" aria-label="Voltage help">?</button>
-              <div id="vHint" class="help-pop">Line voltage state</div>
-            </div>
-          </div>
+          <div class="card-label">Voltage</div>
           <div class="card-value"><span id="vVal">—</span><span class="unit">V</span></div>
+          <div id="vHint" class="metric-note">—</div>
         </div>
 
         <div class="card live-card">
-          <div class="card-topline">
-            <div class="card-label">Current</div>
-            <div class="metric-help">
-              <button class="help-trigger" type="button" aria-label="Current help">?</button>
-              <div id="iHint" class="help-pop">Load draw state</div>
-            </div>
-          </div>
+          <div class="card-label">Current</div>
           <div class="card-value"><span id="iVal">—</span><span class="unit">A</span></div>
+          <div id="iHint" class="metric-note">—</div>
         </div>
 
         <div class="card live-card">
-          <div class="card-topline">
-            <div class="card-label">Apparent Power</div>
-            <div class="metric-help">
-              <button class="help-trigger" type="button" aria-label="Apparent power help">?</button>
-              <div id="pHint" class="help-pop">Estimated demand</div>
-            </div>
-          </div>
+          <div class="card-label">Apparent Power</div>
           <div class="card-value"><span id="pVal">—</span><span class="unit">VA</span></div>
+          <div id="pHint" class="metric-note">—</div>
         </div>
 
         <div class="card live-card">
-          <div class="card-topline">
-            <div class="card-label">Temperature</div>
-            <div class="metric-help">
-              <button class="help-trigger" type="button" aria-label="Temperature help">?</button>
-              <div id="tHint" class="help-pop">Socket thermal state</div>
-            </div>
-          </div>
+          <div class="card-label">Temperature</div>
           <div class="card-value"><span id="tVal">—</span><span class="unit">°C</span></div>
+          <div id="tHint" class="metric-note">—</div>
         </div>
       </div>
     </section>
@@ -220,7 +207,8 @@
     <section class="features-block">
       <div class="section-head">
         <div>
-          <h2 class="section-title">Waveform Data</h2>
+          <h2 class="section-title">Waveform Features</h2>
+          
         </div>
         <div class="section-hint" data-live-state-hint>LIVE</div>
       </div>
@@ -229,7 +217,7 @@
         <div class="feature-group-card">
           <div class="group-head">
             <h3 class="group-title">Time and Cycle Domain</h3>
-            <div class="muted small">Primary</div>
+            <div class="muted small">Primary discriminants</div>
           </div>
           <div class="feature-grid feature-grid-2col">
             <div class="card feature-card"><div class="card-label">Cycle NMSE</div><div class="card-value"><span id="cycleNmseVal">—</span></div></div>
@@ -244,7 +232,7 @@
         <div class="feature-group-card">
           <div class="group-head">
             <h3 class="group-title">Frequency and Energy Domain</h3>
-            <div class="muted small">Context</div>
+            <div class="muted small">Context features</div>
           </div>
           <div class="feature-grid feature-grid-2col">
             <div class="card feature-card"><div class="card-label">HF Band Energy Ratio</div><div class="card-value"><span id="hfEnergyVal">—</span></div></div>
@@ -271,7 +259,7 @@
             <option value="30d">Last 30 days</option>
           </select>
 
-          <button id="btnDownloadCSV" class="btn" type="button">Download</button>
+          <button id="btnDownloadCSV" class="btn btn-success" type="button">Download</button>
           <button id="btnClearHistory" class="btn btn-danger" type="button">Clear</button>
         </div>
       </div>
@@ -297,64 +285,62 @@
       </div>
     </section>
 
-    <section class="history ota-panel collapsible-section" id="otaSection">
+    <section class="history ota-panel admin-only">
       <div class="history-head">
         <div>
           <h2 class="history-title">Over-the-Air (OTA) Updates</h2>
-          <div class="history-hint">Publish a version and firmware link for the device to pull</div>
+          <div class="history-hint">Publish a version and firmware URL for the device to pull</div>
         </div>
 
         <div class="history-actions">
-          <button class="btn btn-small collapse-toggle" type="button" data-collapse-target="otaBody" aria-expanded="false">Expand</button>
-          <button id="btnPublishOta" class="btn btn-primary" type="button">Update</button>
+          <button id="btnPublishOta" class="btn btn-info" type="button">Update</button>
         </div>
       </div>
 
-      <div id="otaBody" class="collapsible-body is-collapsed">
-        <div class="ota-grid">
-          <div class="ota-box">
-            <div class="ota-label">Current Published OTA</div>
-            <div class="ota-line"><span class="muted">Version:</span> <span class="mono" id="otaCurVer">—</span></div>
-            <div class="ota-line"><span class="muted">URL:</span> <span class="mono ota-url" id="otaCurUrl">—</span></div>
+      <div class="ota-grid">
+        <div class="ota-box">
+          <div class="ota-label">Current Published OTA</div>
+          <div class="ota-line"><span class="muted">Version:</span> <span class="mono" id="otaCurVer">—</span></div>
+          <div class="ota-line"><span class="muted">URL:</span> <span class="mono ota-url" id="otaCurUrl">—</span></div>
+        </div>
+
+        <div class="ota-box">
+          <label class="ota-field">
+            <span class="muted">Version</span>
+            <input id="otaDesiredVer" class="ota-input" placeholder="TSP-v0.0.0" />
+          </label>
+
+          <label class="ota-field">
+            <span class="muted">Bin</span>
+            <input id="otaBinName" class="ota-input" value="firmware_version.bin" />
+          </label>
+
+          <div class="ota-row">
+            <button id="btnFillRepoUrl" class="btn btn-info" type="button">Apply</button>
           </div>
 
-          <div class="ota-box">
-            <label class="ota-field">
-              <span class="muted">Version</span>
-              <input id="otaDesiredVer" class="ota-input" placeholder="TSP-v0.0.0" />
-            </label>
-
-            <label class="ota-field">
-              <span class="muted">Bin</span>
-              <input id="otaBinName" class="ota-input" value="firmware_version.bin" />
-            </label>
-
-            <div class="ota-row">
-              <button id="btnFillRepoUrl" class="btn" type="button">Apply</button>
-            </div>
-
-            <label class="ota-field">
-              <span class="muted">Link</span>
-              <input
-                id="otaFirmwareUrl"
-                class="ota-input mono"
-                placeholder="https://raw.githubusercontent.com/ancy-gg/TinyML_Smart-Plug/main/firmware/firmware.bin"
-              />
-            </label>
-          </div>
+          <label class="ota-field">
+            <span class="muted">Link</span>
+            <input
+              id="otaFirmwareUrl"
+              class="ota-input mono"
+              placeholder="https://raw.githubusercontent.com/ancy-gg/TinyML_Smart-Plug/main/firmware/firmware.bin"
+            />
+          </label>
         </div>
       </div>
     </section>
 
-    <section class="history collapsible-section" id="loggerSection">
+    <section class="history admin-only">
       <div class="history-head">
         <div>
           <h2 class="history-title">Data Logger</h2>
-          <div class="history-hint muted">For model training and waveform review</div>
+          <div class="history-hint muted">
+            Data for Machine Learning Model Training and Waveform Analysis
+          </div>
         </div>
 
         <div class="history-actions">
-          <button class="btn btn-small collapse-toggle" type="button" data-collapse-target="loggerBody" aria-expanded="false">Expand</button>
           <label class="muted">
             <input type="checkbox" id="mlLogEnable" />
             Collect Data
@@ -375,18 +361,17 @@
             <option value="1">Label: Arc</option>
           </select>
 
-          <button id="btnDownloadSessionMl" class="btn" type="button">Current Session</button>
-          <button id="btnDownloadAllMl" class="btn" type="button">Compile</button>
-          <button id="btnUploadCsv" class="btn btn-primary" type="button">Upload CSV</button>
+          <button id="btnDownloadSessionMl" class="btn btn-success" type="button">Current Session</button>
+          <button id="btnDownloadAllMl" class="btn btn-success" type="button">Compile</button>
+          <button id="btnUploadCsv" class="btn btn-info" type="button">Upload CSV</button>
           <input id="mlCsvUpload" type="file" accept=".csv,text/csv" hidden />
-          <button id="btnClearMlLogs" class="btn" type="button">Clear</button>
+          <button id="btnClearMlLogs" class="btn btn-danger" type="button">Clear</button>
         </div>
       </div>
 
-      <div id="loggerBody" class="collapsible-body is-collapsed">
-        <div class="muted small" id="mlLogStatus">—</div>
+      <div class="muted small" id="mlLogStatus">—</div>
 
-        <div class="history-table-wrap" style="margin-top:12px;">
+      <div class="history-table-wrap" style="margin-top:12px;">
         <table class="history-table">
           <thead>
             <tr>
@@ -402,10 +387,9 @@
           <tbody id="mlSessionBody"></tbody>
         </table>
       </div>
-      </div>
     </section>
 
-    <section id="plotDrawer" class="history plot-drawer collapsed">
+    <section id="plotDrawer" class="history plot-drawer collapsed admin-only">
       <div class="history-head drawer-head">
         <div>
           <h2 class="history-title" id="title">Plot Viewer</h2>
@@ -413,7 +397,7 @@
         </div>
         <div class="history-actions">
           <button class="btn" id="btnBack" type="button">Close</button>
-          <button class="btn" id="btnDownload" type="button">Download</button>
+          <button class="btn btn-success" id="btnDownload" type="button">Download</button>
         </div>
       </div>
 
@@ -488,7 +472,7 @@
               </div>
 
               <div class="chip">
-                <label><input type="checkbox" id="chkStats"> Stats</label>
+                <label><input type="checkbox" id="chkStats" checked> Stats</label>
               </div>
 
               <div class="chip">
@@ -506,7 +490,7 @@
           <div id="statsWrap" class="statsWrap">
             <div class="statsHead">
               <div class="mono" id="statsHint">—</div>
-              <button class="btn btn-small" id="btnCopyStats" type="button">Copy</button>
+              <button class="btn btn-small btn-info" id="btnCopyStats" type="button">Copy</button>
             </div>
             <div class="statsTableWrap">
               <table class="statsTable">
@@ -530,6 +514,7 @@
 
     <footer class="footer">
       <div class="muted small">
+        TinyML Smart Plug Monitoring Dashboard<br/>
         Developed by ancy-gg | Powered by Firebase
       </div>
     </footer>
