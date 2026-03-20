@@ -255,20 +255,20 @@ modeButtons.forEach((btn) => btn.addEventListener("click", () => setHeaderMenuOp
 btnChangeWifi?.addEventListener("click", async () => {
   setHeaderMenuOpen(false);
 
-  if (!liveIsFresh() || !lastLiveData || !lastLiveData.wifi_connected) {
-    toast("Device must be online first. If it is offline, reboot it and use the 15s AP window.", "err");
-    return;
-  }
-
-  btnChangeWifi.disabled = true;
   const oldText = btnChangeWifi.textContent;
+  btnChangeWifi.disabled = true;
   btnChangeWifi.textContent = "Opening...";
 
   try {
-    await db.ref("controls/open_portal_token").set(`portal_${Date.now()}`);
-    toast("AP opening for 15s. Connect to TinyML-SmartPlug.", "ok");
+    const token = `portal_${Date.now()}`;
+    await db.ref("/controls").update({
+      open_portal_token: token,
+      open_portal_requested_at: firebase.database.ServerValue.TIMESTAMP
+    });
+    console.log("Change WiFi requested:", token);
+    toast("Hotspot request sent. AP will open for 15s.", "ok");
   } catch (e) {
-    console.error(e);
+    console.error("Change WiFi write failed:", e);
     toast("Failed to request WiFi change.", "err");
   } finally {
     btnChangeWifi.disabled = false;
