@@ -23,7 +23,7 @@
 #include "Actuators.h"
 #include "ArcModel.h"
 #include "ArcFeatures.h"
-#include "PowerHoldManager.h"
+#include "FanController.h"
 
 #if ENABLE_ML_LOGGER
   #include "DataLogger.h"
@@ -31,7 +31,7 @@
 
 #define API_KEY "AIzaSyAmJlZZszyWPJFgIkTAAl_TbIySys1nvEw"
 #define DATABASE_URL "tinyml-smart-plug-default-rtdb.asia-southeast1.firebasedatabase.app"
-static const char* FW_VERSION = "TSP-v3.4.0-measure"; //measure - set calib to 0.0 (1.0 for first-order var)
+static const char* FW_VERSION = "TSP-v3.4.1-measure"; //measure - set calib to 0.0 (1.0 for first-order var)
                                                       //protect - change 0 relay, with calibration
                                                       //collect - change 1 relay, with calibration
                                                       
@@ -49,7 +49,7 @@ PullOTA          ota;
 
 VoltageSensor    voltSensor(PIN_VOLT_ADC);
 TempSensor       tempSensor(PIN_TEMP_ADC);
-PowerHoldManager powerHold;
+FanController    fan;
 
 FaultLogic       faultLogic;
 Actuators        actuators;
@@ -188,7 +188,7 @@ static void pollPortalControl(CloudHandler& cloud, NetworkManager& net, bool pau
   if (token == lastToken) return;
 
   lastToken = token;
-  net.requestPortal(true);
+  net.requestPortal(false);
 }
 
 static void onOtaEvent(OtaEvent ev, int progress) {
@@ -355,7 +355,7 @@ void setup() {
 
   tempSensor.begin();
   tempSensor.setLongAverage(8.0f, 1.0f);
-  powerHold.begin(PIN_BAT_HOLD_EN);
+  fan.begin(PIN_FAN_PWM);
 
   if (!gSafeMode) {
     if (curSensor.begin()) {
@@ -475,7 +475,7 @@ void loop() {
     if (newT > -50.0f && newT < 150.0f) tC = newT;
   }
 
-  powerHold.update(vFast);
+  fan.update(tC);
 
   f.vrms = vRms;
   f.temp_c = tC;
