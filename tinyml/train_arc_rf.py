@@ -1,4 +1,5 @@
 import os
+import glob
 import argparse
 import pandas as pd
 import numpy as np
@@ -12,7 +13,7 @@ from sklearn.metrics import (
 import joblib
 import m2cgen as m2c
 
-DEFAULT_CSV = r"tinyml/gen_zero_scaffold_data.csv"
+DEFAULT_CSV_GLOB = r"tinyml/data/*.csv"
 OUT_HEADER = r"tinyml/TinyML_RF.h"
 OUT_JOBLIB = r"tinyml/TinyML_RF.joblib"
 
@@ -32,23 +33,79 @@ TARGET = "label_arc"
 GROUP_COL_CANDIDATES = ["session_id", "session", "sid"]
 
 
-def ensure_dir(path: str):
+def ensure_dir(path):
     d = os.path.dirname(path)
     if d:
         os.makedirs(d, exist_ok=True)
 
 
-def pick_group_column(df: pd.DataFrame):
+def pick_group_column(df):
     for c in GROUP_COL_CANDIDATES:
         if c in df.columns:
             return c
     return None
 
 
-def clean_df(df: pd.DataFrame) -> pd.DataFrame:
+def resolve_csv_files(csv_list, csv_glob):
+    files = []
+
+    if csv_list:
+        for item in csv_list:
+            matches = glob.glob(item)
+            if matches:
+                files.extend(matches)
+            elif os.path.isfile(item):
+                files.append(item)
+
+    if csv_glob:
+        files.extend(glob.glob(csv_glob))
+
+    files = [os.path.abspath(f) for f in files if os.path.isfile(f)]
+    files = sorted(list(dict.fromkeys(files)))  # unique, preserve order
+
+    if not files:
+        raise ValueError("No CSV files found. Check --csv or --csv_glob.")
+
+    return files
+
+
+def load_multiple_csvs(csv_files):
+    frames = []
+    useful_cols = list(dict.fromkeys(FEATURES + [TARGET] + GROUP_COL_CANDIDATES))
+
+    for i, path in enumerate(csv_files):
+        print("[%d/%d] Loading: %s" % (i + 1, len(csv_files), path))
+        df_part = pd.read_csv(path)
+
+        keep_cols = [c for c in useful_cols if c in df_part.columns]
+        if keep_cols:
+            df_part = df_part[keep_cols].copy()
+        else:
+            df_part = df_part.copy()
+
+        base_name = os.path.splitext(os.path.basename(path))[0]
+        group_col = pick_group_column(df_part)
+
+        if group_col is None:
+            df_part["session_id"] = "file_%04d_%s" % (i + 1, base_name)
+        else:
+            df_part[group_col] = base_name + "__" + df_part[group_col].astype(str)
+
+        df_part["_source_file"] = os.path.basename(path)
+        frames.append(df_part)
+
+    if not frames:
+        raise ValueError("No CSV data loaded.")
+
+    df = pd.concat(frames, ignore_index=True)
+    print("Combined rows before cleaning: %d" % len(df))
+    return df
+
+
+def clean_df(df):
     missing = [c for c in FEATURES + [TARGET] if c not in df.columns]
     if missing:
-        raise ValueError(f"Missing required columns: {missing}")
+        raise ValueError("Missing required columns: %s" % missing)
 
     df = df.copy()
     df[TARGET] = pd.to_numeric(df[TARGET], errors="coerce")
@@ -82,22 +139,22 @@ def select_threshold_cost(y_true, y_proba, fn_weight=1000.0, fp_weight=1.0):
         tn, fp, fn, tp = confusion_matrix(y_true, y_pred).ravel()
         cost = fn_weight * fn + fp_weight * fp
         if cost < best["cost"]:
-            best = {"thr": float(thr), "cost": float(cost), "tn": tn, "fp": fp, "fn": fn, "tp": tp}
+            best = {
+                "thr": float(thr),
+                "cost": float(cost),
+                "tn": int(tn),
+                "fp": int(fp),
+                "fn": int(fn),
+                "tp": int(tp)
+            }
     return best
 
 
-def model_size_estimate(rf: RandomForestClassifier) -> int:
+def model_size_estimate(rf):
     return int(sum(est.tree_.node_count for est in rf.estimators_))
 
 
-def postprocess_m2c_header(c_code: str) -> str:
-    """Make m2cgen RandomForest output compile cleanly as a C++ header.
-
-    m2cgen emits C compound literals in some memcpy calls, e.g.
-        memcpy(var80, (double[]){1.0, 0.0}, 2 * sizeof(double));
-    which is valid in C but not in this PlatformIO C++ build.
-    Replace those with a tiny helper and also make helper functions inline.
-    """
+def postprocess_m2c_header(c_code):
     import re
 
     c_code = re.sub(
@@ -131,12 +188,12 @@ def postprocess_m2c_header(c_code: str) -> str:
         r'2\s*\*\s*sizeof\s*\(\s*double\s*\)\s*\)\s*;\s*$'
     )
 
-    def repl(m: re.Match) -> str:
+    def repl(m):
         indent = m.group('indent')
         dst = m.group('dst').strip()
         a = m.group('a').strip()
         b = m.group('b').strip()
-        return f"{indent}set_output2({dst}, {a}, {b});"
+        return "%sset_output2(%s, %s, %s);" % (indent, dst, a, b)
 
     c_code = memcpy_pat.sub(repl, c_code)
     return c_code
@@ -144,14 +201,26 @@ def postprocess_m2c_header(c_code: str) -> str:
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--csv", default=DEFAULT_CSV)
+    ap.add_argument("--csv", nargs="*", default=None,
+                    help="Optional list of CSV files or wildcard patterns")
+    ap.add_argument("--csv_glob", default=DEFAULT_CSV_GLOB,
+                    help="Glob pattern for CSVs, default: tinyml/data/*.csv")
     ap.add_argument("--out_header", default=OUT_HEADER)
     ap.add_argument("--out_joblib", default=OUT_JOBLIB)
     args = ap.parse_args()
 
-    print(f"Loading dataset: {args.csv}")
-    df = pd.read_csv(args.csv)
+    csv_files = resolve_csv_files(args.csv, args.csv_glob)
+
+    print("CSV files to load:")
+    for f in csv_files:
+        print(" - %s" % f)
+
+    df = load_multiple_csvs(csv_files)
     df = clean_df(df)
+
+    print("Rows after cleaning: %d" % len(df))
+    print("Class counts after cleaning:")
+    print(df[TARGET].value_counts(dropna=False))
 
     if df.empty:
         raise ValueError("No labeled rows remain after filtering. label_arc must be 0 or 1.")
@@ -169,16 +238,22 @@ def main():
     y = df[TARGET].astype(int)
 
     gss = GroupShuffleSplit(n_splits=1, test_size=0.20, random_state=42)
-    (train_idx, test_idx), = gss.split(X, y, groups=groups)
+    split_iter = gss.split(X, y, groups=groups)
+    train_idx, test_idx = next(split_iter)
 
     X_train, y_train = X.iloc[train_idx], y.iloc[train_idx]
     X_test, y_test = X.iloc[test_idx], y.iloc[test_idx]
     groups_train = groups.iloc[train_idx]
+    groups_test = groups.iloc[test_idx]
 
-    print(f"Train rows: {len(X_train)}  Test rows: {len(X_test)}")
-    print(f"Train groups: {groups_train.nunique()}  Test groups: {groups.iloc[test_idx].nunique()}")
+    print("Train rows: %d  Test rows: %d" % (len(X_train), len(X_test)))
+    print("Train groups: %d  Test groups: %d" % (groups_train.nunique(), groups_test.nunique()))
 
-    base = RandomForestClassifier(random_state=42, class_weight="balanced_subsample", n_jobs=-1)
+    base = RandomForestClassifier(
+        random_state=42,
+        class_weight="balanced_subsample",
+        n_jobs=-1
+    )
 
     param_dist = {
         "n_estimators": [40, 60, 80, 120],
@@ -190,7 +265,12 @@ def main():
         "ccp_alpha": [0.0, 0.0002, 0.0005, 0.001],
     }
 
-    cv = GroupKFold(n_splits=min(5, groups_train.nunique()))
+    n_splits = min(5, groups_train.nunique())
+    if n_splits < 2:
+        raise ValueError("Need at least 2 distinct groups/sessions for GroupKFold.")
+
+    cv = GroupKFold(n_splits=n_splits)
+
     search = RandomizedSearchCV(
         estimator=base,
         param_distributions=param_dist,
@@ -205,11 +285,13 @@ def main():
     print("\n--- Training: RandomizedSearchCV (GroupKFold) ---")
     search.fit(X_train, y_train, groups=groups_train)
     best = search.best_estimator_
+
     print("Best params:", search.best_params_)
     print("Estimated RF node count:", model_size_estimate(best))
 
     gss2 = GroupShuffleSplit(n_splits=1, test_size=0.20, random_state=123)
-    (tr2_idx, val_idx), = gss2.split(X_train, y_train, groups=groups_train)
+    split_iter2 = gss2.split(X_train, y_train, groups=groups_train)
+    tr2_idx, val_idx = next(split_iter2)
 
     X_tr2, y_tr2 = X_train.iloc[tr2_idx], y_train.iloc[tr2_idx]
     X_val, y_val = X_train.iloc[val_idx], y_train.iloc[val_idx]
@@ -221,8 +303,10 @@ def main():
     thr = thr_info["thr"]
 
     print("\n--- Threshold (VALIDATION) ---")
-    print(f"Chosen threshold: {thr:.2f}  (cost={thr_info['cost']:.1f})")
-    print(f"VAL: TN={thr_info['tn']} FP={thr_info['fp']} FN={thr_info['fn']} TP={thr_info['tp']}")
+    print("Chosen threshold: %.2f  (cost=%.1f)" % (thr, thr_info["cost"]))
+    print("VAL: TN=%d FP=%d FN=%d TP=%d" % (
+        thr_info["tn"], thr_info["fp"], thr_info["fn"], thr_info["tp"]
+    ))
 
     best.fit(X_train, y_train)
     test_proba = best.predict_proba(X_test)[:, 1]
@@ -232,39 +316,40 @@ def main():
     ap_score = average_precision_score(y_test, test_proba)
 
     print("\n--- FINAL TEST (group-held-out) ---")
-    print(f"AP (avg precision): {ap_score:.4f}")
-    print(f"Threshold used: {thr:.2f}")
-    print(f"TN={tn} FP={fp} FN={fn} TP={tp}")
-    print(f"Accuracy: {accuracy_score(y_test, test_pred):.4f}")
+    print("AP (avg precision): %.4f" % ap_score)
+    print("Threshold used: %.2f" % thr)
+    print("TN=%d FP=%d FN=%d TP=%d" % (tn, fp, fn, tp))
+    print("Accuracy: %.4f" % accuracy_score(y_test, test_pred))
     print("\nClassification report:\n", classification_report(y_test, test_pred, digits=4))
 
     ensure_dir(args.out_joblib)
     joblib.dump(best, args.out_joblib)
-    print(f"\nSaved Python model: {args.out_joblib}")
+    print("\nSaved Python model: %s" % args.out_joblib)
 
     ensure_dir(args.out_header)
     c_code = m2c.export_to_c(best, function_name="arc_rf_predict")
     c_code = postprocess_m2c_header(c_code)
-    feat_lines = "\n".join([f"// [{i}] {name}" for i, name in enumerate(FEATURES)])
+    feat_lines = "\n".join(["// [%d] %s" % (i, name) for i, name in enumerate(FEATURES)])
 
-    header = f"""#pragma once
+    header = """#pragma once
 // Auto-generated by m2cgen from scikit-learn RandomForest
-// Generated on: {pd.Timestamp.now()}
+// Generated on: %s
 
-#define ARC_THRESHOLD {thr:.4f}
+#define ARC_THRESHOLD %.4f
 
 // Input Feature Order:
-{feat_lines}
+%s
 
 // output[0] = Probability of Normal
 // output[1] = Probability of Arc Fault
 
-{c_code}
-"""
+%s
+""" % (pd.Timestamp.now(), thr, feat_lines, c_code)
+
     with open(args.out_header, "w", encoding="utf-8") as f:
         f.write(header)
 
-    print(f"Saved TinyML header: {args.out_header}")
+    print("Saved TinyML header: %s" % args.out_header)
 
 
 if __name__ == "__main__":

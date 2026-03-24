@@ -16,5 +16,18 @@ bool CurrentBackendADS8684::begin() {
 }
 
 size_t CurrentBackendADS8684::capture(uint16_t* dst, size_t n, float* measuredFsHz) {
-  return _adc.readRawBurstAveraged(dst, n, ADS_CAPTURE_OVERSAMPLE, measuredFsHz);
+#if defined(ADS_CAPTURE_OVERSAMPLE)
+  const uint8_t os = (ADS_CAPTURE_OVERSAMPLE < 1) ? 1 : ADS_CAPTURE_OVERSAMPLE;
+#else
+  const uint8_t os = 1;
+#endif
+
+  size_t got = (os > 1)
+    ? _adc.readRawBurstAveraged(dst, n, os, measuredFsHz)
+    : _adc.readRawBurst(dst, n, measuredFsHz);
+
+  if (got == n) return got;
+
+  // fallback path if averaged capture fails
+  return _adc.readRawBurst(dst, n, measuredFsHz);
 }

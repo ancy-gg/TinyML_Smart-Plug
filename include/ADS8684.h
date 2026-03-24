@@ -29,15 +29,11 @@ private:
   bool _auxSelected = false;
   float _vref = ADS_VREF_V;
   int _activeClockHz = 0;
-  uint8_t* _txBuf = nullptr;
-  uint8_t* _rxBuf = nullptr;
-  size_t _bufBytes = 0;
 
   esp_err_t xfer32(uint16_t cmd, uint16_t* out_data);
   bool selectAux();
   bool addDevice(int clock_hz);
   bool probeActivity();
-  bool ensureIoBuffers_(size_t bytes);
   bool looksInactive_(const uint16_t* dst, size_t n, int minChanges, uint16_t minSpan) const;
-  size_t captureBurst_(uint16_t* dst, size_t n, uint8_t oversample, float* measured_fs_hz);
+  size_t readRawBurstInternal_(uint16_t* dst, size_t n, uint8_t oversample, float* measured_fs_hz);
 };
