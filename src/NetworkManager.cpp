@@ -99,7 +99,9 @@ void NetworkManager::closeApAndRecover_(uint32_t now) {
   const bool disconnectSta = _portalDisconnectSta;
 
   WiFi.softAPdisconnect(true);
-  delay(40);
+  delay(60);
+  WiFi.mode(WIFI_STA);
+  delay(60);
 
   _portalRequested = false;
   _portalStarted = false;
@@ -108,18 +110,14 @@ void NetworkManager::closeApAndRecover_(uint32_t now) {
   _lastApStations = 0;
   _portalDisconnectSta = false;
 
-  if (!disconnectSta && WiFi.status() == WL_CONNECTED) {
-    WiFi.mode(WIFI_STA);
-    delay(40);
+  if (WiFi.status() == WL_CONNECTED) {
+    s_bootDecisionDone = true;
     _phase = PHASE_CONNECTED;
     _phaseStartMs = now;
     return;
   }
 
-  WiFi.mode(WIFI_STA);
-  delay(40);
-
-  if (manualRequest) {
+  if (manualRequest || disconnectSta) {
     startStaConnect_();
     return;
   }
@@ -180,20 +178,8 @@ void NetworkManager::update() {
 
   if (_phase == PHASE_PORTAL_ACTIVE) {
     if (WiFi.status() == WL_CONNECTED) {
-      WiFi.softAPdisconnect(true);
-      delay(50);
-      WiFi.mode(WIFI_STA);
-      delay(50);
-
-      _portalRequested = false;
-      _portalStarted = false;
-      _portalDisconnectSta = false;
-      _portalStartMs = 0;
-      _apWindowUntilMs = 0;
-      _lastApStations = 0;
-    
-      _phase = PHASE_CONNECTED;
-      _phaseStartMs = now;
+      s_bootDecisionDone = true;
+      closeApAndRecover_(now);
       return;
     }
 
