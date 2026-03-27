@@ -50,9 +50,16 @@ static constexpr uint8_t FAN_MIN_SPIN_DUTY = 96;
 // =========================
 // Sampling and FFT
 // =========================
-static constexpr float    FS_TARGET_HZ = 80000.0f;
+static constexpr float    FS_TARGET_HZ = 125000.0f;
 static constexpr uint16_t N_SAMP       = 4096;
 static constexpr float    MAINS_F0_HZ  = 60.0f;
+
+// Software anti-alias / cleanup for current waveform.
+// The configured cutoff is clamped below Nyquist at runtime.
+static constexpr bool     CURRENT_SOFT_AAF_ENABLE = true;
+static constexpr float    CURRENT_SOFT_AAF_CUTOFF_HZ = 50000.0f;
+static constexpr float    CURRENT_SOFT_AAF_Q = 0.70710678f;
+static constexpr float    CURRENT_SOFT_AAF_MAX_FRAC_NYQUIST = 0.95f;
 
 // =========================
 // Wi-Fi startup / portal
@@ -180,6 +187,3 @@ static constexpr uint16_t ML_LOG_DURATION_S  = 10;
 static constexpr uint32_t DEVICE_PLUG_CUE_INHIBIT_MS = 2000UL;
 static constexpr uint32_t DEVICE_PLUG_CUE_COOLDOWN_MS = 6000UL;
 static constexpr uint32_t DEVICE_PLUG_STABLE_MS = 1200UL;
-static constexpr float    DEVICE_PLUG_MAX_DV_V = 12.0f;
-static constexpr float    DEVICE_PLUG_MAX_STEP_DV_V = 8.0f;
-static constexpr uint32_t DEVICE_PLUG_ARC_INHIBIT_MS = 650UL;

@@ -31,7 +31,7 @@
 
 #define API_KEY "AIzaSyAmJlZZszyWPJFgIkTAAl_TbIySys1nvEw"
 #define DATABASE_URL "tinyml-smart-plug-default-rtdb.asia-southeast1.firebasedatabase.app"
-static const char* FW_VERSION = "TSP-v3.5.3-measure"; //measure - set calib to 0.0 (1.0 for first-order var)
+static const char* FW_VERSION = "TSP-v3.5.4-measure"; //measure - set calib to 0.0 (1.0 for first-order var)
                                                       //protect - change 0 relay, with calibration
                                                       //collect - change 1 relay, with calibration
                                                       
@@ -67,8 +67,6 @@ static QueueHandle_t qFeat = nullptr;
 
 static bool gSafeMode = false;
 static volatile bool gPauseByOta = false;
-static volatile uint32_t gArcInhibitUntilMs = 0;
-static volatile bool gLoadTransientPending = false;
 
 static bool debouncedMainsPresentForState(float vProtect) {
   static bool init = false;
@@ -106,11 +104,6 @@ static bool debouncedMainsPresentForState(float vProtect) {
   return stable;
 }
 
-
-static inline bool relayTripsForState(FaultState st) {
-  return st != STATE_NORMAL;
-}
-
 static void handleCueEvents(float vProtect, float irms, bool mainsPresent, bool paused, FaultState st) {
   static uint32_t lowSinceMs = 0;
   static uint32_t highSinceMs = 0;
@@ -118,7 +111,6 @@ static void handleCueEvents(float vProtect, float irms, bool mainsPresent, bool 
 
   static float loadBaseA = 0.0f;
   static float prevIrms = 0.0f;
-  static float prevVProtect = 0.0f;
   static uint32_t stableSinceMs = 0;
   static uint32_t lastLoadCueMs = 0;
 
@@ -152,7 +144,6 @@ static void handleCueEvents(float vProtect, float irms, bool mainsPresent, bool 
   if (!mainsPresent || vProtect < 200.0f || !stateNormal) {
     loadBaseA = 0.0f;
     prevIrms = irms;
-    prevVProtect = vProtect;
     stableSinceMs = 0;
     mainsStableSinceMs = 0;
     return;
@@ -161,10 +152,7 @@ static void handleCueEvents(float vProtect, float irms, bool mainsPresent, bool 
   if (mainsStableSinceMs == 0) mainsStableSinceMs = now;
 
   const float dI = fabsf(irms - prevIrms);
-  const float dV = fabsf(vProtect - prevVProtect);
   prevIrms = irms;
-  prevVProtect = vProtect;
-
   if (dI < 0.08f) {
     if (stableSinceMs == 0) stableSinceMs = now;
   } else stableSinceMs = 0;
@@ -176,22 +164,11 @@ static void handleCueEvents(float vProtect, float irms, bool mainsPresent, bool 
   const bool cueAllowed = ((now - mainsStableSinceMs) >= DEVICE_PLUG_CUE_INHIBIT_MS);
   const bool firstLoad = (loadBaseA < 0.15f && irms >= 0.35f);
   const bool addedLoad = (loadBaseA >= 0.15f && (irms - loadBaseA) >= 0.45f && dI < 0.15f);
-
   if (cueAllowed && (firstLoad || addedLoad) && (now - lastLoadCueMs >= DEVICE_PLUG_CUE_COOLDOWN_MS)) {
     actuators.notify(SND_DEVICE_PLUG);
     lastLoadCueMs = now;
     loadBaseA = irms;
     stableSinceMs = 0;
-
-    const bool voltageNotAbnormal =
-      (vProtect >= (VOLT_UNDERVOLT_MAX_V + 2.0f)) &&
-      (vProtect <= (VOLT_OVERVOLT_TRIP_V - DEVICE_PLUG_MAX_DV_V));
-    const bool voltageStepLooksBenign = (dV <= DEVICE_PLUG_MAX_STEP_DV_V);
-
-    if (voltageNotAbnormal && voltageStepLooksBenign) {
-      gArcInhibitUntilMs = now + DEVICE_PLUG_ARC_INHIBIT_MS;
-      gLoadTransientPending = true;
-    }
   }
 }
 
@@ -199,7 +176,7 @@ static void handleCueEvents(float vProtect, float irms, bool mainsPresent, bool 
 static void pollPortalControl(CloudHandler& cloud, NetworkManager& net, bool paused, bool portalActive) {
   static uint32_t lastPoll = 0;
   static String lastToken = "";
-  static bool seeded = false;
+  static bool tokenPrimed = false;
 
   if (paused || portalActive || !net.isConnected() || !cloud.isReady()) return;
   if (millis() - lastPoll < 1500UL) return;
@@ -208,18 +185,20 @@ static void pollPortalControl(CloudHandler& cloud, NetworkManager& net, bool pau
   String token;
   if (!cloud.getString("/controls/open_portal_token", token)) return;
   token.trim();
+  if (!token.length()) return;
 
-  if (!seeded) {
+  // Prime on first successful read after boot so a stale cloud token
+  // does not reopen the AP every reboot.
+  if (!tokenPrimed) {
     lastToken = token;
-    seeded = true;
+    tokenPrimed = true;
     return;
   }
 
-  if (!token.length()) return;
   if (token == lastToken) return;
 
   lastToken = token;
-  net.requestPortal(true);
+  net.requestPortal(false);
 }
 
 static void onOtaEvent(OtaEvent ev, int progress) {
@@ -534,7 +513,6 @@ void loop() {
   if (vRms > 0.10f && f.irms > 0.001f) apparentPowerVa = vRms * f.irms;
 
   const bool arcEligible = (!gSafeMode && !paused && !bootSettling && !protectionInhibit &&
-                            ((int32_t)(gArcInhibitUntilMs - millis()) <= 0) &&
                             f.current_valid && f.feat_valid &&
                             f.irms >= ARC_MIN_IRMS_A &&
                             vFast >= VOLT_UNDERVOLT_MAX_V &&
@@ -562,19 +540,6 @@ void loop() {
   actuators.apply(st, vRms, vFast, f.irms, tC);
   const bool mainsPresentStable = debouncedMainsPresentForState(vFast);
   handleCueEvents(vFast, f.irms, mainsPresentStable, paused || gSafeMode || protectionInhibit, st);
-
-  if (gLoadTransientPending && net.isConnected() && cloud.isReady()) {
-    cloud.logFeatureEvent("LOAD_TRANSIENT", f, apparentPowerVa, false, &timeSync);
-    gLoadTransientPending = false;
-  }
-
-  static FaultState lastLoggedTripState = STATE_NORMAL;
-  if (!bootSettling && !paused && st != lastLoggedTripState) {
-    if (st != STATE_NORMAL && net.isConnected() && cloud.isReady() && relayTripsForState(st)) {
-      cloud.logFeatureEvent(String(stateToCstr(st)), f, apparentPowerVa, true, &timeSync);
-    }
-    lastLoggedTripState = st;
-  }
 
 #if ENABLE_ML_LOGGER
   maybeStartAutoArcCapture(logger, oled, paused || protectionInhibit, gSafeMode, (arcEligible && f.model_pred == 1));
