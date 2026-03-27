@@ -176,6 +176,7 @@ static void handleCueEvents(float vProtect, float irms, bool mainsPresent, bool 
 static void pollPortalControl(CloudHandler& cloud, NetworkManager& net, bool paused, bool portalActive) {
   static uint32_t lastPoll = 0;
   static String lastToken = "";
+  static bool seeded = false;
 
   if (paused || portalActive || !net.isConnected() || !cloud.isReady()) return;
   if (millis() - lastPoll < 1500UL) return;
@@ -184,7 +185,19 @@ static void pollPortalControl(CloudHandler& cloud, NetworkManager& net, bool pau
   String token;
   if (!cloud.getString("/controls/open_portal_token", token)) return;
   token.trim();
-  if (!token.length()) return;
+
+  // On boot, just remember the current cloud token.
+  // This prevents a stale token in Firebase from reopening the portal every reboot.
+  if (!seeded) {
+    lastToken = token;
+    seeded = true;
+    return;
+  }
+
+  if (!token.length()) {
+    lastToken = token;
+    return;
+  }
   if (token == lastToken) return;
 
   lastToken = token;

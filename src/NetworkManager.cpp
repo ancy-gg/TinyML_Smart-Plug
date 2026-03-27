@@ -17,18 +17,19 @@ uint8_t NetworkManager::apStations_() const {
 }
 
 void NetworkManager::startStaConnect_() {
+  WiFi.softAPdisconnect(true);
+  delay(40);
+
   WiFi.setSleep(false);
   WiFi.setAutoReconnect(true);
-
-  WiFi.softAPdisconnect(true);
-  delay(60);
   WiFi.mode(WIFI_STA);
-  delay(80);
-  WiFi.begin();
+  delay(60);
+  WiFi.begin();   // uses saved credentials if present
 
   _portalRequested = false;
   _portalStarted = false;
   _portalDisconnectSta = false;
+  _bootFallbackApUsed = false;
   _portalStartMs = 0;
   _apWindowUntilMs = 0;
   _lastApStations = 0;
@@ -42,24 +43,27 @@ void NetworkManager::startApWait_(bool disconnectSta, bool manualRequest) {
   _portalDisconnectSta = disconnectSta;
   _portalStarted = false;
   _portalStartMs = 0;
+  _lastApStations = 0;
 
   WiFi.setSleep(false);
   WiFi.setAutoReconnect(true);
 
-  if (disconnectSta) {
-    WiFi.disconnect(true, false);
-    delay(100);
-    WiFi.mode(WIFI_AP);
-    delay(120);
-  } else {
+  const bool keepSta = (!disconnectSta && WiFi.status() == WL_CONNECTED);
+
+  if (keepSta) {
     WiFi.mode(WIFI_AP_STA);
-    delay(120);
+    delay(80);
+  } else {
+    WiFi.disconnect(false, false);
+    delay(40);
+    WiFi.mode(WIFI_AP);
+    delay(80);
   }
 
   WiFi.softAPdisconnect(true);
-  delay(60);
+  delay(30);
   WiFi.softAP(WIFI_PORTAL_SSID);
-  delay(120);
+  delay(80);
 
   _lastApStations = apStations_();
   _apWindowUntilMs = millis() + (manualRequest ? WIFI_MANUAL_AP_DISCOVERY_WINDOW_MS
@@ -83,13 +87,8 @@ void NetworkManager::startPortal_() {
 }
 
 void NetworkManager::closeApAndRecover_(uint32_t now) {
-  const bool hadManualRequest = _portalRequested;
-  const bool keepSta = (!_portalDisconnectSta && (WiFi.status() == WL_CONNECTED));
-
   WiFi.softAPdisconnect(true);
-  delay(60);
-  WiFi.mode(WIFI_STA);
-  delay(60);
+  delay(40);
 
   _portalRequested = false;
   _portalStarted = false;
@@ -98,17 +97,16 @@ void NetworkManager::closeApAndRecover_(uint32_t now) {
   _apWindowUntilMs = 0;
   _lastApStations = 0;
 
-  if (keepSta || WiFi.status() == WL_CONNECTED) {
+  if (WiFi.status() == WL_CONNECTED) {
+    WiFi.mode(WIFI_STA);
+    delay(40);
     _phase = PHASE_CONNECTED;
     _phaseStartMs = now;
     return;
   }
 
-  if (hadManualRequest) {
-    startStaConnect_();
-    return;
-  }
-
+  WiFi.mode(WIFI_STA);
+  delay(40);
   _phase = PHASE_TIMEOUT;
   _phaseStartMs = now;
 }
@@ -148,8 +146,8 @@ void NetworkManager::begin(void (*apCallback)(WiFiManager*)) {
   WiFi.setSleep(false);
   WiFi.setAutoReconnect(true);
 
-  // Always try saved credentials first. If none exist, WiFi.begin() simply times out,
-  // and update() will open the AP window.
+  // Always try saved credentials first.
+  // If there are none, WiFi.begin() will simply time out and then AP will open.
   startStaConnect_();
 }
 
@@ -200,15 +198,15 @@ void NetworkManager::update() {
       _phase = PHASE_TIMEOUT;
       _phaseStartMs = now;
 #endif
-      return;
     }
     return;
   }
 
   if (_phase == PHASE_CONNECTED) {
     if (WiFi.status() == WL_CONNECTED) return;
-    _phase = PHASE_TIMEOUT;
-    _phaseStartMs = now;
+
+    // Lost Wi-Fi after previously connecting: retry saved credentials first.
+    startStaConnect_();
     return;
   }
 
