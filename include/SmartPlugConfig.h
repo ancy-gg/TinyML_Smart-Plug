@@ -164,7 +164,7 @@ static constexpr float VOLTAGE_CAL_C1 = 1.05726f;
 static constexpr float VOLTAGE_CAL_C0 = -0.495263f;
 
 struct VoltageCalib {
-  float sensitivity  = 620.0f;
+  float sensitivity  = 580.0f;
   float cubic3 = VOLTAGE_CAL_C3;
   float cubic2 = VOLTAGE_CAL_C2;
   float cubic1 = VOLTAGE_CAL_C1;
