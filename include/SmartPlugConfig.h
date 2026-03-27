@@ -50,7 +50,7 @@ static constexpr uint8_t FAN_MIN_SPIN_DUTY = 96;
 // =========================
 // Sampling and FFT
 // =========================
-static constexpr float    FS_TARGET_HZ = 60000.0f;
+static constexpr float    FS_TARGET_HZ = 80000.0f;
 static constexpr uint16_t N_SAMP       = 4096;
 static constexpr float    MAINS_F0_HZ  = 60.0f;
 

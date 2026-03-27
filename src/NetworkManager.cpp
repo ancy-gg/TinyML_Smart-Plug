@@ -7,16 +7,6 @@ static constexpr uint32_t WIFI_BACKGROUND_RETRY_MS           = 60000UL;
 
 NetworkManager* NetworkManager::s_inst = nullptr;
 
-namespace {
-  static bool s_bootDecisionDone = false;
-
-  static bool hasSavedCredentials_() {
-    String ssid = WiFi.SSID();
-    ssid.trim();
-    return ssid.length() > 0;
-  }
-}
-
 uint8_t NetworkManager::apStations_() const {
 #if defined(ARDUINO_ARCH_ESP32)
   if ((((int)WiFi.getMode()) & (int)WIFI_AP) == 0) return 0;
@@ -33,7 +23,7 @@ void NetworkManager::startStaConnect_() {
   WiFi.softAPdisconnect(true);
   delay(60);
   WiFi.mode(WIFI_STA);
-  delay(60);
+  delay(80);
   WiFi.begin();
 
   _portalRequested = false;
@@ -54,7 +44,7 @@ void NetworkManager::startApWait_(bool disconnectSta, bool manualRequest) {
   _portalStartMs = 0;
 
   WiFi.setSleep(false);
-  WiFi.setAutoReconnect(false);
+  WiFi.setAutoReconnect(true);
 
   if (disconnectSta) {
     WiFi.disconnect(true, false);
@@ -62,14 +52,12 @@ void NetworkManager::startApWait_(bool disconnectSta, bool manualRequest) {
     WiFi.mode(WIFI_AP);
     delay(120);
   } else {
-    WiFi.disconnect(false, false);
-    delay(60);
     WiFi.mode(WIFI_AP_STA);
     delay(120);
   }
 
   WiFi.softAPdisconnect(true);
-  delay(40);
+  delay(60);
   WiFi.softAP(WIFI_PORTAL_SSID);
   delay(120);
 
@@ -95,8 +83,8 @@ void NetworkManager::startPortal_() {
 }
 
 void NetworkManager::closeApAndRecover_(uint32_t now) {
-  const bool manualRequest = _portalRequested;
-  const bool disconnectSta = _portalDisconnectSta;
+  const bool hadManualRequest = _portalRequested;
+  const bool keepSta = (!_portalDisconnectSta && (WiFi.status() == WL_CONNECTED));
 
   WiFi.softAPdisconnect(true);
   delay(60);
@@ -105,19 +93,18 @@ void NetworkManager::closeApAndRecover_(uint32_t now) {
 
   _portalRequested = false;
   _portalStarted = false;
+  _portalDisconnectSta = false;
   _portalStartMs = 0;
   _apWindowUntilMs = 0;
   _lastApStations = 0;
-  _portalDisconnectSta = false;
 
-  if (WiFi.status() == WL_CONNECTED) {
-    s_bootDecisionDone = true;
+  if (keepSta || WiFi.status() == WL_CONNECTED) {
     _phase = PHASE_CONNECTED;
     _phaseStartMs = now;
     return;
   }
 
-  if (manualRequest || disconnectSta) {
+  if (hadManualRequest) {
     startStaConnect_();
     return;
   }
@@ -151,7 +138,6 @@ void NetworkManager::begin(void (*apCallback)(WiFiManager*)) {
   _portalStartMs = 0;
   _apWindowUntilMs = 0;
   _lastApStations = 0;
-  s_bootDecisionDone = false;
 
   wm.setDebugOutput(false);
   wm.setConfigPortalBlocking(false);
@@ -162,13 +148,8 @@ void NetworkManager::begin(void (*apCallback)(WiFiManager*)) {
   WiFi.setSleep(false);
   WiFi.setAutoReconnect(true);
 
-  if (!hasSavedCredentials_()) {
-    _bootFallbackApUsed = true;
-    s_bootDecisionDone = true;
-    startApWait_(true, false);
-    return;
-  }
-
+  // Always try saved credentials first. If none exist, WiFi.begin() simply times out,
+  // and update() will open the AP window.
   startStaConnect_();
 }
 
@@ -178,7 +159,6 @@ void NetworkManager::update() {
 
   if (_phase == PHASE_PORTAL_ACTIVE) {
     if (WiFi.status() == WL_CONNECTED) {
-      s_bootDecisionDone = true;
       closeApAndRecover_(now);
       return;
     }
@@ -207,7 +187,6 @@ void NetworkManager::update() {
 
   if (_phase == PHASE_CONNECTING) {
     if (WiFi.status() == WL_CONNECTED) {
-      s_bootDecisionDone = true;
       _phase = PHASE_CONNECTED;
       _phaseStartMs = now;
       return;
@@ -215,18 +194,13 @@ void NetworkManager::update() {
 
     if ((now - _phaseStartMs) >= WIFI_CONNECT_TIMEOUT_MS) {
 #if WIFI_OPEN_PORTAL_ON_TIMEOUT
-      if (!s_bootDecisionDone) {
-        _bootFallbackApUsed = true;
-        s_bootDecisionDone = true;
-        startApWait_(true, false);
-      } else {
-        _phase = PHASE_TIMEOUT;
-        _phaseStartMs = now;
-      }
+      _bootFallbackApUsed = true;
+      startApWait_(true, false);
 #else
       _phase = PHASE_TIMEOUT;
       _phaseStartMs = now;
 #endif
+      return;
     }
     return;
   }

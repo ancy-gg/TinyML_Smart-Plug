@@ -18,8 +18,8 @@ bool CurrentBackendADS8684::begin() {
 size_t CurrentBackendADS8684::capture(uint16_t* dst, size_t n, float* measuredFsHz) {
   if (!dst || n == 0) return 0;
 
-  // Revert to the old, proven ADS path first: raw burst only.
-  // This restores the behavior that was working on your board at 4 MHz.
+  // Keep the proven raw-burst path. The clock selection is handled by ADS_SPI_HZ
+  // and ADS_SPI_FALLBACK_HZ in CurrentBackend.h.
   size_t got = _adc.readRawBurst(dst, n, measuredFsHz);
   if (got == n) return got;
 

@@ -24,7 +24,7 @@ static inline const char* currentBackendName() {
 // Backend acquisition config
 // =========================
 static constexpr float ADS_VREF_V = 4.096f;
-static constexpr int   ADS_SPI_HZ = 4000000;
+static constexpr int   ADS_SPI_HZ = 8000000;
 static constexpr int   ADS_SPI_FALLBACK_HZ = 4000000;
 static constexpr uint8_t ADS_CAPTURE_OVERSAMPLE = 1;
 static constexpr size_t ADS_BURST_OUTPUT_CHUNK_SAMPLES = 384;
@@ -42,9 +42,9 @@ static constexpr uint8_t  MCP3204_BURST_FLUSH     = 4;
 // =========================
 #if CURRENT_CAPTURE_BACKEND == CUR_BACKEND_ADS8684
 
-static constexpr float IRMS_GATE_ON_A               = 0.020f;
-static constexpr float IRMS_GATE_OFF_A              = 0.012f;
-static constexpr float CURRENT_IDLE_SUPPRESS_A      = 0.020f;
+static constexpr float IRMS_GATE_ON_A               = 0.006f;
+static constexpr float IRMS_GATE_OFF_A              = 0.003f;
+static constexpr float CURRENT_IDLE_SUPPRESS_A      = 0.008f;
 static constexpr float FEATURE_MIN_VRMS             = 70.0f;
 static constexpr float FEATURE_MIN_IRMS_A           = 0.015f;
 static constexpr float ARC_MIN_IRMS_A               = 0.020f;
@@ -80,7 +80,7 @@ static constexpr int CURRENT_MIN_ACTIVITY_CHANGES   = 8;
 static constexpr uint16_t CURRENT_MIN_CODE_SPAN     = 6;
 static constexpr uint16_t LOW_CURRENT_CODE_SPAN     = 16;
 
-static constexpr float CURRENT_FRAME_MIN_FS_HZ      = 30000.0f;
+static constexpr float CURRENT_FRAME_MIN_FS_HZ      = 90000.0f;
 static constexpr uint32_t CURRENT_BOOT_SETTLE_MS    = 300UL;
 
 static constexpr float PULSE_ANALYSIS_MIN_IRMS_A    = 0.015f;
