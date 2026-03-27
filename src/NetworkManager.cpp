@@ -1,31 +1,19 @@
 #include "NetworkManager.h"
 #include "SmartPlugConfig.h"
 
-static constexpr uint32_t WIFI_BOOT_AP_DISCOVERY_WINDOW_MS   = 30000UL;
-static constexpr uint32_t WIFI_MANUAL_AP_DISCOVERY_WINDOW_MS = 15000UL;
+static constexpr uint32_t WIFI_BOOT_AP_DISCOVERY_WINDOW_MS   = 20000UL;
+static constexpr uint32_t WIFI_MANUAL_AP_DISCOVERY_WINDOW_MS = 20000UL;
 static constexpr uint32_t WIFI_BACKGROUND_RETRY_MS           = 60000UL;
-static constexpr uint32_t WIFI_BOOT_INET_GRACE_MS            = 1500UL;
-static constexpr uint32_t WIFI_BOOT_INET_DEADLINE_MS         = 5000UL;
-static constexpr const char* WIFI_BOOT_INET_PROBE_HOST       = "clients3.google.com";
 
 NetworkManager* NetworkManager::s_inst = nullptr;
 
 namespace {
   static bool s_bootDecisionDone = false;
-  static uint32_t s_staConnectedSinceMs = 0;
 
   static bool hasSavedCredentials_() {
     String ssid = WiFi.SSID();
     ssid.trim();
     return ssid.length() > 0;
-  }
-
-  static bool hasInternetNow_() {
-    if (WiFi.status() != WL_CONNECTED) return false;
-
-    IPAddress ip;
-    if (WiFi.hostByName(WIFI_BOOT_INET_PROBE_HOST, ip) != 1) return false;
-    return (ip[0] | ip[1] | ip[2] | ip[3]) != 0;
   }
 }
 
@@ -54,7 +42,6 @@ void NetworkManager::startStaConnect_() {
   _portalStartMs = 0;
   _apWindowUntilMs = 0;
   _lastApStations = 0;
-  s_staConnectedSinceMs = 0;
 
   _phase = PHASE_CONNECTING;
   _phaseStartMs = millis();
@@ -65,7 +52,6 @@ void NetworkManager::startApWait_(bool disconnectSta, bool manualRequest) {
   _portalDisconnectSta = disconnectSta;
   _portalStarted = false;
   _portalStartMs = 0;
-  s_staConnectedSinceMs = 0;
 
   WiFi.setSleep(false);
   WiFi.setAutoReconnect(false);
@@ -121,7 +107,6 @@ void NetworkManager::closeApAndRecover_(uint32_t now) {
   _apWindowUntilMs = 0;
   _lastApStations = 0;
   _portalDisconnectSta = false;
-  s_staConnectedSinceMs = 0;
 
   if (!disconnectSta && WiFi.status() == WL_CONNECTED) {
     WiFi.mode(WIFI_STA);
@@ -169,7 +154,6 @@ void NetworkManager::begin(void (*apCallback)(WiFiManager*)) {
   _apWindowUntilMs = 0;
   _lastApStations = 0;
   s_bootDecisionDone = false;
-  s_staConnectedSinceMs = 0;
 
   wm.setDebugOutput(false);
   wm.setConfigPortalBlocking(false);
@@ -207,8 +191,7 @@ void NetworkManager::update() {
       _portalStartMs = 0;
       _apWindowUntilMs = 0;
       _lastApStations = 0;
-      s_staConnectedSinceMs = 0;
-
+    
       _phase = PHASE_CONNECTED;
       _phaseStartMs = now;
       return;
@@ -238,43 +221,11 @@ void NetworkManager::update() {
 
   if (_phase == PHASE_CONNECTING) {
     if (WiFi.status() == WL_CONNECTED) {
-      // after startup succeeds, do not auto-open AP anymore
-      if (s_bootDecisionDone) {
-        _phase = PHASE_CONNECTED;
-        _phaseStartMs = now;
-        return;
-      }
-
-      if (s_staConnectedSinceMs == 0) s_staConnectedSinceMs = now;
-
-      if ((now - s_staConnectedSinceMs) < WIFI_BOOT_INET_GRACE_MS) {
-        return;
-      }
-
-      if (hasInternetNow_()) {
-        s_bootDecisionDone = true;
-        _phase = PHASE_CONNECTED;
-        _phaseStartMs = now;
-        return;
-      }
-
-      if ((now - s_staConnectedSinceMs) >= WIFI_BOOT_INET_DEADLINE_MS) {
-#if WIFI_OPEN_PORTAL_ON_TIMEOUT
-        _bootFallbackApUsed = true;
-        s_bootDecisionDone = true;
-        startApWait_(false, false);  // keep STA if associated, add AP on top
-#else
-        s_bootDecisionDone = true;
-        _phase = PHASE_CONNECTED;
-        _phaseStartMs = now;
-#endif
-        return;
-      }
-
+      s_bootDecisionDone = true;
+      _phase = PHASE_CONNECTED;
+      _phaseStartMs = now;
       return;
     }
-
-    s_staConnectedSinceMs = 0;
 
     if ((now - _phaseStartMs) >= WIFI_CONNECT_TIMEOUT_MS) {
 #if WIFI_OPEN_PORTAL_ON_TIMEOUT
