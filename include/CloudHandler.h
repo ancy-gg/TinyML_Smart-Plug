@@ -4,6 +4,7 @@
 #include <Firebase_ESP_Client.h>
 #include <WiFi.h>
 #include "TimeSync.h"
+#include "SmartPlugTypes.h"
 
 class CloudHandler {
 public:
@@ -28,6 +29,7 @@ public:
 
   bool pushJSON(const char* path, FirebaseJson& json);
   bool logStatusEvent(const String& status, float v, float c, float apparentPower, float t, TimeSync* time);
+  bool logFeatureEvent(const String& status, const FeatureFrame& f, float apparentPower, bool relayTrip, TimeSync* time);
 
 private:
   FirebaseData fbdo;

@@ -42,12 +42,12 @@ static constexpr uint8_t  MCP3204_BURST_FLUSH     = 4;
 // =========================
 #if CURRENT_CAPTURE_BACKEND == CUR_BACKEND_ADS8684
 
-static constexpr float IRMS_GATE_ON_A               = 0.015f;
-static constexpr float IRMS_GATE_OFF_A              = 0.008f;
-static constexpr float CURRENT_IDLE_SUPPRESS_A      = 0.012f;
+static constexpr float IRMS_GATE_ON_A               = 0.020f;
+static constexpr float IRMS_GATE_OFF_A              = 0.012f;
+static constexpr float CURRENT_IDLE_SUPPRESS_A      = 0.020f;
 static constexpr float FEATURE_MIN_VRMS             = 70.0f;
-static constexpr float FEATURE_MIN_IRMS_A           = 0.015f;
-static constexpr float ARC_MIN_IRMS_A               = 0.020f;
+static constexpr float FEATURE_MIN_IRMS_A           = 0.020f;
+static constexpr float ARC_MIN_IRMS_A               = 0.030f;
 static constexpr float FEATURE_REQUIRE_FUND_BELOW_A = 0.060f;
 
 static constexpr float CURRENT_LPF_HZ               = 4200.0f;

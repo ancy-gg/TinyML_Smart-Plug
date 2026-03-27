@@ -2,6 +2,7 @@
 #include <Arduino.h>
 #include <esp_timer.h>
 #include <driver/gpio.h>
+#include <soc/gpio_struct.h>
 
 #ifndef ADS8684_SHIFT_RIGHT_1
 #define ADS8684_SHIFT_RIGHT_1 1
@@ -15,8 +16,16 @@ static inline uint16_t unpack_word(const uint8_t rx[4]) {
   return w;
 }
 
-static inline void cs_high(int pin) { if (pin >= 0) gpio_set_level((gpio_num_t)pin, 1); }
-static inline void cs_low(int pin)  { if (pin >= 0) gpio_set_level((gpio_num_t)pin, 0); }
+static inline __attribute__((always_inline)) void cs_high(int pin) {
+  if (pin < 0) return;
+  if (pin < 32) GPIO.out_w1ts = (1UL << pin);
+  else GPIO.out1_w1ts.val = (1UL << (pin - 32));
+}
+static inline __attribute__((always_inline)) void cs_low(int pin) {
+  if (pin < 0) return;
+  if (pin < 32) GPIO.out_w1tc = (1UL << pin);
+  else GPIO.out1_w1tc.val = (1UL << (pin - 32));
+}
 static inline void cs_hold_enable(int pin)  { if (pin >= 0) gpio_hold_en((gpio_num_t)pin); }
 static inline void cs_hold_disable(int pin) { if (pin >= 0) gpio_hold_dis((gpio_num_t)pin); }
 
@@ -29,8 +38,9 @@ bool ADS8684::addDevice(int clock_hz) {
   spi_device_interface_config_t devcfg = {};
   devcfg.clock_speed_hz = clock_hz;
   devcfg.mode = 1;
-  devcfg.spics_io_num = -1;   // manual CS, safer for this ADC path
+  devcfg.spics_io_num = -1;
   devcfg.queue_size = 1;
+  devcfg.flags = SPI_DEVICE_NO_DUMMY;
   devcfg.cs_ena_pretrans = 0;
   devcfg.cs_ena_posttrans = 0;
 
@@ -81,6 +91,7 @@ esp_err_t ADS8684::xfer32(uint16_t cmd, uint16_t* out_data) {
 
   spi_transaction_t t = {};
   t.length = 32;
+  t.rxlength = 32;
   t.flags = SPI_TRANS_USE_TXDATA | SPI_TRANS_USE_RXDATA;
   t.tx_data[0] = uint8_t(cmd >> 8);
   t.tx_data[1] = uint8_t(cmd & 0xFF);
@@ -129,6 +140,7 @@ size_t ADS8684::readRawBurstInternal_(uint16_t* dst, size_t n, uint8_t oversampl
 
   spi_transaction_t t = {};
   t.length = 32;
+  t.rxlength = 32;
   t.flags = SPI_TRANS_USE_TXDATA | SPI_TRANS_USE_RXDATA;
   t.tx_data[0] = 0x00;
   t.tx_data[1] = 0x00;
@@ -137,7 +149,6 @@ size_t ADS8684::readRawBurstInternal_(uint16_t* dst, size_t n, uint8_t oversampl
 
   cs_hold_disable(_cfg.pin_cs);
 
-  // prime the pipeline
   cs_low(_cfg.pin_cs); (void)spi_device_polling_transmit(_dev, &t); cs_high(_cfg.pin_cs);
   cs_low(_cfg.pin_cs); (void)spi_device_polling_transmit(_dev, &t); cs_high(_cfg.pin_cs);
 
@@ -172,7 +183,7 @@ size_t ADS8684::readRawBurstInternal_(uint16_t* dst, size_t n, uint8_t oversampl
 
   const float dt_s = float(t1 - t0) / 1e6f;
   if (measured_fs_hz && dt_s > 0.0f) {
-    *measured_fs_hz = float(n) / dt_s;   // effective/output fs
+    *measured_fs_hz = float(n) / dt_s;
   }
 
   return n;

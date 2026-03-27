@@ -180,3 +180,6 @@ static constexpr uint16_t ML_LOG_DURATION_S  = 10;
 static constexpr uint32_t DEVICE_PLUG_CUE_INHIBIT_MS = 2000UL;
 static constexpr uint32_t DEVICE_PLUG_CUE_COOLDOWN_MS = 6000UL;
 static constexpr uint32_t DEVICE_PLUG_STABLE_MS = 1200UL;
+static constexpr float    DEVICE_PLUG_MAX_DV_V = 12.0f;
+static constexpr float    DEVICE_PLUG_MAX_STEP_DV_V = 8.0f;
+static constexpr uint32_t DEVICE_PLUG_ARC_INHIBIT_MS = 650UL;

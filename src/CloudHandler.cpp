@@ -123,6 +123,57 @@ bool CloudHandler::logStatusEvent(const String& status, float v, float c, float 
                            0, time);
 }
 
+bool CloudHandler::logFeatureEvent(const String& status, const FeatureFrame& f, float apparentPower, bool relayTrip, TimeSync* time) {
+  if (!Firebase.ready()) return false;
+
+  uint64_t epochMs = 0;
+  String iso = "";
+  if (time) {
+    epochMs = time->nowEpochMs();
+    iso = time->nowISO8601Ms();
+  }
+
+  FirebaseJson json;
+  json.set("wifi_connected", WiFi.status() == WL_CONNECTED);
+  json.set("wifi_rssi", (int)WiFi.RSSI());
+  json.set("ip", WiFi.localIP().toString());
+  json.set("mdns", "tinyml-smart-plug.local");
+  json.set("ota_ready", WiFi.status() == WL_CONNECTED);
+  json.set("fw_version", _fwVersion);
+
+  json.set("voltage", f.vrms);
+  json.set("current", f.irms);
+  json.set("apparent_power", apparentPower);
+  json.set("temp", f.temp_c);
+
+  json.set("cycle_nmse", f.cycle_nmse);
+  json.set("zcv", f.zcv);
+  json.set("zc_dwell_ratio", f.zc_dwell_ratio);
+  json.set("pulse_count_per_cycle", f.pulse_count_per_cycle);
+  json.set("peak_fluct_cv", f.peak_fluct_cv);
+  json.set("midband_residual_rms", f.midband_residual_rms);
+  json.set("hf_band_energy_ratio", f.hf_band_energy_ratio);
+  json.set("wpe_entropy", f.wpe_entropy);
+  json.set("spec_entropy", f.spec_entropy);
+  json.set("thd_i", f.thd_i);
+  json.set("adc_fs_hz", f.adc_fs_hz);
+
+  json.set("feat_valid", (int)f.feat_valid);
+  json.set("current_valid", (int)f.current_valid);
+  json.set("model_pred", (int)f.model_pred);
+  json.set("relay_trip", relayTrip);
+  json.set("status", status);
+
+  json.set("mains_present", f.vrms >= MAINS_PRESENT_ON_V);
+  json.set("power_condition", powerConditionForState(status, f.vrms));
+  json.set("ts_epoch_ms", (double)epochMs);
+  json.set("ts_iso", iso);
+  json.set("uptime_ms", (int)millis());
+  json.set("server_ts/.sv", "timestamp");
+
+  return Firebase.RTDB.pushJSON(&fbdo, "/history", &json);
+}
+
 void CloudHandler::update(float v, float c, float apparentPower, float t,
                           float cycle_nmse, float zcv, float zc_dwell_ratio,
                           float pulse_count_per_cycle, float peak_fluct_cv,
