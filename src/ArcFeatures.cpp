@@ -216,6 +216,7 @@ bool ArcFeatures::compute(const uint16_t* raw, size_t n, float fs_hz,
   }
 
   const float irmsWide = sqrtf((float)(accIrmsWide / (double)n));
+  const float residRms = sqrtf((float)(accResidSq / (double)n));
   const uint16_t codeSpan = (uint16_t)(mxCode - mnCode);
 
   // Mains-coherent RMS meter:
@@ -247,23 +248,31 @@ bool ArcFeatures::compute(const uint16_t* raw, size_t n, float fs_hz,
     }
   }
 
-  float irms = sqrtf((float)harmRmsSq);
-  const float coherence = (irmsWide > 1e-6f) ? (irms / irmsWide) : 0.0f;
+  const float irmsCoherent = sqrtf((float)harmRmsSq);
+  const float coherence = (irmsWide > 1e-6f) ? (irmsCoherent / irmsWide) : 0.0f;
+  const float residFrac = (irmsWide > 1e-6f) ? (residRms / irmsWide) : 1.0f;
 
-  // Reject low-current broadband junk. Real small loads should still keep decent
-  // mains coherence; wideband pickup should not.
-  if (irms < 0.35f && coherence < 0.55f) {
-    irms = 0.0f;
-  }
+  const bool trustWideband =
+      (coherence >= TRUE_RMS_MIN_COHERENCE) ||
+      ((irmsCoherent >= TRUE_RMS_MIN_COHERENT_A) &&
+       (coherence >= TRUE_RMS_RELAXED_COHERENCE) &&
+       (residFrac <= TRUE_RMS_MAX_RESID_FRAC));
 
-  if (irms < CURRENT_IDLE_SUPPRESS_A && codeSpan < LOW_CURRENT_CODE_SPAN) {
+  // Use true RMS from the band-limited waveform when it is still sufficiently
+  // mains-coherent. Otherwise fall back to the mains-coherent estimate so
+  // broadband pickup is not turned into fake current.
+  float irms = trustWideband ? irmsWide : irmsCoherent;
+
+  if (irmsWide < CURRENT_IDLE_SUPPRESS_A && codeSpan < LOW_CURRENT_CODE_SPAN) {
     irms = 0.0f;
-  } else if (irms < IRMS_GATE_OFF_A) {
+  } else if (!trustWideband && irmsCoherent < IRMS_GATE_OFF_A) {
+    irms = 0.0f;
+  } else if (trustWideband && irms < IRMS_GATE_OFF_A) {
     irms = 0.0f;
   }
 
   out.irms_a = irms;
-  out.current_valid = (harmUsed > 0) && (irms > 0.0f || codeSpan >= LOW_CURRENT_CODE_SPAN);
+  out.current_valid = ((harmUsed > 0) || trustWideband) && (irms > 0.0f || codeSpan >= LOW_CURRENT_CODE_SPAN);
 
   if (irms < FEATURE_MIN_IRMS_A) {
     out.feat_valid = false;
@@ -369,7 +378,6 @@ bool ArcFeatures::compute(const uint16_t* raw, size_t n, float fs_hz,
   float prevCycle[RSZ];
   bool havePrevCycle = false;
 
-  const float residRms = sqrtf((float)(accResidSq / (double)n));
   const bool pulseEligible = (irms >= PULSE_ANALYSIS_MIN_IRMS_A) &&
                              (residRms >= PULSE_ANALYSIS_MIN_RESID_A);
   float pulseThr = fmaxf(PULSE_THRESH_MIN_A, PULSE_THRESH_RMS_MUL * residRms);

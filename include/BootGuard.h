@@ -26,6 +26,11 @@ public:
   // For optional UI/debug.
   static uint8_t crashBoots();
 
+  // Mark the currently running OTA image as valid immediately if it is still
+  // pending verification. Safe to call repeatedly. Returns true when the app is
+  // already valid or was confirmed successfully.
+  static bool confirmNow();
+
 private:
   BootGuard() = delete;
 };

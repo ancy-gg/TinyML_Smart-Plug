@@ -31,9 +31,9 @@
 
 #define API_KEY "AIzaSyAmJlZZszyWPJFgIkTAAl_TbIySys1nvEw"
 #define DATABASE_URL "tinyml-smart-plug-default-rtdb.asia-southeast1.firebasedatabase.app"
-static const char* FW_VERSION = "TSP-v3.6.1-measure-mcp";         //measure - set calib to 0.0 (1.0 for first-order var)
-                                                      //protect - change 0 relay, with calibration
-                                                      //collect - change 1 relay, with calibration
+static const char* FW_VERSION = "TSP-v3.6.3-p-mcp";   //m - set calib to 0.0 (1.0 for first-order var)
+                                                      //p - change 0 relay, with calibration
+                                                      //c - change 1 relay, with calibration
                                                       
 static const char* OTA_DESIRED_VERSION_PATH = "/ota/desired_version";
 static const char* OTA_FIRMWARE_URL_PATH    = "/ota/firmware_url";
@@ -371,7 +371,7 @@ static void maybeStartAutoArcCapture(DataLogger& logger, OLED_NOTIF& oledUi, boo
 void setup() {
   esp_log_level_set("*", ESP_LOG_NONE);
 
-  BootGuard::begin(45000, 3);
+  BootGuard::begin(12000, 3);
   gSafeMode = BootGuard::safeMode();
 
   oled.begin();
@@ -433,6 +433,8 @@ void setup() {
   ota.setEventCallback(onOtaEvent);
   ota.setPaths(OTA_DESIRED_VERSION_PATH, OTA_FIRMWARE_URL_PATH);
   ota.setCheckInterval(OTA_CHECK_INTERVAL_MS);
+
+  if (!gSafeMode) (void)BootGuard::confirmNow();
 
   if (gSafeMode) oled.showStatus("SAFE MODE", "OTA only");
 }

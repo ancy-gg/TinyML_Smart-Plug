@@ -6,10 +6,22 @@
 #include <WiFiClientSecure.h>
 #include <HTTPClient.h>
 #include <Update.h>
+#include <esp_ota_ops.h>
 
 static const uint32_t OTA_HTTP_TIMEOUT_MS = 60000;
 static const uint32_t OTA_STREAM_IDLE_MS  = 12000;
 static const uint32_t OTA_RESTART_DELAY_MS = 1200;
+
+static bool confirmRunningImageIfPending() {
+  const esp_partition_t* running = esp_ota_get_running_partition();
+  if (!running) return true;
+
+  esp_ota_img_states_t st;
+  if (esp_ota_get_state_partition(running, &st) != ESP_OK) return true;
+  if (st != ESP_OTA_IMG_PENDING_VERIFY) return true;
+
+  return esp_ota_mark_app_valid_cancel_rollback() == ESP_OK;
+}
 
 void PullOTA::begin(const char* currentVersion, CloudHandler* cloud) {
   _currentVersion = currentVersion ? currentVersion : "TSP-v0.0.0";
@@ -30,6 +42,10 @@ void PullOTA::setInsecureTLS(bool en) { _insecureTLS = en; }
 void PullOTA::loop() {
   if (WiFi.status() != WL_CONNECTED) return;
   if (!_cloud || !_cloud->isReady()) return;
+
+  // ESP-IDF blocks a new OTA while the current image is still pending verify.
+  // Confirm it here as soon as the app is healthy enough to reach the OTA loop.
+  if (!confirmRunningImageIfPending()) return;
 
   const uint32_t now = millis();
   if (!_checkNow && (uint32_t)(now - _lastCheckMs) < _intervalMs) return;

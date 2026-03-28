@@ -50,7 +50,11 @@ static constexpr uint8_t FAN_MIN_SPIN_DUTY = 96;
 // =========================
 // Sampling and FFT
 // =========================
+#if CURRENT_CAPTURE_BACKEND == CUR_BACKEND_ADS8684
 static constexpr float    FS_TARGET_HZ = 80000.0f;
+#else
+static constexpr float    FS_TARGET_HZ = 35000.0f;
+#endif
 static constexpr uint16_t N_SAMP       = 4096;
 static constexpr float    MAINS_F0_HZ  = 60.0f;
 
@@ -58,9 +62,17 @@ static constexpr float    MAINS_F0_HZ  = 60.0f;
 // Software anti-alias / cleanup for current waveform.
 // Effective cutoff is clamped below Nyquist at runtime.
 static constexpr bool     CURRENT_SOFT_AAF_ENABLE = true;
+#if CURRENT_CAPTURE_BACKEND == CUR_BACKEND_ADS8684
 static constexpr float    CURRENT_SOFT_AAF_CUTOFF_HZ = 25000.0f;
+#else
+static constexpr float    CURRENT_SOFT_AAF_CUTOFF_HZ = 15000.0f;
+#endif
 static constexpr float    CURRENT_SOFT_AAF_Q = 0.70710678f;
+#if CURRENT_CAPTURE_BACKEND == CUR_BACKEND_ADS8684
 static constexpr float    CURRENT_SOFT_AAF_MAX_FRAC_NYQUIST = 0.95f;
+#else
+static constexpr float    CURRENT_SOFT_AAF_MAX_FRAC_NYQUIST = 0.98f;
+#endif
 
 // =========================
 // Wi-Fi startup / portal

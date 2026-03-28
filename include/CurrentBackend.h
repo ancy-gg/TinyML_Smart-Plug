@@ -37,6 +37,9 @@ static constexpr uint16_t MCP3204_STARTUP_FLUSH   = 256;
 static constexpr uint8_t  MCP3204_WARMUP_BURSTS   = 2;
 static constexpr uint8_t  MCP3204_BURST_FLUSH     = 4;
 
+static constexpr bool  MCP3204_MM3_HYBRID_FILTER_ENABLE = true;
+static constexpr uint8_t MCP3204_MM3_MEDIAN_WEIGHT = 2; // out=(2*median + mean)/3
+
 // =========================
 // Backend-specific profiles
 // =========================
@@ -86,6 +89,11 @@ static constexpr uint32_t CURRENT_BOOT_SETTLE_MS    = 300UL;
 static constexpr float PULSE_ANALYSIS_MIN_IRMS_A    = 0.015f;
 static constexpr float PULSE_ANALYSIS_MIN_RESID_A   = 0.015f;
 
+static constexpr float TRUE_RMS_MIN_COHERENCE       = 0.60f;
+static constexpr float TRUE_RMS_RELAXED_COHERENCE   = 0.42f;
+static constexpr float TRUE_RMS_MIN_COHERENT_A      = 0.20f;
+static constexpr float TRUE_RMS_MAX_RESID_FRAC      = 0.85f;
+
 #else
 
 static constexpr float IRMS_GATE_ON_A               = 0.075f;
@@ -110,13 +118,13 @@ static constexpr float PULSE_THRESH_RMS_MUL         = 7.0f;
 static constexpr float PULSE_THRESH_MIN_A           = 0.120f;
 
 static constexpr float MIDBAND_LO_HZ                = 220.0f;
-static constexpr float MIDBAND_HI_HZ                = 3200.0f;
+static constexpr float MIDBAND_HI_HZ                = 4000.0f;
 static constexpr float UPPERMID_LO_HZ               = 900.0f;
-static constexpr float UPPERMID_HI_HZ               = 3200.0f;
-static constexpr float HF_BAND_LO_HZ                = 3200.0f;
-static constexpr float HF_BAND_HI_HZ                = 6800.0f;
+static constexpr float UPPERMID_HI_HZ               = 6500.0f;
+static constexpr float HF_BAND_LO_HZ                = 6500.0f;
+static constexpr float HF_BAND_HI_HZ                = 14000.0f;
 static constexpr float SPEC_ENT_LO_HZ               = 220.0f;
-static constexpr float SPEC_ENT_HI_HZ               = 6800.0f;
+static constexpr float SPEC_ENT_HI_HZ               = 14000.0f;
 
 static constexpr float FUND_SNR_MIN                 = 6.0f;
 static constexpr float FUND_MAG_MIN                 = 1e-5f;
@@ -126,21 +134,26 @@ static constexpr int CURRENT_MIN_ACTIVITY_CHANGES   = 10;
 static constexpr uint16_t CURRENT_MIN_CODE_SPAN     = 10;
 static constexpr uint16_t LOW_CURRENT_CODE_SPAN     = 30;
 
-static constexpr float CURRENT_FRAME_MIN_FS_HZ      = 9000.0f;
+static constexpr float CURRENT_FRAME_MIN_FS_HZ      = 30000.0f;
 static constexpr uint32_t CURRENT_BOOT_SETTLE_MS    = 450UL;
 
 static constexpr float PULSE_ANALYSIS_MIN_IRMS_A    = 0.075f;
 static constexpr float PULSE_ANALYSIS_MIN_RESID_A   = 0.035f;
+
+static constexpr float TRUE_RMS_MIN_COHERENCE       = 0.74f;
+static constexpr float TRUE_RMS_RELAXED_COHERENCE   = 0.55f;
+static constexpr float TRUE_RMS_MIN_COHERENT_A      = 0.45f;
+static constexpr float TRUE_RMS_MAX_RESID_FRAC      = 0.60f;
 
 #endif
 
 // =========================
 // Current calibration
 // =========================
-static constexpr float CURRENT_CAL_C3 = 0.0f;
-static constexpr float CURRENT_CAL_C2 = 0.0f;
-static constexpr float CURRENT_CAL_C1 = 1.0f;
-static constexpr float CURRENT_CAL_C0 = 0.0f;
+static constexpr float CURRENT_CAL_C3 = 0.00061628f;
+static constexpr float CURRENT_CAL_C2 = -0.000465664f;
+static constexpr float CURRENT_CAL_C1 = 1.22698f;
+static constexpr float CURRENT_CAL_C0 = -0.0360701f;
 
 struct CurrentCalib {
 #if CURRENT_CAPTURE_BACKEND == CUR_BACKEND_ADS8684

@@ -35,6 +35,18 @@ static bool isCrashReset(esp_reset_reason_t r) {
   }
 }
 
+
+static bool confirmPendingNow_() {
+  if (!s_pendingVerify) return true;
+  const esp_err_t e = esp_ota_mark_app_valid_cancel_rollback();
+  if (e == ESP_OK) {
+    s_pendingVerify = false;
+    s_crashBoots = 0;
+    return true;
+  }
+  return false;
+}
+
 static bool getPendingVerifyState() {
   const esp_partition_t* running = esp_ota_get_running_partition();
   if (!running) return false;
@@ -95,10 +107,11 @@ void BootGuard::loop() {
   s_crashBoots = 0;
 
   if (s_pendingVerify) {
-    (void)esp_ota_mark_app_valid_cancel_rollback();
-    s_pendingVerify = false;
+    (void)confirmPendingNow_();
   }
 }
+
+bool BootGuard::confirmNow() { return confirmPendingNow_(); }
 
 bool BootGuard::safeMode() { return s_safeMode != 0; }
 bool BootGuard::pendingVerify() { return s_pendingVerify; }
