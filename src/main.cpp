@@ -31,7 +31,7 @@
 
 #define API_KEY "AIzaSyAmJlZZszyWPJFgIkTAAl_TbIySys1nvEw"
 #define DATABASE_URL "tinyml-smart-plug-default-rtdb.asia-southeast1.firebasedatabase.app"
-static const char* FW_VERSION = "TSP-v3.5.5-measure"; //measure - set calib to 0.0 (1.0 for first-order var)
+static const char* FW_VERSION = "TSP-v3.5.6-measure";         //measure - set calib to 0.0 (1.0 for first-order var)
                                                       //protect - change 0 relay, with calibration
                                                       //collect - change 1 relay, with calibration
                                                       
@@ -67,6 +67,34 @@ static QueueHandle_t qFeat = nullptr;
 
 static bool gSafeMode = false;
 static volatile bool gPauseByOta = false;
+
+static bool arcInputStable(bool currentValid, bool featValid, float irms) {
+  static uint32_t stableSince = 0;
+  static float refIrms = 0.0f;
+  const uint32_t now = millis();
+
+  if (!currentValid || !featValid || irms < ARC_MIN_IRMS_A) {
+    stableSince = 0;
+    refIrms = irms;
+    return false;
+  }
+
+  if (stableSince == 0) {
+    stableSince = now;
+    refIrms = irms;
+    return false;
+  }
+
+  const float tol = fmaxf(0.08f, 0.25f * fmaxf(refIrms, 0.10f));
+  if (fabsf(irms - refIrms) > tol) {
+    stableSince = now;
+    refIrms = irms;
+    return false;
+  }
+
+  refIrms += 0.08f * (irms - refIrms);
+  return (now - stableSince) >= 1500UL;
+}
 
 static bool debouncedMainsPresentForState(float vProtect) {
   static bool init = false;
@@ -513,8 +541,7 @@ void loop() {
   if (vRms > 0.10f && f.irms > 0.001f) apparentPowerVa = vRms * f.irms;
 
   const bool arcEligible = (!gSafeMode && !paused && !bootSettling && !protectionInhibit &&
-                            f.current_valid && f.feat_valid &&
-                            f.irms >= ARC_MIN_IRMS_A &&
+                            arcInputStable(f.current_valid, f.feat_valid, f.irms) &&
                             vFast >= VOLT_UNDERVOLT_MAX_V &&
                             vFast < VOLT_OVERVOLT_TRIP_V);
 

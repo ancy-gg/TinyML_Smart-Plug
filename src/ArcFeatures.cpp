@@ -94,37 +94,6 @@ static inline float computeEntropyFromBands(const float* e, int n) {
   return clampf((float)(H / log((double)n)), 0.0f, 1.0f);
 }
 
-static float computeLineSelectiveRms(const float* x, size_t n, float fs_hz, float mainsHz, int maxHarmonic) {
-  if (!x || n < 32 || fs_hz < 1000.0f || mainsHz < 40.0f) return 0.0f;
-  if (maxHarmonic < 1) maxHarmonic = 1;
-  if (maxHarmonic > 15) maxHarmonic = 15;
-
-  double rmsSq = 0.0;
-
-  for (int h = 1; h <= maxHarmonic; ++h) {
-    const float f = mainsHz * (float)h;
-    if (f >= 0.45f * fs_hz) break;
-
-    const double w = 2.0 * 3.14159265358979323846 * (double)f / (double)fs_hz;
-    double c = 0.0;
-    double s = 0.0;
-
-    for (size_t i = 0; i < n; ++i) {
-      const double ang = w * (double)i;
-      const double xi = (double)x[i];
-      c += xi * cos(ang);
-      s += xi * sin(ang);
-    }
-
-    const double a = (2.0 / (double)n) * c;
-    const double b = (2.0 / (double)n) * s;
-    rmsSq += 0.5 * (a * a + b * b);
-  }
-
-  if (rmsSq <= 0.0) return 0.0f;
-  return sqrtf((float)rmsSq);
-}
-
 static inline bool makeBandBins(float f0, float f1, float binHz, int half, int& k0, int& k1) {
   if (half <= 1 || binHz <= 0.0f) return false;
 
@@ -173,7 +142,6 @@ bool ArcFeatures::compute(const uint16_t* raw, size_t n, float fs_hz,
   static float sig[N_SAMP];
   static float sigMed[N_SAMP];
   static float sigFilt[N_SAMP];
-  static float sigMeter[N_SAMP];
   static float sigClean[N_SAMP];
   static float sigBase[N_SAMP];
   static float resid[N_SAMP];
@@ -226,25 +194,16 @@ bool ArcFeatures::compute(const uint16_t* raw, size_t n, float fs_hz,
     memcpy(sigFilt, sig, n * sizeof(float));
   }
 
-  BiquadLPF meterLpf;
-  if (makeLowpassBiquad(fs_hz, CURRENT_RMS_LPF_HZ, 0.70710678f, meterLpf)) {
-    for (size_t i = 0; i < n; ++i) {
-      sigMeter[i] = meterLpf.step(sigFilt[i]);
-    }
-  } else {
-    memcpy(sigMeter, sigFilt, n * sizeof(float));
-  }
-
   const float dt = 1.0f / fs_hz;
   const float rcClean = 1.0f / (6.2831853f * CURRENT_LPF_HZ);
   const float rcBase  = 1.0f / (6.2831853f * CURRENT_BASE_LPF_HZ);
   const float aClean = dt / (rcClean + dt);
   const float aBase  = dt / (rcBase + dt);
 
-  float yClean = sigFilt[0];
-  float yBase  = sigFilt[0];
-  double accIrmsMeter = 0.0;
-  double accResidSq   = 0.0;
+  float yClean = 0.0f;
+  float yBase  = 0.0f;
+  double accIrmsWide = 0.0;
+  double accResidSq  = 0.0;
 
   for (size_t i = 0; i < n; ++i) {
     yClean += aClean * (sigFilt[i] - yClean);
@@ -252,29 +211,59 @@ bool ArcFeatures::compute(const uint16_t* raw, size_t n, float fs_hz,
     sigClean[i] = yClean;
     sigBase[i]  = yBase;
     resid[i]    = yClean - yBase;
-    accIrmsMeter += (double)sigMeter[i] * (double)sigMeter[i];
-    accResidSq   += (double)resid[i] * (double)resid[i];
+    accIrmsWide += (double)sigFilt[i] * (double)sigFilt[i];
+    accResidSq  += (double)resid[i] * (double)resid[i];
   }
 
-  const float irmsMeter = sqrtf((float)(accIrmsMeter / (double)n));
-  const float irmsLine  = computeLineSelectiveRms(sigBase, n, fs_hz, mainsHz, CURRENT_METER_MAX_HARMONIC);
-  const float coherentRatio = (irmsMeter > 1e-6f) ? (irmsLine / irmsMeter) : 0.0f;
-
-  float irms = irmsLine;
+  const float irmsWide = sqrtf((float)(accIrmsWide / (double)n));
   const uint16_t codeSpan = (uint16_t)(mxCode - mnCode);
 
-  if (irms < IRMS_GATE_OFF_A) {
+  // Mains-coherent RMS meter:
+  // estimate current only from the 60 Hz fundamental and low-order harmonics,
+  // which rejects broadband ADS residue that was being turned into false load current.
+  double harmRmsSq = 0.0;
+  int harmUsed = 0;
+  for (int h = 1; h <= 15; ++h) {
+    const float fh = mainsHz * (float)h;
+    if (fh > 1500.0f || fh >= (0.45f * fs_hz)) break;
+
+    double csum = 0.0;
+    double ssum = 0.0;
+    const float w = 2.0f * 3.14159265358979f * fh / fs_hz;
+    for (size_t i = 0; i < n; ++i) {
+      const float ang = w * (float)i;
+      const float x = sigFilt[i];
+      csum += (double)x * cosf(ang);
+      ssum += (double)x * sinf(ang);
+    }
+
+    const float a = (2.0f / (float)n) * (float)csum;
+    const float b = (2.0f / (float)n) * (float)ssum;
+    const float peak = sqrtf(a * a + b * b);
+    const float rmsH = peak * 0.70710678f;
+    if (rmsH > 0.0025f) {
+      harmRmsSq += (double)rmsH * (double)rmsH;
+      harmUsed++;
+    }
+  }
+
+  float irms = sqrtf((float)harmRmsSq);
+  const float coherence = (irmsWide > 1e-6f) ? (irms / irmsWide) : 0.0f;
+
+  // Reject low-current broadband junk. Real small loads should still keep decent
+  // mains coherence; wideband pickup should not.
+  if (irms < 0.35f && coherence < 0.55f) {
     irms = 0.0f;
-  } else if (irms < CURRENT_IDLE_SUPPRESS_A && codeSpan < LOW_CURRENT_CODE_SPAN) {
+  }
+
+  if (irms < CURRENT_IDLE_SUPPRESS_A && codeSpan < LOW_CURRENT_CODE_SPAN) {
     irms = 0.0f;
-  } else if (irms < CURRENT_LOWLOAD_MAX_A &&
-             coherentRatio < CURRENT_LOWLOAD_COHERENT_MIN &&
-             codeSpan < (uint16_t)(LOW_CURRENT_CODE_SPAN * 8U)) {
+  } else if (irms < IRMS_GATE_OFF_A) {
     irms = 0.0f;
   }
 
   out.irms_a = irms;
-  out.current_valid = (irms >= IRMS_GATE_OFF_A);
+  out.current_valid = (harmUsed > 0) && (irms > 0.0f || codeSpan >= LOW_CURRENT_CODE_SPAN);
 
   if (irms < FEATURE_MIN_IRMS_A) {
     out.feat_valid = false;
