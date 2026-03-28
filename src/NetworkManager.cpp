@@ -2,7 +2,7 @@
 #include "SmartPlugConfig.h"
 #include <esp_wifi.h>
 
-static constexpr uint32_t WIFI_BOOT_AP_DISCOVERY_WINDOW_MS   = 20000UL;
+static constexpr uint32_t WIFI_BOOT_AP_DISCOVERY_WINDOW_MS   = WIFI_BOOT_BLOCK_MS;
 static constexpr uint32_t WIFI_MANUAL_AP_DISCOVERY_WINDOW_MS = 20000UL;
 static constexpr uint32_t WIFI_BACKGROUND_RETRY_MS           = 60000UL;
 
@@ -35,15 +35,13 @@ void NetworkManager::startStaConnect_() {
   WiFi.setAutoReconnect(true);
 
   WiFi.softAPdisconnect(true);
-  delay(50);
+  delay(40);
   WiFi.mode(WIFI_STA);
-  delay(50);
+  delay(40);
   WiFi.begin();
 
   _portalRequested = false;
-  _portalStarted = false;
   _portalDisconnectSta = false;
-  _bootFallbackApUsed = false;
   _portalStartMs = 0;
   _apWindowUntilMs = 0;
   _lastApStations = 0;
@@ -55,26 +53,26 @@ void NetworkManager::startStaConnect_() {
 void NetworkManager::startApWait_(bool disconnectSta, bool manualRequest) {
   _portalRequested = manualRequest;
   _portalDisconnectSta = disconnectSta;
-  _portalStarted = false;
   _portalStartMs = 0;
+  _lastApStations = 0;
 
   WiFi.setSleep(false);
   WiFi.setAutoReconnect(!disconnectSta);
 
   if (disconnectSta || WiFi.status() != WL_CONNECTED) {
     WiFi.disconnect(true, false);
-    delay(80);
+    delay(60);
     WiFi.mode(WIFI_AP);
-    delay(100);
+    delay(80);
   } else {
     WiFi.mode(WIFI_AP_STA);
-    delay(100);
+    delay(80);
   }
 
   WiFi.softAPdisconnect(true);
-  delay(40);
+  delay(30);
   WiFi.softAP(WIFI_PORTAL_SSID);
-  delay(120);
+  delay(80);
 
   _lastApStations = apStations_();
   _apWindowUntilMs = millis() + (manualRequest ? WIFI_MANUAL_AP_DISCOVERY_WINDOW_MS
@@ -92,21 +90,20 @@ void NetworkManager::startPortal_() {
   _phase = PHASE_PORTAL_ACTIVE;
   _phaseStartMs = millis();
   _portalStartMs = _phaseStartMs;
-  _portalStarted = true;
-
   wm.startConfigPortal(WIFI_PORTAL_SSID);
 }
 
 void NetworkManager::closeApAndRecover_(uint32_t now) {
+  const bool wasPortal = (_phase == PHASE_PORTAL_ACTIVE);
+  const bool hadSaved = hasSavedCredentials_();
+
   WiFi.softAPdisconnect(true);
-  delay(50);
+  delay(40);
   WiFi.mode(WIFI_STA);
-  delay(50);
+  delay(40);
 
   _portalRequested = false;
-  _portalStarted = false;
   _portalDisconnectSta = false;
-  _bootFallbackApUsed = false;
   _portalStartMs = 0;
   _apWindowUntilMs = 0;
   _lastApStations = 0;
@@ -117,13 +114,25 @@ void NetworkManager::closeApAndRecover_(uint32_t now) {
     return;
   }
 
-  if (hasSavedCredentials_()) {
-    startStaConnect_();
+  // Deterministic recovery: if the user entered the portal but left without
+  // getting the STA link up, reboot the device so boot flow becomes:
+  // AP first -> optional portal -> saved STA connect.
+  if (wasPortal) {
+    delay(120);
+    ESP.restart();
     return;
   }
 
-  _phase = PHASE_TIMEOUT;
-  _phaseStartMs = now;
+  if (hadSaved) {
+    WiFi.begin();
+    _phase = PHASE_CONNECTING;
+    _phaseStartMs = now;
+    return;
+  }
+
+  // No saved credentials yet: keep the hotspot available instead of going
+  // into a disconnected idle state.
+  startApWait_(true, false);
 }
 
 void NetworkManager::requestPortal(bool disconnectSta) {
@@ -133,7 +142,6 @@ void NetworkManager::requestPortal(bool disconnectSta) {
 void NetworkManager::apTrampoline(WiFiManager* wmgr) {
   if (!s_inst) return;
   s_inst->_phase = PHASE_PORTAL_ACTIVE;
-  s_inst->_portalStarted = true;
   s_inst->_portalStartMs = millis();
   if (s_inst->_userApCb) s_inst->_userApCb(wmgr);
 }
@@ -145,11 +153,10 @@ void NetworkManager::begin(void (*apCallback)(WiFiManager*)) {
   _phase = PHASE_BOOT_BLOCK;
   _phaseStartMs = millis();
   _portalRequested = false;
-  _portalStarted = false;
   _portalDisconnectSta = false;
-  _bootFallbackApUsed = false;
   _portalStartMs = 0;
   _apWindowUntilMs = 0;
+  _lastRetryMs = 0;
   _lastApStations = 0;
 
   wm.setDebugOutput(false);
@@ -163,34 +170,20 @@ void NetworkManager::begin(void (*apCallback)(WiFiManager*)) {
   WiFi.mode(WIFI_STA);
   delay(60);
 
-  if (hasSavedCredentials_()) {
-    startStaConnect_();
-  } else {
-    startApWait_(true, false);
-  }
+  // Deterministic boot rule:
+  // always open the AP first for a short discovery window, then either
+  // connect to saved Wi-Fi or keep the AP running if there are no creds yet.
+  startApWait_(true, false);
 }
 
 void NetworkManager::update() {
   const uint32_t now = millis();
-  wm.process();
 
   if (_phase == PHASE_PORTAL_ACTIVE) {
+    wm.process();
+
     if (WiFi.status() == WL_CONNECTED) {
-      WiFi.softAPdisconnect(true);
-      delay(50);
-      WiFi.mode(WIFI_STA);
-      delay(50);
-
-      _portalRequested = false;
-      _portalStarted = false;
-      _portalDisconnectSta = false;
-      _bootFallbackApUsed = false;
-      _portalStartMs = 0;
-      _apWindowUntilMs = 0;
-      _lastApStations = 0;
-
-      _phase = PHASE_CONNECTED;
-      _phaseStartMs = now;
+      closeApAndRecover_(now);
       return;
     }
 
@@ -225,11 +218,11 @@ void NetworkManager::update() {
 
     if ((now - _phaseStartMs) >= WIFI_CONNECT_TIMEOUT_MS) {
 #if WIFI_OPEN_PORTAL_ON_TIMEOUT
-      _bootFallbackApUsed = true;
       startApWait_(true, false);
 #else
       _phase = PHASE_TIMEOUT;
       _phaseStartMs = now;
+      _lastRetryMs = now;
 #endif
       return;
     }
@@ -242,14 +235,21 @@ void NetworkManager::update() {
     if (hasSavedCredentials_()) {
       startStaConnect_();
     } else {
-      _phase = PHASE_TIMEOUT;
-      _phaseStartMs = now;
+      startApWait_(true, false);
     }
     return;
   }
 
   if (_phase == PHASE_TIMEOUT || _phase == PHASE_BOOT_BLOCK) {
-    if (hasSavedCredentials_() && (now - _phaseStartMs) >= WIFI_BACKGROUND_RETRY_MS) {
+    if (!hasSavedCredentials_()) {
+      if ((now - _lastRetryMs) >= WIFI_BACKGROUND_RETRY_MS) {
+        _lastRetryMs = now;
+        startApWait_(true, false);
+      }
+      return;
+    }
+
+    if ((now - _phaseStartMs) >= WIFI_BACKGROUND_RETRY_MS) {
       startStaConnect_();
     }
     return;

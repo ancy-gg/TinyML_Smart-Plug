@@ -16,13 +16,12 @@ bool CurrentBackendADS8684::begin() {
 }
 
 size_t CurrentBackendADS8684::capture(uint16_t* dst, size_t n, float* measuredFsHz) {
-  if (!dst || n == 0) return 0;
-
-  // Keep the proven raw-burst path. The clock selection is handled by ADS_SPI_HZ
-  // and ADS_SPI_FALLBACK_HZ in CurrentBackend.h.
+  // Keep AUX-based low-level ADS path intact.
+  // Use the raw burst path only; cleanup happens later in DSP.
   size_t got = _adc.readRawBurst(dst, n, measuredFsHz);
   if (got == n) return got;
 
-  // Retry once after the driver re-selects AUX internally.
+  // Retry once using the same raw path. The ADS driver itself already
+  // handles primary/fallback SPI clock selection during begin().
   return _adc.readRawBurst(dst, n, measuredFsHz);
 }

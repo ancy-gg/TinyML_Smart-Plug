@@ -31,7 +31,7 @@
 
 #define API_KEY "AIzaSyAmJlZZszyWPJFgIkTAAl_TbIySys1nvEw"
 #define DATABASE_URL "tinyml-smart-plug-default-rtdb.asia-southeast1.firebasedatabase.app"
-static const char* FW_VERSION = "TSP-v3.5.4-measure"; //measure - set calib to 0.0 (1.0 for first-order var)
+static const char* FW_VERSION = "TSP-v3.5.5-measure"; //measure - set calib to 0.0 (1.0 for first-order var)
                                                       //protect - change 0 relay, with calibration
                                                       //collect - change 1 relay, with calibration
                                                       
@@ -187,8 +187,8 @@ static void pollPortalControl(CloudHandler& cloud, NetworkManager& net, bool pau
   token.trim();
   if (!token.length()) return;
 
-  // Prime on first successful read after boot so a stale cloud token
-  // does not reopen the AP every reboot.
+  // Prime from the first cloud read after boot so an old token does not
+  // reopen the AP every restart.
   if (!tokenPrimed) {
     lastToken = token;
     tokenPrimed = true;

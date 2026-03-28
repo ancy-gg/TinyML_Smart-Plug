@@ -24,8 +24,8 @@ static inline const char* currentBackendName() {
 // Backend acquisition config
 // =========================
 static constexpr float ADS_VREF_V = 4.096f;
-static constexpr int   ADS_SPI_HZ = 8000000;
-static constexpr int   ADS_SPI_FALLBACK_HZ = 4000000;
+static constexpr int   ADS_SPI_HZ = 4000000;
+static constexpr int   ADS_SPI_FALLBACK_HZ = 2000000;
 static constexpr uint8_t ADS_CAPTURE_OVERSAMPLE = 1;
 static constexpr size_t ADS_BURST_OUTPUT_CHUNK_SAMPLES = 384;
 
@@ -47,11 +47,15 @@ static constexpr float IRMS_GATE_OFF_A              = 0.012f;
 static constexpr float CURRENT_IDLE_SUPPRESS_A      = 0.020f;
 static constexpr float FEATURE_MIN_VRMS             = 70.0f;
 static constexpr float FEATURE_MIN_IRMS_A           = 0.020f;
-static constexpr float ARC_MIN_IRMS_A               = 0.030f;
-static constexpr float FEATURE_REQUIRE_FUND_BELOW_A = 0.060f;
+static constexpr float ARC_MIN_IRMS_A               = 0.35f;
+static constexpr float FEATURE_REQUIRE_FUND_BELOW_A = 0.20f;
 
 static constexpr float CURRENT_LPF_HZ               = 4200.0f;
-static constexpr float CURRENT_BASE_LPF_HZ          = 650.0f;
+static constexpr float CURRENT_BASE_LPF_HZ          = 450.0f;
+static constexpr float CURRENT_RMS_LPF_HZ           = 900.0f;
+static constexpr uint8_t CURRENT_METER_MAX_HARMONIC = 7;
+static constexpr float CURRENT_LOWLOAD_MAX_A        = 0.35f;
+static constexpr float CURRENT_LOWLOAD_COHERENT_MIN = 0.28f;
 
 static constexpr float ZC_HYS_MIN_A                 = 0.010f;
 static constexpr float ZC_HYS_FRAC                  = 0.08f;
@@ -76,9 +80,9 @@ static constexpr float FUND_SNR_MIN                 = 4.0f;
 static constexpr float FUND_MAG_MIN                 = 1e-5f;
 static constexpr float SF_EPS                       = 1e-12f;
 
-static constexpr int CURRENT_MIN_ACTIVITY_CHANGES   = 8;
-static constexpr uint16_t CURRENT_MIN_CODE_SPAN     = 6;
-static constexpr uint16_t LOW_CURRENT_CODE_SPAN     = 16;
+static constexpr int CURRENT_MIN_ACTIVITY_CHANGES   = 6;
+static constexpr uint16_t CURRENT_MIN_CODE_SPAN     = 4;
+static constexpr uint16_t LOW_CURRENT_CODE_SPAN     = 12;
 
 static constexpr float CURRENT_FRAME_MIN_FS_HZ      = 30000.0f;
 static constexpr uint32_t CURRENT_BOOT_SETTLE_MS    = 300UL;
@@ -98,6 +102,10 @@ static constexpr float FEATURE_REQUIRE_FUND_BELOW_A = 0.180f;
 
 static constexpr float CURRENT_LPF_HZ               = 1800.0f;
 static constexpr float CURRENT_BASE_LPF_HZ          = 260.0f;
+static constexpr float CURRENT_RMS_LPF_HZ           = 900.0f;
+static constexpr uint8_t CURRENT_METER_MAX_HARMONIC = 7;
+static constexpr float CURRENT_LOWLOAD_MAX_A        = 0.35f;
+static constexpr float CURRENT_LOWLOAD_COHERENT_MIN = 0.35f;
 
 static constexpr float ZC_HYS_MIN_A                 = 0.035f;
 static constexpr float ZC_HYS_FRAC                  = 0.18f;

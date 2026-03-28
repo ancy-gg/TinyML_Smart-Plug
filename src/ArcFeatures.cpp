@@ -27,6 +27,7 @@ static inline float median3f(float a, float b, float c) {
   return b;
 }
 
+
 struct BiquadLPF {
   float b0 = 1.0f, b1 = 0.0f, b2 = 0.0f;
   float a1 = 0.0f, a2 = 0.0f;
@@ -40,7 +41,7 @@ struct BiquadLPF {
   }
 };
 
-static bool makeLowpassBiquad(float fs_hz, float cutoff_hz, float q, BiquadLPF& biq, float* effCutoffHz = nullptr) {
+static bool makeLowpassBiquad(float fs_hz, float cutoff_hz, float q, BiquadLPF& biq) {
   if (fs_hz < 10.0f || cutoff_hz <= 0.0f) return false;
 
   const float nyq = 0.5f * fs_hz;
@@ -48,8 +49,6 @@ static bool makeLowpassBiquad(float fs_hz, float cutoff_hz, float q, BiquadLPF& 
   const float maxCut = fmaxf(10.0f, CURRENT_SOFT_AAF_MAX_FRAC_NYQUIST * nyq);
   if (fc > maxCut) fc = maxCut;
   if (fc < 5.0f) fc = 5.0f;
-
-  if (effCutoffHz) *effCutoffHz = fc;
 
   const float w0 = 2.0f * 3.14159265358979f * (fc / fs_hz);
   const float cw = cosf(w0);
@@ -75,7 +74,6 @@ static bool makeLowpassBiquad(float fs_hz, float cutoff_hz, float q, BiquadLPF& 
   return true;
 }
 
-
 static inline float codeToCurrentA(uint16_t code, const CurrentCalib& cal) {
   const float v_adc = (float(code) * cal.adcFullScaleV) / 65535.0f;
   const float v_sensor = (cal.dividerRatio > 1e-9f) ? (v_adc / cal.dividerRatio) : 0.0f;
@@ -94,6 +92,37 @@ static inline float computeEntropyFromBands(const float* e, int n) {
     if (p > 1e-18) H += -p * log(p);
   }
   return clampf((float)(H / log((double)n)), 0.0f, 1.0f);
+}
+
+static float computeLineSelectiveRms(const float* x, size_t n, float fs_hz, float mainsHz, int maxHarmonic) {
+  if (!x || n < 32 || fs_hz < 1000.0f || mainsHz < 40.0f) return 0.0f;
+  if (maxHarmonic < 1) maxHarmonic = 1;
+  if (maxHarmonic > 15) maxHarmonic = 15;
+
+  double rmsSq = 0.0;
+
+  for (int h = 1; h <= maxHarmonic; ++h) {
+    const float f = mainsHz * (float)h;
+    if (f >= 0.45f * fs_hz) break;
+
+    const double w = 2.0 * 3.14159265358979323846 * (double)f / (double)fs_hz;
+    double c = 0.0;
+    double s = 0.0;
+
+    for (size_t i = 0; i < n; ++i) {
+      const double ang = w * (double)i;
+      const double xi = (double)x[i];
+      c += xi * cos(ang);
+      s += xi * sin(ang);
+    }
+
+    const double a = (2.0 / (double)n) * c;
+    const double b = (2.0 / (double)n) * s;
+    rmsSq += 0.5 * (a * a + b * b);
+  }
+
+  if (rmsSq <= 0.0) return 0.0f;
+  return sqrtf((float)rmsSq);
 }
 
 static inline bool makeBandBins(float f0, float f1, float binHz, int half, int& k0, int& k1) {
@@ -143,6 +172,8 @@ bool ArcFeatures::compute(const uint16_t* raw, size_t n, float fs_hz,
 
   static float sig[N_SAMP];
   static float sigMed[N_SAMP];
+  static float sigFilt[N_SAMP];
+  static float sigMeter[N_SAMP];
   static float sigClean[N_SAMP];
   static float sigBase[N_SAMP];
   static float resid[N_SAMP];
@@ -181,20 +212,27 @@ bool ArcFeatures::compute(const uint16_t* raw, size_t n, float fs_hz,
 
   for (size_t i = 0; i < n; ++i) sig[i] = sigMed[i] - (float)mean;
 
-  static float sigAaf[N_SAMP];
-  BiquadLPF softAaf;
-  float softAafHz = 0.0f;
-  const bool useSoftAaf = CURRENT_SOFT_AAF_ENABLE &&
-                          makeLowpassBiquad(fs_hz, CURRENT_SOFT_AAF_CUTOFF_HZ, CURRENT_SOFT_AAF_Q,
-                                            softAaf, &softAafHz);
-  (void)softAafHz;
-
+  const bool useSoftAaf = CURRENT_SOFT_AAF_ENABLE;
   if (useSoftAaf) {
-    for (size_t i = 0; i < n; ++i) {
-      sigAaf[i] = softAaf.step(sig[i]);
+    BiquadLPF softAaf;
+    if (makeLowpassBiquad(fs_hz, CURRENT_SOFT_AAF_CUTOFF_HZ, CURRENT_SOFT_AAF_Q, softAaf)) {
+      for (size_t i = 0; i < n; ++i) {
+        sigFilt[i] = softAaf.step(sig[i]);
+      }
+    } else {
+      memcpy(sigFilt, sig, n * sizeof(float));
     }
   } else {
-    memcpy(sigAaf, sig, n * sizeof(float));
+    memcpy(sigFilt, sig, n * sizeof(float));
+  }
+
+  BiquadLPF meterLpf;
+  if (makeLowpassBiquad(fs_hz, CURRENT_RMS_LPF_HZ, 0.70710678f, meterLpf)) {
+    for (size_t i = 0; i < n; ++i) {
+      sigMeter[i] = meterLpf.step(sigFilt[i]);
+    }
+  } else {
+    memcpy(sigMeter, sigFilt, n * sizeof(float));
   }
 
   const float dt = 1.0f / fs_hz;
@@ -203,37 +241,40 @@ bool ArcFeatures::compute(const uint16_t* raw, size_t n, float fs_hz,
   const float aClean = dt / (rcClean + dt);
   const float aBase  = dt / (rcBase + dt);
 
-  float yClean = sigAaf[0];
-  float yBase  = sigAaf[0];
-  double accIrmsClean = 0.0;
-  double accIrmsAaf   = 0.0;
+  float yClean = sigFilt[0];
+  float yBase  = sigFilt[0];
+  double accIrmsMeter = 0.0;
   double accResidSq   = 0.0;
 
   for (size_t i = 0; i < n; ++i) {
-    yClean += aClean * (sigAaf[i] - yClean);
-    yBase  += aBase  * (sigAaf[i] - yBase);
+    yClean += aClean * (sigFilt[i] - yClean);
+    yBase  += aBase  * (sigFilt[i] - yBase);
     sigClean[i] = yClean;
     sigBase[i]  = yBase;
     resid[i]    = yClean - yBase;
-    accIrmsClean += (double)yClean * (double)yClean;
-    accIrmsAaf   += (double)sigAaf[i] * (double)sigAaf[i];
+    accIrmsMeter += (double)sigMeter[i] * (double)sigMeter[i];
     accResidSq   += (double)resid[i] * (double)resid[i];
   }
 
-  const float irmsClean = sqrtf((float)(accIrmsClean / (double)n));
-  const float irmsAaf   = sqrtf((float)(accIrmsAaf / (double)n));
+  const float irmsMeter = sqrtf((float)(accIrmsMeter / (double)n));
+  const float irmsLine  = computeLineSelectiveRms(sigBase, n, fs_hz, mainsHz, CURRENT_METER_MAX_HARMONIC);
+  const float coherentRatio = (irmsMeter > 1e-6f) ? (irmsLine / irmsMeter) : 0.0f;
 
-  float irms = fmaxf(irmsClean, irmsAaf);
+  float irms = irmsLine;
   const uint16_t codeSpan = (uint16_t)(mxCode - mnCode);
 
-  if (irms < CURRENT_IDLE_SUPPRESS_A && codeSpan < LOW_CURRENT_CODE_SPAN) {
+  if (irms < IRMS_GATE_OFF_A) {
     irms = 0.0f;
-  } else if (irms < IRMS_GATE_OFF_A) {
+  } else if (irms < CURRENT_IDLE_SUPPRESS_A && codeSpan < LOW_CURRENT_CODE_SPAN) {
+    irms = 0.0f;
+  } else if (irms < CURRENT_LOWLOAD_MAX_A &&
+             coherentRatio < CURRENT_LOWLOAD_COHERENT_MIN &&
+             codeSpan < (uint16_t)(LOW_CURRENT_CODE_SPAN * 8U)) {
     irms = 0.0f;
   }
 
   out.irms_a = irms;
-  out.current_valid = true;
+  out.current_valid = (irms >= IRMS_GATE_OFF_A);
 
   if (irms < FEATURE_MIN_IRMS_A) {
     out.feat_valid = false;
@@ -427,7 +468,7 @@ bool ArcFeatures::compute(const uint16_t* raw, size_t n, float fs_hz,
   if (nmsePairs > 0) out.cycle_nmse = nmseAcc / (float)nmsePairs;
 
   for (size_t i = 0; i < n; ++i) {
-    fft_cf[2 * i + 0] = sigAaf[i] * win[i];
+    fft_cf[2 * i + 0] = sigFilt[i] * win[i];
     fft_cf[2 * i + 1] = 0.0f;
   }
 

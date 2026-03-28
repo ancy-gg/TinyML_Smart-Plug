@@ -8,7 +8,13 @@
 #define ADS8684_SHIFT_RIGHT_1 1
 #endif
 
+static constexpr int ADS_SPI_RECOVERY_HZ = 2000000;
+static constexpr uint8_t ADS_SELECT_AUX_FLUSH = 4;
+
 static inline uint16_t unpack_word(const uint8_t rx[4]) {
+  // Keep the legacy right-shift that previously made the AUX path line up on
+  // this board. The no-shift variant caused startup inactivity and the sensing
+  // task never came up.
   uint16_t w = (uint16_t(rx[2]) << 8) | uint16_t(rx[3]);
 #if ADS8684_SHIFT_RIGHT_1
   w >>= 1;
@@ -28,6 +34,10 @@ static inline __attribute__((always_inline)) void cs_low(int pin) {
 }
 static inline void cs_hold_enable(int pin)  { if (pin >= 0) gpio_hold_en((gpio_num_t)pin); }
 static inline void cs_hold_disable(int pin) { if (pin >= 0) gpio_hold_dis((gpio_num_t)pin); }
+
+static inline bool sameClock_(int a, int b) {
+  return a == b;
+}
 
 bool ADS8684::addDevice(int clock_hz) {
   if (_dev) {
@@ -74,16 +84,27 @@ bool ADS8684::begin() {
   esp_err_t err = spi_bus_initialize(_cfg.host, &buscfg, SPI_DMA_CH_AUTO);
   if (err != ESP_OK && err != ESP_ERR_INVALID_STATE) return false;
 
-  if (!addDevice(_cfg.spi_clock_hz)) return false;
-  delay(20);
+  // Start conservatively. If the digital timing is marginal, 4 MHz is usually
+  // much more forgiving than 8 MHz, but still fast enough for this project.
+  const int clocks[] = { ADS_SPI_FALLBACK_HZ, _cfg.spi_clock_hz, ADS_SPI_RECOVERY_HZ };
+  bool haveAux = false;
 
-  if (!selectAux() || !probeActivity()) {
-    if (!addDevice(ADS_SPI_FALLBACK_HZ)) return false;
-    delay(10);
-    if (!selectAux() || !probeActivity()) return false;
+  for (size_t i = 0; i < (sizeof(clocks) / sizeof(clocks[0])); ++i) {
+    const int hz = clocks[i];
+    if (hz <= 0) continue;
+    if (i > 0 && sameClock_(hz, clocks[i - 1])) continue;
+    if (!addDevice(hz)) continue;
+    delay((i == 0) ? 20 : 12);
+
+    if (!selectAux()) continue;
+    haveAux = true;
+
+    // Runtime capture is the real source of truth. Do not brick the current
+    // pipeline just because the startup probe happened during a quiet instant.
+    if (probeActivity()) return true;
   }
 
-  return true;
+  return haveAux;
 }
 
 esp_err_t ADS8684::xfer32(uint16_t cmd, uint16_t* out_data) {
@@ -112,8 +133,9 @@ esp_err_t ADS8684::xfer32(uint16_t cmd, uint16_t* out_data) {
 bool ADS8684::selectAux() {
   uint16_t dummy = 0;
   if (xfer32(0xE000, &dummy) != ESP_OK) return false;
-  (void)xfer32(0x0000, &dummy);
-  (void)xfer32(0x0000, &dummy);
+  for (uint8_t i = 0; i < ADS_SELECT_AUX_FLUSH; ++i) {
+    if (xfer32(0x0000, &dummy) != ESP_OK) return false;
+  }
   _auxSelected = true;
   return true;
 }
@@ -133,6 +155,7 @@ bool ADS8684::looksInactive_(const uint16_t* dst, size_t n, int minChanges, uint
 }
 
 size_t ADS8684::readRawBurstInternal_(uint16_t* dst, size_t n, uint8_t oversample, float* measured_fs_hz) {
+  if (measured_fs_hz) *measured_fs_hz = 0.0f;
   if (!dst || n == 0 || _dev == nullptr) return 0;
   if (oversample < 1) oversample = 1;
 
@@ -149,12 +172,16 @@ size_t ADS8684::readRawBurstInternal_(uint16_t* dst, size_t n, uint8_t oversampl
 
   cs_hold_disable(_cfg.pin_cs);
 
-  cs_low(_cfg.pin_cs); (void)spi_device_polling_transmit(_dev, &t); cs_high(_cfg.pin_cs);
-  cs_low(_cfg.pin_cs); (void)spi_device_polling_transmit(_dev, &t); cs_high(_cfg.pin_cs);
+  for (uint8_t i = 0; i < ADS_SELECT_AUX_FLUSH; ++i) {
+    cs_low(_cfg.pin_cs);
+    (void)spi_device_polling_transmit(_dev, &t);
+    cs_high(_cfg.pin_cs);
+  }
 
   const int64_t t0 = esp_timer_get_time();
+  size_t count = 0;
 
-  for (size_t i = 0; i < n; ++i) {
+  for (; count < n; ++count) {
     uint32_t acc = 0;
 
     for (uint8_t o = 0; o < oversample; ++o) {
@@ -166,13 +193,17 @@ size_t ADS8684::readRawBurstInternal_(uint16_t* dst, size_t n, uint8_t oversampl
         cs_high(_cfg.pin_cs);
         cs_hold_enable(_cfg.pin_cs);
         spi_device_release_bus(_dev);
-        return i;
+        const int64_t t1 = esp_timer_get_time();
+        if (measured_fs_hz && t1 > t0 && count > 0) {
+          *measured_fs_hz = (count * 1000000.0f) / float(t1 - t0);
+        }
+        return count;
       }
 
       acc += uint32_t(unpack_word(t.rx_data));
     }
 
-    dst[i] = uint16_t((acc + uint32_t(oversample / 2U)) / uint32_t(oversample));
+    dst[count] = uint16_t((acc + uint32_t(oversample / 2U)) / uint32_t(oversample));
   }
 
   const int64_t t1 = esp_timer_get_time();
@@ -181,19 +212,18 @@ size_t ADS8684::readRawBurstInternal_(uint16_t* dst, size_t n, uint8_t oversampl
   cs_hold_enable(_cfg.pin_cs);
   spi_device_release_bus(_dev);
 
-  const float dt_s = float(t1 - t0) / 1e6f;
-  if (measured_fs_hz && dt_s > 0.0f) {
-    *measured_fs_hz = float(n) / dt_s;
+  if (measured_fs_hz && t1 > t0 && count > 0) {
+    *measured_fs_hz = (count * 1000000.0f) / float(t1 - t0);
   }
 
-  return n;
+  return count;
 }
 
 bool ADS8684::probeActivity() {
-  uint16_t tmp[32];
+  uint16_t tmp[64];
   float fs = 0.0f;
-  const size_t got = readRawBurstInternal_(tmp, 32, 1, &fs);
-  if (got != 32) return false;
+  const size_t got = readRawBurstInternal_(tmp, 64, 1, &fs);
+  if (got != 64) return false;
   return !looksInactive_(tmp, got, 4, 2);
 }
 
@@ -209,10 +239,19 @@ size_t ADS8684::readRawBurst(uint16_t* dst, size_t n, float* measured_fs_hz) {
   if (!_auxSelected && !selectAux()) return 0;
 
   size_t got = readRawBurstInternal_(dst, n, 1, measured_fs_hz);
-  if (got == n && looksInactive_(dst, n, 2, 2)) {
+  if (got == n && !looksInactive_(dst, n, 2, 2)) return got;
+
+  const int clocks[] = { _activeClockHz, ADS_SPI_FALLBACK_HZ, ADS_SPI_RECOVERY_HZ, _cfg.spi_clock_hz };
+  for (size_t i = 0; i < (sizeof(clocks) / sizeof(clocks[0])); ++i) {
+    const int hz = clocks[i];
+    if (hz <= 0) continue;
+    if (i > 0 && sameClock_(hz, clocks[i - 1])) continue;
+    if (!sameClock_(hz, _activeClockHz) && !addDevice(hz)) continue;
+    delay(2);
     _auxSelected = false;
-    if (!selectAux()) return got;
+    if (!selectAux()) continue;
     got = readRawBurstInternal_(dst, n, 1, measured_fs_hz);
+    if (got == n && !looksInactive_(dst, n, 2, 2)) return got;
   }
 
   return got;
@@ -222,10 +261,19 @@ size_t ADS8684::readRawBurstAveraged(uint16_t* dst, size_t n, uint8_t oversample
   if (!_auxSelected && !selectAux()) return 0;
 
   size_t got = readRawBurstInternal_(dst, n, oversample, measured_fs_hz);
-  if (got == n && looksInactive_(dst, n, 2, 2)) {
+  if (got == n && !looksInactive_(dst, n, 2, 2)) return got;
+
+  const int clocks[] = { _activeClockHz, ADS_SPI_FALLBACK_HZ, ADS_SPI_RECOVERY_HZ, _cfg.spi_clock_hz };
+  for (size_t i = 0; i < (sizeof(clocks) / sizeof(clocks[0])); ++i) {
+    const int hz = clocks[i];
+    if (hz <= 0) continue;
+    if (i > 0 && sameClock_(hz, clocks[i - 1])) continue;
+    if (!sameClock_(hz, _activeClockHz) && !addDevice(hz)) continue;
+    delay(2);
     _auxSelected = false;
-    if (!selectAux()) return got;
+    if (!selectAux()) continue;
     got = readRawBurstInternal_(dst, n, oversample, measured_fs_hz);
+    if (got == n && !looksInactive_(dst, n, 2, 2)) return got;
   }
 
   return got;
