@@ -9,7 +9,7 @@
 #define CUR_BACKEND_MCP3204 1
 
 #ifndef CURRENT_CAPTURE_BACKEND
-#define CURRENT_CAPTURE_BACKEND CUR_BACKEND_ADS8684
+#define CURRENT_CAPTURE_BACKEND CUR_BACKEND_MCP3204
 #endif
 
 static inline const char* currentBackendName() {
