@@ -31,7 +31,7 @@
 
 #define API_KEY "AIzaSyAmJlZZszyWPJFgIkTAAl_TbIySys1nvEw"
 #define DATABASE_URL "tinyml-smart-plug-default-rtdb.asia-southeast1.firebasedatabase.app"
-static const char* FW_VERSION = "TSP-v3.6.3-p-mcp";   //m - set calib to 0.0 (1.0 for first-order var)
+static const char* FW_VERSION = "TSP-v3.6.4-p-mcp";   //m - set calib to 0.0 (1.0 for first-order var)
                                                       //p - change 0 relay, with calibration
                                                       //c - change 1 relay, with calibration
                                                       
@@ -94,6 +94,27 @@ static bool arcInputStable(bool currentValid, bool featValid, float irms) {
 
   refIrms += 0.08f * (irms - refIrms);
   return (now - stableSince) >= 1500UL;
+}
+
+static float applyCurrentDisplayHysteresis(float irms) {
+  static bool active = false;
+
+  if (!(irms > 0.0f)) {
+    active = false;
+    return 0.0f;
+  }
+
+  if (active) {
+    if (irms < CURRENT_DISPLAY_OFF_A) {
+      active = false;
+      return 0.0f;
+    }
+  } else {
+    if (irms > CURRENT_DISPLAY_ON_A) active = true;
+    else return 0.0f;
+  }
+
+  return irms;
 }
 
 static bool debouncedMainsPresentForState(float vProtect) {
@@ -520,10 +541,12 @@ void loop() {
   f.vrms = vRms;
   f.temp_c = tC;
 
-  // Display current can remain visible, but noisy low-current feature analytics are disabled.
-  if (f.irms < CURRENT_IDLE_SUPPRESS_A) {
-    f.irms = 0.0f;
-  }
+  // Clean up the remaining low-current floor for UI/logging/protection use.
+  // The backend-specific fixed floor is removed in ArcFeatures.cpp; this local
+  // hysteresis keeps the readout from chattering between 0 A and a few tens of
+  // mA while still allowing a real fan load to show.
+  f.irms = applyCurrentDisplayHysteresis(f.irms);
+  if (f.irms <= 0.0f) f.current_valid = 0;
 
   if (f.irms < FEATURE_MIN_IRMS_A) {
     f.feat_valid = 0;

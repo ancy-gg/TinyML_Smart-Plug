@@ -94,6 +94,10 @@ static constexpr float TRUE_RMS_RELAXED_COHERENCE   = 0.42f;
 static constexpr float TRUE_RMS_MIN_COHERENT_A      = 0.20f;
 static constexpr float TRUE_RMS_MAX_RESID_FRAC      = 0.85f;
 
+static constexpr float CURRENT_RMS_FLOOR_SUB_A      = 0.000f;
+static constexpr float CURRENT_DISPLAY_ON_A         = 0.020f;
+static constexpr float CURRENT_DISPLAY_OFF_A        = 0.010f;
+
 #else
 
 static constexpr float IRMS_GATE_ON_A               = 0.075f;
@@ -144,6 +148,13 @@ static constexpr float TRUE_RMS_MIN_COHERENCE       = 0.74f;
 static constexpr float TRUE_RMS_RELAXED_COHERENCE   = 0.55f;
 static constexpr float TRUE_RMS_MIN_COHERENT_A      = 0.45f;
 static constexpr float TRUE_RMS_MAX_RESID_FRAC      = 0.60f;
+
+// MCP path on this board currently carries a stable low-current hardware floor.
+// Subtract it after RMS estimation, then use a small hysteresis so idle noise
+// stays at 0 A while a real fan load can still appear.
+static constexpr float CURRENT_RMS_FLOOR_SUB_A      = 0.170f;
+static constexpr float CURRENT_DISPLAY_ON_A         = 0.060f;
+static constexpr float CURRENT_DISPLAY_OFF_A        = 0.030f;
 
 #endif
 

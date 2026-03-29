@@ -77,8 +77,13 @@ static bool makeLowpassBiquad(float fs_hz, float cutoff_hz, float q, BiquadLPF& 
 static inline float codeToCurrentA(uint16_t code, const CurrentCalib& cal) {
   const float v_adc = (float(code) * cal.adcFullScaleV) / 65535.0f;
   const float v_sensor = (cal.dividerRatio > 1e-9f) ? (v_adc / cal.dividerRatio) : 0.0f;
-  const float amps_uncal = ((v_sensor - cal.offsetV) / cal.voltsPerAmp) * cal.ampsScale;
-  return eval_cubic_signed_mag(amps_uncal, cal.cubic3, cal.cubic2, cal.cubic1, cal.cubic0);
+
+  // Keep the waveform path physically linear.
+  // The cubic coefficients were fitted from RMS-vs-reference data, so applying
+  // them sample-by-sample distorts low-current waveforms and can amplify idle
+  // noise. Do only the sensor-domain volts->amps mapping here, then apply the
+  // cubic once to the final RMS estimate later.
+  return ((v_sensor - cal.offsetV) / cal.voltsPerAmp) * cal.ampsScale;
 }
 
 static inline float computeEntropyFromBands(const float* e, int n) {
@@ -269,6 +274,18 @@ bool ArcFeatures::compute(const uint16_t* raw, size_t n, float fs_hz,
     irms = 0.0f;
   } else if (trustWideband && irms < IRMS_GATE_OFF_A) {
     irms = 0.0f;
+  }
+
+  // Apply the RMS calibration in the RMS domain, not sample-by-sample.
+  if (irms > 0.0f) {
+    irms = eval_cubic_horner(irms, cal.cubic3, cal.cubic2, cal.cubic1, cal.cubic0);
+    if (irms < 0.0f) irms = 0.0f;
+  }
+
+  // Remove the measured backend floor after calibration.
+  if (CURRENT_RMS_FLOOR_SUB_A > 0.0f) {
+    irms -= CURRENT_RMS_FLOOR_SUB_A;
+    if (irms < 0.0f) irms = 0.0f;
   }
 
   out.irms_a = irms;

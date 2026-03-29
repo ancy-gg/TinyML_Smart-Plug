@@ -41,7 +41,7 @@ static constexpr uint32_t SYSTEM_READY_CHIME_DELAY_MS = 1000;
 // =========================
 // Fan control
 // =========================
-static constexpr float FAN_MIN_TEMP_C      = 35.0f;
+static constexpr float FAN_MIN_TEMP_C      = 25.0f;
 static constexpr float FAN_MAX_TEMP_C      = 50.0f;
 static constexpr uint32_t FAN_PWM_HZ       = 25000UL;
 static constexpr uint8_t FAN_PWM_BITS      = 8;
