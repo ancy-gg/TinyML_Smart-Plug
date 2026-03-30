@@ -30,6 +30,7 @@ public:
   void begin(int pinLatchOn, int pinLatchOff, int pinBuzzer, NotificationOLED* oled);
   void apply(FaultState st, float vDisplay, float vProtect, float i, float t);
   void notify(SoundEvent ev);
+  void clearFaultAlert();
 
   void pulseRelayOn(uint32_t pulseMs = 0);
   void pulseRelayOff(uint32_t pulseMs = 0);

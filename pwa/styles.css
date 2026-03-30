@@ -1463,3 +1463,301 @@ body.density-compact .history-hint{ font-size:11px; }
   .history-table-wrap{ max-height:280px; }
   .history-table{ min-width:560px; }
 }
+
+
+/* ===== Compact dashboard refresh for overview / relay controls / mobile ===== */
+.overview-toolbar{
+  margin-top:12px;
+  display:grid;
+  grid-template-columns:1.3fr 1fr;
+  gap:10px;
+  align-items:end;
+}
+.overview-control{
+  display:flex;
+  flex-direction:column;
+  gap:6px;
+}
+.overview-control-label{
+  font-size:11px;
+  color:rgba(255,255,255,0.56);
+  text-transform:uppercase;
+  letter-spacing:0.08em;
+}
+.ml-seconds-input{
+  width:120px;
+  min-width:120px;
+}
+
+@media (max-width: 760px){
+  .app{
+    display:grid;
+    grid-template-columns:minmax(0, 0.94fr) minmax(0, 1.06fr);
+    gap:10px;
+    width:min(100vw, 100%);
+    padding-inline:10px;
+    margin:10px auto 24px;
+  }
+
+  .top,
+  .install-help,
+  .history,
+  .ota-panel,
+  .plot-drawer,
+  section.history.admin-only{
+    grid-column:1 / -1;
+    margin-top:10px;
+  }
+
+  .overview-block{
+    grid-column:1;
+    grid-row:span 2;
+    margin-top:10px;
+    padding:10px;
+  }
+
+  .metrics-block{
+    grid-column:2;
+    margin-top:10px;
+    padding:10px;
+  }
+
+  .features-block{
+    grid-column:2;
+    margin-top:10px;
+    padding:10px;
+  }
+
+  .section-head,
+  .history-head{
+    margin-bottom:8px;
+    gap:8px;
+  }
+
+  .section-title,
+  .history-title{
+    font-size:13px;
+  }
+
+  .overview-grid{
+    grid-template-columns:repeat(2, minmax(0, 1fr));
+    gap:6px;
+  }
+
+  .summary-card{
+    padding:9px;
+    border-radius:12px;
+    min-height:0;
+  }
+
+  .summary-card-wide{
+    grid-column:1 / -1;
+  }
+
+  .summary-kicker{
+    font-size:9px;
+    margin-bottom:4px;
+  }
+
+  .summary-title,
+  .summary-value{
+    font-size:13px;
+    line-height:1.15;
+  }
+
+  .summary-copy{
+    display:none;
+  }
+
+  .summary-card-wide .summary-copy{
+    display:block;
+    font-size:10px;
+    margin-top:4px;
+    color:rgba(255,255,255,0.48);
+  }
+
+  .overview-toolbar{
+    grid-template-columns:1fr;
+    gap:8px;
+    margin-top:8px;
+  }
+
+  .overview-control-label{
+    font-size:10px;
+  }
+
+  .relay-rocker{
+    border-radius:10px;
+  }
+
+  .rocker-btn{
+    min-height:36px;
+    font-size:12px;
+  }
+
+  .metric-grid-top{
+    grid-template-columns:repeat(2, minmax(0, 1fr));
+    gap:6px;
+  }
+
+  .card{
+    min-height:0;
+    padding:9px 9px 8px;
+    border-radius:12px;
+  }
+
+  .card-label{
+    margin-bottom:4px;
+    font-size:10px;
+  }
+
+  .card-value{
+    font-size:18px;
+    gap:4px;
+  }
+
+  .live-card .card-value,
+  .feature-card .card-value{
+    font-size:17px;
+  }
+
+  .unit{
+    font-size:10px;
+  }
+
+  .metric-note{
+    margin-top:4px;
+    font-size:9px;
+    line-height:1.2;
+  }
+
+  .wave-grid{
+    grid-template-columns:1fr;
+    gap:6px;
+  }
+
+  .feature-group-card{
+    padding:8px;
+    border-radius:12px;
+  }
+
+  .group-head{
+    margin-bottom:6px;
+  }
+
+  .group-title{
+    font-size:12px;
+  }
+
+  .group-head .muted{
+    display:none;
+  }
+
+  .feature-grid-2col{
+    grid-template-columns:repeat(2, minmax(0, 1fr));
+    gap:6px;
+  }
+
+  .rules-grid-cards{
+    grid-template-columns:repeat(2, minmax(0, 1fr));
+    gap:6px;
+  }
+
+  .rule-mini-card{
+    min-height:0;
+    padding:8px;
+    border-radius:10px;
+  }
+
+  .rule-mini-card strong{
+    font-size:11px;
+    line-height:1.15;
+  }
+
+  .rule-mini-card span{
+    display:none;
+  }
+
+  .btn,
+  .select,
+  .ota-input{
+    min-height:36px;
+    padding:8px 10px;
+    font-size:12px;
+  }
+
+  .ml-seconds-input{
+    width:100px;
+    min-width:100px;
+  }
+}
+
+@media (max-width: 480px){
+  .app{
+    grid-template-columns:minmax(0, 0.92fr) minmax(0, 1.08fr);
+    gap:8px;
+    padding-inline:8px;
+  }
+
+  .top,
+  .install-help,
+  .history,
+  .ota-panel,
+  .plot-drawer,
+  section.history.admin-only{
+    margin-top:8px;
+  }
+
+  .overview-block,
+  .metrics-block,
+  .features-block{
+    padding:8px;
+  }
+
+  .overview-grid{
+    gap:5px;
+  }
+
+  .summary-card,
+  .card,
+  .feature-group-card{
+    padding:8px;
+  }
+
+  .summary-title,
+  .summary-value{
+    font-size:12px;
+  }
+
+  .card-value,
+  .live-card .card-value,
+  .feature-card .card-value{
+    font-size:15px;
+  }
+
+  .metric-note{
+    font-size:8px;
+  }
+
+  .feature-grid-2col,
+  .metric-grid-top{
+    gap:5px;
+  }
+
+  .rules-grid-cards{
+    gap:5px;
+  }
+
+  .overview-toolbar{
+    gap:6px;
+  }
+
+  .rocker-btn{
+    min-height:32px;
+    font-size:11px;
+  }
+
+  .history-table-wrap{
+    max-height:280px;
+  }
+}

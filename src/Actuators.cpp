@@ -302,6 +302,12 @@ void Actuators::notify(SoundEvent ev) {
   soundStart((uint8_t)ev);
 }
 
+void Actuators::clearFaultAlert() {
+  s_faultHoldSound = 255;
+  s_faultHoldUntil = 0;
+  if (isFaultPattern(s_activeId)) soundStop();
+}
+
 void Actuators::apply(FaultState st, float vDisplay, float vProtect, float i, float t) {
   (void)vDisplay;
   const uint32_t now = millis();
@@ -331,10 +337,12 @@ void Actuators::apply(FaultState st, float vDisplay, float vProtect, float i, fl
     if (wantedFaultSound != s_faultHoldSound) {
       s_faultHoldSound = wantedFaultSound;
       s_faultHoldUntil = now + FAULT_ALERT_MIN_MS;
-    } else if ((int32_t)(s_faultHoldUntil - now) < 0) {
-      s_faultHoldUntil = now + FAULT_ALERT_MIN_MS;
+      soundStart(wantedFaultSound);
+    } else if (s_faultHoldSound != 255 && (int32_t)(s_faultHoldUntil - now) > 0) {
+      soundStart(s_faultHoldSound);
+    } else if (isFaultPattern(s_activeId)) {
+      soundStop();
     }
-    soundStart(wantedFaultSound);
   } else {
     if (s_faultHoldSound != 255 && (int32_t)(s_faultHoldUntil - now) > 0) {
       soundStart(s_faultHoldSound);
@@ -352,16 +360,13 @@ void Actuators::apply(FaultState st, float vDisplay, float vProtect, float i, fl
 
   const bool rawOn = (vProtect >= MAINS_PRESENT_ON_V);
   const bool rawOff = (vProtect <= MAINS_PRESENT_OFF_V);
-  const bool noLoad = (i <= LOAD_OFF_DETECT_A);
-  const bool faultKeep = arcActive || heatActive;
-  const bool cueOff = rawOff && noLoad && !faultKeep;
 
   if (!mainsInit) {
     mainsStable = rawOn;
     mainsInit = true;
   }
 
-  if (cueOff) {
+  if (rawOff) {
     if (mainsOffSince == 0) mainsOffSince = now;
     mainsOnSince = 0;
     if (mainsStable && (now - mainsOffSince) >= UNPLUGGED_BUZZ_DELAY_MS) {
@@ -380,13 +385,7 @@ void Actuators::apply(FaultState st, float vDisplay, float vProtect, float i, fl
     mainsOnSince = 0;
   }
 
-  if (rawOff && noLoad && !faultKeep) {
-    if (_unpluggedSince == 0) _unpluggedSince = now;
-  } else {
-    _unpluggedSince = 0;
-  }
-
-  const bool unplugged = (_unpluggedSince != 0) && ((now - _unpluggedSince) >= UNPLUGGED_STATE_DELAY_MS);
+  const bool unplugged = rawOff && (mainsOffSince != 0) && ((now - mainsOffSince) >= UNPLUGGED_STATE_DELAY_MS);
   const bool criticalBlock = arcActive || heatActive || underVoltActive || overVoltActive || overloadActive || sustainedOverloadActive;
 
   if (unplugged && _relayLatchedOn) {

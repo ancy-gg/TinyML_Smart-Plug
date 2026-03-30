@@ -1,6 +1,7 @@
 #include "NotificationOLED.h"
 #include "SmartPlugConfig.h"
 #include <math.h>
+#include <string.h>
 
 static const uint8_t PROGMEM kBootLogo24x24[] = {
   0x00, 0x00, 0x00, 0x00, 0xFF, 0x00, 0x03, 0x81, 0xC0, 0x06, 0x00, 0x60,
@@ -10,49 +11,6 @@ static const uint8_t PROGMEM kBootLogo24x24[] = {
   0x20, 0x7E, 0x04, 0x30, 0x3C, 0x0C, 0x18, 0x18, 0x18, 0x0C, 0x00, 0x30,
   0x06, 0x18, 0x60, 0x03, 0x99, 0xC0, 0x00, 0xCF, 0x00, 0x00, 0x00, 0x00
 };
-
-
-static void drawArrowUpIcon(Adafruit_SSD1306* d, int x, int y, int bob) {
-  if (!d) return;
-  const int yy = y + bob;
-  d->drawLine(x + 4, yy, x + 4, yy + 10, SSD1306_WHITE);
-  d->drawLine(x + 4, yy, x, yy + 4, SSD1306_WHITE);
-  d->drawLine(x + 4, yy, x + 8, yy + 4, SSD1306_WHITE);
-}
-
-static void drawArrowDownIcon(Adafruit_SSD1306* d, int x, int y, int bob) {
-  if (!d) return;
-  const int yy = y + bob;
-  d->drawLine(x + 4, yy, x + 4, yy + 10, SSD1306_WHITE);
-  d->drawLine(x, yy + 6, x + 4, yy + 10, SSD1306_WHITE);
-  d->drawLine(x + 8, yy + 6, x + 4, yy + 10, SSD1306_WHITE);
-}
-
-static void drawBoltIcon(Adafruit_SSD1306* d, int x, int y, int sway) {
-  if (!d) return;
-  const int xx = x + sway;
-  d->drawLine(xx + 4, y, xx + 1, y + 5, SSD1306_WHITE);
-  d->drawLine(xx + 1, y + 5, xx + 4, y + 5, SSD1306_WHITE);
-  d->drawLine(xx + 4, y + 5, xx + 2, y + 10, SSD1306_WHITE);
-  d->drawLine(xx + 2, y + 10, xx + 7, y + 4, SSD1306_WHITE);
-  d->drawLine(xx + 7, y + 4, xx + 4, y + 4, SSD1306_WHITE);
-}
-
-static void drawFireIcon(Adafruit_SSD1306* d, int x, int y, int sway) {
-  if (!d) return;
-  const int xx = x + sway;
-  d->drawTriangle(xx + 4, y, xx, y + 8, xx + 8, y + 8, SSD1306_WHITE);
-  d->drawTriangle(xx + 4, y + 3, xx + 2, y + 8, xx + 6, y + 8, SSD1306_WHITE);
-}
-
-static void drawWarnIcon(Adafruit_SSD1306* d, int x, int y, bool blink) {
-  if (!d) return;
-  d->drawTriangle(x + 4, y, x, y + 8, x + 8, y + 8, SSD1306_WHITE);
-  if (blink) {
-    d->drawLine(x + 4, y + 2, x + 4, y + 5, SSD1306_WHITE);
-    d->drawPixel(x + 4, y + 7, SSD1306_WHITE);
-  }
-}
 
 static void formatMeasure(char* dst, size_t n, float v, uint8_t decimals, const char* unit) {
   if (fabsf(v) < 0.0005f) v = 0.0f;
@@ -106,6 +64,17 @@ void NotificationOLED::setWiFi(bool connected, int rssi, bool blocking, bool inP
 void NotificationOLED::triggerCollecting(uint32_t durMs) {
   _collectUntilMs = millis() + durMs;
 }
+
+void NotificationOLED::triggerNotice(const char* line1, const char* line2, uint32_t durMs) {
+  const char* l1 = line1 ? line1 : "";
+  const char* l2 = line2 ? line2 : "";
+  strncpy(_noticeLine1, l1, sizeof(_noticeLine1) - 1);
+  _noticeLine1[sizeof(_noticeLine1) - 1] = '\0';
+  strncpy(_noticeLine2, l2, sizeof(_noticeLine2) - 1);
+  _noticeLine2[sizeof(_noticeLine2) - 1] = '\0';
+  _noticeUntilMs = millis() + durMs;
+}
+
 
 void NotificationOLED::triggerConnected(uint32_t durMs) {
   uint32_t start = millis();
@@ -287,6 +256,17 @@ void NotificationOLED::drawCollecting(uint32_t nowMs) {
   drawCenteredText("DATA", 18, 1);
 }
 
+void NotificationOLED::drawNotice(uint32_t nowMs) {
+  (void)nowMs;
+  const bool hasLine2 = (_noticeLine2[0] != '\0');
+  if (hasLine2) {
+    drawCenteredText(_noticeLine1, 7, 1);
+    drawCenteredText(_noticeLine2, 18, 1);
+  } else {
+    drawCenteredText(_noticeLine1, 12, 1);
+  }
+}
+
 void NotificationOLED::drawOta(uint32_t nowMs) {
   (void)nowMs;
   drawCenteredText("UPDATING", 4, 1);
@@ -303,38 +283,42 @@ void NotificationOLED::drawUnplugged(uint32_t nowMs) {
   display->setCursor(44, 12);
   display->print("UNPLUGGED");
 }
+
 void NotificationOLED::drawFaultSlide(uint32_t nowMs, OledOverlay ov) {
-  const bool blink = ((nowMs / 220U) & 1U) == 0U;
-  const int bob = blink ? -1 : 1;
-  const int sway = blink ? -1 : 1;
+  (void)nowMs;
 
   if (ov == OledOverlay::FAULT_OVERVOLT || ov == OledOverlay::FAULT_SURGE) {
-    drawCenteredText("OVERVOLTAGE", 2, 1);
-    drawArrowUpIcon(display, 12, 10, bob);
-    drawBoltIcon(display, 28, 9, blink ? 1 : 0);
-  } else if (ov == OledOverlay::FAULT_UNDERVOLT) {
-    drawCenteredText("UNDERVOLTAGE", 2, 1);
-    drawArrowDownIcon(display, 12, 10, bob);
-    drawBoltIcon(display, 28, 9, blink ? 1 : 0);
-  } else if (ov == OledOverlay::FAULT_ARC) {
-    drawCenteredText("ARC FAULT", 2, 1);
-    drawBoltIcon(display, 12, 9, blink ? -1 : 0);
-    drawBoltIcon(display, 28, 9, blink ? 1 : 0);
-  } else if (ov == OledOverlay::FAULT_HEAT || ov == OledOverlay::FAULT_TEMP_CRITICAL) {
-    drawCenteredText("HEATING", 2, 1);
-    drawFireIcon(display, 12, 8, sway);
-    drawFireIcon(display, 28, 8, -sway);
-  } else if (ov == OledOverlay::FAULT_OVERLOAD) {
-    if (_state == STATE_SUSTAINED_OVERLOAD) {
-      drawCenteredText("SUSTAINED", 2, 1);
-      drawBoltIcon(display, 12, 9, blink ? 1 : 0);
-      drawFireIcon(display, 28, 8, sway);
-    } else {
-      drawCenteredText("OVERLOAD", 2, 1);
-      drawArrowUpIcon(display, 12, 10, bob);
-      drawWarnIcon(display, 28, 10, blink);
-    }
+    drawCenteredText("OVERVOLTAGE", 12, 1);
+    return;
   }
+
+  if (ov == OledOverlay::FAULT_UNDERVOLT) {
+    drawCenteredText("UNDERVOLTAGE", 12, 1);
+    return;
+  }
+
+  if (ov == OledOverlay::FAULT_ARC) {
+    drawCenteredText("ARC", 7, 1);
+    drawCenteredText("FAULT", 18, 1);
+    return;
+  }
+
+  if (ov == OledOverlay::FAULT_HEAT || ov == OledOverlay::FAULT_TEMP_CRITICAL) {
+    drawCenteredText("HEATING", 12, 1);
+    return;
+  }
+
+  if (ov == OledOverlay::FAULT_OVERLOAD) {
+    if (_state == STATE_SUSTAINED_OVERLOAD) {
+      drawCenteredText("SUSTAINED", 7, 1);
+      drawCenteredText("OVERLOAD", 18, 1);
+    } else {
+      drawCenteredText("OVERLOAD", 12, 1);
+    }
+    return;
+  }
+
+  drawCenteredText("FAULT", 12, 1);
 }
 
 void NotificationOLED::render() {
@@ -358,6 +342,8 @@ void NotificationOLED::render() {
   } else if (_overlay != OledOverlay::NONE) {
     if (_overlay == OledOverlay::UNPLUGGED) drawUnplugged(now);
     else drawFaultSlide(now, _overlay);
+  } else if (_noticeUntilMs && (int32_t)(_noticeUntilMs - now) > 0) {
+    drawNotice(now);
   } else if (_collectUntilMs && (int32_t)(_collectUntilMs - now) > 0) {
     drawCollecting(now);
   } else if (_wifiBlocking) {

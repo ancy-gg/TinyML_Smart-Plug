@@ -56,11 +56,6 @@
             </div>
             <div class="menu-section menu-section-links">
               <button type="button" class="menu-link" id="btnChangeWifi">Change WiFi</button>
-              <div class="menu-label">Relay Pulse</div>
-              <div class="relay-rocker" id="relayRocker">
-                <button type="button" class="rocker-btn" id="btnRelayOn">ON</button>
-                <button type="button" class="rocker-btn" id="btnRelayOff">OFF</button>
-              </div>
               <a class="menu-link" href="guide.html">Guide</a>
             </div>
           </div>
@@ -128,6 +123,21 @@
           </div>
           <div id="overviewPrimary" class="summary-title">Waiting for device…</div>
           <div id="overviewSecondary" class="summary-copy">Waiting for data.</div>
+
+          <div class="overview-toolbar">
+            <div class="overview-control">
+              <div class="overview-control-label">Relay Pulse</div>
+              <div class="relay-rocker" id="relayRocker">
+                <button type="button" class="rocker-btn" id="btnRelayOn">ON</button>
+                <button type="button" class="rocker-btn" id="btnRelayOff">OFF</button>
+              </div>
+            </div>
+
+            <div class="overview-control">
+              <div class="overview-control-label">Fault State</div>
+              <button id="btnFaultClear" class="btn btn-small btn-info" type="button">Fault Cleared</button>
+            </div>
+          </div>
         </div>
 
         <div class="summary-card">
@@ -353,12 +363,7 @@
             </span>
           </label>
 
-          <select id="mlLogDur" class="select">
-            <option value="5">5s</option>
-            <option value="10" selected>10s</option>
-            <option value="15">15s</option>
-            <option value="30">30s</option>
-          </select>
+          <input id="mlLogDur" class="ota-input mono ml-seconds-input" type="number" inputmode="numeric" min="1" step="1" value="10" placeholder="seconds" />
 
           <input id="mlLoadType" class="ota-input mono" placeholder="load type (fan_max, laptop_charger...)" />
 

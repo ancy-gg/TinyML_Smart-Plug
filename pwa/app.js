@@ -231,6 +231,7 @@ const headerMenu = el("headerMenu");
 const btnChangeWifi = el("btnChangeWifi");
 const btnRelayOn = el("btnRelayOn");
 const btnRelayOff = el("btnRelayOff");
+const btnFaultClear = el("btnFaultClear");
 const relayRocker = el("relayRocker");
 
 function setHeaderMenuOpen(open) {
@@ -322,6 +323,19 @@ btnRelayOff?.addEventListener("click", async () => {
     {
       relay_off_token: `relay_off_${Date.now()}`,
       relay_off_requested_at: firebase.database.ServerValue.TIMESTAMP
+    }
+  );
+});
+
+btnFaultClear?.addEventListener("click", async () => {
+  await sendControlPulse(
+    btnFaultClear,
+    "Clearing...",
+    "Fault timers cleared.",
+    "Failed to clear fault state.",
+    {
+      fault_clear_token: `fault_clear_${Date.now()}`,
+      fault_clear_requested_at: firebase.database.ServerValue.TIMESTAMP
     }
   );
 });
@@ -787,9 +801,13 @@ function relayControlsLocked() {
 
 function updateRelayControls() {
   const locked = relayControlsLocked();
+  const status = classifyStatus(effectiveStatusKind());
+  const faultClearLocked = !liveIsFresh() || !["ARCING", "HEATING", "OVERLOAD", "SUSTAINED_OVERLOAD", "UNDERVOLTAGE", "OVERVOLTAGE"].includes(status);
+
   relayRocker?.classList.toggle("is-disabled", locked);
   if (btnRelayOn) btnRelayOn.disabled = locked;
   if (btnRelayOff) btnRelayOff.disabled = locked;
+  if (btnFaultClear) btnFaultClear.disabled = faultClearLocked;
 }
 
 function applyHistoryFilter() {
@@ -1155,19 +1173,88 @@ function sessionFilename(meta, sessionId) {
   return `TSP_ML_${startStr}__${endStr}__${load}__${sessionId}.csv`;
 }
 
+
+let mlAutoOffTimer = null;
+const LS_ML_TIMER_SID = "tsp_ml_timer_sid";
+const LS_ML_TIMER_DEADLINE = "tsp_ml_timer_deadline_ms";
+
+function clearMlAutoOffTimer() {
+  if (mlAutoOffTimer) {
+    clearTimeout(mlAutoOffTimer);
+    mlAutoOffTimer = null;
+  }
+}
+
+async function stopMlCollectionSession(sid, reason = "timer") {
+  if (!sid) sid = currentSessionId;
+  clearMlAutoOffTimer();
+
+  try {
+    await db.ref("ml_log").update({ enabled: false });
+    if (sid) {
+      await db.ref(`ml_sessions/${sid}`).update({
+        end_ms: firebase.database.ServerValue.TIMESTAMP,
+        stop_reason: reason
+      });
+    }
+    localStorage.removeItem(LS_ML_TIMER_SID);
+    localStorage.removeItem(LS_ML_TIMER_DEADLINE);
+    if (mlLogStatus) mlLogStatus.textContent = `Logging disabled. Session closed: ${sid || "—"}`;
+    toast("Logger disabled.", "ok");
+  } catch (e) {
+    console.error(e);
+    toast("Failed to stop logger.", "err");
+  }
+}
+
+function scheduleMlAutoOff(sid, durSeconds) {
+  clearMlAutoOffTimer();
+  if (!sid || !Number.isFinite(Number(durSeconds))) return;
+
+  const deadline = Date.now() + Math.max(1000, Number(durSeconds) * 1000);
+  localStorage.setItem(LS_ML_TIMER_SID, sid);
+  localStorage.setItem(LS_ML_TIMER_DEADLINE, String(deadline));
+
+  mlAutoOffTimer = setTimeout(() => {
+    stopMlCollectionSession(sid, "timer");
+  }, Math.max(0, deadline - Date.now()));
+}
+
+function restoreMlAutoOffIfNeeded(enabled, sid) {
+  clearMlAutoOffTimer();
+  if (!enabled || !sid) return;
+
+  const savedSid = localStorage.getItem(LS_ML_TIMER_SID) || "";
+  const savedDeadline = Number(localStorage.getItem(LS_ML_TIMER_DEADLINE) || "0");
+  if (savedSid !== sid || !savedDeadline) return;
+
+  const remain = savedDeadline - Date.now();
+  if (remain <= 0) {
+    stopMlCollectionSession(sid, "timer");
+    return;
+  }
+
+  mlAutoOffTimer = setTimeout(() => {
+    stopMlCollectionSession(sid, "timer");
+  }, remain);
+}
+
 if (mlLogEnable) {
   db.ref("ml_log").on("value", (s) => {
     const v = s.val() || {};
-    mlLogEnable.checked = !!v.enabled;
+    const enabled = !!v.enabled;
+    mlLogEnable.checked = enabled;
     if (typeof v.duration_s === "number" && mlLogDur) mlLogDur.value = String(v.duration_s);
     if (mlLoadType && v.load_type) mlLoadType.value = v.load_type;
     if (mlLabelOverride && (v.label_override !== undefined)) mlLabelOverride.value = String(v.label_override);
     if (v.session_id) currentSessionId = v.session_id;
+
+    restoreMlAutoOffIfNeeded(enabled, currentSessionId);
   });
 
   mlLogEnable.addEventListener("change", async () => {
     const enabled = !!mlLogEnable.checked;
-    const dur = parseInt(mlLogDur?.value || "10", 10);
+    const dur = Math.max(1, parseInt(mlLogDur?.value || "10", 10) || 10);
     const load = (mlLoadType?.value || "unknown").trim() || "unknown";
     const labelOv = parseInt(mlLabelOverride?.value || "-1", 10);
 
@@ -1182,22 +1269,20 @@ if (mlLogEnable) {
         duration_s: dur,
         label_override: labelOv
       });
+      scheduleMlAutoOff(sid, dur);
       if (mlLogStatus) mlLogStatus.textContent = `Logging enabled. Session: ${sid}`;
-      toast("Logger enabled (session created).", "ok");
+      toast("Logger enabled (timed session started).", "ok");
     } else {
-      const sid = currentSessionId;
-      await db.ref("ml_log").update({ enabled: false });
-      if (sid) await db.ref(`ml_sessions/${sid}`).update({ end_ms: firebase.database.ServerValue.TIMESTAMP });
-      if (mlLogStatus) mlLogStatus.textContent = `Logging disabled. Session closed: ${sid || "—"}`;
-      toast("Logger disabled.", "ok");
+      await stopMlCollectionSession(currentSessionId, "manual");
     }
   });
 }
 
 mlLogDur?.addEventListener("change", async () => {
-  const dur = parseInt(mlLogDur.value || "10", 10);
+  const dur = Math.max(1, parseInt(mlLogDur.value || "10", 10) || 10);
+  mlLogDur.value = String(dur);
   await db.ref("ml_log").update({ duration_s: dur });
-  toast("Duration updated.", "ok");
+  toast("Collection timer updated.", "ok");
 });
 mlLoadType?.addEventListener("change", async () => {
   await db.ref("ml_log").update({ load_type: (mlLoadType.value || "unknown").trim() || "unknown" });

@@ -218,14 +218,13 @@ bool ArcFeatures::compute(const uint16_t* raw, size_t n, float fs_hz,
   const float irmsWide = sqrtf((float)(accIrmsWide / (double)n));
   const float residRms = sqrtf((float)(accResidSq / (double)n));
   const uint16_t codeSpan = (uint16_t)(mxCode - mnCode);
-  float irms = 0.0f;
 
 #if CURRENT_CAPTURE_BACKEND == CUR_BACKEND_MCP3204
   // MCP path: keep the RMS meter simple and efficient.
   // True RMS is taken directly from the band-limited waveform after the soft AAF.
   // This keeps it responsive while avoiding the heavier coherent-harmonic meter
   // that was hiding real low-current loads and amplifying MCP instability.
-  irms = irmsWide;
+  float irms = irmsWide;
 
   if (irms < CURRENT_IDLE_SUPPRESS_A && codeSpan < LOW_CURRENT_CODE_SPAN) {
     irms = 0.0f;
@@ -279,7 +278,7 @@ bool ArcFeatures::compute(const uint16_t* raw, size_t n, float fs_hz,
        (coherence >= TRUE_RMS_RELAXED_COHERENCE) &&
        (residFrac <= TRUE_RMS_MAX_RESID_FRAC));
 
-  irms = trustWideband ? irmsWide : irmsCoherent;
+  float irms = trustWideband ? irmsWide : irmsCoherent;
 
   if (irmsWide < CURRENT_IDLE_SUPPRESS_A && codeSpan < LOW_CURRENT_CODE_SPAN) {
     irms = 0.0f;

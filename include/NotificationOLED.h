@@ -38,6 +38,7 @@ public:
   void setState(FaultState state);
   void setWiFi(bool connected, int rssi, bool blocking, bool inPortal, bool timedOut = false, bool apWindow = false);
   void triggerCollecting(uint32_t durMs = 1000UL);
+  void triggerNotice(const char* line1, const char* line2 = "", uint32_t durMs = 1200UL);
   void triggerConnected(uint32_t durMs = 900UL);
   void startBootSequence(uint32_t durMs = 3000UL);
   void setOta(bool active, uint8_t progress = 0);
@@ -67,6 +68,9 @@ private:
   bool _otaActive = false;
   uint8_t _otaProgress = 0;
   uint32_t _collectUntilMs = 0;
+  uint32_t _noticeUntilMs = 0;
+  char _noticeLine1[17] = {0};
+  char _noticeLine2[17] = {0};
   uint32_t _bootUntilMs = 0;
   uint32_t _bootStartMs = 0;
   uint32_t _connectedUntilMs = 0;
@@ -79,6 +83,7 @@ private:
   void drawConnected(uint32_t nowMs);
   void drawWiFiWait(uint32_t nowMs, bool portal);
   void drawCollecting(uint32_t nowMs);
+  void drawNotice(uint32_t nowMs);
   void drawOta(uint32_t nowMs);
   void drawUnplugged(uint32_t nowMs);
   void drawFaultSlide(uint32_t nowMs, OledOverlay ov);
