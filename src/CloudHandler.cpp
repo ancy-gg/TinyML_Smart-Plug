@@ -6,7 +6,7 @@ static String powerConditionForState(const String& state, float v) {
   if (state == "ARCING" || state == "HEATING" || state == "OVERLOAD" || state == "SUSTAINED OVERLOAD") return state;
   if (state == "UNPLUGGED" || v <= MAINS_PRESENT_OFF_V) return "UNPLUGGED";
   if (state == "OVERVOLTAGE" || v >= VOLT_OVERVOLT_TRIP_V) return "OVERVOLTAGE";
-  if (state == "UNDERVOLTAGE" || (v >= MAINS_PRESENT_ON_V && v < VOLT_UNDERVOLT_MAX_V)) return "UNDERVOLTAGE";
+  if (state == "UNDERVOLTAGE" || (v >= VOLT_UNDERVOLT_MIN_V && v < VOLT_UNDERVOLT_MAX_V)) return "UNDERVOLTAGE";
   return "NORMAL";
 }
 

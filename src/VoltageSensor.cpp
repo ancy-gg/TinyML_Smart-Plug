@@ -64,16 +64,27 @@ float VoltageSensor::update() {
     _count = 0;
     _sum   = 0.0;
     _sumSq = 0.0;
+    _sampleMin = 4095;
+    _sampleMax = 0;
     (void)analogRead(_pin);
     return -1.0f;
   }
 
-  constexpr int SAMPLES_PER_CALL = 8;
-  for (int i = 0; i < SAMPLES_PER_CALL; i++) {
-    const int a = analogRead(_pin);
-    const int b = analogRead(_pin);
-    const int c = analogRead(_pin);
-    const int val = _median3(a, b, c);
+  constexpr int FILTERED_SAMPLES_PER_CALL = 4;
+  for (int i = 0; i < FILTERED_SAMPLES_PER_CALL; ++i) {
+    const int s0 = analogRead(_pin);
+    const int s1 = analogRead(_pin);
+    const int s2 = analogRead(_pin);
+    const int s3 = analogRead(_pin);
+    const int s4 = analogRead(_pin);
+
+    const int med  = _median5(s0, s1, s2, s3, s4);
+    const int mean = (s0 + s1 + s2 + s3 + s4 + 2) / 5;
+    const int val  = (3 * med + mean + 2) / 4;
+
+    if (val < _sampleMin) _sampleMin = val;
+    if (val > _sampleMax) _sampleMax = val;
+
     _count++;
     _sum   += val;
     _sumSq += (double)val * (double)val;
@@ -82,17 +93,28 @@ float VoltageSensor::update() {
   if ((uint32_t)(now - _startTime) < _windowUs) return -1.0f;
 
   _sampling = false;
-  if (_count < 32) return _dispVrms;
+  if (_count < 24) return _dispVrms;
 
   const double mean = _sum / (double)_count;
   double var = (_sumSq / (double)_count) - (mean * mean);
   if (var < 0.0) var = 0.0;
 
   const float vrmsCounts = (float)sqrt(var);
+  const int p2pCounts = (_sampleMax >= _sampleMin) ? (_sampleMax - _sampleMin) : 0;
+
   const float vrmsAdcV   = vrmsCounts * (_adcFullScaleV / 4095.0f);
   const float vrmsUncal  = vrmsAdcV * _cal.sensitivity;
   float vrmsMain = eval_cubic_horner(fabsf(vrmsUncal), _cal.cubic3, _cal.cubic2, _cal.cubic1, _cal.cubic0);
   if (vrmsMain < 0.0f) vrmsMain = 0.0f;
+
+  // ESP32 ADC + ZMPT can occasionally report a false low-voltage waveform when
+  // the plug is unplugged or the signal is too small. Require both RMS energy
+  // and peak-to-peak activity before treating the result as real mains.
+  const bool weakSignal = (vrmsCounts < 8.0f) || (p2pCounts < 120);
+  if (weakSignal && vrmsMain < VOLT_UNDERVOLT_MIN_V) {
+    vrmsMain = 0.0f;
+    _vActive = false;
+  }
 
   if (_vActive) {
     if (vrmsMain < _vOff) {

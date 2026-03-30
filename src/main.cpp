@@ -30,7 +30,7 @@
 
 #define API_KEY "AIzaSyAmJlZZszyWPJFgIkTAAl_TbIySys1nvEw"
 #define DATABASE_URL "tinyml-smart-plug-default-rtdb.asia-southeast1.firebasedatabase.app"
-static const char* FW_VERSION = "TSP-v3.7.3-p-mcp";   //m - set calib to 0.0 (1.0 for first-order var)
+static const char* FW_VERSION = "TSP-v3.7.4-p-mcp";   //m - set calib to 0.0 (1.0 for first-order var)
                                                       //p - change 0 relay, with calibration
                                                       //c - change 1 relay, with calibration
                                                       
@@ -39,6 +39,7 @@ static const char* OTA_FIRMWARE_URL_PATH    = "/ota/firmware_url";
 static const uint32_t OTA_CHECK_INTERVAL_MS = 60000;
 static constexpr uint32_t SENSOR_BOOT_SETTLE_MS = CURRENT_BOOT_SETTLE_MS;
 static constexpr uint32_t PROTECTION_INHIBIT_MS = 5000UL;
+static constexpr uint32_t ML_CONTROL_FAST_POLL_MS = 1000UL;
 
 NotificationOLED       oled(0x3C);
 NetworkManager   net;
@@ -370,10 +371,8 @@ static bool pollFaultClearControl(CloudHandler& cloud, NetworkManager& net, bool
   lastPoll = millis();
 
   String token;
-  cloud.getString("/controls/fault_clear_token", token);
+  if (!cloud.getString("/controls/fault_clear_token", token)) return false;
   token.trim();
-
-  if (!token.length()) return false;
 
   if (!primed) {
     lastToken = token;
@@ -381,12 +380,10 @@ static bool pollFaultClearControl(CloudHandler& cloud, NetworkManager& net, bool
     return false;
   }
 
-  if (token == lastToken) return false;
-
+  if (!token.length() || token == lastToken) return false;
   lastToken = token;
   return true;
 }
-
 static void onOtaEvent(OtaEvent ev, int progress) {
   if (ev == OtaEvent::START) {
     gPauseByOta = true;
@@ -453,83 +450,44 @@ static void Core0Task(void* pv) {
   }
 }
 
-
 #if ENABLE_ML_LOGGER
 static void pollMlControl(CloudHandler& cloud, DataLogger& logger, NotificationOLED& oledUi) {
   static uint32_t lastPoll = 0;
-  static bool cachePrimed = false;
-  static bool cachedEnabled = false;
-  static int cachedDur = 10;
-  static int cachedLabelOv = -1;
-  static String cachedSid = "";
-  static String cachedLoad = "unknown";
+  static bool lastEnabled = false;
 
-  static bool lastAppliedEnabled = false;
-  static String activeSid = "";
-  static String suppressedSid = "";
-  static uint32_t manualDeadlineMs = 0;
+  if (millis() - lastPoll < ML_CONTROL_FAST_POLL_MS) return;
+  lastPoll = millis();
 
-  const uint32_t now = millis();
-  if (!cachePrimed || (now - lastPoll) >= ML_CTRL_POLL_MS) {
-    lastPoll = now;
-    cachePrimed = true;
+  bool enabled = false;
+  int dur = 10;
+  int labelOv = -1;
+  String sid = "";
+  String load = "unknown";
 
-    cloud.getBool("/ml_log/enabled", cachedEnabled);
-    cloud.getInt("/ml_log/duration_s", cachedDur);
-    cloud.getInt("/ml_log/label_override", cachedLabelOv);
-    cloud.getString("/ml_log/session_id", cachedSid);
-    cloud.getString("/ml_log/load_type", cachedLoad);
+  cloud.getBool("/ml_log/enabled", enabled);
+  cloud.getInt("/ml_log/duration_s", dur);
+  cloud.getInt("/ml_log/label_override", labelOv);
+  cloud.getString("/ml_log/session_id", sid);
+  cloud.getString("/ml_log/load_type", load);
 
-    if (cachedDur < 1) cachedDur = 1;
-    if (cachedDur > 600) cachedDur = 600;
-  }
+  if (dur < 5) dur = 5;
+  if (dur > 60) dur = 60;
 
-  if (!cachedEnabled) {
-    if (lastAppliedEnabled) oledUi.triggerNotice("DATA", "COLLECTED", 1200UL);
+  if (enabled && sid.length() < 3) {
     logger.setEnabled(false);
-    lastAppliedEnabled = false;
-    activeSid = "";
-    suppressedSid = "";
-    manualDeadlineMs = 0;
+    lastEnabled = false;
     return;
   }
 
-  if (cachedSid.length() < 3) {
-    logger.setEnabled(false);
-    lastAppliedEnabled = false;
-    return;
-  }
+  logger.setDurationSeconds((uint16_t)dur);
+  logger.setSession(sid, load, labelOv);
+  logger.setEnabled(enabled);
 
-  const bool newSession = (cachedSid != activeSid);
-  if (newSession || !lastAppliedEnabled) {
-    activeSid = cachedSid;
-    manualDeadlineMs = now + (uint32_t)cachedDur * 1000UL;
-    if (suppressedSid == cachedSid) suppressedSid = "";
-  }
-
-  if (suppressedSid.length() && cachedSid == suppressedSid) {
-    logger.setEnabled(false);
-    lastAppliedEnabled = false;
-    return;
-  }
-
-  if (manualDeadlineMs != 0 && (int32_t)(now - manualDeadlineMs) >= 0) {
-    if (lastAppliedEnabled) oledUi.triggerNotice("DATA", "COLLECTED", 1200UL);
-    logger.setEnabled(false);
-    lastAppliedEnabled = false;
-    suppressedSid = cachedSid;
-    return;
-  }
-
-  logger.setDurationSeconds((uint16_t)cachedDur);
-  logger.setSession(cachedSid, cachedLoad, cachedLabelOv);
-  logger.setEnabled(true);
-
-  if (!lastAppliedEnabled) {
+  if (enabled && !lastEnabled) {
     actuators.notify(SND_LOGGER_ON);
-    oledUi.triggerCollecting(1200UL);
+    oledUi.triggerCollecting(1000);
   }
-  lastAppliedEnabled = true;
+  lastEnabled = enabled;
 }
 #endif
 
@@ -754,6 +712,12 @@ void loop() {
                             vFast >= VOLT_UNDERVOLT_MAX_V &&
                             vFast < VOLT_OVERVOLT_TRIP_V);
 
+  const bool faultClearRequested = (!gSafeMode) ? pollFaultClearControl(cloud, net, paused, portalActive) : false;
+  if (faultClearRequested) {
+    faultLogic.resetLatch();
+    actuators.notify(SND_RESET_ACK);
+  }
+
   int pred = 0;
   if (arcEligible) {
     pred = ArcPredict(
@@ -765,13 +729,6 @@ void loop() {
     );
   }
   f.model_pred = (uint8_t)pred;
-
-  const bool faultClearRequest = (!gSafeMode) ? pollFaultClearControl(cloud, net, paused, portalActive) : false;
-  if (faultClearRequest) {
-    faultLogic.resetLatch();
-    actuators.clearFaultAlert();
-    actuators.notify(SND_RESET_ACK);
-  }
 
   FaultState st = STATE_NORMAL;
   if (!bootSettling) {
@@ -821,10 +778,11 @@ void loop() {
 
   static FaultState displayFaultState = STATE_NORMAL;
   static uint32_t displayFaultUntil = 0;
-  if (faultClearRequest) {
+  if (faultClearRequested) {
     displayFaultState = STATE_NORMAL;
     displayFaultUntil = 0;
-  } else if (st != STATE_NORMAL) {
+  }
+  if (st != STATE_NORMAL) {
     displayFaultState = st;
     displayFaultUntil = millis() + FAULT_ALERT_MIN_MS;
   } else if (displayFaultState != STATE_NORMAL && (int32_t)(millis() - displayFaultUntil) >= 0) {

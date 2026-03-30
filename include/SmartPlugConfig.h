@@ -171,7 +171,7 @@ static constexpr float SUSTAINED_OVERLOAD_TRIP_A = 14.5f;
 static constexpr uint32_t SUSTAINED_OVERLOAD_TRIP_MS = 60UL * 1000UL;
 
 static constexpr uint32_t FEAT_STALE_MS           = 350;
-static constexpr uint32_t ML_CTRL_POLL_MS         = 10000;
+static constexpr uint32_t ML_CTRL_POLL_MS         = 1000;
 static constexpr uint16_t AUTO_ARC_CAPTURE_DURATION_S = 12;
 static constexpr uint32_t AUTO_ARC_CAPTURE_COOLDOWN_MS = 60000UL;
 static constexpr int8_t ML_UNKNOWN_LABEL = -1;

@@ -30,6 +30,8 @@ private:
   uint32_t _count = 0;
   double   _sum   = 0.0;
   double   _sumSq = 0.0;
+  int      _sampleMin = 4095;
+  int      _sampleMax = 0;
 
   bool  _vActive = false;
   float _vOff    = 15.0f;
@@ -51,5 +53,19 @@ private:
     if (b > c) { int t = b; b = c; c = t; }
     if (a > b) { int t = a; a = b; b = t; }
     return b;
+  }
+
+  static inline int _median5(int a, int b, int c, int d, int e) {
+    int v[5] = {a, b, c, d, e};
+    for (int i = 0; i < 4; ++i) {
+      for (int j = i + 1; j < 5; ++j) {
+        if (v[j] < v[i]) {
+          int t = v[i];
+          v[i] = v[j];
+          v[j] = t;
+        }
+      }
+    }
+    return v[2];
   }
 };
