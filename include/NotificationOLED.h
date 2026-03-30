@@ -1,5 +1,5 @@
-#ifndef OLED_NOTIF_H
-#define OLED_NOTIF_H
+#ifndef NotificationOLED_H
+#define NotificationOLED_H
 
 #include <Arduino.h>
 #include <Wire.h>
@@ -27,10 +27,10 @@ enum class OledOverlay : uint8_t {
   UNPLUGGED
 };
 
-class OLED_NOTIF {
+class NotificationOLED {
 public:
-  OLED_NOTIF(uint8_t address = 0x3C);
-  ~OLED_NOTIF();
+  NotificationOLED(uint8_t address = 0x3C);
+  ~NotificationOLED();
 
   bool begin();
 

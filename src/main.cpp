@@ -11,7 +11,7 @@
 #include "SmartPlugTypes.h"
 #include "NetworkManager.h"
 #include "CloudHandler.h"
-#include "OLED_NOTIF.h"
+#include "NotificationOLED.h"
 #include "TimeSync.h"
 #include "PullOTA.h"
 #include "BootGuard.h"
@@ -30,7 +30,7 @@
 
 #define API_KEY "AIzaSyAmJlZZszyWPJFgIkTAAl_TbIySys1nvEw"
 #define DATABASE_URL "tinyml-smart-plug-default-rtdb.asia-southeast1.firebasedatabase.app"
-static const char* FW_VERSION = "TSP-v3.7.1-p-mcp";   //m - set calib to 0.0 (1.0 for first-order var)
+static const char* FW_VERSION = "TSP-v3.7.2-p-mcp";   //m - set calib to 0.0 (1.0 for first-order var)
                                                       //p - change 0 relay, with calibration
                                                       //c - change 1 relay, with calibration
                                                       
@@ -40,7 +40,7 @@ static const uint32_t OTA_CHECK_INTERVAL_MS = 60000;
 static constexpr uint32_t SENSOR_BOOT_SETTLE_MS = CURRENT_BOOT_SETTLE_MS;
 static constexpr uint32_t PROTECTION_INHIBIT_MS = 5000UL;
 
-OLED_NOTIF       oled(0x3C);
+NotificationOLED       oled(0x3C);
 NetworkManager   net;
 CloudHandler     cloud;
 TimeSync         timeSync;
@@ -130,6 +130,24 @@ static bool debouncedMainsPresentForState(float vProtect) {
   return stable;
 }
 
+
+static bool classifyUnpluggedSocket(float vProtect, float irmsA, FaultState st, uint32_t* sinceMs) {
+  if (!sinceMs) return false;
+
+  const bool zeroLike = (vProtect <= MAINS_PRESENT_OFF_V);
+  const bool noLoad = (irmsA <= LOAD_OFF_DETECT_A);
+  const bool arcLike = (st == STATE_ARCING);
+  const bool heatLike = (st == STATE_HEATING);
+  const bool faultKeep = arcLike || heatLike;
+
+  if (zeroLike && noLoad && !faultKeep) {
+    if (*sinceMs == 0) *sinceMs = millis();
+  } else {
+    *sinceMs = 0;
+  }
+
+  return (*sinceMs != 0) && ((millis() - *sinceMs) >= UNPLUGGED_STATE_DELAY_MS);
+}
 
 static float cleanDisplayCurrent(float irmsRaw, bool currentValid, bool featValid, float vProtect) {
   static bool learnStarted = false;
@@ -408,7 +426,7 @@ static void Core0Task(void* pv) {
 }
 
 #if ENABLE_ML_LOGGER
-static void pollMlControl(CloudHandler& cloud, DataLogger& logger, OLED_NOTIF& oledUi) {
+static void pollMlControl(CloudHandler& cloud, DataLogger& logger, NotificationOLED& oledUi) {
   static uint32_t lastPoll = 0;
   static bool lastEnabled = false;
 
@@ -449,7 +467,7 @@ static void pollMlControl(CloudHandler& cloud, DataLogger& logger, OLED_NOTIF& o
 #endif
 
 #if ENABLE_ML_LOGGER
-static void maybeStartAutoArcCapture(DataLogger& logger, OLED_NOTIF& oledUi, bool paused, bool safeMode, bool modelPositive) {
+static void maybeStartAutoArcCapture(DataLogger& logger, NotificationOLED& oledUi, bool paused, bool safeMode, bool modelPositive) {
   static bool lastPositive = false;
   static uint32_t lastAutoStartMs = 0;
 
@@ -689,12 +707,7 @@ void loop() {
   if (gSafeMode) st = STATE_NORMAL;
 
   static uint32_t noPowerSinceMsCtl = 0;
-  if (vFast <= MAINS_PRESENT_OFF_V) {
-    if (noPowerSinceMsCtl == 0) noPowerSinceMsCtl = millis();
-  } else if (vFast >= MAINS_PRESENT_ON_V) {
-    noPowerSinceMsCtl = 0;
-  }
-  const bool unpluggedLiveCtl = (noPowerSinceMsCtl != 0) && ((millis() - noPowerSinceMsCtl) >= UNPLUGGED_STATE_DELAY_MS);
+  const bool unpluggedLiveCtl = classifyUnpluggedSocket(vFast, irmsRawForLogic, st, &noPowerSinceMsCtl);
   const bool controlsLocked = gSafeMode || paused || bootSettling || protectionInhibit || unpluggedLiveCtl || faultLogic.webControlLocked();
 
   if (!gSafeMode) {
@@ -732,17 +745,36 @@ void loop() {
 #endif
   }
 
+  static FaultState displayFaultState = STATE_NORMAL;
+  static uint32_t displayFaultUntil = 0;
+  if (st != STATE_NORMAL) {
+    displayFaultState = st;
+    displayFaultUntil = millis() + FAULT_ALERT_MIN_MS;
+  } else if (displayFaultState != STATE_NORMAL && (int32_t)(millis() - displayFaultUntil) >= 0) {
+    displayFaultState = STATE_NORMAL;
+    displayFaultUntil = 0;
+  }
+  const bool displayFaultActive = (displayFaultState != STATE_NORMAL) && ((int32_t)(displayFaultUntil - millis()) > 0);
+
+  static uint32_t noPowerSinceMsOled = 0;
+  const bool unpluggedLiveOled = classifyUnpluggedSocket(vFast, irmsRawForLogic, st, &noPowerSinceMsOled);
+
+  const FaultState oledState = displayFaultActive ? displayFaultState : st;
   OledOverlay ov = OledOverlay::NONE;
   if (!gPauseByOta && !bootSettling) {
-    if (st == STATE_HEATING) ov = OledOverlay::FAULT_HEAT;
-    else if (st == STATE_ARCING) ov = OledOverlay::FAULT_ARC;
-    else if (st == STATE_OVERVOLTAGE) ov = OledOverlay::FAULT_OVERVOLT;
-    else if (st == STATE_UNDERVOLTAGE) ov = OledOverlay::FAULT_UNDERVOLT;
-    else if (st == STATE_OVERLOAD || st == STATE_SUSTAINED_OVERLOAD) ov = OledOverlay::FAULT_OVERLOAD;
+    if (unpluggedLiveOled && oledState != STATE_ARCING && oledState != STATE_HEATING) {
+      ov = OledOverlay::UNPLUGGED;
+    } else if (displayFaultActive) {
+      if (oledState == STATE_HEATING) ov = OledOverlay::FAULT_HEAT;
+      else if (oledState == STATE_ARCING) ov = OledOverlay::FAULT_ARC;
+      else if (oledState == STATE_OVERVOLTAGE) ov = OledOverlay::FAULT_OVERVOLT;
+      else if (oledState == STATE_UNDERVOLTAGE) ov = OledOverlay::FAULT_UNDERVOLT;
+      else if (oledState == STATE_OVERLOAD || oledState == STATE_SUSTAINED_OVERLOAD) ov = OledOverlay::FAULT_OVERLOAD;
+    }
   }
 
   oled.setOverlay(ov);
-  oled.setState(st);
+  oled.setState(oledState);
   oled.setMeasurements(vRms, f.irms, apparentPowerVa, tC);
   const bool apWindowActive = (wifiPhase == NetworkManager::PHASE_AP_WAIT_CLIENT);
   const bool showWifiBanner = portalActive || apWindowActive || ((int32_t)(wifiBannerUntilMs - millis()) > 0);
@@ -769,19 +801,14 @@ void loop() {
     lastLive = millis();
 
     static uint32_t noPowerSinceMs = 0;
-    if (vFast <= MAINS_PRESENT_OFF_V) {
-      if (noPowerSinceMs == 0) noPowerSinceMs = millis();
-    } else if (vFast >= MAINS_PRESENT_ON_V) {
-      noPowerSinceMs = 0;
-    }
-    const bool unpluggedLive = (noPowerSinceMs != 0) && ((millis() - noPowerSinceMs) >= UNPLUGGED_STATE_DELAY_MS);
+    const bool unpluggedLive = classifyUnpluggedSocket(vFast, irmsRawForLogic, st, &noPowerSinceMs);
 
     String stateStr;
     if (gPauseByOta) stateStr = "OTA_UPDATING";
     else if (portalActive) stateStr = "CONFIG_PORTAL";
     else if (bootSettling || protectionInhibit) stateStr = "STARTUP_STABILIZING";
-    else if (unpluggedLive) stateStr = "UNPLUGGED";
     else if (gSafeMode) stateStr = "SAFE_MODE";
+    else if (unpluggedLive && st != STATE_ARCING && st != STATE_HEATING) stateStr = "UNPLUGGED";
     else stateStr = String(stateToCstr(st));
 
     cloud.update(vRms, f.irms, apparentPowerVa, tC,

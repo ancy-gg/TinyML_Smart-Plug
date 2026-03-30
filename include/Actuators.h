@@ -2,7 +2,7 @@
 #include <Arduino.h>
 #include "SmartPlugTypes.h"
 
-class OLED_NOTIF;
+class NotificationOLED;
 
 enum SoundEvent : uint8_t {
   SND_BOOT = 0,
@@ -27,7 +27,7 @@ enum SoundEvent : uint8_t {
 
 class Actuators {
 public:
-  void begin(int pinLatchOn, int pinLatchOff, int pinBuzzer, OLED_NOTIF* oled);
+  void begin(int pinLatchOn, int pinLatchOff, int pinBuzzer, NotificationOLED* oled);
   void apply(FaultState st, float vDisplay, float vProtect, float i, float t);
   void notify(SoundEvent ev);
 
@@ -42,7 +42,7 @@ private:
   int _pinLatchOn = -1;
   int _pinLatchOff = -1;
   int _pinBuzzer = -1;
-  OLED_NOTIF* _oled = nullptr;
+  NotificationOLED* _oled = nullptr;
 
   bool _relayLatchedOn = false;
   uint32_t _pulseOnUntil = 0;

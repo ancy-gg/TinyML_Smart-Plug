@@ -27,6 +27,7 @@ void FaultLogic::resetLatch() {
   _tripOffEdge = false;
   _autoOnEdge = false;
   _webLockout = false;
+  _prevSustainedTrip = false;
   _loadOn = false;
   _loadOnSince = 0;
   _loadOffSince = 0;
@@ -64,7 +65,7 @@ FaultState FaultLogic::update(float vProtect, float tempC, float irmsA, int arcM
   const bool arcActive  = arcTrip  || (now < _arcHoldUntil);
   const bool heatActive = heatTrip || (now < _heatHoldUntil);
 
-  const bool underVoltRaw = (vProtect > VOLT_UNDERVOLT_MIN_V && vProtect < VOLT_UNDERVOLT_MAX_V);
+  const bool underVoltRaw = (vProtect >= MAINS_PRESENT_ON_V && vProtect < VOLT_UNDERVOLT_MAX_V);
   const bool overVoltRaw  = (vProtect >= VOLT_OVERVOLT_TRIP_V);
   const bool extremeUnder = (vProtect > 0.0f && vProtect <= EXTREME_UNDERVOLT_FAST_V);
   const bool extremeOver  = (vProtect >= EXTREME_OVERVOLT_FAST_V);
@@ -122,11 +123,10 @@ FaultState FaultLogic::update(float vProtect, float tempC, float irmsA, int arcM
     }
   }
 
-  static bool prevSustainedTrip = false;
-  if (sustainedOverloadActive && !prevSustainedTrip) {
+  if (sustainedOverloadActive && !_prevSustainedTrip) {
     _tripOffEdge = true;
   }
-  prevSustainedTrip = sustainedOverloadActive;
+  _prevSustainedTrip = sustainedOverloadActive;
 
   if (!_loadOn) {
     if (irmsA >= LOAD_ON_DETECT_A) {

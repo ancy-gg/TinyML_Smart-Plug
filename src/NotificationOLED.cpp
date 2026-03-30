@@ -1,4 +1,4 @@
-#include "OLED_NOTIF.h"
+#include "NotificationOLED.h"
 #include "SmartPlugConfig.h"
 #include <math.h>
 
@@ -10,6 +10,49 @@ static const uint8_t PROGMEM kBootLogo24x24[] = {
   0x20, 0x7E, 0x04, 0x30, 0x3C, 0x0C, 0x18, 0x18, 0x18, 0x0C, 0x00, 0x30,
   0x06, 0x18, 0x60, 0x03, 0x99, 0xC0, 0x00, 0xCF, 0x00, 0x00, 0x00, 0x00
 };
+
+
+static void drawArrowUpIcon(Adafruit_SSD1306* d, int x, int y, int bob) {
+  if (!d) return;
+  const int yy = y + bob;
+  d->drawLine(x + 4, yy, x + 4, yy + 10, SSD1306_WHITE);
+  d->drawLine(x + 4, yy, x, yy + 4, SSD1306_WHITE);
+  d->drawLine(x + 4, yy, x + 8, yy + 4, SSD1306_WHITE);
+}
+
+static void drawArrowDownIcon(Adafruit_SSD1306* d, int x, int y, int bob) {
+  if (!d) return;
+  const int yy = y + bob;
+  d->drawLine(x + 4, yy, x + 4, yy + 10, SSD1306_WHITE);
+  d->drawLine(x, yy + 6, x + 4, yy + 10, SSD1306_WHITE);
+  d->drawLine(x + 8, yy + 6, x + 4, yy + 10, SSD1306_WHITE);
+}
+
+static void drawBoltIcon(Adafruit_SSD1306* d, int x, int y, int sway) {
+  if (!d) return;
+  const int xx = x + sway;
+  d->drawLine(xx + 4, y, xx + 1, y + 5, SSD1306_WHITE);
+  d->drawLine(xx + 1, y + 5, xx + 4, y + 5, SSD1306_WHITE);
+  d->drawLine(xx + 4, y + 5, xx + 2, y + 10, SSD1306_WHITE);
+  d->drawLine(xx + 2, y + 10, xx + 7, y + 4, SSD1306_WHITE);
+  d->drawLine(xx + 7, y + 4, xx + 4, y + 4, SSD1306_WHITE);
+}
+
+static void drawFireIcon(Adafruit_SSD1306* d, int x, int y, int sway) {
+  if (!d) return;
+  const int xx = x + sway;
+  d->drawTriangle(xx + 4, y, xx, y + 8, xx + 8, y + 8, SSD1306_WHITE);
+  d->drawTriangle(xx + 4, y + 3, xx + 2, y + 8, xx + 6, y + 8, SSD1306_WHITE);
+}
+
+static void drawWarnIcon(Adafruit_SSD1306* d, int x, int y, bool blink) {
+  if (!d) return;
+  d->drawTriangle(x + 4, y, x, y + 8, x + 8, y + 8, SSD1306_WHITE);
+  if (blink) {
+    d->drawLine(x + 4, y + 2, x + 4, y + 5, SSD1306_WHITE);
+    d->drawPixel(x + 4, y + 7, SSD1306_WHITE);
+  }
+}
 
 static void formatMeasure(char* dst, size_t n, float v, uint8_t decimals, const char* unit) {
   if (fabsf(v) < 0.0005f) v = 0.0f;
@@ -23,16 +66,16 @@ static void formatMeasure(char* dst, size_t n, float v, uint8_t decimals, const 
   snprintf(dst, n, "%s%s", p, unit ? unit : "");
 }
 
-OLED_NOTIF::OLED_NOTIF(uint8_t address) {
+NotificationOLED::NotificationOLED(uint8_t address) {
   _address = address;
   display = new Adafruit_SSD1306(SCREEN_WIDTH, SCREEN_HEIGHT, &Wire, OLED_RESET);
 }
 
-OLED_NOTIF::~OLED_NOTIF() {
+NotificationOLED::~NotificationOLED() {
   delete display;
 }
 
-bool OLED_NOTIF::begin() {
+bool NotificationOLED::begin() {
   if (!display->begin(SSD1306_SWITCHCAPVCC, _address)) return false;
   display->cp437(true);
   display->clearDisplay();
@@ -40,18 +83,18 @@ bool OLED_NOTIF::begin() {
   return true;
 }
 
-void OLED_NOTIF::setMeasurements(float voltage, float current, float apparentPower, float temperature) {
+void NotificationOLED::setMeasurements(float voltage, float current, float apparentPower, float temperature) {
   _voltage = voltage;
   _current = current;
   _apparentPower = apparentPower;
   _temperature = temperature;
 }
 
-void OLED_NOTIF::setState(FaultState state) {
+void NotificationOLED::setState(FaultState state) {
   _state = state;
 }
 
-void OLED_NOTIF::setWiFi(bool connected, int rssi, bool blocking, bool inPortal, bool timedOut, bool apWindow) {
+void NotificationOLED::setWiFi(bool connected, int rssi, bool blocking, bool inPortal, bool timedOut, bool apWindow) {
   _wifiConnected = connected;
   _wifiRssi = rssi;
   _wifiBlocking = blocking;
@@ -60,36 +103,36 @@ void OLED_NOTIF::setWiFi(bool connected, int rssi, bool blocking, bool inPortal,
   _wifiApWindow = apWindow;
 }
 
-void OLED_NOTIF::triggerCollecting(uint32_t durMs) {
+void NotificationOLED::triggerCollecting(uint32_t durMs) {
   _collectUntilMs = millis() + durMs;
 }
 
-void OLED_NOTIF::triggerConnected(uint32_t durMs) {
+void NotificationOLED::triggerConnected(uint32_t durMs) {
   uint32_t start = millis();
   if (_bootUntilMs && (int32_t)(_bootUntilMs - start) > 0) start = _bootUntilMs + 120UL;
   _connectedStartMs = start;
   _connectedUntilMs = start + durMs;
 }
 
-void OLED_NOTIF::startBootSequence(uint32_t durMs) {
+void NotificationOLED::startBootSequence(uint32_t durMs) {
   _bootStartMs = millis();
   _bootUntilMs = _bootStartMs + durMs;
 }
 
-void OLED_NOTIF::setOta(bool active, uint8_t progress) {
+void NotificationOLED::setOta(bool active, uint8_t progress) {
   _otaActive = active;
   _otaProgress = progress;
 }
 
-void OLED_NOTIF::setOverlay(OledOverlay overlay) {
+void NotificationOLED::setOverlay(OledOverlay overlay) {
   _overlay = overlay;
 }
 
-void OLED_NOTIF::clearOverlay() {
+void NotificationOLED::clearOverlay() {
   _overlay = OledOverlay::NONE;
 }
 
-void OLED_NOTIF::drawWiFiBars(int x, int y, int bars, bool crossed) {
+void NotificationOLED::drawWiFiBars(int x, int y, int bars, bool crossed) {
   bars = constrain(bars, 0, 4);
   for (int i = 0; i < 4; ++i) {
     const int bx = x + i * 3;
@@ -103,7 +146,7 @@ void OLED_NOTIF::drawWiFiBars(int x, int y, int bars, bool crossed) {
   }
 }
 
-void OLED_NOTIF::drawLogo(int x, int y, bool invert) {
+void NotificationOLED::drawLogo(int x, int y, bool invert) {
   if (invert) {
     display->fillRect(x, y, 24, 24, SSD1306_WHITE);
     display->drawBitmap(x, y, kBootLogo24x24, 24, 24, SSD1306_BLACK);
@@ -112,7 +155,7 @@ void OLED_NOTIF::drawLogo(int x, int y, bool invert) {
   }
 }
 
-void OLED_NOTIF::drawCenteredText(const char* txt, int y, uint8_t size) {
+void NotificationOLED::drawCenteredText(const char* txt, int y, uint8_t size) {
   display->setTextSize(size);
   int16_t x1, y1; uint16_t w, h;
   display->getTextBounds(txt, 0, y, &x1, &y1, &w, &h);
@@ -121,7 +164,7 @@ void OLED_NOTIF::drawCenteredText(const char* txt, int y, uint8_t size) {
   display->setTextSize(1);
 }
 
-void OLED_NOTIF::drawRightText(const char* txt, int xRight, int y, uint8_t size) {
+void NotificationOLED::drawRightText(const char* txt, int xRight, int y, uint8_t size) {
   display->setTextSize(size);
   int16_t x1, y1; uint16_t w, h;
   display->getTextBounds(txt, 0, y, &x1, &y1, &w, &h);
@@ -130,7 +173,7 @@ void OLED_NOTIF::drawRightText(const char* txt, int xRight, int y, uint8_t size)
   display->setTextSize(1);
 }
 
-void OLED_NOTIF::drawDashboard(uint32_t nowMs) {
+void NotificationOLED::drawDashboard(uint32_t nowMs) {
   (void)nowMs;
   const char* status = "NORMAL";
   if (_state == STATE_ARCING) status = "ARCING";
@@ -138,6 +181,7 @@ void OLED_NOTIF::drawDashboard(uint32_t nowMs) {
   else if (_state == STATE_OVERVOLTAGE) status = "OVERVOLT";
   else if (_state == STATE_UNDERVOLTAGE) status = "UNDERVOLT";
   else if (_state == STATE_OVERLOAD) status = "OVERLOAD";
+  else if (_state == STATE_SUSTAINED_OVERLOAD) status = "SUSTAIN";
 
   const int bars = _wifiConnected ? ((_wifiRssi >= -55) ? 4 : (_wifiRssi >= -67) ? 3 : (_wifiRssi >= -78) ? 2 : 1) : 0;
   drawWiFiBars(1, 1, bars, !_wifiConnected);
@@ -161,7 +205,7 @@ void OLED_NOTIF::drawDashboard(uint32_t nowMs) {
   drawRightText(t, 127, 22, 1);
 }
 
-void OLED_NOTIF::drawBootSequence(uint32_t nowMs) {
+void NotificationOLED::drawBootSequence(uint32_t nowMs) {
   if (_bootUntilMs <= _bootStartMs) return;
   const uint32_t total = _bootUntilMs - _bootStartMs;
   const uint32_t t = nowMs - _bootStartMs;
@@ -205,13 +249,13 @@ void OLED_NOTIF::drawBootSequence(uint32_t nowMs) {
   display->print("SMARTPLUG");
 }
 
-void OLED_NOTIF::drawConnected(uint32_t nowMs) {
+void NotificationOLED::drawConnected(uint32_t nowMs) {
   (void)nowMs;
   drawCenteredText("WIFI", 7, 1);
   drawCenteredText("CONNECTED", 19, 1);
 }
 
-void OLED_NOTIF::drawWiFiWait(uint32_t nowMs, bool portal) {
+void NotificationOLED::drawWiFiWait(uint32_t nowMs, bool portal) {
   const int phase = (nowMs / 200U) % 4;
 
   if (portal) {
@@ -237,13 +281,13 @@ void OLED_NOTIF::drawWiFiWait(uint32_t nowMs, bool portal) {
   drawCenteredText("CONNECTING", 19, 1);
 }
 
-void OLED_NOTIF::drawCollecting(uint32_t nowMs) {
+void NotificationOLED::drawCollecting(uint32_t nowMs) {
   (void)nowMs;
   drawCenteredText("COLLECTING", 7, 1);
   drawCenteredText("DATA", 18, 1);
 }
 
-void OLED_NOTIF::drawOta(uint32_t nowMs) {
+void NotificationOLED::drawOta(uint32_t nowMs) {
   (void)nowMs;
   drawCenteredText("UPDATING", 4, 1);
   display->drawRect(8, 18, 112, 8, SSD1306_WHITE);
@@ -251,7 +295,7 @@ void OLED_NOTIF::drawOta(uint32_t nowMs) {
   if (w > 0) display->fillRect(9, 19, w, 6, SSD1306_WHITE);
 }
 
-void OLED_NOTIF::drawUnplugged(uint32_t nowMs) {
+void NotificationOLED::drawUnplugged(uint32_t nowMs) {
   (void)nowMs;
   drawLogo(8, 4);
   display->drawLine(6, 4, 30, 28, SSD1306_WHITE);
@@ -259,50 +303,41 @@ void OLED_NOTIF::drawUnplugged(uint32_t nowMs) {
   display->setCursor(44, 12);
   display->print("UNPLUGGED");
 }
-void OLED_NOTIF::drawFaultSlide(uint32_t nowMs, OledOverlay ov) {
-  const bool blink = ((nowMs / 200U) & 1U) == 0U;
-  if (ov == OledOverlay::FAULT_ARC) {
-    drawCenteredText("ARCING", 0, 1);
-    if (blink) {
-      display->fillTriangle(22, 8, 12, 24, 22, 24, SSD1306_WHITE);
-      display->fillTriangle(22, 24, 28, 18, 20, 18, SSD1306_WHITE);
-    }
-  } else if (ov == OledOverlay::FAULT_OVERLOAD) {
-    drawCenteredText("OVERLOAD", 0, 1);
-    const int dy = blink ? 0 : 2;
-    display->drawLine(18, 24 - dy, 18, 10 - dy, SSD1306_WHITE);
-    display->drawLine(18, 10 - dy, 12, 16 - dy, SSD1306_WHITE);
-    display->drawLine(18, 10 - dy, 24, 16 - dy, SSD1306_WHITE);
-  } else if (ov == OledOverlay::FAULT_HEAT || ov == OledOverlay::FAULT_TEMP_CRITICAL) {
-    drawCenteredText("HEATING", 0, 1);
-    const int sway = blink ? -1 : 1;
-    display->fillTriangle(16 + sway, 25, 10 + sway, 15, 18 + sway, 8, SSD1306_WHITE);
-    display->fillTriangle(18 + sway, 25, 14 + sway, 17, 22 + sway, 12, SSD1306_BLACK);
-  } else if (ov == OledOverlay::FAULT_OVERVOLT || ov == OledOverlay::FAULT_SURGE) {
-    drawCenteredText("OVERVOLT", 0, 1);
-    display->drawCircle(18, 18, blink ? 7 : 6, SSD1306_WHITE);
-    display->drawFastVLine(18, 11, 14, SSD1306_WHITE);
-  } else if (ov == OledOverlay::FAULT_UNDERVOLT) {
-    drawCenteredText("UNDERVOLT", 0, 1);
-    display->drawRect(11, 12, 14, 12, SSD1306_WHITE);
-    display->drawFastHLine(14, 18, 8, SSD1306_WHITE);
-    if (blink) display->drawFastHLine(13, 21, 10, SSD1306_WHITE);
-  }
+void NotificationOLED::drawFaultSlide(uint32_t nowMs, OledOverlay ov) {
+  const bool blink = ((nowMs / 220U) & 1U) == 0U;
+  const int bob = blink ? -1 : 1;
+  const int sway = blink ? -1 : 1;
 
-  if (ov == OledOverlay::FAULT_ARC || ov == OledOverlay::FAULT_OVERLOAD ||
-      ov == OledOverlay::FAULT_HEAT || ov == OledOverlay::FAULT_TEMP_CRITICAL ||
-      ov == OledOverlay::FAULT_OVERVOLT || ov == OledOverlay::FAULT_SURGE ||
-      ov == OledOverlay::FAULT_UNDERVOLT) {
-    display->setCursor(44, 14);
-    if (ov == OledOverlay::FAULT_ARC) display->print("LIGHTNING");
-    else if (ov == OledOverlay::FAULT_OVERLOAD) display->print("UP ARROW");
-    else if (ov == OledOverlay::FAULT_OVERVOLT || ov == OledOverlay::FAULT_SURGE) display->print("HIGH LINE");
-    else if (ov == OledOverlay::FAULT_UNDERVOLT) display->print("LOW LINE");
-    else display->print("FIRE");
+  if (ov == OledOverlay::FAULT_OVERVOLT || ov == OledOverlay::FAULT_SURGE) {
+    drawCenteredText("OVERVOLTAGE", 2, 1);
+    drawArrowUpIcon(display, 12, 10, bob);
+    drawBoltIcon(display, 28, 9, blink ? 1 : 0);
+  } else if (ov == OledOverlay::FAULT_UNDERVOLT) {
+    drawCenteredText("UNDERVOLTAGE", 2, 1);
+    drawArrowDownIcon(display, 12, 10, bob);
+    drawBoltIcon(display, 28, 9, blink ? 1 : 0);
+  } else if (ov == OledOverlay::FAULT_ARC) {
+    drawCenteredText("ARC FAULT", 2, 1);
+    drawBoltIcon(display, 12, 9, blink ? -1 : 0);
+    drawBoltIcon(display, 28, 9, blink ? 1 : 0);
+  } else if (ov == OledOverlay::FAULT_HEAT || ov == OledOverlay::FAULT_TEMP_CRITICAL) {
+    drawCenteredText("HEATING", 2, 1);
+    drawFireIcon(display, 12, 8, sway);
+    drawFireIcon(display, 28, 8, -sway);
+  } else if (ov == OledOverlay::FAULT_OVERLOAD) {
+    if (_state == STATE_SUSTAINED_OVERLOAD) {
+      drawCenteredText("SUSTAINED", 2, 1);
+      drawBoltIcon(display, 12, 9, blink ? 1 : 0);
+      drawFireIcon(display, 28, 8, sway);
+    } else {
+      drawCenteredText("OVERLOAD", 2, 1);
+      drawArrowUpIcon(display, 12, 10, bob);
+      drawWarnIcon(display, 28, 10, blink);
+    }
   }
 }
 
-void OLED_NOTIF::render() {
+void NotificationOLED::render() {
   const uint32_t now = millis();
   if (_voltage <= 0.2f) {
     if (_noPowerSinceMs == 0) _noPowerSinceMs = now;
@@ -335,14 +370,14 @@ void OLED_NOTIF::render() {
   display->display();
 }
 
-void OLED_NOTIF::showStatus(const char* title, const char* msg) {
+void NotificationOLED::showStatus(const char* title, const char* msg) {
   display->clearDisplay();
   drawCenteredText(title ? title : "STATUS", 2, 1);
   drawCenteredText(msg ? msg : "", 18, 1);
   display->display();
 }
 
-void OLED_NOTIF::clear() {
+void NotificationOLED::clear() {
   display->clearDisplay();
   display->display();
 }

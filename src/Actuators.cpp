@@ -1,5 +1,5 @@
 #include "Actuators.h"
-#include "OLED_NOTIF.h"
+#include "NotificationOLED.h"
 #include "SmartPlugConfig.h"
 
 static constexpr uint8_t BUZZ_CH = 0;
@@ -239,7 +239,7 @@ void Actuators::updateRelayPulse_() {
   }
 }
 
-void Actuators::begin(int pinLatchOn, int pinLatchOff, int pinBuzzer, OLED_NOTIF* oled) {
+void Actuators::begin(int pinLatchOn, int pinLatchOff, int pinBuzzer, NotificationOLED* oled) {
   _pinLatchOn = pinLatchOn;
   _pinLatchOff = pinLatchOff;
   _pinBuzzer = pinBuzzer;
@@ -250,6 +250,7 @@ void Actuators::begin(int pinLatchOn, int pinLatchOff, int pinBuzzer, OLED_NOTIF
   writeLatchOn_(false);
   writeLatchOff_(false);
   delay(20);
+  _lastRelayPulseMs = millis() - LATCH_PULSE_GAP_MS;
   pulseRelayOff(LATCH_OFF_PULSE_MS);
 
   soundBegin(_pinBuzzer);
@@ -351,13 +352,16 @@ void Actuators::apply(FaultState st, float vDisplay, float vProtect, float i, fl
 
   const bool rawOn = (vProtect >= MAINS_PRESENT_ON_V);
   const bool rawOff = (vProtect <= MAINS_PRESENT_OFF_V);
+  const bool noLoad = (i <= LOAD_OFF_DETECT_A);
+  const bool faultKeep = arcActive || heatActive;
+  const bool cueOff = rawOff && noLoad && !faultKeep;
 
   if (!mainsInit) {
     mainsStable = rawOn;
     mainsInit = true;
   }
 
-  if (rawOff) {
+  if (cueOff) {
     if (mainsOffSince == 0) mainsOffSince = now;
     mainsOnSince = 0;
     if (mainsStable && (now - mainsOffSince) >= UNPLUGGED_BUZZ_DELAY_MS) {
@@ -376,7 +380,13 @@ void Actuators::apply(FaultState st, float vDisplay, float vProtect, float i, fl
     mainsOnSince = 0;
   }
 
-  const bool unplugged = rawOff && (mainsOffSince != 0) && ((now - mainsOffSince) >= UNPLUGGED_STATE_DELAY_MS);
+  if (rawOff && noLoad && !faultKeep) {
+    if (_unpluggedSince == 0) _unpluggedSince = now;
+  } else {
+    _unpluggedSince = 0;
+  }
+
+  const bool unplugged = (_unpluggedSince != 0) && ((now - _unpluggedSince) >= UNPLUGGED_STATE_DELAY_MS);
   const bool criticalBlock = arcActive || heatActive || underVoltActive || overVoltActive || overloadActive || sustainedOverloadActive;
 
   if (unplugged && _relayLatchedOn) {
