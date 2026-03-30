@@ -23,7 +23,6 @@
 #include "Actuators.h"
 #include "ArcModel.h"
 #include "ArcFeatures.h"
-#include "ResetEmulation.h"
 
 #if ENABLE_ML_LOGGER
   #include "DataLogger.h"
@@ -31,7 +30,7 @@
 
 #define API_KEY "AIzaSyAmJlZZszyWPJFgIkTAAl_TbIySys1nvEw"
 #define DATABASE_URL "tinyml-smart-plug-default-rtdb.asia-southeast1.firebasedatabase.app"
-static const char* FW_VERSION = "TSP-v3.7.0-p-mcp";   //m - set calib to 0.0 (1.0 for first-order var)
+static const char* FW_VERSION = "TSP-v3.7.1-p-mcp";   //m - set calib to 0.0 (1.0 for first-order var)
                                                       //p - change 0 relay, with calibration
                                                       //c - change 1 relay, with calibration
                                                       
@@ -49,7 +48,6 @@ PullOTA          ota;
 
 VoltageSensor    voltSensor(PIN_VOLT_ADC);
 TempSensor       tempSensor(PIN_TEMP_ADC);
-ResetEmulation   resetEmu;
 
 FaultLogic       faultLogic;
 Actuators        actuators;
@@ -67,7 +65,6 @@ static QueueHandle_t qFeat = nullptr;
 
 static bool gSafeMode = false;
 static volatile bool gPauseByOta = false;
-static bool gManualRelayOff = false;
 
 static bool arcInputStable(bool currentValid, bool featValid, float irms) {
   static uint32_t stableSince = 0;
@@ -303,45 +300,44 @@ static void pollPortalControl(CloudHandler& cloud, NetworkManager& net, bool pau
   net.requestPortal(false);
 }
 
-
-static void pollRelayControl(CloudHandler& cloud,
-                             NetworkManager& net,
-                             ResetEmulation& resetEmu,
-                             Actuators& actuators,
-                             bool paused,
-                             bool portalActive) {
+static void pollRelayControl(CloudHandler& cloud, NetworkManager& net, Actuators& actuators, bool paused, bool portalActive, bool controlsLocked) {
   static uint32_t lastPoll = 0;
-  static String lastOnToken  = "";
+  static String lastOnToken = "";
   static String lastOffToken = "";
+  static bool primed = false;
 
   if (paused || portalActive || !net.isConnected() || !cloud.isReady()) return;
-  if ((millis() - lastPoll) < RELAY_CTRL_POLL_MS) return;
+  if ((millis() - lastPoll) < 700UL) return;
   lastPoll = millis();
 
   String onToken;
-  if (cloud.getString("/controls/relay_on_token", onToken)) {
-    onToken.trim();
-    if (onToken.length() && onToken != lastOnToken) {
-      lastOnToken = onToken;
+  String offToken;
+  cloud.getString("/controls/relay_on_token", onToken);
+  cloud.getString("/controls/relay_off_token", offToken);
+  onToken.trim();
+  offToken.trim();
 
-      gManualRelayOff = false;
-      actuators.setManualRelayOff(false);
-
-      resetEmu.triggerPulse(LATCH_RESET_PULSE_MS);
-      actuators.notify(SND_RESET_ACK);
-    }
+  if (!primed) {
+    lastOnToken = onToken;
+    lastOffToken = offToken;
+    primed = true;
+    return;
   }
 
-  String offToken;
-  if (cloud.getString("/controls/relay_off_token", offToken)) {
-    offToken.trim();
-    if (offToken.length() && offToken != lastOffToken) {
-      lastOffToken = offToken;
+  if (!controlsLocked && onToken.length() && onToken != lastOnToken) {
+    lastOnToken = onToken;
+    actuators.pulseRelayOn();
+    actuators.notify(SND_RESET_ACK);
+  } else if (onToken.length()) {
+    lastOnToken = onToken;
+  }
 
-      gManualRelayOff = true;
-      actuators.setManualRelayOff(true);
-      actuators.notify(SND_RESET_ACK);
-    }
+  if (!controlsLocked && offToken.length() && offToken != lastOffToken) {
+    lastOffToken = offToken;
+    actuators.pulseRelayOff();
+    actuators.notify(SND_RESET_ACK);
+  } else if (offToken.length()) {
+    lastOffToken = offToken;
   }
 }
 
@@ -485,7 +481,7 @@ void setup() {
 
   oled.begin();
   oled.startBootSequence(3600);
-  actuators.begin(PIN_RELAY, PIN_BUZZER_PWM, &oled);
+  actuators.begin(PIN_LATCH_ON, PIN_LATCH_OFF, PIN_BUZZER_PWM, &oled);
   actuators.notify(SND_BOOT);
 
   voltSensor.begin();
@@ -502,7 +498,6 @@ void setup() {
 
   tempSensor.begin();
   tempSensor.setLongAverage(8.0f, 1.0f);
-  resetEmu.begin(PIN_LATCH_RESET, true);
 
   if (!gSafeMode) {
     if (curSensor.begin()) {
@@ -592,9 +587,6 @@ void loop() {
   if (wifiConnected && !lastWiFiConnected) actuators.notify(SND_WIFI_OK);
   lastWiFiConnected = wifiConnected;
 
-  if (!gSafeMode) pollPortalControl(cloud, net, paused, portalActive);
-  if (!gSafeMode) pollRelayControl(cloud, net, resetEmu, actuators, paused, portalActive);
-  resetEmu.update();
 
   static FeatureFrame lastF = {};
   static bool hasLast = false;
@@ -696,6 +688,25 @@ void loop() {
 
   if (gSafeMode) st = STATE_NORMAL;
 
+  static uint32_t noPowerSinceMsCtl = 0;
+  if (vFast <= MAINS_PRESENT_OFF_V) {
+    if (noPowerSinceMsCtl == 0) noPowerSinceMsCtl = millis();
+  } else if (vFast >= MAINS_PRESENT_ON_V) {
+    noPowerSinceMsCtl = 0;
+  }
+  const bool unpluggedLiveCtl = (noPowerSinceMsCtl != 0) && ((millis() - noPowerSinceMsCtl) >= UNPLUGGED_STATE_DELAY_MS);
+  const bool controlsLocked = gSafeMode || paused || bootSettling || protectionInhibit || unpluggedLiveCtl || faultLogic.webControlLocked();
+
+  if (!gSafeMode) {
+    pollPortalControl(cloud, net, paused, portalActive);
+    pollRelayControl(cloud, net, actuators, paused, portalActive, controlsLocked);
+  }
+
+  const bool tripOffEdge = faultLogic.consumeTripOffEdge();
+  const bool autoOnEdge  = faultLogic.consumeAutoOnEdge();
+  if (tripOffEdge) actuators.pulseRelayOff();
+  if (autoOnEdge && !controlsLocked) actuators.pulseRelayOn();
+
   actuators.apply(st, vRms, vFast, irmsRawForLogic, tC);
   const bool mainsPresentStable = debouncedMainsPresentForState(vFast);
   handleCueEvents(vFast, irmsRawForLogic, mainsPresentStable, paused || gSafeMode || protectionInhibit, st);
@@ -727,7 +738,7 @@ void loop() {
     else if (st == STATE_ARCING) ov = OledOverlay::FAULT_ARC;
     else if (st == STATE_OVERVOLTAGE) ov = OledOverlay::FAULT_OVERVOLT;
     else if (st == STATE_UNDERVOLTAGE) ov = OledOverlay::FAULT_UNDERVOLT;
-    else if (st == STATE_OVERLOAD) ov = OledOverlay::FAULT_OVERLOAD;
+    else if (st == STATE_OVERLOAD || st == STATE_SUSTAINED_OVERLOAD) ov = OledOverlay::FAULT_OVERLOAD;
   }
 
   oled.setOverlay(ov);
@@ -741,6 +752,16 @@ void loop() {
   if (millis() - lastOled >= 80) {
     lastOled = millis();
     oled.render();
+  }
+
+  static FaultState lastImmediateFaultState = STATE_NORMAL;
+  if (!gSafeMode && !paused && !bootSettling && cloud.isReady()) {
+    if (st != STATE_NORMAL && (st != lastImmediateFaultState || tripOffEdge)) {
+      FeatureFrame fHist = f;
+      fHist.irms = irmsRawForLogic;
+      (void)cloud.logFeatureEvent(String(stateToCstr(st)), fHist, apparentPowerVa, tripOffEdge, &timeSync);
+    }
+    lastImmediateFaultState = st;
   }
 
   static uint32_t lastLive = 0;
@@ -761,7 +782,6 @@ void loop() {
     else if (bootSettling || protectionInhibit) stateStr = "STARTUP_STABILIZING";
     else if (unpluggedLive) stateStr = "UNPLUGGED";
     else if (gSafeMode) stateStr = "SAFE_MODE";
-    else if (gManualRelayOff && st == STATE_NORMAL) stateStr = "MANUAL RELAY OFF";
     else stateStr = String(stateToCstr(st));
 
     cloud.update(vRms, f.irms, apparentPowerVa, tC,

@@ -27,18 +27,34 @@ enum SoundEvent : uint8_t {
 
 class Actuators {
 public:
-  void begin(int pinRelay, int pinBuzzer, OLED_NOTIF* oled);
+  void begin(int pinLatchOn, int pinLatchOff, int pinBuzzer, OLED_NOTIF* oled);
   void apply(FaultState st, float vDisplay, float vProtect, float i, float t);
   void notify(SoundEvent ev);
 
-  void setManualRelayOff(bool en) { _manualRelayOff = en; }
-  bool manualRelayOff() const { return _manualRelayOff; }
+  void pulseRelayOn(uint32_t pulseMs = 0);
+  void pulseRelayOff(uint32_t pulseMs = 0);
+
+  bool relayLatchedOn() const { return _relayLatchedOn; }
+  bool consumeRelayOnEdge();
+  bool consumeRelayOffEdge();
 
 private:
-  int _pinRelay = -1;
+  int _pinLatchOn = -1;
+  int _pinLatchOff = -1;
   int _pinBuzzer = -1;
   OLED_NOTIF* _oled = nullptr;
-  uint32_t _lastOled = 0;
-  bool _manualRelayOff = false;
-  void setRelay(bool on);
+
+  bool _relayLatchedOn = false;
+  uint32_t _pulseOnUntil = 0;
+  uint32_t _pulseOffUntil = 0;
+  uint32_t _lastRelayPulseMs = 0;
+  bool _relayOnEdge = false;
+  bool _relayOffEdge = false;
+
+  uint32_t _loadDetectSince = 0;
+  uint32_t _unpluggedSince = 0;
+
+  void writeLatchOn_(bool asserted);
+  void writeLatchOff_(bool asserted);
+  void updateRelayPulse_();
 };

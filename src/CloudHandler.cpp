@@ -3,8 +3,7 @@
 #include <time.h>
 
 static String powerConditionForState(const String& state, float v) {
-  if (state == "ARCING" || state == "HEATING" || state == "OVERLOAD") return state;
-  if (state == "MANUAL RELAY OFF") return "MANUAL RELAY OFF";
+  if (state == "ARCING" || state == "HEATING" || state == "OVERLOAD" || state == "SUSTAINED OVERLOAD") return state;
   if (state == "UNPLUGGED") return "UNPLUGGED";
   if (state == "OVERVOLTAGE" || v >= VOLT_OVERVOLT_TRIP_V) return "OVERVOLTAGE";
   if (state == "UNDERVOLTAGE" || (v > VOLT_UNDERVOLT_MIN_V && v < VOLT_UNDERVOLT_MAX_V)) return "UNDERVOLTAGE";
@@ -206,10 +205,10 @@ void CloudHandler::update(float v, float c, float apparentPower, float t,
 
   const bool mainsPresent = (v >= MAINS_PRESENT_ON_V);
   const String powerCondition = powerConditionForState(state, v);
-  String devicePhase = "ACTIVE";
+  const String loadState = (c >= LOAD_ON_DETECT_A) ? String("LOAD ON") : String("LOAD OFF");
+  String devicePhase = loadState;
   if (isTransitionState(state)) devicePhase = state;
   else if (state == "UNPLUGGED") devicePhase = "UNPLUGGED";
-  else if (state == "MANUAL RELAY OFF") devicePhase = "MANUAL RELAY OFF";
 
   FirebaseJson json;
   json.set("wifi_connected", WiFi.status() == WL_CONNECTED);
@@ -241,6 +240,7 @@ void CloudHandler::update(float v, float c, float apparentPower, float t,
   json.set("mains_present", mainsPresent);
   json.set("power_condition", powerCondition);
   json.set("device_phase", devicePhase);
+  json.set("load_state", loadState);
   json.set("last_transition", _lastTransitionEvent);
   json.set("last_transition_epoch_ms", (double)_lastTransitionEpochMs);
 
@@ -266,8 +266,8 @@ void CloudHandler::update(float v, float c, float apparentPower, float t,
   }
 
   if (state == "ARCING" || state == "HEATING" || state == "OVERLOAD" ||
-      state == "UNDERVOLTAGE" || state == "OVERVOLTAGE" ||
-      state == "SURGE" || state == "SAFE_MODE" || state == "MANUAL RELAY OFF") {
+      state == "SUSTAINED OVERLOAD" || state == "UNDERVOLTAGE" || state == "OVERVOLTAGE" ||
+      state == "SURGE" || state == "SAFE_MODE") {
     historyStatus = state;
     pushHistory = (historyStatus != _lastLoggedFaultState);
     if (pushHistory) _lastLoggedFaultState = historyStatus;

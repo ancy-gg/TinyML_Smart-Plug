@@ -1350,3 +1350,116 @@ body.showSeries{ overflow:auto; }
   .wave-grid{ grid-template-columns:1fr; }
   .summary-card-wide{ grid-column:span 1; }
 }
+
+/* ===== Relay rocker + compact mobile refresh ===== */
+.relay-rocker{
+  display:grid;
+  grid-template-columns:1fr 1fr;
+  gap:0;
+  border:1px solid rgba(255,255,255,0.12);
+  border-radius:14px;
+  overflow:hidden;
+  background:rgba(255,255,255,0.05);
+}
+.relay-rocker.is-disabled{ opacity:0.5; }
+.rocker-btn{
+  min-height:42px;
+  border:none;
+  border-right:1px solid rgba(255,255,255,0.10);
+  background:transparent;
+  color:#f3f3f3;
+  font-weight:900;
+  cursor:pointer;
+}
+.rocker-btn:last-child{ border-right:none; }
+.rocker-btn:hover:not(:disabled){ background:rgba(255,255,255,0.08); }
+.rocker-btn:disabled{ cursor:not-allowed; }
+
+.switchline{
+  display:inline-flex;
+  align-items:center;
+  gap:10px;
+  min-height:40px;
+  padding:0 6px;
+}
+.switch-caption{
+  font-size:13px;
+  font-weight:850;
+  color:rgba(255,255,255,0.86);
+}
+.switch{
+  position:relative;
+  width:50px;
+  height:28px;
+  display:inline-block;
+}
+.switch input{
+  opacity:0;
+  width:0;
+  height:0;
+}
+.switch-slider{
+  position:absolute;
+  inset:0;
+  border-radius:999px;
+  background:rgba(255,255,255,0.16);
+  border:1px solid rgba(255,255,255,0.14);
+  transition:background 140ms ease;
+}
+.switch-slider::before{
+  content:"";
+  position:absolute;
+  width:22px;
+  height:22px;
+  left:2px;
+  top:2px;
+  border-radius:50%;
+  background:#fff;
+  transition:transform 140ms ease;
+}
+.switch input:checked + .switch-slider{
+  background:rgba(46,204,113,0.42);
+}
+.switch input:checked + .switch-slider::before{
+  transform:translateX(22px);
+}
+
+body.density-compact .overview-block,
+body.density-compact .metrics-block,
+body.density-compact .features-block,
+body.density-compact .history,
+body.density-compact .install-help{
+  margin-top:12px;
+  padding:11px;
+}
+body.density-compact .summary-card,
+body.density-compact .feature-group-card,
+body.density-compact .card{
+  padding:12px;
+}
+body.density-compact .section-head,
+body.density-compact .history-head{ margin-bottom:10px; }
+body.density-compact .metric-grid-top,
+body.density-compact .overview-grid,
+body.density-compact .wave-grid{ gap:10px; }
+body.density-compact .summary-copy,
+body.density-compact .metric-note,
+body.density-compact .history-hint{ font-size:11px; }
+.history-table{ min-width:620px; }
+
+@media (max-width: 640px){
+  .app{ margin:8px auto 20px; padding-inline:8px; }
+  .overview-block,
+  .metrics-block,
+  .features-block,
+  .history,
+  .install-help{ margin-top:10px; padding:10px; }
+  .summary-card,
+  .card,
+  .feature-group-card{ padding:10px; }
+  .metric-grid-top{ gap:8px; }
+  .status-wrap{ gap:6px; }
+  .status{ padding:12px 10px; }
+  .history-table-wrap{ max-height:280px; }
+  .history-table{ min-width:560px; }
+}

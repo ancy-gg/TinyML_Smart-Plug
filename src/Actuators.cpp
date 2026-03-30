@@ -75,24 +75,24 @@ static constexpr ToneStep P_RESET_ACK[] = {
 };
 
 static constexpr TonePattern PATTERNS[] = {
-  { P_BOOT,            (uint8_t)(sizeof(P_BOOT) / sizeof(P_BOOT[0])),                   false, 1 },
-  { P_WIFI_PORTAL,     (uint8_t)(sizeof(P_WIFI_PORTAL) / sizeof(P_WIFI_PORTAL[0])),     false, 1 },
-  { P_WIFI_OK,         (uint8_t)(sizeof(P_WIFI_OK) / sizeof(P_WIFI_OK[0])),             false, 1 },
-  { P_LOGGER_ON,       (uint8_t)(sizeof(P_LOGGER_ON) / sizeof(P_LOGGER_ON[0])),         false, 1 },
-  { P_OTA_START,       (uint8_t)(sizeof(P_OTA_START) / sizeof(P_OTA_START[0])),         false, 2 },
-  { P_OTA_OK,          (uint8_t)(sizeof(P_OTA_OK) / sizeof(P_OTA_OK[0])),               false, 2 },
-  { P_OTA_FAIL,        (uint8_t)(sizeof(P_OTA_FAIL) / sizeof(P_OTA_FAIL[0])),           false, 2 },
-  { P_MAINS_LOST,      (uint8_t)(sizeof(P_MAINS_LOST) / sizeof(P_MAINS_LOST[0])),       false, 2 },
+  { P_BOOT,            (uint8_t)(sizeof(P_BOOT) / sizeof(P_BOOT[0])), false, 1 },
+  { P_WIFI_PORTAL,     (uint8_t)(sizeof(P_WIFI_PORTAL) / sizeof(P_WIFI_PORTAL[0])), false, 1 },
+  { P_WIFI_OK,         (uint8_t)(sizeof(P_WIFI_OK) / sizeof(P_WIFI_OK[0])), false, 1 },
+  { P_LOGGER_ON,       (uint8_t)(sizeof(P_LOGGER_ON) / sizeof(P_LOGGER_ON[0])), false, 1 },
+  { P_OTA_START,       (uint8_t)(sizeof(P_OTA_START) / sizeof(P_OTA_START[0])), false, 2 },
+  { P_OTA_OK,          (uint8_t)(sizeof(P_OTA_OK) / sizeof(P_OTA_OK[0])), false, 2 },
+  { P_OTA_FAIL,        (uint8_t)(sizeof(P_OTA_FAIL) / sizeof(P_OTA_FAIL[0])), false, 2 },
+  { P_MAINS_LOST,      (uint8_t)(sizeof(P_MAINS_LOST) / sizeof(P_MAINS_LOST[0])), false, 2 },
   { P_MAINS_RESTORED,  (uint8_t)(sizeof(P_MAINS_RESTORED) / sizeof(P_MAINS_RESTORED[0])), false, 2 },
-  { P_VOLT_LOW,        (uint8_t)(sizeof(P_VOLT_LOW) / sizeof(P_VOLT_LOW[0])),           false, 2 },
-  { P_VOLT_HIGH,       (uint8_t)(sizeof(P_VOLT_HIGH) / sizeof(P_VOLT_HIGH[0])),         false, 2 },
-  { P_DEVICE_PLUG,     (uint8_t)(sizeof(P_DEVICE_PLUG) / sizeof(P_DEVICE_PLUG[0])),     false, 1 },
-  { P_FAULT_ARC,       (uint8_t)(sizeof(P_FAULT_ARC) / sizeof(P_FAULT_ARC[0])),         true,  4 },
-  { P_FAULT_HEAT,      (uint8_t)(sizeof(P_FAULT_HEAT) / sizeof(P_FAULT_HEAT[0])),       true,  5 },
-  { P_FAULT_OVER,      (uint8_t)(sizeof(P_FAULT_OVER) / sizeof(P_FAULT_OVER[0])),       true,  3 },
+  { P_VOLT_LOW,        (uint8_t)(sizeof(P_VOLT_LOW) / sizeof(P_VOLT_LOW[0])), false, 2 },
+  { P_VOLT_HIGH,       (uint8_t)(sizeof(P_VOLT_HIGH) / sizeof(P_VOLT_HIGH[0])), false, 2 },
+  { P_DEVICE_PLUG,     (uint8_t)(sizeof(P_DEVICE_PLUG) / sizeof(P_DEVICE_PLUG[0])), false, 1 },
+  { P_FAULT_ARC,       (uint8_t)(sizeof(P_FAULT_ARC) / sizeof(P_FAULT_ARC[0])), true, 4 },
+  { P_FAULT_HEAT,      (uint8_t)(sizeof(P_FAULT_HEAT) / sizeof(P_FAULT_HEAT[0])), true, 5 },
+  { P_FAULT_OVER,      (uint8_t)(sizeof(P_FAULT_OVER) / sizeof(P_FAULT_OVER[0])), true, 3 },
   { P_FAULT_UNDERVOLT, (uint8_t)(sizeof(P_FAULT_UNDERVOLT) / sizeof(P_FAULT_UNDERVOLT[0])), true, 3 },
   { P_FAULT_OVERVOLT,  (uint8_t)(sizeof(P_FAULT_OVERVOLT) / sizeof(P_FAULT_OVERVOLT[0])), true, 4 },
-  { P_RESET_ACK,       (uint8_t)(sizeof(P_RESET_ACK) / sizeof(P_RESET_ACK[0])),         false, 1 }
+  { P_RESET_ACK,       (uint8_t)(sizeof(P_RESET_ACK) / sizeof(P_RESET_ACK[0])), false, 1 }
 };
 
 static_assert((sizeof(PATTERNS) / sizeof(PATTERNS[0])) == (SND_RESET_ACK + 1),
@@ -104,16 +104,12 @@ static uint8_t s_activeId = 255;
 static uint8_t s_step = 0;
 static uint32_t s_t0 = 0;
 static uint8_t s_activePrio = 0;
-static uint8_t s_lastFaultSound = 255;
 static uint8_t s_faultHoldSound = 255;
 static uint32_t s_faultHoldUntil = 0;
 
 static inline bool isFaultPattern(uint8_t id) {
-  return id == SND_FAULT_ARC ||
-         id == SND_FAULT_HEAT ||
-         id == SND_FAULT_OVER ||
-         id == SND_FAULT_UNDERVOLT ||
-         id == SND_FAULT_OVERVOLT;
+  return id == SND_FAULT_ARC || id == SND_FAULT_HEAT || id == SND_FAULT_OVER ||
+         id == SND_FAULT_UNDERVOLT || id == SND_FAULT_OVERVOLT;
 }
 
 static inline bool startupMuteActive() {
@@ -221,22 +217,83 @@ static void soundLoop() {
   }
 }
 
-void Actuators::begin(int pinRelay, int pinBuzzer, OLED_NOTIF* oled) {
-  _pinRelay = pinRelay;
+void Actuators::writeLatchOn_(bool asserted) {
+  if (_pinLatchOn < 0) return;
+  digitalWrite(_pinLatchOn, asserted ? HIGH : LOW);
+}
+
+void Actuators::writeLatchOff_(bool asserted) {
+  if (_pinLatchOff < 0) return;
+  digitalWrite(_pinLatchOff, asserted ? HIGH : LOW);
+}
+
+void Actuators::updateRelayPulse_() {
+  const uint32_t now = millis();
+  if (_pulseOnUntil && (int32_t)(now - _pulseOnUntil) >= 0) {
+    writeLatchOn_(false);
+    _pulseOnUntil = 0;
+  }
+  if (_pulseOffUntil && (int32_t)(now - _pulseOffUntil) >= 0) {
+    writeLatchOff_(false);
+    _pulseOffUntil = 0;
+  }
+}
+
+void Actuators::begin(int pinLatchOn, int pinLatchOff, int pinBuzzer, OLED_NOTIF* oled) {
+  _pinLatchOn = pinLatchOn;
+  _pinLatchOff = pinLatchOff;
   _pinBuzzer = pinBuzzer;
   _oled = oled;
 
-  pinMode(_pinRelay, OUTPUT);
-  setRelay(true);
+  pinMode(_pinLatchOn, OUTPUT);
+  pinMode(_pinLatchOff, OUTPUT);
+  writeLatchOn_(false);
+  writeLatchOff_(false);
+  delay(20);
+  pulseRelayOff(LATCH_OFF_PULSE_MS);
 
   soundBegin(_pinBuzzer);
   soundStop();
 }
 
-void Actuators::setRelay(bool on) {
-  if (_pinRelay < 0) return;
-  const bool level = RELAY_ACTIVE_LOW ? !on : on;
-  digitalWrite(_pinRelay, level ? HIGH : LOW);
+void Actuators::pulseRelayOn(uint32_t pulseMs) {
+  if (pulseMs == 0) pulseMs = LATCH_ON_PULSE_MS;
+  const uint32_t now = millis();
+  if ((now - _lastRelayPulseMs) < LATCH_PULSE_GAP_MS) return;
+  updateRelayPulse_();
+  writeLatchOff_(false);
+  writeLatchOn_(true);
+  _pulseOffUntil = 0;
+  _pulseOnUntil = now + pulseMs;
+  _lastRelayPulseMs = now;
+  _relayLatchedOn = true;
+  _relayOnEdge = true;
+}
+
+void Actuators::pulseRelayOff(uint32_t pulseMs) {
+  if (pulseMs == 0) pulseMs = LATCH_OFF_PULSE_MS;
+  const uint32_t now = millis();
+  if ((now - _lastRelayPulseMs) < LATCH_PULSE_GAP_MS) return;
+  updateRelayPulse_();
+  writeLatchOn_(false);
+  writeLatchOff_(true);
+  _pulseOnUntil = 0;
+  _pulseOffUntil = now + pulseMs;
+  _lastRelayPulseMs = now;
+  _relayLatchedOn = false;
+  _relayOffEdge = true;
+}
+
+bool Actuators::consumeRelayOnEdge() {
+  const bool v = _relayOnEdge;
+  _relayOnEdge = false;
+  return v;
+}
+
+bool Actuators::consumeRelayOffEdge() {
+  const bool v = _relayOffEdge;
+  _relayOffEdge = false;
+  return v;
 }
 
 void Actuators::notify(SoundEvent ev) {
@@ -247,6 +304,7 @@ void Actuators::notify(SoundEvent ev) {
 void Actuators::apply(FaultState st, float vDisplay, float vProtect, float i, float t) {
   (void)vDisplay;
   const uint32_t now = millis();
+  updateRelayPulse_();
 
 #if COLLECTION_ONLY_MODE
   const float heatCutoffC = TEMP_DATA_WARN_C;
@@ -258,22 +316,8 @@ void Actuators::apply(FaultState st, float vDisplay, float vProtect, float i, fl
   const bool arcActive       = (st == STATE_ARCING);
   const bool underVoltActive = (st == STATE_UNDERVOLTAGE);
   const bool overVoltActive  = (st == STATE_OVERVOLTAGE);
-  const bool overloadActive  = (st == STATE_OVERLOAD) || (i >= OVERLOAD_WARN_A);
-
-  bool relayOn = true;
-
-  if (_manualRelayOff) {
-    relayOn = false;
-  } else if (heatActive || underVoltActive || overVoltActive || overloadActive) {
-    relayOn = false;
-  }
-#if !COLLECTION_ONLY_MODE
-  else if (arcActive) {
-    relayOn = false;
-  }
-#endif
-
-  setRelay(relayOn);
+  const bool overloadActive  = (st == STATE_OVERLOAD) || (st == STATE_SUSTAINED_OVERLOAD) || (i >= OVERLOAD_WARN_A);
+  const bool sustainedOverloadActive = (st == STATE_SUSTAINED_OVERLOAD);
 
   uint8_t wantedFaultSound = 255;
   if (heatActive) wantedFaultSound = SND_FAULT_HEAT;
@@ -289,10 +333,8 @@ void Actuators::apply(FaultState st, float vDisplay, float vProtect, float i, fl
     } else if ((int32_t)(s_faultHoldUntil - now) < 0) {
       s_faultHoldUntil = now + FAULT_ALERT_MIN_MS;
     }
-    s_lastFaultSound = wantedFaultSound;
     soundStart(wantedFaultSound);
   } else {
-    s_lastFaultSound = 255;
     if (s_faultHoldSound != 255 && (int32_t)(s_faultHoldUntil - now) > 0) {
       soundStart(s_faultHoldSound);
     } else {
@@ -332,6 +374,27 @@ void Actuators::apply(FaultState st, float vDisplay, float vProtect, float i, fl
   } else {
     mainsOffSince = 0;
     mainsOnSince = 0;
+  }
+
+  const bool unplugged = rawOff && (mainsOffSince != 0) && ((now - mainsOffSince) >= UNPLUGGED_STATE_DELAY_MS);
+  const bool criticalBlock = arcActive || heatActive || underVoltActive || overVoltActive || overloadActive || sustainedOverloadActive;
+
+  if (unplugged && _relayLatchedOn) {
+    pulseRelayOff(LATCH_OFF_PULSE_MS);
+  }
+
+  if (!criticalBlock && mainsStable && !_relayLatchedOn) {
+    if (i >= LOAD_ON_DETECT_A) {
+      if (_loadDetectSince == 0) _loadDetectSince = now;
+      if ((now - _loadDetectSince) >= LOAD_ON_DETECT_MS) {
+        pulseRelayOn(LATCH_ON_PULSE_MS);
+        _loadDetectSince = 0;
+      }
+    } else {
+      _loadDetectSince = 0;
+    }
+  } else {
+    _loadDetectSince = 0;
   }
 
   soundLoop();

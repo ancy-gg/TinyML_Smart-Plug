@@ -56,8 +56,11 @@
             </div>
             <div class="menu-section menu-section-links">
               <button type="button" class="menu-link" id="btnChangeWifi">Change WiFi</button>
-              <button type="button" class="menu-link" id="btnRelayOn">Relay ON</button>
-              <button type="button" class="menu-link" id="btnRelayOff">Relay OFF</button>
+              <div class="menu-label">Relay Pulse</div>
+              <div class="relay-rocker" id="relayRocker">
+                <button type="button" class="rocker-btn" id="btnRelayOn">ON</button>
+                <button type="button" class="rocker-btn" id="btnRelayOff">OFF</button>
+              </div>
               <a class="menu-link" href="guide.html">Guide</a>
             </div>
           </div>
@@ -342,9 +345,12 @@
         </div>
 
         <div class="history-actions">
-          <label class="muted">
-            <input type="checkbox" id="mlLogEnable" />
-            Collect Data
+          <label class="switchline" for="mlLogEnable">
+            <span class="switch-caption">Collect Data</span>
+            <span class="switch">
+              <input type="checkbox" id="mlLogEnable" />
+              <span class="switch-slider"></span>
+            </span>
           </label>
 
           <select id="mlLogDur" class="select">

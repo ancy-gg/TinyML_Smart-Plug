@@ -39,10 +39,16 @@ static constexpr uint32_t BUZZER_STARTUP_MUTE_MS = 700;
 static constexpr uint32_t SYSTEM_READY_CHIME_DELAY_MS = 1000;
 
 // =========================
-// Latch reset control
+// Fan control
 // =========================
-static constexpr uint32_t LATCH_RESET_PULSE_MS = 120UL;
-static constexpr uint32_t RELAY_CTRL_POLL_MS   = 700UL;
+static constexpr bool  FAN_FORCE_MAX_TEST       = true;   // test mode: keep fan fully on
+static constexpr bool  FAN_BYPASS_PWM_WHEN_FORCED = true;  // cheap 2-wire fans often prefer DC, not PWM
+static constexpr float FAN_MIN_TEMP_C            = 25.0f;
+static constexpr float FAN_MAX_TEMP_C            = 50.0f;
+static constexpr uint32_t FAN_PWM_HZ             = 25000UL;
+static constexpr uint8_t FAN_PWM_BITS            = 8;
+static constexpr uint8_t FAN_MIN_SPIN_DUTY       = 96;
+static constexpr uint32_t FAN_START_KICK_MS      = 1200UL;
 
 // =========================
 // Sampling and FFT
@@ -128,15 +134,41 @@ static constexpr int HEAT_FRAMES_DEC  = 1;
 // =========================
 static constexpr int PIN_VOLT_ADC    = D0;
 static constexpr int PIN_TEMP_ADC    = D1;
-static constexpr int PIN_LATCH_RESET = D6;
+static constexpr int PIN_LATCH_ON    = D6;
 
 static constexpr int PIN_ADC_CS   = D3;
 static constexpr int PIN_ADC_SCK  = D8;
 static constexpr int PIN_ADC_MISO = D9;
 static constexpr int PIN_ADC_MOSI = D10;
 
-static constexpr int PIN_RELAY      = D7;
+static constexpr int PIN_LATCH_OFF   = D7;
 static constexpr int PIN_BUZZER_PWM = D2;
+
+// Legacy aliases kept for older source files
+static constexpr int PIN_FAN_PWM = PIN_LATCH_ON;
+static constexpr int PIN_RELAY   = PIN_LATCH_OFF;
+
+// Hardware latch pulse control
+static constexpr uint32_t LATCH_ON_PULSE_MS  = 120UL;
+static constexpr uint32_t LATCH_OFF_PULSE_MS = 120UL;
+static constexpr uint32_t LATCH_PULSE_GAP_MS = 250UL;
+
+// Load state / physical-button override sync
+static constexpr float LOAD_ON_DETECT_A   = 0.12f;
+static constexpr float LOAD_OFF_DETECT_A  = 0.03f;
+static constexpr uint32_t LOAD_ON_DETECT_MS  = 350UL;
+static constexpr uint32_t LOAD_OFF_DETECT_MS = 1200UL;
+
+// Voltage validation / recovery
+static constexpr uint32_t VOLTAGE_EVENT_VALIDATE_MS   = 500UL;
+static constexpr uint32_t EXTREME_VOLTAGE_VALIDATE_MS = 120UL;
+static constexpr float EXTREME_UNDERVOLT_FAST_V = 170.0f;
+static constexpr float EXTREME_OVERVOLT_FAST_V  = 270.0f;
+static constexpr uint32_t VOLTAGE_RECLOSE_STABLE_MS = 5UL * 60UL * 1000UL;
+
+// Sustained overload logic
+static constexpr float SUSTAINED_OVERLOAD_TRIP_A = 14.5f;
+static constexpr uint32_t SUSTAINED_OVERLOAD_TRIP_MS = 60UL * 1000UL;
 
 static constexpr uint32_t FEAT_STALE_MS           = 350;
 static constexpr uint32_t ML_CTRL_POLL_MS         = 10000;

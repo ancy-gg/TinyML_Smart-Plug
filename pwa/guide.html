@@ -71,11 +71,11 @@
       <h2>Protection rules</h2>
       <div class="grid">
         <div class="rule"><h3>Arc Fault</h3><p>Trips when the AI model detects an arc signature from waveform features.</p></div>
-        <div class="rule"><h3>Overload</h3><p>Alarm at 10 A or above.</p></div>
+        <div class="rule"><h3>Overload</h3><p>Alarm at 10 A or above. If current reaches 14.5 A for 1 minute, status becomes Sustained Overload and the relay is pulsed OFF.</p></div>
         <div class="rule"><h3>Socket Heating</h3><p>Trip at 70 °C or higher.</p></div>
         <div class="rule"><h3>Short Circuit</h3><p>Trip above 20 A.</p></div>
-        <div class="rule"><h3>Undervoltage</h3><p>Trip below 200 V.</p></div>
-        <div class="rule"><h3>Overvoltage</h3><p>Trip above 250 V.</p></div>
+        <div class="rule"><h3>Undervoltage</h3><p>Validated below 200 V using a short persistence counter. Once valid, the relay is pulsed OFF and the device waits 5 minutes of stable voltage before auto-pulsing ON.</p></div>
+        <div class="rule"><h3>Overvoltage</h3><p>Validated above 250 V using a short persistence counter. Once valid, the relay is pulsed OFF and the device waits 5 minutes of stable voltage before auto-pulsing ON.</p></div>
       </div>
     </section>
 
@@ -92,6 +92,17 @@
         <div class="card"><h3>Wavelet Packet Energy Entropy</h3><p>Captures how spread and disordered the signal energy becomes across wavelet bands.</p></div>
         <div class="card"><h3>Spectral Entropy</h3><p>Measures randomness in the frequency spectrum. More disorder often means a less stable waveform.</p></div>
         <div class="card"><h3>THD Current</h3><p>Total harmonic distortion of current. This is a supporting distortion feature, not a complete arc decision by itself.</p></div>
+      </div>
+    </section>
+
+
+    <section class="section">
+      <h2>Relay pulse behavior</h2>
+      <div class="grid">
+        <div class="card"><h3>Hardware latch</h3><p>The output relay is controlled by a hardware latch, so the firmware only sends short ON or OFF pulses. It does not hold the relay command continuously.</p></div>
+        <div class="card"><h3>Auto-off on unplugged</h3><p>When mains is absent long enough to qualify as unplugged, the device sends an OFF pulse so the latch returns to the safe state.</p></div>
+        <div class="card"><h3>Physical button override</h3><p>If current is detected while the software believes the relay is off, the firmware re-synchronizes by issuing an ON pulse. This allows the physical latch button to remain authoritative.</p></div>
+        <div class="card"><h3>Remote controls</h3><p>The app can send ON and OFF pulses only when the device is in a non-critical state. Remote relay controls are disabled during arc, heating, overload, sustained overload, undervoltage, and overvoltage events.</p></div>
       </div>
     </section>
 
@@ -118,7 +129,7 @@
         <li>Only after you personally confirm the environment is safe, press the physical reset button on the device.</li>
         <li>Reconnect and watch the dashboard again. If the same trip returns, discontinue use and inspect the appliance or installation more thoroughly.</li>
       </ol>
-      <div class="callout">The relay cannot automatically or remotely reset. This is intentional. The user must physically confirm safety and then press the physical reset button on the device.</div>
+      <div class="callout">The relay uses pulse-based latch control. For critical faults, the dashboard disables remote relay controls until the fault clears. Voltage faults can auto-reclose only after five minutes of stable mains.</div>
     </section>
   </div>
 </body>

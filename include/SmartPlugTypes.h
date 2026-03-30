@@ -4,6 +4,7 @@
 enum FaultState : uint8_t {
   STATE_NORMAL = 0,
   STATE_OVERLOAD,
+  STATE_SUSTAINED_OVERLOAD,
   STATE_UNDERVOLTAGE,
   STATE_OVERVOLTAGE,
   STATE_HEATING,
@@ -12,12 +13,13 @@ enum FaultState : uint8_t {
 
 static inline const char* stateToCstr(FaultState s) {
   switch (s) {
-    case STATE_OVERLOAD:      return "OVERLOAD";
-    case STATE_UNDERVOLTAGE:  return "UNDERVOLTAGE";
-    case STATE_OVERVOLTAGE:   return "OVERVOLTAGE";
-    case STATE_HEATING:       return "HEATING";
-    case STATE_ARCING:        return "ARCING";
-    default:                  return "NORMAL";
+    case STATE_OVERLOAD:            return "OVERLOAD";
+    case STATE_SUSTAINED_OVERLOAD:  return "SUSTAINED OVERLOAD";
+    case STATE_UNDERVOLTAGE:        return "UNDERVOLTAGE";
+    case STATE_OVERVOLTAGE:         return "OVERVOLTAGE";
+    case STATE_HEATING:             return "HEATING";
+    case STATE_ARCING:              return "ARCING";
+    default:                        return "NORMAL";
   }
 }
 
@@ -25,12 +27,10 @@ struct FeatureFrame {
   uint64_t epoch_ms  = 0;
   uint32_t uptime_ms = 0;
 
-  // context
   float vrms   = 0.0f;
   float irms   = 0.0f;
   float temp_c = 0.0f;
 
-  // exact main 10-feature order
   float cycle_nmse            = 0.0f;
   float zcv                   = 0.0f;
   float zc_dwell_ratio        = 0.0f;
