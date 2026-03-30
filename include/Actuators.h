@@ -31,10 +31,14 @@ public:
   void apply(FaultState st, float vDisplay, float vProtect, float i, float t);
   void notify(SoundEvent ev);
 
+  void setManualRelayOff(bool en) { _manualRelayOff = en; }
+  bool manualRelayOff() const { return _manualRelayOff; }
+
 private:
   int _pinRelay = -1;
   int _pinBuzzer = -1;
   OLED_NOTIF* _oled = nullptr;
   uint32_t _lastOled = 0;
+  bool _manualRelayOff = false;
   void setRelay(bool on);
 };

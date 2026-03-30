@@ -83,7 +83,7 @@ static constexpr int CURRENT_MIN_ACTIVITY_CHANGES   = 6;
 static constexpr uint16_t CURRENT_MIN_CODE_SPAN     = 4;
 static constexpr uint16_t LOW_CURRENT_CODE_SPAN     = 12;
 
-static constexpr float CURRENT_FRAME_MIN_FS_HZ      = 9000.0f;
+static constexpr float CURRENT_FRAME_MIN_FS_HZ      = 24000.0f;
 static constexpr uint32_t CURRENT_BOOT_SETTLE_MS    = 300UL;
 
 static constexpr float PULSE_ANALYSIS_MIN_IRMS_A    = 0.015f;
@@ -100,12 +100,12 @@ static constexpr float CURRENT_DISPLAY_OFF_A        = 0.010f;
 
 #else
 
-static constexpr float IRMS_GATE_ON_A               = 0.075f;
-static constexpr float IRMS_GATE_OFF_A              = 0.045f;
-static constexpr float CURRENT_IDLE_SUPPRESS_A      = 0.075f;
+static constexpr float IRMS_GATE_ON_A               = 0.050f;
+static constexpr float IRMS_GATE_OFF_A              = 0.025f;
+static constexpr float CURRENT_IDLE_SUPPRESS_A      = 0.040f;
 static constexpr float FEATURE_MIN_VRMS             = 70.0f;
-static constexpr float FEATURE_MIN_IRMS_A           = 0.075f;
-static constexpr float ARC_MIN_IRMS_A               = 0.075f;
+static constexpr float FEATURE_MIN_IRMS_A           = 0.050f;
+static constexpr float ARC_MIN_IRMS_A               = 0.060f;
 static constexpr float FEATURE_REQUIRE_FUND_BELOW_A = 0.180f;
 
 static constexpr float CURRENT_LPF_HZ               = 1800.0f;
@@ -122,13 +122,13 @@ static constexpr float PULSE_THRESH_RMS_MUL         = 7.0f;
 static constexpr float PULSE_THRESH_MIN_A           = 0.120f;
 
 static constexpr float MIDBAND_LO_HZ                = 220.0f;
-static constexpr float MIDBAND_HI_HZ                = 4000.0f;
+static constexpr float MIDBAND_HI_HZ                = 3500.0f;
 static constexpr float UPPERMID_LO_HZ               = 900.0f;
-static constexpr float UPPERMID_HI_HZ               = 3200.0f;
-static constexpr float HF_BAND_LO_HZ                = 3200.0f;
-static constexpr float HF_BAND_HI_HZ                = 6800.0f;
+static constexpr float UPPERMID_HI_HZ               = 6000.0f;
+static constexpr float HF_BAND_LO_HZ                = 6000.0f;
+static constexpr float HF_BAND_HI_HZ                = 15000.0f;
 static constexpr float SPEC_ENT_LO_HZ               = 220.0f;
-static constexpr float SPEC_ENT_HI_HZ               = 6800.0f;
+static constexpr float SPEC_ENT_HI_HZ               = 15000.0f;
 
 static constexpr float FUND_SNR_MIN                 = 6.0f;
 static constexpr float FUND_MAG_MIN                 = 1e-5f;
@@ -138,23 +138,23 @@ static constexpr int CURRENT_MIN_ACTIVITY_CHANGES   = 10;
 static constexpr uint16_t CURRENT_MIN_CODE_SPAN     = 10;
 static constexpr uint16_t LOW_CURRENT_CODE_SPAN     = 30;
 
-static constexpr float CURRENT_FRAME_MIN_FS_HZ      = 9000.0f;
+static constexpr float CURRENT_FRAME_MIN_FS_HZ      = 24000.0f;
 static constexpr uint32_t CURRENT_BOOT_SETTLE_MS    = 450UL;
 
 static constexpr float PULSE_ANALYSIS_MIN_IRMS_A    = 0.075f;
 static constexpr float PULSE_ANALYSIS_MIN_RESID_A   = 0.035f;
 
-static constexpr float TRUE_RMS_MIN_COHERENCE       = 0.74f;
-static constexpr float TRUE_RMS_RELAXED_COHERENCE   = 0.55f;
-static constexpr float TRUE_RMS_MIN_COHERENT_A      = 0.45f;
-static constexpr float TRUE_RMS_MAX_RESID_FRAC      = 0.60f;
+static constexpr float TRUE_RMS_MIN_COHERENCE       = 0.55f;
+static constexpr float TRUE_RMS_RELAXED_COHERENCE   = 0.40f;
+static constexpr float TRUE_RMS_MIN_COHERENT_A      = 0.10f;
+static constexpr float TRUE_RMS_MAX_RESID_FRAC      = 0.80f;
 
 // MCP path on this board currently carries a stable low-current hardware floor.
 // Subtract it after RMS estimation, then use a small hysteresis so idle noise
 // stays at 0 A while a real fan load can still appear.
 static constexpr float CURRENT_RMS_FLOOR_SUB_A      = 0.000f;
-static constexpr float CURRENT_DISPLAY_ON_A         = 0.060f;
-static constexpr float CURRENT_DISPLAY_OFF_A        = 0.030f;
+static constexpr float CURRENT_DISPLAY_ON_A         = 0.040f;
+static constexpr float CURRENT_DISPLAY_OFF_A        = 0.020f;
 
 #endif
 

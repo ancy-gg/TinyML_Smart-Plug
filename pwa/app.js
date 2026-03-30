@@ -229,6 +229,8 @@ modeButtons.forEach((btn) => btn.addEventListener("click", () => {
 const menuTrigger = el("menuTrigger");
 const headerMenu = el("headerMenu");
 const btnChangeWifi = el("btnChangeWifi");
+const btnRelayOn = el("btnRelayOn");
+const btnRelayOff = el("btnRelayOff");
 
 function setHeaderMenuOpen(open) {
   if (!menuTrigger || !headerMenu) return;
@@ -274,6 +276,57 @@ btnChangeWifi?.addEventListener("click", async () => {
     btnChangeWifi.disabled = false;
     btnChangeWifi.textContent = oldText || "Change WiFi";
   }
+});
+
+async function sendControlToken(buttonEl, busyText, okText, errText, payload) {
+  setHeaderMenuOpen(false);
+
+  const oldText = buttonEl?.textContent || "";
+  if (buttonEl) {
+    buttonEl.disabled = true;
+    buttonEl.textContent = busyText;
+  }
+
+  try {
+    await db.ref("/controls").update(payload);
+    toast(okText, "ok");
+  } catch (e) {
+    console.error(e);
+    toast(errText, "err");
+  } finally {
+    if (buttonEl) {
+      buttonEl.disabled = false;
+      buttonEl.textContent = oldText;
+    }
+  }
+}
+
+btnRelayOn?.addEventListener("click", async () => {
+  const token = `relay_on_${Date.now()}`;
+  await sendControlToken(
+    btnRelayOn,
+    "Sending...",
+    "Relay ON pulse sent.",
+    "Failed to send Relay ON.",
+    {
+      relay_on_token: token,
+      relay_on_requested_at: firebase.database.ServerValue.TIMESTAMP
+    }
+  );
+});
+
+btnRelayOff?.addEventListener("click", async () => {
+  const token = `relay_off_${Date.now()}`;
+  await sendControlToken(
+    btnRelayOff,
+    "Sending...",
+    "Relay OFF sent.",
+    "Failed to send Relay OFF.",
+    {
+      relay_off_token: token,
+      relay_off_requested_at: firebase.database.ServerValue.TIMESTAMP
+    }
+  );
 });
 
 if (alertEnable) alertEnable.checked = loadBool(LS_ALERT, true);
@@ -329,6 +382,7 @@ function classifyStatus(s) {
   if (u === "DEVICE PLUGGED IN") return "DEVICE_PLUGGED_IN";
   if (u === "DEVICE ONLINE") return "DEVICE_ONLINE";
   if (u === "FIRMWARE UPDATED") return "FIRMWARE_UPDATED";
+  if (u === "MANUAL RELAY OFF" || u === "MANUAL_RELAY_OFF") return "MANUAL_RELAY_OFF";
   if (u.includes("DISCON")) return "DEVICE_DISCONNECTED";
   if (u.includes("UNPLUG")) return "UNPLUGGED";
   if (u.includes("ARC")) return "ARCING";
@@ -364,6 +418,7 @@ function statusBadgeHTML(kind) {
     case "DEVICE_ONLINE": return `ONLINE`;
     case "DEVICE_PLUGGED_IN": return `PLUGGED IN`;
     case "FIRMWARE_UPDATED": return `FIRMWARE UPDATED`;
+    case "MANUAL_RELAY_OFF": return `MANUAL RELAY OFF`;
     case "SAFE_MODE": return `SAFE MODE`;
     case "CONFIG_PORTAL": return `CONFIG PORTAL`;
     case "WIFI_CONNECTING": return `WIFI CONNECTING`;
@@ -387,6 +442,7 @@ function setTopStatus(kind) {
   else if (k === "OVERVOLTAGE") statusBadge.classList.add("status-OVERVOLTAGE");
   else if (k === "UNDERVOLTAGE") statusBadge.classList.add("status-UNDERVOLTAGE");
   else if (k === "FIRMWARE_UPDATED") statusBadge.classList.add("status-FW");
+  else if (k === "MANUAL_RELAY_OFF") statusBadge.classList.add("status-WARN");
   else if (k === "SAFE_MODE" || k === "CONFIG_PORTAL" || k === "WIFI_CONNECTING" || k === "STARTUP_STABILIZING" || k === "OTA_UPDATING") statusBadge.classList.add("status-WARN");
   else statusBadge.classList.add("status-OK");
 
@@ -411,6 +467,7 @@ function pillHTML(kind) {
   if (k === "DEVICE_PLUGGED_IN") return `<span class="pill pill-ONLINE">DEVICE PLUGGED IN</span>`;
   if (k === "DEVICE_ONLINE") return `<span class="pill pill-ONLINE">DEVICE ONLINE</span>`;
   if (k === "FIRMWARE_UPDATED") return `<span class="pill pill-FW">FIRMWARE UPDATED</span>`;
+  if (k === "MANUAL_RELAY_OFF") return `<span class="pill pill-DIS">MANUAL RELAY OFF</span>`;
   if (k === "NORMAL") return `<span class="pill pill-OK">NORMAL</span>`;
   return `<span class="pill pill-OK">${prettyStatus(k)}</span>`;
 }
@@ -463,7 +520,7 @@ function isLiveLoadActive(data) {
 
 function deriveLiveStatus(data) {
   const raw = classifyStatus(data?.status || "NORMAL");
-  if (["DEVICE_DISCONNECTED", "OVERLOAD", "HEATING", "ARCING", "OVERVOLTAGE", "UNDERVOLTAGE", "UNPLUGGED", "SAFE_MODE", "CONFIG_PORTAL", "WIFI_CONNECTING", "STARTUP_STABILIZING", "OTA_UPDATING", "FIRMWARE_UPDATED"].includes(raw)) return raw;
+  if (["DEVICE_DISCONNECTED", "OVERLOAD", "HEATING", "ARCING", "OVERVOLTAGE", "UNDERVOLTAGE", "UNPLUGGED", "SAFE_MODE", "CONFIG_PORTAL", "WIFI_CONNECTING", "STARTUP_STABILIZING", "OTA_UPDATING", "FIRMWARE_UPDATED", "MANUAL_RELAY_OFF"].includes(raw)) return raw;
   const power = derivePowerConditionFromLive(data);
   if (power === "OVERVOLTAGE") return "OVERVOLTAGE";
   if (power === "UNDERVOLTAGE") return "UNDERVOLTAGE";
@@ -583,6 +640,7 @@ function renderOverview() {
     else if (status === "WIFI_CONNECTING") overviewPrimary.textContent = "Connecting to Wi-Fi";
     else if (status === "CONFIG_PORTAL") overviewPrimary.textContent = "Config portal open";
     else if (status === "OTA_UPDATING") overviewPrimary.textContent = "Firmware updating";
+    else if (status === "MANUAL_RELAY_OFF") overviewPrimary.textContent = "Relay manually held off";
     else overviewPrimary.textContent = prettyStatus(status);
   }
 
@@ -624,6 +682,7 @@ function renderOverview() {
   if (ovProtectionSub) {
     if (status === "OVERLOAD") ovProtectionSub.textContent = "Alarm only.";
     else if (["HEATING", "ARCING", "UNDERVOLTAGE", "OVERVOLTAGE"].includes(status)) ovProtectionSub.textContent = "Trip active.";
+    else if (status === "MANUAL_RELAY_OFF") ovProtectionSub.textContent = "Manual off active.";
     else if (status === "UNPLUGGED") ovProtectionSub.textContent = "No trip.";
     else ovProtectionSub.textContent = "No active trip.";
   }
@@ -635,7 +694,7 @@ function renderOverview() {
   if (ovLastEventSub) ovLastEventSub.textContent = lastEventStatus === "—" ? "No history." : lastEventTime;
 
   if (status === "HEATING" || status === "ARCING") setMiniBadge("fault", "Critical");
-  else if (["OVERLOAD", "UNDERVOLTAGE", "OVERVOLTAGE", "UNPLUGGED", "WIFI_CONNECTING", "STARTUP_STABILIZING", "CONFIG_PORTAL", "OTA_UPDATING", "DEVICE_DISCONNECTED"].includes(status)) setMiniBadge("warn", fresh ? "Attention" : "Offline");
+  else if (["OVERLOAD", "UNDERVOLTAGE", "OVERVOLTAGE", "UNPLUGGED", "WIFI_CONNECTING", "STARTUP_STABILIZING", "CONFIG_PORTAL", "OTA_UPDATING", "DEVICE_DISCONNECTED", "MANUAL_RELAY_OFF"].includes(status)) setMiniBadge("warn", fresh ? "Attention" : "Offline");
   else if (fresh) setMiniBadge("ok", loadActive ? "Active" : "Idle");
   else setMiniBadge("warn", "Offline");
 
@@ -701,11 +760,46 @@ function rangeLabel(key) {
   return "Last 7 days";
 }
 
+function formatDurationMs(ms) {
+  if (!Number.isFinite(ms) || ms <= 0) return "—";
+  const totalSec = Math.round(ms / 1000);
+  const h = Math.floor(totalSec / 3600);
+  const m = Math.floor((totalSec % 3600) / 60);
+  const s = totalSec % 60;
+  if (h > 0) return `${h}h ${m}m ${s}s`;
+  if (m > 0) return `${m}m ${s}s`;
+  return `${s}s`;
+}
+
+function buildHistoryWithDurations(records) {
+  const rows = (records || [])
+    .slice()
+    .filter(r => getRecordEpochMs(r) > 0)
+    .sort((a, b) => getRecordEpochMs(a) - getRecordEpochMs(b));
+
+  for (let i = 0; i < rows.length; i++) {
+    const cur = rows[i];
+    const curTs = getRecordEpochMs(cur);
+    let nextTs = 0;
+
+    if (i + 1 < rows.length) {
+      nextTs = getRecordEpochMs(rows[i + 1]);
+    } else if (liveIsFresh() && classifyStatus(lastLiveData?.status || "") === classifyStatus(cur.status || "")) {
+      nextTs = Date.now();
+    }
+
+    cur._duration_ms = (nextTs > curTs) ? (nextTs - curTs) : 0;
+  }
+
+  return rows;
+}
+
 function applyHistoryFilter() {
   const key = rangeSelect?.value || "7d";
   const { start, end } = getRangeBounds(key);
 
-  const filtered = historyCache.filter(r => {
+  const enriched = buildHistoryWithDurations(historyCache);
+  const filtered = enriched.filter(r => {
     const epoch = getRecordEpochMs(r);
     return epoch && epoch >= start && epoch < end;
   });
@@ -714,7 +808,7 @@ function applyHistoryFilter() {
   if (historyHint) historyHint.textContent = `Showing: ${rangeLabel(key)} (${filtered.length})`;
 
   if (!filtered.length) {
-    historyBody.innerHTML = `<tr><td colspan="8" class="muted">No history in this range.</td></tr>`;
+    historyBody.innerHTML = `<tr><td colspan="6" class="muted">No history in this range.</td></tr>`;
     return;
   }
 
@@ -722,6 +816,7 @@ function applyHistoryFilter() {
   const rows = filtered.slice(0, MAX_RENDER_ROWS).map((r, idx) => {
     const epoch = getRecordEpochMs(r);
     const timeStr = formatEpochMsTZ(epoch);
+    const durStr = formatDurationMs(Number(r._duration_ms || 0));
     return `
       <tr class="row-in" style="animation-delay:${Math.min(idx, 10) * 25}ms">
         <td class="mono">${timeStr}</td>
@@ -729,9 +824,7 @@ function applyHistoryFilter() {
         <td class="mono">${toFixedOrDash(r.voltage, 1)}</td>
         <td class="mono">${toFixedOrDash(r.current, 3)}</td>
         <td class="mono">${toFixedOrDash(r.temp, 1)}</td>
-        <td class="mono">${toFixedOrDash(r.cycle_nmse, 3)}</td>
-        <td class="mono">${toFixedOrDash(r.zcv, 3)}</td>
-        <td class="mono">${toFixedOrDash(r.thd_i, 3)}</td>
+        <td class="mono">${durStr}</td>
       </tr>
     `;
   }).join("");
@@ -766,12 +859,13 @@ btnDownloadCSV?.addEventListener("click", () => {
     .slice()
     .sort((a, b) => getRecordEpochMs(a) - getRecordEpochMs(b));
 
-  const header = ["timestamp","epoch_ms","status","voltage","current","temp","cycle_nmse","zcv","zc_dwell_ratio","pulse_count_per_cycle","peak_fluct_cv","midband_residual_rms","hf_band_energy_ratio","wpe_entropy","spec_entropy","thd_i"];
+  const header = ["timestamp","epoch_ms","status","voltage","current","temp","duration_s"];
   const lines = [header.join(",")];
 
   for (const r of rows) {
     const epoch = getRecordEpochMs(r);
     const ts = formatEpochMsTZ(epoch);
+    const durationS = Number.isFinite(Number(r._duration_ms)) ? (Number(r._duration_ms) / 1000).toFixed(3) : "";
     lines.push([
       csvEscape(ts),
       csvEscape(epoch),
@@ -779,16 +873,7 @@ btnDownloadCSV?.addEventListener("click", () => {
       csvEscape(r.voltage ?? ""),
       csvEscape(r.current ?? ""),
       csvEscape(r.temp ?? ""),
-      csvEscape(r.cycle_nmse ?? ""),
-      csvEscape(r.zcv ?? ""),
-      csvEscape(r.zc_dwell_ratio ?? ""),
-      csvEscape(r.pulse_count_per_cycle ?? ""),
-      csvEscape(r.peak_fluct_cv ?? ""),
-      csvEscape(r.midband_residual_rms ?? ""),
-      csvEscape(r.hf_band_energy_ratio ?? ""),
-      csvEscape(r.wpe_entropy ?? ""),
-      csvEscape(r.spec_entropy ?? ""),
-      csvEscape(r.thd_i ?? "")
+      csvEscape(durationS)
     ].join(","));
   }
 

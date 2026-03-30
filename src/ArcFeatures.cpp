@@ -180,7 +180,7 @@ bool ArcFeatures::compute(const uint16_t* raw, size_t n, float fs_hz,
 
   for (size_t i = 0; i < n; ++i) sig[i] = sigMed[i] - (float)mean;
 
-  const bool useSoftAaf = CURRENT_SOFT_AAF_ENABLE && (CURRENT_CAPTURE_BACKEND == CUR_BACKEND_ADS8684);
+  const bool useSoftAaf = CURRENT_SOFT_AAF_ENABLE;
   if (useSoftAaf) {
     BiquadLPF softAaf;
     if (makeLowpassBiquad(fs_hz, CURRENT_SOFT_AAF_CUTOFF_HZ, CURRENT_SOFT_AAF_Q, softAaf)) {
@@ -204,38 +204,27 @@ bool ArcFeatures::compute(const uint16_t* raw, size_t n, float fs_hz,
   float yBase  = 0.0f;
   double accIrmsWide = 0.0;
   double accResidSq  = 0.0;
-#if CURRENT_CAPTURE_BACKEND == CUR_BACKEND_MCP3204
-  double accIrmsClean = 0.0;
-#endif
 
   for (size_t i = 0; i < n; ++i) {
-#if CURRENT_CAPTURE_BACKEND == CUR_BACKEND_MCP3204
-    yClean += aClean * (sig[i] - yClean);
-    yBase  += aBase  * (sig[i] - yBase);
-#else
     yClean += aClean * (sigFilt[i] - yClean);
     yBase  += aBase  * (sigFilt[i] - yBase);
-#endif
     sigClean[i] = yClean;
     sigBase[i]  = yBase;
     resid[i]    = yClean - yBase;
-#if CURRENT_CAPTURE_BACKEND == CUR_BACKEND_MCP3204
-    accIrmsClean += (double)yClean * (double)yClean;
-    accIrmsWide  += (double)sig[i] * (double)sig[i];
-#else
     accIrmsWide += (double)sigFilt[i] * (double)sigFilt[i];
-#endif
     accResidSq  += (double)resid[i] * (double)resid[i];
   }
 
+  const float irmsWide = sqrtf((float)(accIrmsWide / (double)n));
   const float residRms = sqrtf((float)(accResidSq / (double)n));
   const uint16_t codeSpan = (uint16_t)(mxCode - mnCode);
 
 #if CURRENT_CAPTURE_BACKEND == CUR_BACKEND_MCP3204
-  const float irmsClean = sqrtf((float)(accIrmsClean / (double)n));
-  const float irmsWide  = sqrtf((float)(accIrmsWide / (double)n));
-
-  float irms = fmaxf(irmsClean, irmsWide * 0.92f);
+  // MCP path: keep the RMS meter simple and efficient.
+  // True RMS is taken directly from the band-limited waveform after the soft AAF.
+  // This keeps it responsive while avoiding the heavier coherent-harmonic meter
+  // that was hiding real low-current loads and amplifying MCP instability.
+  float irms = irmsWide;
 
   if (irms < CURRENT_IDLE_SUPPRESS_A && codeSpan < LOW_CURRENT_CODE_SPAN) {
     irms = 0.0f;
@@ -249,13 +238,10 @@ bool ArcFeatures::compute(const uint16_t* raw, size_t n, float fs_hz,
   }
 
   out.irms_a = irms;
-  out.current_valid = true;
+  out.current_valid = (changes >= CURRENT_MIN_ACTIVITY_CHANGES) &&
+                      ((codeSpan >= CURRENT_MIN_CODE_SPAN) || (irms > 0.0f));
 #else
-  const float irmsWide = sqrtf((float)(accIrmsWide / (double)n));
-
-  // Mains-coherent RMS meter:
-  // estimate current only from the 60 Hz fundamental and low-order harmonics,
-  // which rejects broadband ADS residue that was being turned into false load current.
+  // ADS path: keep the more selective mains-coherent RMS logic.
   double harmRmsSq = 0.0;
   int harmUsed = 0;
   for (int h = 1; h <= 15; ++h) {
@@ -311,7 +297,7 @@ bool ArcFeatures::compute(const uint16_t* raw, size_t n, float fs_hz,
   out.current_valid = ((harmUsed > 0) || trustWideband) && (irms > 0.0f || codeSpan >= LOW_CURRENT_CODE_SPAN);
 #endif
 
-  if (out.irms_a < FEATURE_MIN_IRMS_A) {
+  if (irms < FEATURE_MIN_IRMS_A) {
     out.feat_valid = false;
     return true;
   }
@@ -502,11 +488,7 @@ bool ArcFeatures::compute(const uint16_t* raw, size_t n, float fs_hz,
   if (nmsePairs > 0) out.cycle_nmse = nmseAcc / (float)nmsePairs;
 
   for (size_t i = 0; i < n; ++i) {
-#if CURRENT_CAPTURE_BACKEND == CUR_BACKEND_MCP3204
-    fft_cf[2 * i + 0] = sig[i] * win[i];
-#else
     fft_cf[2 * i + 0] = sigFilt[i] * win[i];
-#endif
     fft_cf[2 * i + 1] = 0.0f;
   }
 

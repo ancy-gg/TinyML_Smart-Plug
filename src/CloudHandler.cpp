@@ -4,6 +4,7 @@
 
 static String powerConditionForState(const String& state, float v) {
   if (state == "ARCING" || state == "HEATING" || state == "OVERLOAD") return state;
+  if (state == "MANUAL RELAY OFF") return "MANUAL RELAY OFF";
   if (state == "UNPLUGGED") return "UNPLUGGED";
   if (state == "OVERVOLTAGE" || v >= VOLT_OVERVOLT_TRIP_V) return "OVERVOLTAGE";
   if (state == "UNDERVOLTAGE" || (v > VOLT_UNDERVOLT_MIN_V && v < VOLT_UNDERVOLT_MAX_V)) return "UNDERVOLTAGE";
@@ -208,6 +209,7 @@ void CloudHandler::update(float v, float c, float apparentPower, float t,
   String devicePhase = "ACTIVE";
   if (isTransitionState(state)) devicePhase = state;
   else if (state == "UNPLUGGED") devicePhase = "UNPLUGGED";
+  else if (state == "MANUAL RELAY OFF") devicePhase = "MANUAL RELAY OFF";
 
   FirebaseJson json;
   json.set("wifi_connected", WiFi.status() == WL_CONNECTED);
@@ -265,7 +267,7 @@ void CloudHandler::update(float v, float c, float apparentPower, float t,
 
   if (state == "ARCING" || state == "HEATING" || state == "OVERLOAD" ||
       state == "UNDERVOLTAGE" || state == "OVERVOLTAGE" ||
-      state == "SURGE" || state == "SAFE_MODE") {
+      state == "SURGE" || state == "SAFE_MODE" || state == "MANUAL RELAY OFF") {
     historyStatus = state;
     pushHistory = (historyStatus != _lastLoggedFaultState);
     if (pushHistory) _lastLoggedFaultState = historyStatus;

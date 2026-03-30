@@ -262,7 +262,9 @@ void Actuators::apply(FaultState st, float vDisplay, float vProtect, float i, fl
 
   bool relayOn = true;
 
-  if (heatActive || underVoltActive || overVoltActive || overloadActive) {
+  if (_manualRelayOff) {
+    relayOn = false;
+  } else if (heatActive || underVoltActive || overVoltActive || overloadActive) {
     relayOn = false;
   }
 #if !COLLECTION_ONLY_MODE
