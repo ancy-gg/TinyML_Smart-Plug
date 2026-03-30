@@ -31,7 +31,7 @@
 
 #define API_KEY "AIzaSyAmJlZZszyWPJFgIkTAAl_TbIySys1nvEw"
 #define DATABASE_URL "tinyml-smart-plug-default-rtdb.asia-southeast1.firebasedatabase.app"
-static const char* FW_VERSION = "TSP-v3.6.4-p-mcp";   //m - set calib to 0.0 (1.0 for first-order var)
+static const char* FW_VERSION = "TSP-v3.6.5-p-mcp";   //m - set calib to 0.0 (1.0 for first-order var)
                                                       //p - change 0 relay, with calibration
                                                       //c - change 1 relay, with calibration
                                                       
@@ -96,27 +96,6 @@ static bool arcInputStable(bool currentValid, bool featValid, float irms) {
   return (now - stableSince) >= 1500UL;
 }
 
-static float applyCurrentDisplayHysteresis(float irms) {
-  static bool active = false;
-
-  if (!(irms > 0.0f)) {
-    active = false;
-    return 0.0f;
-  }
-
-  if (active) {
-    if (irms < CURRENT_DISPLAY_OFF_A) {
-      active = false;
-      return 0.0f;
-    }
-  } else {
-    if (irms > CURRENT_DISPLAY_ON_A) active = true;
-    else return 0.0f;
-  }
-
-  return irms;
-}
-
 static bool debouncedMainsPresentForState(float vProtect) {
   static bool init = false;
   static bool stable = false;
@@ -151,6 +130,79 @@ static bool debouncedMainsPresentForState(float vProtect) {
   }
 
   return stable;
+}
+
+
+static float cleanDisplayCurrent(float irmsRaw, bool currentValid, bool featValid, float vProtect) {
+  static bool learnStarted = false;
+  static bool floorLocked = false;
+  static uint32_t learnStartMs = 0;
+  static double floorSqAcc = 0.0;
+  static uint32_t floorCount = 0;
+  static float learnedFloorA = 0.0f;
+
+  static bool displayGateOn = false;
+  static float dispIrms = 0.0f;
+  static uint32_t lastUpdateMs = 0;
+
+  const uint32_t now = millis();
+  const bool mainsOn = (vProtect >= MAINS_PRESENT_ON_V);
+
+  if (!learnStarted && mainsOn) {
+    learnStarted = true;
+    learnStartMs = now;
+  }
+
+  const bool canLearnIdle =
+      CURRENT_IDLE_LEARN_ENABLE &&
+      learnStarted &&
+      !floorLocked &&
+      mainsOn &&
+      currentValid &&
+      !featValid &&
+      irmsRaw > 0.005f &&
+      irmsRaw < CURRENT_IDLE_LEARN_MAX_A &&
+      ((now - learnStartMs) <= CURRENT_IDLE_LEARN_WINDOW_MS);
+
+  if (canLearnIdle) {
+    floorSqAcc += (double)irmsRaw * (double)irmsRaw;
+    floorCount++;
+    learnedFloorA = sqrtf((float)(floorSqAcc / (double)floorCount));
+  }
+
+  if (CURRENT_IDLE_LEARN_ENABLE &&
+      learnStarted &&
+      !floorLocked &&
+      ((now - learnStartMs) > CURRENT_IDLE_LEARN_WINDOW_MS)) {
+    floorLocked = (floorCount >= CURRENT_IDLE_LEARN_MIN_FRAMES);
+  }
+
+  float irms = irmsRaw;
+  if (floorLocked && learnedFloorA > 0.005f) {
+    const float floorUsed = fmaxf(0.0f, learnedFloorA - CURRENT_IDLE_FLOOR_MARGIN_A);
+    irms = sqrtf(fmaxf(0.0f, (irms * irms) - (floorUsed * floorUsed)));
+  }
+
+  if (!currentValid) irms = 0.0f;
+
+  const uint32_t dtMs = (lastUpdateMs == 0) ? 0 : (now - lastUpdateMs);
+  lastUpdateMs = now;
+  const float dtS = (dtMs > 0) ? (dtMs / 1000.0f) : 0.0f;
+  const float tau = (irms <= CURRENT_DISPLAY_SMOOTH_SPLIT_A)
+                      ? CURRENT_DISPLAY_SMOOTH_TAU_LOW_S
+                      : CURRENT_DISPLAY_SMOOTH_TAU_HIGH_S;
+  const float alpha = (dtS <= 0.0f) ? 1.0f : fminf(1.0f, dtS / fmaxf(0.02f, tau));
+
+  dispIrms += alpha * (irms - dispIrms);
+
+  if (displayGateOn) {
+    if (dispIrms < CURRENT_DISPLAY_GATE_OFF_A) displayGateOn = false;
+  } else {
+    if (dispIrms > CURRENT_DISPLAY_GATE_ON_A) displayGateOn = true;
+  }
+
+  if (!displayGateOn) dispIrms = 0.0f;
+  return dispIrms;
 }
 
 static void handleCueEvents(float vProtect, float irms, bool mainsPresent, bool paused, FaultState st) {
@@ -271,8 +323,6 @@ static void onOtaEvent(OtaEvent ev, int progress) {
 static void Core0Task(void* pv) {
   (void)pv;
   ArcFeatOut out;
-  FeatureFrame lastGood = {};
-  bool hasGood = false;
 
   while (millis() < SENSOR_BOOT_SETTLE_MS) vTaskDelay(20 / portTICK_PERIOD_MS);
 
@@ -311,14 +361,9 @@ static void Core0Task(void* pv) {
         f.spec_entropy          = out.spec_entropy;
         f.thd_i                 = out.thd_i;
       }
-
-      lastGood = f;
-      hasGood = true;
-      if (qFeat) xQueueOverwrite(qFeat, &f);
-    } else if (hasGood && qFeat) {
-      xQueueOverwrite(qFeat, &lastGood);
     }
 
+    if (qFeat) xQueueOverwrite(qFeat, &f);
     vTaskDelay(1);
   }
 }
@@ -508,12 +553,34 @@ void loop() {
 
   static FeatureFrame lastF = {};
   static bool hasLast = false;
+  static uint32_t lastFeatRxMs = 0;
   FeatureFrame f;
+  bool gotNewFeat = false;
   if (qFeat && xQueueReceive(qFeat, &f, 0) == pdTRUE) {
     lastF = f;
     hasLast = true;
+    lastFeatRxMs = millis();
+    gotNewFeat = true;
   } else if (hasLast) {
     f = lastF;
+    if ((millis() - lastFeatRxMs) > FEAT_STALE_MS) {
+      f.irms = 0.0f;
+      f.current_valid = 0;
+      f.feat_valid = 0;
+      f.model_pred = 0;
+      f.adc_fs_hz = 0.0f;
+      f.cycle_nmse = 0.0f;
+      f.zcv = 0.0f;
+      f.zc_dwell_ratio = 0.0f;
+      f.pulse_count_per_cycle = 0.0f;
+      f.peak_fluct_cv = 0.0f;
+      f.midband_residual_rms = 0.0f;
+      f.hf_band_energy_ratio = 0.0f;
+      f.wpe_entropy = 0.0f;
+      f.spec_entropy = 0.0f;
+      f.thd_i = 0.0f;
+      lastF = f;
+    }
   } else {
     memset(&f, 0, sizeof(f));
     f.uptime_ms = millis();
@@ -541,14 +608,10 @@ void loop() {
   f.vrms = vRms;
   f.temp_c = tC;
 
-  // Clean up the remaining low-current floor for UI/logging/protection use.
-  // The backend-specific fixed floor is removed in ArcFeatures.cpp; this local
-  // hysteresis keeps the readout from chattering between 0 A and a few tens of
-  // mA while still allowing a real fan load to show.
-  f.irms = applyCurrentDisplayHysteresis(f.irms);
-  if (f.irms <= 0.0f) f.current_valid = 0;
+  const float irmsRawForLogic = f.irms;
+  f.irms = cleanDisplayCurrent(irmsRawForLogic, f.current_valid != 0, f.feat_valid != 0, vFast);
 
-  if (f.irms < FEATURE_MIN_IRMS_A) {
+  if (irmsRawForLogic < FEATURE_MIN_IRMS_A) {
     f.feat_valid = 0;
     f.cycle_nmse = 0.0f;
     f.zcv = 0.0f;
@@ -566,7 +629,7 @@ void loop() {
   if (vRms > 0.10f && f.irms > 0.001f) apparentPowerVa = vRms * f.irms;
 
   const bool arcEligible = (!gSafeMode && !paused && !bootSettling && !protectionInhibit &&
-                            arcInputStable(f.current_valid, f.feat_valid, f.irms) &&
+                            arcInputStable(f.current_valid, f.feat_valid, irmsRawForLogic) &&
                             vFast >= VOLT_UNDERVOLT_MAX_V &&
                             vFast < VOLT_OVERVOLT_TRIP_V);
 
@@ -577,21 +640,21 @@ void loop() {
       f.pulse_count_per_cycle, f.peak_fluct_cv,
       f.midband_residual_rms, f.hf_band_energy_ratio,
       f.wpe_entropy, f.spec_entropy, f.thd_i,
-      f.vrms, f.irms, f.temp_c
+      f.vrms, irmsRawForLogic, f.temp_c
     );
   }
   f.model_pred = (uint8_t)pred;
 
   FaultState st = STATE_NORMAL;
   if (!bootSettling) {
-    st = faultLogic.update(vFast, tC, f.irms, f.model_pred, arcEligible);
+    st = faultLogic.update(vFast, tC, irmsRawForLogic, f.model_pred, arcEligible);
   }
 
   if (gSafeMode) st = STATE_NORMAL;
 
-  actuators.apply(st, vRms, vFast, f.irms, tC);
+  actuators.apply(st, vRms, vFast, irmsRawForLogic, tC);
   const bool mainsPresentStable = debouncedMainsPresentForState(vFast);
-  handleCueEvents(vFast, f.irms, mainsPresentStable, paused || gSafeMode || protectionInhibit, st);
+  handleCueEvents(vFast, irmsRawForLogic, mainsPresentStable, paused || gSafeMode || protectionInhibit, st);
 
 #if ENABLE_ML_LOGGER
   maybeStartAutoArcCapture(logger, oled, paused || protectionInhibit, gSafeMode, (arcEligible && f.model_pred == 1));
@@ -606,7 +669,9 @@ void loop() {
     if (millis() - lastMl >= period) {
       lastMl = millis();
       f.epoch_ms = timeSync.isSynced() ? timeSync.nowEpochMs() : 0;
-      logger.ingest(f, st, faultLogic.arcCounter());
+      FeatureFrame fLog = f;
+      fLog.irms = irmsRawForLogic;
+      logger.ingest(fLog, st, faultLogic.arcCounter());
     }
     logger.loop();
 #endif

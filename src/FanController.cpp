@@ -8,6 +8,15 @@ void FanController::begin(int pwmPin) {
   _pin = pwmPin;
   pinMode(_pin, OUTPUT);
 
+  _lastDuty = 0;
+  _kickUntilMs = 0;
+
+  if (FAN_FORCE_MAX_TEST && FAN_BYPASS_PWM_WHEN_FORCED) {
+    digitalWrite(_pin, HIGH);
+    _lastDuty = 255;
+    return;
+  }
+
 #if defined(ESP_ARDUINO_VERSION_MAJOR) && (ESP_ARDUINO_VERSION_MAJOR >= 3)
   ledcAttach(_pin, FAN_PWM_HZ, FAN_PWM_BITS);
   ledcWrite(_pin, 0);
@@ -16,12 +25,10 @@ void FanController::begin(int pwmPin) {
   ledcAttachPin(_pin, FAN_PWM_CH);
   ledcWrite(FAN_PWM_CH, 0);
 #endif
-
-  _lastDuty = 0;
-  _kickUntilMs = 0;
 }
 
 uint8_t FanController::dutyFromTemp_(float tempC) const {
+  if (FAN_FORCE_MAX_TEST) return 255;
   if (!(tempC > -40.0f && tempC < 150.0f)) return 0;
   if (tempC <= FAN_MIN_TEMP_C) return 0;
   if (tempC >= FAN_MAX_TEMP_C) return 255;

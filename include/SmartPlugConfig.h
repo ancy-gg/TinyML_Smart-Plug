@@ -41,11 +41,14 @@ static constexpr uint32_t SYSTEM_READY_CHIME_DELAY_MS = 1000;
 // =========================
 // Fan control
 // =========================
-static constexpr float FAN_MIN_TEMP_C      = 25.0f;
-static constexpr float FAN_MAX_TEMP_C      = 50.0f;
-static constexpr uint32_t FAN_PWM_HZ       = 25000UL;
-static constexpr uint8_t FAN_PWM_BITS      = 8;
-static constexpr uint8_t FAN_MIN_SPIN_DUTY = 96;
+static constexpr bool  FAN_FORCE_MAX_TEST       = true;   // test mode: keep fan fully on
+static constexpr bool  FAN_BYPASS_PWM_WHEN_FORCED = true;  // cheap 2-wire fans often prefer DC, not PWM
+static constexpr float FAN_MIN_TEMP_C            = 25.0f;
+static constexpr float FAN_MAX_TEMP_C            = 50.0f;
+static constexpr uint32_t FAN_PWM_HZ             = 25000UL;
+static constexpr uint8_t FAN_PWM_BITS            = 8;
+static constexpr uint8_t FAN_MIN_SPIN_DUTY       = 96;
+static constexpr uint32_t FAN_START_KICK_MS      = 1200UL;
 
 // =========================
 // Sampling and FFT
@@ -196,6 +199,20 @@ struct VoltageCalib {
 // =========================
 static constexpr uint16_t ML_LOG_RATE_HZ     = 30;
 static constexpr uint16_t ML_LOG_DURATION_S  = 10;
+
+// =========================
+// Current display cleanup
+// =========================
+static constexpr bool     CURRENT_IDLE_LEARN_ENABLE      = true;
+static constexpr uint32_t CURRENT_IDLE_LEARN_WINDOW_MS   = 15000UL;
+static constexpr float    CURRENT_IDLE_LEARN_MAX_A       = 0.35f;
+static constexpr uint16_t CURRENT_IDLE_LEARN_MIN_FRAMES  = 8;
+static constexpr float    CURRENT_IDLE_FLOOR_MARGIN_A    = 0.015f;
+static constexpr float    CURRENT_DISPLAY_GATE_ON_A      = 0.060f;
+static constexpr float    CURRENT_DISPLAY_GATE_OFF_A     = 0.030f;
+static constexpr float    CURRENT_DISPLAY_SMOOTH_TAU_LOW_S  = 0.45f;
+static constexpr float    CURRENT_DISPLAY_SMOOTH_TAU_HIGH_S = 0.18f;
+static constexpr float    CURRENT_DISPLAY_SMOOTH_SPLIT_A    = 1.00f;
 
 static constexpr uint32_t DEVICE_PLUG_CUE_INHIBIT_MS = 2000UL;
 static constexpr uint32_t DEVICE_PLUG_CUE_COOLDOWN_MS = 6000UL;
