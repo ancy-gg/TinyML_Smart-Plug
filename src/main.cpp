@@ -31,15 +31,14 @@
 
 #define API_KEY "AIzaSyAmJlZZszyWPJFgIkTAAl_TbIySys1nvEw"
 #define DATABASE_URL "tinyml-smart-plug-default-rtdb.asia-southeast1.firebasedatabase.app"
-static const char* FW_VERSION = "TSP-v3.6.5-p-mcp";   //m - set calib to 0.0 (1.0 for first-order var)
-                                                      //p - change 0 relay, with calibration
-                                                      //c - change 1 relay, with calibration
-                                                      
+static const char* FW_VERSION = "TSP-v3.6.6-mcp";
+
 static const char* OTA_DESIRED_VERSION_PATH = "/ota/desired_version";
 static const char* OTA_FIRMWARE_URL_PATH    = "/ota/firmware_url";
 static const uint32_t OTA_CHECK_INTERVAL_MS = 60000;
 static constexpr uint32_t SENSOR_BOOT_SETTLE_MS = CURRENT_BOOT_SETTLE_MS;
 static constexpr uint32_t PROTECTION_INHIBIT_MS = 5000UL;
+static constexpr uint32_t FEAT_STALE_CLEAR_MS = 1200UL;
 
 OLED_NOTIF       oled(0x3C);
 NetworkManager   net;
@@ -132,77 +131,22 @@ static bool debouncedMainsPresentForState(float vProtect) {
   return stable;
 }
 
+static float simpleDisplayCurrent(float irmsRaw, bool currentValid) {
+  static bool gateOn = false;
 
-static float cleanDisplayCurrent(float irmsRaw, bool currentValid, bool featValid, float vProtect) {
-  static bool learnStarted = false;
-  static bool floorLocked = false;
-  static uint32_t learnStartMs = 0;
-  static double floorSqAcc = 0.0;
-  static uint32_t floorCount = 0;
-  static float learnedFloorA = 0.0f;
+  float irms = currentValid ? irmsRaw : 0.0f;
+  if (irms < CURRENT_IDLE_SUPPRESS_A) irms = 0.0f;
 
-  static bool displayGateOn = false;
-  static float dispIrms = 0.0f;
-  static uint32_t lastUpdateMs = 0;
-
-  const uint32_t now = millis();
-  const bool mainsOn = (vProtect >= MAINS_PRESENT_ON_V);
-
-  if (!learnStarted && mainsOn) {
-    learnStarted = true;
-    learnStartMs = now;
-  }
-
-  const bool canLearnIdle =
-      CURRENT_IDLE_LEARN_ENABLE &&
-      learnStarted &&
-      !floorLocked &&
-      mainsOn &&
-      currentValid &&
-      !featValid &&
-      irmsRaw > 0.005f &&
-      irmsRaw < CURRENT_IDLE_LEARN_MAX_A &&
-      ((now - learnStartMs) <= CURRENT_IDLE_LEARN_WINDOW_MS);
-
-  if (canLearnIdle) {
-    floorSqAcc += (double)irmsRaw * (double)irmsRaw;
-    floorCount++;
-    learnedFloorA = sqrtf((float)(floorSqAcc / (double)floorCount));
-  }
-
-  if (CURRENT_IDLE_LEARN_ENABLE &&
-      learnStarted &&
-      !floorLocked &&
-      ((now - learnStartMs) > CURRENT_IDLE_LEARN_WINDOW_MS)) {
-    floorLocked = (floorCount >= CURRENT_IDLE_LEARN_MIN_FRAMES);
-  }
-
-  float irms = irmsRaw;
-  if (floorLocked && learnedFloorA > 0.005f) {
-    const float floorUsed = fmaxf(0.0f, learnedFloorA - CURRENT_IDLE_FLOOR_MARGIN_A);
-    irms = sqrtf(fmaxf(0.0f, (irms * irms) - (floorUsed * floorUsed)));
-  }
-
-  if (!currentValid) irms = 0.0f;
-
-  const uint32_t dtMs = (lastUpdateMs == 0) ? 0 : (now - lastUpdateMs);
-  lastUpdateMs = now;
-  const float dtS = (dtMs > 0) ? (dtMs / 1000.0f) : 0.0f;
-  const float tau = (irms <= CURRENT_DISPLAY_SMOOTH_SPLIT_A)
-                      ? CURRENT_DISPLAY_SMOOTH_TAU_LOW_S
-                      : CURRENT_DISPLAY_SMOOTH_TAU_HIGH_S;
-  const float alpha = (dtS <= 0.0f) ? 1.0f : fminf(1.0f, dtS / fmaxf(0.02f, tau));
-
-  dispIrms += alpha * (irms - dispIrms);
-
-  if (displayGateOn) {
-    if (dispIrms < CURRENT_DISPLAY_GATE_OFF_A) displayGateOn = false;
+#if CURRENT_CAPTURE_BACKEND == CUR_BACKEND_MCP3204
+  if (gateOn) {
+    if (irms < IRMS_GATE_OFF_A) gateOn = false;
   } else {
-    if (dispIrms > CURRENT_DISPLAY_GATE_ON_A) displayGateOn = true;
+    if (irms > IRMS_GATE_ON_A) gateOn = true;
   }
+  if (!gateOn) irms = 0.0f;
+#endif
 
-  if (!displayGateOn) dispIrms = 0.0f;
-  return dispIrms;
+  return irms;
 }
 
 static void handleCueEvents(float vProtect, float irms, bool mainsPresent, bool paused, FaultState st) {
@@ -273,7 +217,6 @@ static void handleCueEvents(float vProtect, float irms, bool mainsPresent, bool 
   }
 }
 
-
 static void pollPortalControl(CloudHandler& cloud, NetworkManager& net, bool paused, bool portalActive) {
   static uint32_t lastPoll = 0;
   static String lastToken = "";
@@ -288,8 +231,6 @@ static void pollPortalControl(CloudHandler& cloud, NetworkManager& net, bool pau
   token.trim();
   if (!token.length()) return;
 
-  // Prime from the first cloud read after boot so an old token does not
-  // reopen the AP every restart.
   if (!tokenPrimed) {
     lastToken = token;
     tokenPrimed = true;
@@ -297,7 +238,6 @@ static void pollPortalControl(CloudHandler& cloud, NetworkManager& net, bool pau
   }
 
   if (token == lastToken) return;
-
   lastToken = token;
   net.requestPortal(false);
 }
@@ -323,6 +263,8 @@ static void onOtaEvent(OtaEvent ev, int progress) {
 static void Core0Task(void* pv) {
   (void)pv;
   ArcFeatOut out;
+  FeatureFrame lastGood = {};
+  bool hasGood = false;
 
   while (millis() < SENSOR_BOOT_SETTLE_MS) vTaskDelay(20 / portTICK_PERIOD_MS);
 
@@ -361,9 +303,14 @@ static void Core0Task(void* pv) {
         f.spec_entropy          = out.spec_entropy;
         f.thd_i                 = out.thd_i;
       }
+
+      lastGood = f;
+      hasGood = true;
+      if (qFeat) xQueueOverwrite(qFeat, &f);
+    } else if (hasGood && qFeat) {
+      xQueueOverwrite(qFeat, &lastGood);
     }
 
-    if (qFeat) xQueueOverwrite(qFeat, &f);
     vTaskDelay(1);
   }
 }
@@ -501,7 +448,6 @@ void setup() {
   ota.setCheckInterval(OTA_CHECK_INTERVAL_MS);
 
   if (!gSafeMode) (void)BootGuard::confirmNow();
-
   if (gSafeMode) oled.showStatus("SAFE MODE", "OTA only");
 }
 
@@ -555,15 +501,13 @@ void loop() {
   static bool hasLast = false;
   static uint32_t lastFeatRxMs = 0;
   FeatureFrame f;
-  bool gotNewFeat = false;
   if (qFeat && xQueueReceive(qFeat, &f, 0) == pdTRUE) {
     lastF = f;
     hasLast = true;
     lastFeatRxMs = millis();
-    gotNewFeat = true;
   } else if (hasLast) {
     f = lastF;
-    if ((millis() - lastFeatRxMs) > FEAT_STALE_MS) {
+    if ((millis() - lastFeatRxMs) > FEAT_STALE_CLEAR_MS) {
       f.irms = 0.0f;
       f.current_valid = 0;
       f.feat_valid = 0;
@@ -579,7 +523,6 @@ void loop() {
       f.wpe_entropy = 0.0f;
       f.spec_entropy = 0.0f;
       f.thd_i = 0.0f;
-      lastF = f;
     }
   } else {
     memset(&f, 0, sizeof(f));
@@ -609,7 +552,7 @@ void loop() {
   f.temp_c = tC;
 
   const float irmsRawForLogic = f.irms;
-  f.irms = cleanDisplayCurrent(irmsRawForLogic, f.current_valid != 0, f.feat_valid != 0, vFast);
+  f.irms = simpleDisplayCurrent(irmsRawForLogic, f.current_valid != 0);
 
   if (irmsRawForLogic < FEATURE_MIN_IRMS_A) {
     f.feat_valid = 0;
@@ -629,7 +572,7 @@ void loop() {
   if (vRms > 0.10f && f.irms > 0.001f) apparentPowerVa = vRms * f.irms;
 
   const bool arcEligible = (!gSafeMode && !paused && !bootSettling && !protectionInhibit &&
-                            arcInputStable(f.current_valid, f.feat_valid, irmsRawForLogic) &&
+                            arcInputStable(f.current_valid != 0, f.feat_valid != 0, irmsRawForLogic) &&
                             vFast >= VOLT_UNDERVOLT_MAX_V &&
                             vFast < VOLT_OVERVOLT_TRIP_V);
 
@@ -654,7 +597,7 @@ void loop() {
 
   actuators.apply(st, vRms, vFast, irmsRawForLogic, tC);
   const bool mainsPresentStable = debouncedMainsPresentForState(vFast);
-  handleCueEvents(vFast, irmsRawForLogic, mainsPresentStable, paused || gSafeMode || protectionInhibit, st);
+  handleCueEvents(vFast, f.irms, mainsPresentStable, paused || gSafeMode || protectionInhibit, st);
 
 #if ENABLE_ML_LOGGER
   maybeStartAutoArcCapture(logger, oled, paused || protectionInhibit, gSafeMode, (arcEligible && f.model_pred == 1));
@@ -669,9 +612,7 @@ void loop() {
     if (millis() - lastMl >= period) {
       lastMl = millis();
       f.epoch_ms = timeSync.isSynced() ? timeSync.nowEpochMs() : 0;
-      FeatureFrame fLog = f;
-      fLog.irms = irmsRawForLogic;
-      logger.ingest(fLog, st, faultLogic.arcCounter());
+      logger.ingest(f, st, faultLogic.arcCounter());
     }
     logger.loop();
 #endif

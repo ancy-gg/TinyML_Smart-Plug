@@ -21,15 +21,6 @@ static inline uint16_t median3u16(uint16_t a, uint16_t b, uint16_t c) {
   return b;
 }
 
-static inline uint16_t hybridMm3u16(uint16_t a, uint16_t b, uint16_t c) {
-  const uint16_t med = median3u16(a, b, c);
-  const uint16_t mean = uint16_t((uint32_t(a) + uint32_t(b) + uint32_t(c) + 1U) / 3U);
-  const uint32_t wMed = (MCP3204_MM3_MEDIAN_WEIGHT < 1) ? 1U : uint32_t(MCP3204_MM3_MEDIAN_WEIGHT);
-  const uint32_t num = wMed * uint32_t(med) + uint32_t(mean);
-  const uint32_t den = wMed + 1U;
-  return uint16_t((num + (den / 2U)) / den);
-}
-
 namespace {
   static inline void mcpBuildTxn(spi_transaction_t& t) {
     memset(&t, 0, sizeof(t));
@@ -152,16 +143,6 @@ size_t CurrentBackendMCP3204::capture(uint16_t* dst, size_t n, float* measuredFs
 
     const uint16_t avg12 = uint16_t((acc + (uint32_t)(good / 2)) / (uint32_t)good);
     dst[count++] = scale12to16(avg12);
-  }
-
-  if (MCP3204_MM3_HYBRID_FILTER_ENABLE && count >= 3 && count <= N_SAMP) {
-    static uint16_t filt[N_SAMP];
-    filt[0] = dst[0];
-    for (size_t i = 1; i + 1 < count; ++i) {
-      filt[i] = hybridMm3u16(dst[i - 1], dst[i], dst[i + 1]);
-    }
-    filt[count - 1] = dst[count - 1];
-    memcpy(dst, filt, count * sizeof(uint16_t));
   }
 
   spi_device_release_bus(_dev);

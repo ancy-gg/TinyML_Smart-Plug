@@ -41,7 +41,7 @@ static constexpr uint32_t SYSTEM_READY_CHIME_DELAY_MS = 1000;
 // =========================
 // Fan control
 // =========================
-static constexpr bool  FAN_FORCE_MAX_TEST       = true;   // test mode: keep fan fully on
+static constexpr bool  FAN_FORCE_MAX_TEST       = false;   // test mode: keep fan fully on
 static constexpr bool  FAN_BYPASS_PWM_WHEN_FORCED = true;  // cheap 2-wire fans often prefer DC, not PWM
 static constexpr float FAN_MIN_TEMP_C            = 25.0f;
 static constexpr float FAN_MAX_TEMP_C            = 50.0f;
@@ -64,7 +64,7 @@ static constexpr float    MAINS_F0_HZ  = 60.0f;
 
 // Software anti-alias / cleanup for current waveform.
 // Effective cutoff is clamped below Nyquist at runtime.
-static constexpr bool     CURRENT_SOFT_AAF_ENABLE = true;
+static constexpr bool     CURRENT_SOFT_AAF_ENABLE = true; // ADS-only in practice; MCP bypasses this in ArcFeatures.cpp
 #if CURRENT_CAPTURE_BACKEND == CUR_BACKEND_ADS8684
 static constexpr float    CURRENT_SOFT_AAF_CUTOFF_HZ = 25000.0f;
 #else
@@ -203,7 +203,7 @@ static constexpr uint16_t ML_LOG_DURATION_S  = 10;
 // =========================
 // Current display cleanup
 // =========================
-static constexpr bool     CURRENT_IDLE_LEARN_ENABLE      = true;
+static constexpr bool     CURRENT_IDLE_LEARN_ENABLE      = false;
 static constexpr uint32_t CURRENT_IDLE_LEARN_WINDOW_MS   = 15000UL;
 static constexpr float    CURRENT_IDLE_LEARN_MAX_A       = 0.35f;
 static constexpr uint16_t CURRENT_IDLE_LEARN_MIN_FRAMES  = 8;
