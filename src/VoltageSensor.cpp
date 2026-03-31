@@ -143,6 +143,9 @@ float VoltageSensor::update() {
   } else {
     const float dProt = fabsf(_rawVrms - _protVrms);
     const bool highEvent = (_rawVrms >= (VOLT_SURGE_TRIP_V - 5.0f));
+    const bool recoveryEvent =
+        ((_protVrms < VOLT_UNDERVOLT_MAX_V) && (_rawVrms >= (VOLT_UNDERVOLT_MAX_V + 10.0f))) ||
+        ((_protVrms >= VOLT_OVERVOLT_TRIP_V) && (_rawVrms < (VOLT_OVERVOLT_TRIP_V - 8.0f)));
 
     if (_rawVrms <= _vOff) {
       if (_lowWindows < 255) _lowWindows++;
@@ -154,7 +157,7 @@ float VoltageSensor::update() {
 
     if (hardZero) {
       _protVrms = 0.0f;
-    } else if (highEvent || dProt >= _avgJumpV) {
+    } else if (highEvent || recoveryEvent || dProt >= _avgJumpV) {
       _protVrms = _rawVrms;
     } else {
       const float alphaProt = fminf(1.0f, dtS / 1.0f);

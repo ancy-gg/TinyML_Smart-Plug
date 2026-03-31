@@ -69,28 +69,46 @@ FaultState FaultLogic::update(float vProtect, float vRaw, float tempC, float irm
       (vRaw <= MAINS_PRESENT_OFF_V) ||
       ((vProtect <= MAINS_PRESENT_OFF_V) && (irmsA <= LOAD_OFF_DETECT_A));
 
-  const bool underVoltRaw = !mainsGoneLike && (vProtect >= VOLT_UNDERVOLT_MIN_V && vProtect < VOLT_UNDERVOLT_MAX_V);
-  const bool overVoltRaw  = !mainsGoneLike && (vProtect >= VOLT_OVERVOLT_TRIP_V);
-  const bool extremeUnder = !mainsGoneLike && (vProtect > 0.0f && vProtect <= EXTREME_UNDERVOLT_FAST_V);
-  const bool extremeOver  = !mainsGoneLike && (vProtect >= EXTREME_OVERVOLT_FAST_V);
+  // Blend the fast/raw and smoothed/protection voltages so detection is stable,
+  // but let the fast path clear a false undervoltage quickly when mains is already back.
+  const float vVote = 0.65f * vProtect + 0.35f * vRaw;
+  const bool rawHealthyWindow = (vRaw >= (VOLT_UNDERVOLT_MAX_V + 10.0f)) &&
+                                (vRaw <  (VOLT_OVERVOLT_TRIP_V - 8.0f));
+  const bool rawMaybeUnder = (vRaw >= 70.0f) && (vRaw < (VOLT_UNDERVOLT_MAX_V + 8.0f));
+  const bool rawMaybeOver  = (vRaw >= (VOLT_OVERVOLT_TRIP_V - 8.0f));
 
   bool underVoltValid = false;
   bool overVoltValid = false;
 
-  if (underVoltRaw) {
+  if (mainsGoneLike || rawHealthyWindow) {
+    _underVoltSince = 0;
+    _overVoltSince = 0;
+  }
+
+  const bool underVoltCandidate =
+      !mainsGoneLike &&
+      rawMaybeUnder &&
+      (vVote >= VOLT_UNDERVOLT_MIN_V) &&
+      (vVote < VOLT_UNDERVOLT_MAX_V);
+
+  const bool overVoltCandidate =
+      !mainsGoneLike &&
+      rawMaybeOver &&
+      (vVote >= VOLT_OVERVOLT_TRIP_V);
+
+  const bool extremeUnder = underVoltCandidate && (vVote <= EXTREME_UNDERVOLT_FAST_V);
+  const bool extremeOver  = overVoltCandidate  && (vVote >= EXTREME_OVERVOLT_FAST_V);
+
+  if (underVoltCandidate) {
     if (_underVoltSince == 0) _underVoltSince = now;
     const uint32_t need = extremeUnder ? EXTREME_VOLTAGE_VALIDATE_MS : VOLTAGE_EVENT_VALIDATE_MS;
     underVoltValid = ((now - _underVoltSince) >= need);
-  } else {
-    _underVoltSince = 0;
   }
 
-  if (overVoltRaw) {
+  if (overVoltCandidate) {
     if (_overVoltSince == 0) _overVoltSince = now;
     const uint32_t need = extremeOver ? EXTREME_VOLTAGE_VALIDATE_MS : VOLTAGE_EVENT_VALIDATE_MS;
     overVoltValid = ((now - _overVoltSince) >= need);
-  } else {
-    _overVoltSince = 0;
   }
 
   const bool overloadRaw = (irmsA >= OVERLOAD_WARN_A);
@@ -110,8 +128,6 @@ FaultState FaultLogic::update(float vProtect, float vRaw, float tempC, float irm
   const bool sustainedOverloadActive = sustainedOverloadRaw && ((now - _sustainedOverloadSince) >= SUSTAINED_OVERLOAD_TRIP_MS);
 
   if (mainsGoneLike) {
-    _underVoltSince = 0;
-    _overVoltSince = 0;
     _voltageRecoverySince = 0;
     _voltageLockout = false;
     _voltageLockoutKind = STATE_NORMAL;
@@ -124,12 +140,19 @@ FaultState FaultLogic::update(float vProtect, float vRaw, float tempC, float irm
     _voltageLockoutKind = kind;
     _voltageRecoverySince = 0;
   } else if (_voltageLockout) {
-    if (_voltageRecoverySince == 0) _voltageRecoverySince = now;
-    if ((now - _voltageRecoverySince) >= VOLTAGE_RECLOSE_STABLE_MS) {
-      _voltageLockout = false;
-      _voltageLockoutKind = STATE_NORMAL;
+    // Keep the relay lockout internally until the line is healthy long enough,
+    // but do not keep the user-facing undervoltage/overvoltage alarm latched
+    // once the raw mains reading is already back inside the safe band.
+    if (rawHealthyWindow && !underVoltCandidate && !overVoltCandidate) {
+      if (_voltageRecoverySince == 0) _voltageRecoverySince = now;
+      if ((now - _voltageRecoverySince) >= VOLTAGE_RECLOSE_STABLE_MS) {
+        _voltageLockout = false;
+        _voltageLockoutKind = STATE_NORMAL;
+        _voltageRecoverySince = 0;
+        _autoOnEdge = true;
+      }
+    } else {
       _voltageRecoverySince = 0;
-      _autoOnEdge = true;
     }
   }
 
@@ -163,17 +186,17 @@ FaultState FaultLogic::update(float vProtect, float vRaw, float tempC, float irm
   FaultState st = STATE_NORMAL;
   if (heatActive) st = STATE_HEATING;
   else if (arcActive) st = STATE_ARCING;
-  else if (_voltageLockout) st = _voltageLockoutKind;
+  else if (underVoltValid) st = STATE_UNDERVOLTAGE;
+  else if (overVoltValid) st = STATE_OVERVOLTAGE;
   else if (sustainedOverloadActive) st = STATE_SUSTAINED_OVERLOAD;
   else if (overloadActive) st = STATE_OVERLOAD;
   else st = STATE_NORMAL;
 
   _webLockout = (st == STATE_ARCING) ||
                 (st == STATE_HEATING) ||
-                (st == STATE_UNDERVOLTAGE) ||
-                (st == STATE_OVERVOLTAGE) ||
                 (st == STATE_OVERLOAD) ||
-                (st == STATE_SUSTAINED_OVERLOAD);
+                (st == STATE_SUSTAINED_OVERLOAD) ||
+                _voltageLockout;
 
   return st;
 }

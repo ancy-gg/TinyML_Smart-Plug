@@ -28,6 +28,7 @@ public:
   bool getInt(const char* path, int& out);
 
   bool pushJSON(const char* path, FirebaseJson& json);
+  bool updateJSON(const char* path, FirebaseJson& json);
   bool logStatusEvent(const String& status, float v, float c, float apparentPower, float t, TimeSync* time);
   bool logFeatureEvent(const String& status, const FeatureFrame& f, float apparentPower, bool relayTrip, TimeSync* time);
 

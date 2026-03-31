@@ -30,7 +30,7 @@
 
 #define API_KEY "AIzaSyAmJlZZszyWPJFgIkTAAl_TbIySys1nvEw"
 #define DATABASE_URL "tinyml-smart-plug-default-rtdb.asia-southeast1.firebasedatabase.app"
-static const char* FW_VERSION = "TSP-v3.7.5-p-mcp";   //m - set calib to 0.0 (1.0 for first-order var)
+static const char* FW_VERSION = "TSP-v3.7.6-p-mcp";   //m - set calib to 0.0 (1.0 for first-order var)
                                                       //p - change 0 relay, with calibration
                                                       //c - change 1 relay, with calibration
                                                       
@@ -248,7 +248,7 @@ static float cleanLogicCurrent(float irmsRaw, bool currentValid, float vRaw, flo
   return irmsRaw;
 }
 
-static void handleCueEvents(float vProtect, float irms, bool mainsPresent, bool paused, FaultState st) {
+static void handleCueEvents(float vRaw, float vProtect, float irms, bool mainsPresent, bool paused, FaultState st) {
   static uint32_t lowSinceMs = 0;
   static uint32_t highSinceMs = 0;
   static uint32_t lastVoltWarnMs = 0;
@@ -263,8 +263,11 @@ static void handleCueEvents(float vProtect, float irms, bool mainsPresent, bool 
 
   const bool stateNormal = (st == STATE_NORMAL);
 
-  const bool lowWarn  = (vProtect > VOLT_UNDERVOLT_MIN_V && vProtect < VOLT_UNDERVOLT_MAX_V);
-  const bool highWarn = (vProtect >= VOLT_OVERVOLT_TRIP_V);
+  const float vVote = 0.65f * vProtect + 0.35f * vRaw;
+  const bool lowWarn  = (vVote > VOLT_UNDERVOLT_MIN_V && vVote < VOLT_UNDERVOLT_MAX_V) &&
+                        (vRaw < (VOLT_UNDERVOLT_MAX_V + 8.0f));
+  const bool highWarn = (vVote >= VOLT_OVERVOLT_TRIP_V) &&
+                        (vRaw >= (VOLT_OVERVOLT_TRIP_V - 8.0f));
 
   if (lowWarn) {
     if (lowSinceMs == 0) lowSinceMs = now;
@@ -285,7 +288,7 @@ static void handleCueEvents(float vProtect, float irms, bool mainsPresent, bool 
 
   static uint32_t mainsStableSinceMs = 0;
 
-  if (!mainsPresent || vProtect < 200.0f || !stateNormal) {
+  if (!mainsPresent || vVote < 200.0f || !stateNormal) {
     loadBaseA = 0.0f;
     prevIrms = irms;
     stableSinceMs = 0;
@@ -768,7 +771,7 @@ void loop() {
 
   static uint32_t noPowerSinceMsCtl = 0;
   const bool unpluggedLiveCtl = classifyUnpluggedSocket(vRaw, vFast, irmsRawForLogic, f.current_valid != 0, st, &noPowerSinceMsCtl);
-  const bool controlsLocked = gSafeMode || paused || bootSettling || protectionInhibit || unpluggedLiveCtl || faultLogic.webControlLocked();
+  const bool controlsLocked = gSafeMode || paused || bootSettling || protectionInhibit || unpluggedLiveCtl || faultLogic.webControlLocked() || faultLogic.voltageLockoutActive();
 
   if (!gSafeMode) {
     pollPortalControl(cloud, net, paused, portalActive);
@@ -782,7 +785,7 @@ void loop() {
 
   actuators.apply(st, vRms, vFast, irmsRawForLogic, tC);
   const bool mainsPresentStable = debouncedMainsPresentForState(vFast);
-  handleCueEvents(vFast, irmsRawForLogic, mainsPresentStable, paused || gSafeMode || protectionInhibit, st);
+  handleCueEvents(vRaw, vFast, irmsRawForLogic, mainsPresentStable, paused || gSafeMode || protectionInhibit, st);
 
 #if ENABLE_ML_LOGGER
   maybeStartAutoArcCapture(logger, oled, paused || protectionInhibit, gSafeMode, (arcEligible && f.model_pred == 1));

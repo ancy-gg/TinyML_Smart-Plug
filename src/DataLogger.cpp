@@ -143,12 +143,33 @@ void DataLogger::loop() {
   if (_lastFlushAttemptMs && (now - _lastFlushAttemptMs) < 2000) return;
   _lastFlushAttemptMs = now;
 
-  const bool finalFlush = activeIsAuto();
+  const bool manualTimeUp = (_manualEnabled && !_autoEnabled && timeUp);
+  const bool finalFlush = activeIsAuto() || manualTimeUp;
+
   if (flushToFirebase(finalFlush)) {
+    const String finishedSessionId = spec.sessionId;
     _count = 0;
     _chunkStartMs = 0;
     _lastFlushAttemptMs = 0;
-    if (activeIsAuto()) _autoEnabled = false;
+
+    if (activeIsAuto()) {
+      _autoEnabled = false;
+    } else if (manualTimeUp) {
+      _manualEnabled = false;
+
+      FirebaseJson mlState;
+      mlState.set("enabled", false);
+      mlState.set("last_completed_session_id", finishedSessionId);
+      mlState.set("last_completed_at/.sv", "timestamp");
+      (void)_cloud->updateJSON("/ml_log", mlState);
+
+      String sessPath = "/ml_sessions/";
+      sessPath += finishedSessionId;
+      FirebaseJson sessMeta;
+      sessMeta.set("end_ms/.sv", "timestamp");
+      sessMeta.set("closed_by_device", true);
+      (void)_cloud->updateJSON(sessPath.c_str(), sessMeta);
+    }
   }
 #endif
 }

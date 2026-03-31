@@ -65,6 +65,11 @@ bool CloudHandler::pushJSON(const char* path, FirebaseJson& json) {
   return Firebase.RTDB.pushJSON(&fbLog, path, &json);
 }
 
+bool CloudHandler::updateJSON(const char* path, FirebaseJson& json) {
+  if (!cloudNetReady() || !Firebase.ready() || !path || !*path) return false;
+  return Firebase.RTDB.updateNode(&fbLog, path, &json);
+}
+
 bool CloudHandler::pushHistoryRecord(const String& status, float v, float c, float apparentPower, float t,
                                      float cycle_nmse, float zcv, float zc_dwell_ratio,
                                      float pulse_count_per_cycle, float peak_fluct_cv,
