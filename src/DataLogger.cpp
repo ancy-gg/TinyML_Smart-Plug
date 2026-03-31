@@ -1,12 +1,10 @@
 #include "DataLogger.h"
-#include "CloudHandler.h"
+#include "FirebaseHandler.h"
 
-// Local fallbacks so DataLogger.cpp still compiles even if an older SmartPlugConfig.h
-// is what the IDE/compiler sees first.
-static constexpr uint16_t LOCAL_ML_LOG_MIN_DURATION_S = 1;
-static constexpr uint16_t LOCAL_ML_LOG_MAX_DURATION_S = 7200;
-
-void DataLogger::begin(CloudHandler* cloud) { _cloud = cloud; resetRuntimeState_(); }
+void DataLogger::begin(FirebaseHandler* cloud) {
+  _cloud = cloud;
+  resetRuntimeState_();
+}
 
 String DataLogger::sanitizeToken(const String& s) {
   String o = s;
@@ -20,47 +18,31 @@ String DataLogger::sanitizeToken(const String& s) {
   return o;
 }
 
-#if ENABLE_ML_LOGGER
 const DataLogger::SessionSpec& DataLogger::activeSpec() const {
   return _manualEnabled ? _manual : _auto;
 }
-#endif
 
 void DataLogger::setSession(const String& sessionId, const String& loadType, int labelOverride) {
-#if ENABLE_ML_LOGGER
   _manual.sessionId = sanitizeToken(sessionId);
   _manual.loadType  = sanitizeToken(loadType);
   _manual.labelOverride = (int8_t)labelOverride;
-#else
-  (void)sessionId; (void)loadType; (void)labelOverride;
-#endif
 }
 
 void DataLogger::setEnabled(bool en) {
-#if ENABLE_ML_LOGGER
-  if (en && !_manualEnabled) {
-    resetRuntimeState_();
-  }
+  if (en && !_manualEnabled) resetRuntimeState_();
   _manualEnabled = en;
-#else
-  (void)en;
-#endif
 }
 
 void DataLogger::setDurationSeconds(uint16_t sec) {
-  if (sec < LOCAL_ML_LOG_MIN_DURATION_S) sec = LOCAL_ML_LOG_MIN_DURATION_S;
-  if (sec > LOCAL_ML_LOG_MAX_DURATION_S) sec = LOCAL_ML_LOG_MAX_DURATION_S;
-#if ENABLE_ML_LOGGER
+  if (sec < ML_LOG_MIN_DURATION_S) sec = ML_LOG_MIN_DURATION_S;
+  if (sec > ML_LOG_MAX_DURATION_S) sec = ML_LOG_MAX_DURATION_S;
   _manual.durationS = sec;
-#endif
 }
 
 bool DataLogger::startAutoCapture(const String& reason, uint16_t sec) {
-#if ENABLE_ML_LOGGER
   if (_manualEnabled || _autoEnabled) return false;
   if (sec < ML_LOG_AUTO_MIN_DURATION_S) sec = ML_LOG_AUTO_MIN_DURATION_S;
   if (sec > ML_LOG_AUTO_MAX_DURATION_S) sec = ML_LOG_AUTO_MAX_DURATION_S;
-
   _auto.sessionId = sanitizeToken(String("auto_") + reason + String("_") + String((unsigned long)millis()));
   _auto.loadType = sanitizeToken(String("auto_") + reason);
   _auto.labelOverride = ML_UNKNOWN_LABEL;
@@ -68,32 +50,23 @@ bool DataLogger::startAutoCapture(const String& reason, uint16_t sec) {
   _autoEnabled = true;
   resetRuntimeState_();
   return true;
-#else
-  (void)reason; (void)sec;
-  return false;
-#endif
 }
 
 void DataLogger::stopAutoCapture() {
-#if ENABLE_ML_LOGGER
   _autoEnabled = false;
   resetRuntimeState_();
-#endif
 }
 
 void DataLogger::ingest(const FeatureFrame& f, FaultState st, int arcCounter) {
-#if ENABLE_ML_LOGGER
   if (!enabled()) return;
   const SessionSpec& spec = activeSpec();
-  if (spec.sessionId.length() < 3) return;
-  if (_count >= MAX_REC) return;
+  if (spec.sessionId.length() < 3 || _count >= MAX_REC) return;
 
   if (_sessionStartMs == 0) _sessionStartMs = millis();
   if (_count == 0) _chunkStartMs = millis();
 
   Rec& r = _buf[_count++];
   r.epoch_ms = f.epoch_ms;
-
   r.cycle_nmse = f.cycle_nmse;
   r.zcv = f.zcv;
   r.zc_dwell_ratio = f.zc_dwell_ratio;
@@ -104,14 +77,10 @@ void DataLogger::ingest(const FeatureFrame& f, FaultState st, int arcCounter) {
   r.wpe_entropy = f.wpe_entropy;
   r.spec_entropy = f.spec_entropy;
   r.thd_i = f.thd_i;
-
   r.v_rms = f.vrms;
   r.i_rms = f.irms;
   r.temp_c = f.temp_c;
-
-  if (spec.labelOverride == 0 || spec.labelOverride == 1) r.label_arc = spec.labelOverride;
-  else r.label_arc = ML_UNKNOWN_LABEL;
-
+  r.label_arc = (spec.labelOverride == 0 || spec.labelOverride == 1) ? spec.labelOverride : ML_UNKNOWN_LABEL;
   r.model_pred = f.model_pred;
   r.feat_valid = f.feat_valid;
   r.current_valid = f.current_valid;
@@ -119,13 +88,9 @@ void DataLogger::ingest(const FeatureFrame& f, FaultState st, int arcCounter) {
   r.arc_counter = (int16_t)arcCounter;
   r.adc_fs_hz = f.adc_fs_hz;
   r.auto_capture = activeIsAuto() ? 1 : 0;
-#else
-  (void)f; (void)st; (void)arcCounter;
-#endif
 }
 
 void DataLogger::loop() {
-#if ENABLE_ML_LOGGER
   if (!_cloud || !_cloud->isReady()) return;
 
   if (_wasEnabled && !enabled()) {
@@ -133,8 +98,8 @@ void DataLogger::loop() {
     resetRuntimeState_();
   }
   _wasEnabled = enabled();
-
   if (!enabled()) return;
+
   const SessionSpec& spec = activeSpec();
   if (spec.sessionId.length() < 3) return;
 
@@ -158,7 +123,6 @@ void DataLogger::loop() {
   }
 
   if (!manualTimeUp && !autoTimeUp && !chunkTimeUp && !full) return;
-
   if (_lastFlushAttemptMs && (now - _lastFlushAttemptMs) < 2000UL) return;
   _lastFlushAttemptMs = now;
 
@@ -168,7 +132,6 @@ void DataLogger::loop() {
     _count = 0;
     _chunkStartMs = 0;
     _lastFlushAttemptMs = 0;
-
     if (autoTimeUp) {
       _autoEnabled = false;
       _sessionStartMs = 0;
@@ -177,10 +140,8 @@ void DataLogger::loop() {
       _sessionStartMs = 0;
     }
   }
-#endif
 }
 
-#if ENABLE_ML_LOGGER
 void DataLogger::resetRuntimeState_() {
   _sessionStartMs = 0;
   _chunkStartMs = 0;
@@ -190,7 +151,6 @@ void DataLogger::resetRuntimeState_() {
 
 void DataLogger::closeManualSession_(const String& finishedSessionId) {
   _manualEnabled = false;
-
   FirebaseJson mlState;
   mlState.set("enabled", false);
   mlState.set("last_completed_session_id", finishedSessionId);
@@ -225,7 +185,6 @@ bool DataLogger::flushToFirebase(bool finalFlush) {
     String csv;
     csv.reserve((i1 - i0) * 300 + 360);
     csv += header;
-
     for (uint16_t i = i0; i < i1; ++i) {
       const Rec& r = _buf[i];
       csv += String(r.cycle_nmse, 6);            csv += ",";
@@ -251,8 +210,7 @@ bool DataLogger::flushToFirebase(bool finalFlush) {
       csv += String((int)r.fault_state);         csv += ",";
       csv += String((int)r.arc_counter);         csv += ",";
       csv += String(r.adc_fs_hz, 2);             csv += ",";
-      csv += String((int)r.auto_capture);
-      csv += "\n";
+      csv += String((int)r.auto_capture);        csv += "\n";
     }
 
     FirebaseJson json;
@@ -263,18 +221,14 @@ bool DataLogger::flushToFirebase(bool finalFlush) {
     json.set("chunk_count", (int)chunkCount);
     json.set("final", finalFlush && (chunk == (chunkCount - 1U)));
     json.set("csv", csv);
-
     json.set("meta/session_id", spec.sessionId);
     json.set("meta/load_type", spec.loadType);
     json.set("meta/label_override", (int)spec.labelOverride);
     json.set("meta/duration_s", (int)spec.durationS);
     json.set("meta/auto_capture", activeIsAuto());
     json.set("meta/feature_order", "cycle_nmse,zcv,zc_dwell_ratio,pulse_count_per_cycle,peak_fluct_cv,midband_residual_rms,hf_band_energy_ratio,wpe_entropy,spec_entropy,thd_i");
-
     if (!_cloud->pushJSON(path.c_str(), json)) return false;
     delay(2);
   }
-
   return true;
 }
-#endif

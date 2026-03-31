@@ -1,13 +1,13 @@
 #pragma once
 #include <Arduino.h>
-#include "SmartPlugConfig.h"
+#include "MainConfiguration.h"
 
 class VoltageSensor {
 public:
   explicit VoltageSensor(int pin);
   void begin();
   void setSensitivity(float factor);
-  void setLinearCalib(float slope, float intercept); // legacy helper -> maps to cubic1/cubic0
+  void setLinearCalib(float slope, float intercept);
   void setCubicCalib(float c3, float c2, float c1, float c0);
   void setAdcFullScaleVolts(float vfs);
   void setWindowMs(uint16_t ms);
@@ -22,49 +22,32 @@ private:
   int _pin;
   VoltageCalib _cal;
   float _adcFullScaleV = 3.3f;
-
-  uint32_t _windowUs = 200000;
+  uint32_t _windowUs = 120000;
   bool _sampling = false;
   uint32_t _startTime = 0;
-
   uint32_t _count = 0;
   double   _sum   = 0.0;
   double   _sumSq = 0.0;
   int      _sampleMin = 4095;
   int      _sampleMax = 0;
-
   bool  _vActive = false;
-  float _vOff    = 15.0f;
-  float _vOn     = 25.0f;
-
-  float _rawVrms  = 0.0f;
+  float _vOff    = 12.0f;
+  float _vOn     = 24.0f;
+  float _rawVrms = 0.0f;
   bool  _protInit = false;
   float _protVrms = 0.0f;
-
   bool  _dispInit = false;
   float _dispVrms = 0.0f;
-  float _avgTauS  = 18.0f;
-  float _avgJumpV = 18.0f;
-
+  float _avgTauS  = 1.4f;
+  float _avgJumpV = 10.0f;
   uint8_t _lowWindows = 0;
   uint8_t _noSignalWindows = 0;
-
-  static inline int _median3(int a, int b, int c) {
-    if (a > b) { int t = a; a = b; b = t; }
-    if (b > c) { int t = b; b = c; c = t; }
-    if (a > b) { int t = a; a = b; b = t; }
-    return b;
-  }
 
   static inline int _median5(int a, int b, int c, int d, int e) {
     int v[5] = {a, b, c, d, e};
     for (int i = 0; i < 4; ++i) {
       for (int j = i + 1; j < 5; ++j) {
-        if (v[j] < v[i]) {
-          int t = v[i];
-          v[i] = v[j];
-          v[j] = t;
-        }
+        if (v[j] < v[i]) { int t = v[i]; v[i] = v[j]; v[j] = t; }
       }
     }
     return v[2];

@@ -1,6 +1,6 @@
 #pragma once
 #include <Arduino.h>
-#include "SmartPlugConfig.h"
+#include "MainConfiguration.h"
 
 struct ArcFeatOut {
   float fs_hz   = FS_TARGET_HZ;

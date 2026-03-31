@@ -219,11 +219,6 @@ bool ArcFeatures::compute(const uint16_t* raw, size_t n, float fs_hz,
   const float residRms = sqrtf((float)(accResidSq / (double)n));
   const uint16_t codeSpan = (uint16_t)(mxCode - mnCode);
 
-#if CURRENT_CAPTURE_BACKEND == CUR_BACKEND_MCP3204
-  // MCP path: keep the RMS meter simple and efficient.
-  // True RMS is taken directly from the band-limited waveform after the soft AAF.
-  // This keeps it responsive while avoiding the heavier coherent-harmonic meter
-  // that was hiding real low-current loads and amplifying MCP instability.
   float irms = irmsWide;
 
   if (irms < CURRENT_IDLE_SUPPRESS_A && codeSpan < LOW_CURRENT_CODE_SPAN) {
@@ -240,62 +235,6 @@ bool ArcFeatures::compute(const uint16_t* raw, size_t n, float fs_hz,
   out.irms_a = irms;
   out.current_valid = (changes >= CURRENT_MIN_ACTIVITY_CHANGES) &&
                       ((codeSpan >= CURRENT_MIN_CODE_SPAN) || (irms > 0.0f));
-#else
-  // ADS path: keep the more selective mains-coherent RMS logic.
-  double harmRmsSq = 0.0;
-  int harmUsed = 0;
-  for (int h = 1; h <= 15; ++h) {
-    const float fh = mainsHz * (float)h;
-    if (fh > 1500.0f || fh >= (0.45f * fs_hz)) break;
-
-    double csum = 0.0;
-    double ssum = 0.0;
-    const float w = 2.0f * 3.14159265358979f * fh / fs_hz;
-    for (size_t i = 0; i < n; ++i) {
-      const float ang = w * (float)i;
-      const float x = sigFilt[i];
-      csum += (double)x * cosf(ang);
-      ssum += (double)x * sinf(ang);
-    }
-
-    const float a = (2.0f / (float)n) * (float)csum;
-    const float b = (2.0f / (float)n) * (float)ssum;
-    const float peak = sqrtf(a * a + b * b);
-    const float rmsH = peak * 0.70710678f;
-    if (rmsH > 0.0025f) {
-      harmRmsSq += (double)rmsH * (double)rmsH;
-      harmUsed++;
-    }
-  }
-
-  const float irmsCoherent = sqrtf((float)harmRmsSq);
-  const float coherence = (irmsWide > 1e-6f) ? (irmsCoherent / irmsWide) : 0.0f;
-  const float residFrac = (irmsWide > 1e-6f) ? (residRms / irmsWide) : 1.0f;
-
-  const bool trustWideband =
-      (coherence >= TRUE_RMS_MIN_COHERENCE) ||
-      ((irmsCoherent >= TRUE_RMS_MIN_COHERENT_A) &&
-       (coherence >= TRUE_RMS_RELAXED_COHERENCE) &&
-       (residFrac <= TRUE_RMS_MAX_RESID_FRAC));
-
-  float irms = trustWideband ? irmsWide : irmsCoherent;
-
-  if (irmsWide < CURRENT_IDLE_SUPPRESS_A && codeSpan < LOW_CURRENT_CODE_SPAN) {
-    irms = 0.0f;
-  } else if (!trustWideband && irmsCoherent < IRMS_GATE_OFF_A) {
-    irms = 0.0f;
-  } else if (trustWideband && irms < IRMS_GATE_OFF_A) {
-    irms = 0.0f;
-  }
-
-  if (irms > 0.0f) {
-    irms = eval_cubic_horner(irms, cal.cubic3, cal.cubic2, cal.cubic1, cal.cubic0);
-    if (irms < 0.0f) irms = 0.0f;
-  }
-
-  out.irms_a = irms;
-  out.current_valid = ((harmUsed > 0) || trustWideband) && (irms > 0.0f || codeSpan >= LOW_CURRENT_CODE_SPAN);
-#endif
 
   if (irms < FEATURE_MIN_IRMS_A) {
     out.feat_valid = false;
