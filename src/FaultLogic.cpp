@@ -45,7 +45,7 @@ bool FaultLogic::consumeAutoOnEdge() {
   return v;
 }
 
-FaultState FaultLogic::update(float vProtect, float tempC, float irmsA, int arcModelOut, bool arcEligible) {
+FaultState FaultLogic::update(float vProtect, float vRaw, float tempC, float irmsA, int arcModelOut, bool arcEligible) {
   const uint32_t now = millis();
 
   if (!arcEligible || irmsA < ARC_MIN_IRMS_A) arcModelOut = 0;
@@ -65,10 +65,14 @@ FaultState FaultLogic::update(float vProtect, float tempC, float irmsA, int arcM
   const bool arcActive  = arcTrip  || (now < _arcHoldUntil);
   const bool heatActive = heatTrip || (now < _heatHoldUntil);
 
-  const bool underVoltRaw = (vProtect >= VOLT_UNDERVOLT_MIN_V && vProtect < VOLT_UNDERVOLT_MAX_V);
-  const bool overVoltRaw  = (vProtect >= VOLT_OVERVOLT_TRIP_V);
-  const bool extremeUnder = (vProtect > 0.0f && vProtect <= EXTREME_UNDERVOLT_FAST_V);
-  const bool extremeOver  = (vProtect >= EXTREME_OVERVOLT_FAST_V);
+  const bool mainsGoneLike =
+      (vRaw <= MAINS_PRESENT_OFF_V) ||
+      ((vProtect <= MAINS_PRESENT_OFF_V) && (irmsA <= LOAD_OFF_DETECT_A));
+
+  const bool underVoltRaw = !mainsGoneLike && (vProtect >= VOLT_UNDERVOLT_MIN_V && vProtect < VOLT_UNDERVOLT_MAX_V);
+  const bool overVoltRaw  = !mainsGoneLike && (vProtect >= VOLT_OVERVOLT_TRIP_V);
+  const bool extremeUnder = !mainsGoneLike && (vProtect > 0.0f && vProtect <= EXTREME_UNDERVOLT_FAST_V);
+  const bool extremeOver  = !mainsGoneLike && (vProtect >= EXTREME_OVERVOLT_FAST_V);
 
   bool underVoltValid = false;
   bool overVoltValid = false;
@@ -105,7 +109,13 @@ FaultState FaultLogic::update(float vProtect, float tempC, float irmsA, int arcM
   }
   const bool sustainedOverloadActive = sustainedOverloadRaw && ((now - _sustainedOverloadSince) >= SUSTAINED_OVERLOAD_TRIP_MS);
 
-  if (underVoltValid || overVoltValid) {
+  if (mainsGoneLike) {
+    _underVoltSince = 0;
+    _overVoltSince = 0;
+    _voltageRecoverySince = 0;
+    _voltageLockout = false;
+    _voltageLockoutKind = STATE_NORMAL;
+  } else if (underVoltValid || overVoltValid) {
     const FaultState kind = underVoltValid ? STATE_UNDERVOLTAGE : STATE_OVERVOLTAGE;
     if (!_voltageLockout || _voltageLockoutKind != kind) {
       _tripOffEdge = true;

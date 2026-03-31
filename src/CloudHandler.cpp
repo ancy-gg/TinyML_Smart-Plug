@@ -2,6 +2,11 @@
 #include "SmartPlugConfig.h"
 #include <time.h>
 
+static inline bool cloudNetReady() {
+  return WiFi.status() == WL_CONNECTED;
+}
+
+
 static String powerConditionForState(const String& state, float v) {
   if (state == "ARCING" || state == "HEATING" || state == "OVERLOAD" || state == "SUSTAINED OVERLOAD") return state;
   if (state == "UNPLUGGED" || v <= MAINS_PRESENT_OFF_V) return "UNPLUGGED";
@@ -35,29 +40,29 @@ void CloudHandler::setFaultIntervalMs(uint32_t ms) {
   _faultIntervalMs = ms;
 }
 
-bool CloudHandler::isReady() const { return Firebase.ready(); }
+bool CloudHandler::isReady() const { return cloudNetReady() && Firebase.ready(); }
 
 bool CloudHandler::getString(const char* path, String& out) {
-  if (!Firebase.ready() || !path || !*path) return false;
-  if (!Firebase.RTDB.getString(&fbdo, path)) return false;
-  out = fbdo.stringData();
+  if (!cloudNetReady() || !Firebase.ready() || !path || !*path) return false;
+  if (!Firebase.RTDB.getString(&fbRead, path)) return false;
+  out = fbRead.stringData();
   return true;
 }
 bool CloudHandler::getBool(const char* path, bool& out) {
-  if (!Firebase.ready() || !path || !*path) return false;
-  if (!Firebase.RTDB.getBool(&fbdo, path)) return false;
-  out = fbdo.boolData();
+  if (!cloudNetReady() || !Firebase.ready() || !path || !*path) return false;
+  if (!Firebase.RTDB.getBool(&fbRead, path)) return false;
+  out = fbRead.boolData();
   return true;
 }
 bool CloudHandler::getInt(const char* path, int& out) {
-  if (!Firebase.ready() || !path || !*path) return false;
-  if (!Firebase.RTDB.getInt(&fbdo, path)) return false;
-  out = fbdo.intData();
+  if (!cloudNetReady() || !Firebase.ready() || !path || !*path) return false;
+  if (!Firebase.RTDB.getInt(&fbRead, path)) return false;
+  out = fbRead.intData();
   return true;
 }
 bool CloudHandler::pushJSON(const char* path, FirebaseJson& json) {
-  if (!Firebase.ready() || !path || !*path) return false;
-  return Firebase.RTDB.pushJSON(&fbdo, path, &json);
+  if (!cloudNetReady() || !Firebase.ready() || !path || !*path) return false;
+  return Firebase.RTDB.pushJSON(&fbLog, path, &json);
 }
 
 bool CloudHandler::pushHistoryRecord(const String& status, float v, float c, float apparentPower, float t,
@@ -67,7 +72,7 @@ bool CloudHandler::pushHistoryRecord(const String& status, float v, float c, flo
                                      float wpe_entropy, float spec_entropy, float thd_i,
                                      uint8_t model_pred,
                                      TimeSync* time) {
-  if (!Firebase.ready()) return false;
+  if (!cloudNetReady() || !Firebase.ready()) return false;
 
   uint64_t epochMs = 0;
   String iso = "";
@@ -110,7 +115,7 @@ bool CloudHandler::pushHistoryRecord(const String& status, float v, float c, flo
   json.set("uptime_ms", (int)millis());
   json.set("server_ts/.sv", "timestamp");
 
-  return Firebase.RTDB.pushJSON(&fbdo, "/history", &json);
+  return Firebase.RTDB.pushJSON(&fbHistory, "/history", &json);
 }
 
 bool CloudHandler::logStatusEvent(const String& status, float v, float c, float apparentPower, float t, TimeSync* time) {
@@ -123,7 +128,7 @@ bool CloudHandler::logStatusEvent(const String& status, float v, float c, float 
 }
 
 bool CloudHandler::logFeatureEvent(const String& status, const FeatureFrame& f, float apparentPower, bool relayTrip, TimeSync* time) {
-  if (!Firebase.ready()) return false;
+  if (!cloudNetReady() || !Firebase.ready()) return false;
 
   uint64_t epochMs = 0;
   String iso = "";
@@ -170,7 +175,7 @@ bool CloudHandler::logFeatureEvent(const String& status, const FeatureFrame& f, 
   json.set("uptime_ms", (int)millis());
   json.set("server_ts/.sv", "timestamp");
 
-  return Firebase.RTDB.pushJSON(&fbdo, "/history", &json);
+  return Firebase.RTDB.pushJSON(&fbHistory, "/history", &json);
 }
 
 void CloudHandler::update(float v, float c, float apparentPower, float t,
@@ -180,7 +185,7 @@ void CloudHandler::update(float v, float c, float apparentPower, float t,
                           float wpe_entropy, float spec_entropy, float thd_i,
                           uint8_t model_pred,
                           const String& state, TimeSync* time) {
-  if (!Firebase.ready()) return;
+  if (!cloudNetReady() || !Firebase.ready()) return;
 
   const bool isNormal = (state == "NORMAL");
   const bool stateChanged = (state != _lastSentLiveState);
@@ -191,9 +196,6 @@ void CloudHandler::update(float v, float c, float apparentPower, float t,
   if (stateChanged) shouldSend = true;
   else if (now - _lastLiveSend >= interval) shouldSend = true;
   if (!shouldSend) return;
-
-  _lastLiveSend = now;
-  _lastSentLiveState = state;
 
   uint64_t epochMs = 0;
   String iso = "";
@@ -248,7 +250,10 @@ void CloudHandler::update(float v, float c, float apparentPower, float t,
   json.set("uptime_ms", (int)millis());
   json.set("server_ts/.sv", "timestamp");
 
-  if (!Firebase.RTDB.updateNode(&fbdo, "/live_data", &json)) return;
+  if (!Firebase.RTDB.updateNode(&fbLive, "/live_data", &json)) return;
+
+  _lastLiveSend = now;
+  _lastSentLiveState = state;
 
   String historyStatus = "";
   bool pushHistory = false;

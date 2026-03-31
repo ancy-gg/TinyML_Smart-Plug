@@ -6,7 +6,7 @@
 class FaultLogic {
 public:
   void resetLatch();
-  FaultState update(float vProtect, float tempC, float irmsA, int arcModelOut, bool arcEligible);
+  FaultState update(float vProtect, float vRaw, float tempC, float irmsA, int arcModelOut, bool arcEligible);
 
   int arcCounter() const { return _arcCnt; }
   bool consumeTripOffEdge();

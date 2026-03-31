@@ -30,7 +30,7 @@
 
 #define API_KEY "AIzaSyAmJlZZszyWPJFgIkTAAl_TbIySys1nvEw"
 #define DATABASE_URL "tinyml-smart-plug-default-rtdb.asia-southeast1.firebasedatabase.app"
-static const char* FW_VERSION = "TSP-v3.7.4-p-mcp";   //m - set calib to 0.0 (1.0 for first-order var)
+static const char* FW_VERSION = "TSP-v3.7.5-p-mcp";   //m - set calib to 0.0 (1.0 for first-order var)
                                                       //p - change 0 relay, with calibration
                                                       //c - change 1 relay, with calibration
                                                       
@@ -132,25 +132,27 @@ static bool debouncedMainsPresentForState(float vProtect) {
 }
 
 
-static bool classifyUnpluggedSocket(float vProtect, float irmsA, FaultState st, uint32_t* sinceMs) {
+static bool classifyUnpluggedSocket(float vRaw, float vProtect, float irmsA, bool currentValid, FaultState st, uint32_t* sinceMs) {
   if (!sinceMs) return false;
 
-  const bool zeroLike = (vProtect <= MAINS_PRESENT_OFF_V);
-  const bool noLoad = (irmsA <= LOAD_OFF_DETECT_A);
+  const bool rawGone  = (vRaw <= MAINS_PRESENT_OFF_V);
+  const bool protGone = (vProtect <= MAINS_PRESENT_OFF_V);
+  const bool zeroLike = rawGone || protGone;
+  const bool noLoad = (!currentValid) || (irmsA <= LOAD_OFF_DETECT_A);
   const bool arcLike = (st == STATE_ARCING);
   const bool heatLike = (st == STATE_HEATING);
   const bool faultKeep = arcLike || heatLike;
 
   if (zeroLike && noLoad && !faultKeep) {
     if (*sinceMs == 0) *sinceMs = millis();
-  } else if (vProtect >= MAINS_PRESENT_ON_V || !noLoad || faultKeep) {
+  } else if (vRaw >= MAINS_PRESENT_ON_V || vProtect >= MAINS_PRESENT_ON_V || !noLoad || faultKeep) {
     *sinceMs = 0;
   }
 
   return (*sinceMs != 0) && ((millis() - *sinceMs) >= UNPLUGGED_STATE_DELAY_MS);
 }
 
-static float cleanDisplayCurrent(float irmsRaw, bool currentValid, bool featValid, float vProtect) {
+static float cleanDisplayCurrent(float irmsRaw, bool currentValid, bool featValid, float vRaw, float vProtect) {
   static bool learnStarted = false;
   static bool floorLocked = false;
   static uint32_t learnStartMs = 0;
@@ -164,6 +166,13 @@ static float cleanDisplayCurrent(float irmsRaw, bool currentValid, bool featVali
 
   const uint32_t now = millis();
   const bool mainsOn = (vProtect >= MAINS_PRESENT_ON_V);
+
+  if (vRaw <= MAINS_PRESENT_OFF_V) {
+    dispIrms = 0.0f;
+    displayGateOn = false;
+    lastUpdateMs = now;
+    return 0.0f;
+  }
 
   if (!learnStarted && mainsOn) {
     learnStarted = true;
@@ -220,6 +229,23 @@ static float cleanDisplayCurrent(float irmsRaw, bool currentValid, bool featVali
 
   if (!displayGateOn) dispIrms = 0.0f;
   return dispIrms;
+}
+
+static float cleanLogicCurrent(float irmsRaw, bool currentValid, float vRaw, float vProtect) {
+  static uint32_t mainsGoneSinceMs = 0;
+  const uint32_t now = millis();
+
+  const bool rawGone = (vRaw <= MAINS_PRESENT_OFF_V);
+  const bool protGone = (vProtect <= MAINS_PRESENT_OFF_V);
+  if (rawGone || protGone) {
+    if (mainsGoneSinceMs == 0) mainsGoneSinceMs = now;
+    if ((now - mainsGoneSinceMs) >= 450UL) return 0.0f;
+  } else {
+    mainsGoneSinceMs = 0;
+  }
+
+  if (!currentValid) return 0.0f;
+  return irmsRaw;
 }
 
 static void handleCueEvents(float vProtect, float irms, bool mainsPresent, bool paused, FaultState st) {
@@ -668,6 +694,7 @@ void loop() {
 
   static float vRms = 0.0f;
   static float vFast = 0.0f;
+  static float vRaw = 0.0f;
   static float tC = 0.0f;
   static uint32_t tTemp = 0;
 
@@ -675,6 +702,7 @@ void loop() {
   if (newV >= 0.0f) {
     vRms = newV;
     vFast = voltSensor.protectVrms();
+    vRaw = voltSensor.rawVrms();
   }
 
   if (millis() - tTemp >= 500) {
@@ -687,8 +715,9 @@ void loop() {
   f.vrms = vRms;
   f.temp_c = tC;
 
-  const float irmsRawForLogic = f.irms;
-  f.irms = cleanDisplayCurrent(irmsRawForLogic, f.current_valid != 0, f.feat_valid != 0, vFast);
+  const float irmsRawMeasured = f.irms;
+  const float irmsRawForLogic = cleanLogicCurrent(irmsRawMeasured, f.current_valid != 0, vRaw, vFast);
+  f.irms = cleanDisplayCurrent(irmsRawForLogic, f.current_valid != 0, f.feat_valid != 0, vRaw, vFast);
 
   if (irmsRawForLogic < FEATURE_MIN_IRMS_A) {
     f.feat_valid = 0;
@@ -732,13 +761,13 @@ void loop() {
 
   FaultState st = STATE_NORMAL;
   if (!bootSettling) {
-    st = faultLogic.update(vFast, tC, irmsRawForLogic, f.model_pred, arcEligible);
+    st = faultLogic.update(vFast, vRaw, tC, irmsRawForLogic, f.model_pred, arcEligible);
   }
 
   if (gSafeMode) st = STATE_NORMAL;
 
   static uint32_t noPowerSinceMsCtl = 0;
-  const bool unpluggedLiveCtl = classifyUnpluggedSocket(vFast, irmsRawForLogic, st, &noPowerSinceMsCtl);
+  const bool unpluggedLiveCtl = classifyUnpluggedSocket(vRaw, vFast, irmsRawForLogic, f.current_valid != 0, st, &noPowerSinceMsCtl);
   const bool controlsLocked = gSafeMode || paused || bootSettling || protectionInhibit || unpluggedLiveCtl || faultLogic.webControlLocked();
 
   if (!gSafeMode) {
@@ -772,7 +801,6 @@ void loop() {
       fLog.irms = irmsRawForLogic;
       logger.ingest(fLog, st, faultLogic.arcCounter());
     }
-    logger.loop();
 #endif
   }
 
@@ -792,7 +820,7 @@ void loop() {
   const bool displayFaultActive = (displayFaultState != STATE_NORMAL) && ((int32_t)(displayFaultUntil - millis()) > 0);
 
   static uint32_t noPowerSinceMsOled = 0;
-  const bool unpluggedLiveOled = classifyUnpluggedSocket(vFast, irmsRawForLogic, st, &noPowerSinceMsOled);
+  const bool unpluggedLiveOled = classifyUnpluggedSocket(vRaw, vFast, irmsRawForLogic, f.current_valid != 0, st, &noPowerSinceMsOled);
 
   const FaultState oledState = displayFaultActive ? displayFaultState : st;
   OledOverlay ov = OledOverlay::NONE;
@@ -836,7 +864,7 @@ void loop() {
     lastLive = millis();
 
     static uint32_t noPowerSinceMs = 0;
-    const bool unpluggedLive = classifyUnpluggedSocket(vFast, irmsRawForLogic, st, &noPowerSinceMs);
+    const bool unpluggedLive = classifyUnpluggedSocket(vRaw, vFast, irmsRawForLogic, f.current_valid != 0, st, &noPowerSinceMs);
 
     String stateStr;
     if (gPauseByOta) stateStr = "OTA_UPDATING";
@@ -854,6 +882,12 @@ void loop() {
                  f.model_pred,
                  stateStr, &timeSync);
   }
+
+#if ENABLE_ML_LOGGER
+  if (!paused && !gSafeMode) {
+    logger.loop();
+  }
+#endif
 
   delay(2);
 }

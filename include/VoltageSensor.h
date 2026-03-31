@@ -47,6 +47,7 @@ private:
   float _avgJumpV = 18.0f;
 
   uint8_t _lowWindows = 0;
+  uint8_t _noSignalWindows = 0;
 
   static inline int _median3(int a, int b, int c) {
     if (a > b) { int t = a; a = b; b = t; }

@@ -32,7 +32,10 @@ public:
   bool logFeatureEvent(const String& status, const FeatureFrame& f, float apparentPower, bool relayTrip, TimeSync* time);
 
 private:
-  FirebaseData fbdo;
+  FirebaseData fbLive;
+  FirebaseData fbRead;
+  FirebaseData fbHistory;
+  FirebaseData fbLog;
   FirebaseAuth auth;
   FirebaseConfig config;
 

@@ -159,54 +159,71 @@ bool DataLogger::flushToFirebase(bool finalFlush) {
   const SessionSpec& spec = activeSpec();
   if (spec.sessionId.length() < 3) return false;
 
-  String csv;
-  csv.reserve(_count * 290 + 360);
-  csv += "cycle_nmse,zcv,zc_dwell_ratio,pulse_count_per_cycle,peak_fluct_cv,midband_residual_rms,hf_band_energy_ratio,wpe_entropy,spec_entropy,thd_i,v_rms,i_rms,temp_c,label_arc,load_type,session_id,epoch_ms,model_pred,feat_valid,current_valid,fault_state,arc_counter,adc_fs_hz,auto_capture\n";
-
-  for (uint16_t i = 0; i < _count; i++) {
-    const Rec& r = _buf[i];
-    csv += String(r.cycle_nmse, 6);            csv += ",";
-    csv += String(r.zcv, 6);                   csv += ",";
-    csv += String(r.zc_dwell_ratio, 6);        csv += ",";
-    csv += String(r.pulse_count_per_cycle, 6); csv += ",";
-    csv += String(r.peak_fluct_cv, 6);         csv += ",";
-    csv += String(r.midband_residual_rms, 6);  csv += ",";
-    csv += String(r.hf_band_energy_ratio, 6);  csv += ",";
-    csv += String(r.wpe_entropy, 6);           csv += ",";
-    csv += String(r.spec_entropy, 6);          csv += ",";
-    csv += String(r.thd_i, 4);                 csv += ",";
-    csv += String(r.v_rms, 3);                 csv += ",";
-    csv += String(r.i_rms, 6);                 csv += ",";
-    csv += String(r.temp_c, 3);                csv += ",";
-    csv += String((int)r.label_arc);           csv += ",";
-    csv += spec.loadType;                      csv += ",";
-    csv += spec.sessionId;                     csv += ",";
-    csv += String((unsigned long long)r.epoch_ms); csv += ",";
-    csv += String((int)r.model_pred);          csv += ",";
-    csv += String((int)r.feat_valid);          csv += ",";
-    csv += String((int)r.current_valid);       csv += ",";
-    csv += String((int)r.fault_state);         csv += ",";
-    csv += String((int)r.arc_counter);         csv += ",";
-    csv += String(r.adc_fs_hz, 2);             csv += ",";
-    csv += String((int)r.auto_capture);
-    csv += "\n";
-  }
-
-  FirebaseJson json;
-  json.set("created_at/.sv", "timestamp");
-  json.set("count", (int)_count);
-  json.set("final", finalFlush);
-  json.set("csv", csv);
-
-  json.set("meta/session_id", spec.sessionId);
-  json.set("meta/load_type", spec.loadType);
-  json.set("meta/label_override", (int)spec.labelOverride);
-  json.set("meta/duration_s", (int)spec.durationS);
-  json.set("meta/auto_capture", activeIsAuto());
-  json.set("meta/feature_order", "cycle_nmse,zcv,zc_dwell_ratio,pulse_count_per_cycle,peak_fluct_cv,midband_residual_rms,hf_band_energy_ratio,wpe_entropy,spec_entropy,thd_i");
+  static constexpr uint16_t ROWS_PER_CHUNK = 80;
+  const uint16_t totalCount = _count;
+  const uint16_t chunkCount = (totalCount + ROWS_PER_CHUNK - 1U) / ROWS_PER_CHUNK;
+  const char* header = "cycle_nmse,zcv,zc_dwell_ratio,pulse_count_per_cycle,peak_fluct_cv,midband_residual_rms,hf_band_energy_ratio,wpe_entropy,spec_entropy,thd_i,v_rms,i_rms,temp_c,label_arc,load_type,session_id,epoch_ms,model_pred,feat_valid,current_valid,fault_state,arc_counter,adc_fs_hz,auto_capture\n";
 
   String path = "/ml_logs/";
   path += spec.sessionId;
-  return _cloud->pushJSON(path.c_str(), json);
+
+  for (uint16_t chunk = 0; chunk < chunkCount; ++chunk) {
+    const uint16_t i0 = chunk * ROWS_PER_CHUNK;
+    const uint16_t i1 = ((uint16_t)(i0 + ROWS_PER_CHUNK) < totalCount) ? (uint16_t)(i0 + ROWS_PER_CHUNK) : totalCount;
+
+    String csv;
+    csv.reserve((i1 - i0) * 300 + 360);
+    csv += header;
+
+    for (uint16_t i = i0; i < i1; ++i) {
+      const Rec& r = _buf[i];
+      csv += String(r.cycle_nmse, 6);            csv += ",";
+      csv += String(r.zcv, 6);                   csv += ",";
+      csv += String(r.zc_dwell_ratio, 6);        csv += ",";
+      csv += String(r.pulse_count_per_cycle, 6); csv += ",";
+      csv += String(r.peak_fluct_cv, 6);         csv += ",";
+      csv += String(r.midband_residual_rms, 6);  csv += ",";
+      csv += String(r.hf_band_energy_ratio, 6);  csv += ",";
+      csv += String(r.wpe_entropy, 6);           csv += ",";
+      csv += String(r.spec_entropy, 6);          csv += ",";
+      csv += String(r.thd_i, 4);                 csv += ",";
+      csv += String(r.v_rms, 3);                 csv += ",";
+      csv += String(r.i_rms, 6);                 csv += ",";
+      csv += String(r.temp_c, 3);                csv += ",";
+      csv += String((int)r.label_arc);           csv += ",";
+      csv += spec.loadType;                      csv += ",";
+      csv += spec.sessionId;                     csv += ",";
+      csv += String((unsigned long long)r.epoch_ms); csv += ",";
+      csv += String((int)r.model_pred);          csv += ",";
+      csv += String((int)r.feat_valid);          csv += ",";
+      csv += String((int)r.current_valid);       csv += ",";
+      csv += String((int)r.fault_state);         csv += ",";
+      csv += String((int)r.arc_counter);         csv += ",";
+      csv += String(r.adc_fs_hz, 2);             csv += ",";
+      csv += String((int)r.auto_capture);
+      csv += "\n";
+    }
+
+    FirebaseJson json;
+    json.set("created_at/.sv", "timestamp");
+    json.set("count", (int)(i1 - i0));
+    json.set("total_count", (int)totalCount);
+    json.set("chunk_index", (int)chunk);
+    json.set("chunk_count", (int)chunkCount);
+    json.set("final", finalFlush && (chunk == (chunkCount - 1U)));
+    json.set("csv", csv);
+
+    json.set("meta/session_id", spec.sessionId);
+    json.set("meta/load_type", spec.loadType);
+    json.set("meta/label_override", (int)spec.labelOverride);
+    json.set("meta/duration_s", (int)spec.durationS);
+    json.set("meta/auto_capture", activeIsAuto());
+    json.set("meta/feature_order", "cycle_nmse,zcv,zc_dwell_ratio,pulse_count_per_cycle,peak_fluct_cv,midband_residual_rms,hf_band_energy_ratio,wpe_entropy,spec_entropy,thd_i");
+
+    if (!_cloud->pushJSON(path.c_str(), json)) return false;
+    delay(2);
+  }
+
+  return true;
 }
 #endif

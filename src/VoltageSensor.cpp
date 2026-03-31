@@ -107,24 +107,31 @@ float VoltageSensor::update() {
   float vrmsMain = eval_cubic_horner(fabsf(vrmsUncal), _cal.cubic3, _cal.cubic2, _cal.cubic1, _cal.cubic0);
   if (vrmsMain < 0.0f) vrmsMain = 0.0f;
 
-  // ESP32 ADC + ZMPT can occasionally report a false low-voltage waveform when
-  // the plug is unplugged or the signal is too small. Require both RMS energy
-  // and peak-to-peak activity before treating the result as real mains.
-  const bool weakSignal = (vrmsCounts < 8.0f) || (p2pCounts < 120);
-  if (weakSignal && vrmsMain < VOLT_UNDERVOLT_MIN_V) {
+  // Validate that the waveform actually looks like real mains.
+  // When unplugged, the ZMPT/ESP32 path can still produce enough variance to map
+  // into the undervoltage band unless we also check the waveform activity/shape.
+  const float activityRatio = (vrmsCounts > 0.25f) ? (float)p2pCounts / vrmsCounts : 0.0f;
+  const bool signalTooSmall = (vrmsCounts < 6.0f) || (p2pCounts < 80);
+  const bool signalShapeInvalid = (!signalTooSmall) && (activityRatio < 1.65f);
+  const bool noRealMains = signalTooSmall || signalShapeInvalid;
+
+  if (noRealMains) {
+    if (_noSignalWindows < 255) _noSignalWindows++;
     vrmsMain = 0.0f;
     _vActive = false;
-  }
+  } else {
+    _noSignalWindows = 0;
 
-  if (_vActive) {
-    if (vrmsMain < _vOff) {
-      _vActive = false;
+    if (_vActive) {
+      if (vrmsMain < _vOff) {
+        _vActive = false;
+        vrmsMain = 0.0f;
+      }
+    } else if (vrmsMain > _vOn) {
+      _vActive = true;
+    } else {
       vrmsMain = 0.0f;
     }
-  } else if (vrmsMain > _vOn) {
-    _vActive = true;
-  } else {
-    vrmsMain = 0.0f;
   }
 
   _rawVrms = vrmsMain;
@@ -143,10 +150,12 @@ float VoltageSensor::update() {
       _lowWindows = 0;
     }
 
-    if (highEvent || dProt >= _avgJumpV) {
-      _protVrms = _rawVrms;
-    } else if (_rawVrms <= _vOff && _lowWindows >= 2) {
+    const bool hardZero = (_rawVrms <= _vOff && _lowWindows >= 2) || (_noSignalWindows >= 2);
+
+    if (hardZero) {
       _protVrms = 0.0f;
+    } else if (highEvent || dProt >= _avgJumpV) {
+      _protVrms = _rawVrms;
     } else {
       const float alphaProt = fminf(1.0f, dtS / 1.0f);
       _protVrms += alphaProt * (_rawVrms - _protVrms);
@@ -161,7 +170,7 @@ float VoltageSensor::update() {
   }
 
   const float delta = fabsf(_protVrms - _dispVrms);
-  if (_protVrms <= 0.0f) {
+  if (_protVrms <= 0.0f || _noSignalWindows >= 2) {
     _dispVrms = 0.0f;
   } else if (delta >= _avgJumpV) {
     _dispVrms = _protVrms;
