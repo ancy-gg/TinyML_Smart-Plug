@@ -161,7 +161,7 @@
       <section class="metrics-block dashboard-live">
           <div class="section-head section-head-tight">
             <div>
-              <h2 class="section-title">Live Electrical</h2>
+              <h2 class="section-title">Main Readings</h2>
             </div>
             <div class="section-hint" data-live-state-hint>LIVE</div>
           </div>
@@ -196,7 +196,7 @@
         <section class="features-block dashboard-time">
           <div class="section-head section-head-tight">
             <div>
-              <h2 class="section-title">Time Domain</h2>
+              <h2 class="section-title">Primary Features</h2>
             </div>
             <div class="section-hint" data-live-state-hint>LIVE</div>
           </div>
@@ -213,7 +213,7 @@
         <section class="features-block dashboard-freq">
           <div class="section-head section-head-tight">
             <div>
-              <h2 class="section-title">Frequency Domain</h2>
+              <h2 class="section-title">Secondary Features</h2>
             </div>
             <div class="section-hint" data-live-state-hint>LIVE</div>
           </div>
@@ -271,7 +271,7 @@
       <div class="history-head">
         <div>
           <h2 class="history-title">Over-the-Air (OTA) Updates</h2>
-          <div class="history-hint">Publish a version and firmware URL for the device to pull</div>
+          <div class="history-hint">Wireless firmware updates</div>
         </div>
 
         <div class="history-actions">
@@ -288,12 +288,12 @@
 
         <div class="ota-box">
           <label class="ota-field">
-            <span class="muted">Version</span>
+            <span class="muted">Version Name</span>
             <input id="otaDesiredVer" class="ota-input" placeholder="TSP-v0.0.0" />
           </label>
 
           <label class="ota-field">
-            <span class="muted">Bin</span>
+            <span class="muted">Binary File</span>
             <input id="otaBinName" class="ota-input" value="firmware_version.bin" />
           </label>
 
@@ -318,7 +318,7 @@
         <div>
           <h2 class="history-title">Data Logger</h2>
           <div class="history-hint muted">
-            Data for Machine Learning Model Training and Waveform Analysis
+            Used for Training TinyML Models and Waveform Analysis
           </div>
         </div>
 
@@ -389,7 +389,7 @@
           </div>
 
           <div class="smallnote" style="margin-top:0; margin-bottom:6px;">
-            Axis: <span class="mono">Y1</span>=left, <span class="mono">Y2</span>=right
+            Axis: <span class="mono">Y-Left</span>=left, <span class="mono">Y-Right</span>=right
           </div>
 
           <input id="seriesSearch" class="seriesSearch mono" placeholder="Filter series (e.g., rms, thd, entropy…)" />

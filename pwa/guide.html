@@ -7,18 +7,146 @@
   <meta name="theme-color" content="#111111" />
   <link rel="icon" type="image/png" href="icons/icon-512.png">
   <style>
-    :root{color-scheme:dark;--panel:rgba(255,255,255,0.05);--border:rgba(255,255,255,0.10);--text:#f3f3f3;--muted:rgba(255,255,255,0.68);--shadow:0 16px 40px rgba(0,0,0,0.45)}
-    *{box-sizing:border-box} body{margin:0;min-height:100vh;font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif;color:var(--text);background:radial-gradient(1200px 700px at 50% -240px,#2a2a2d 0%,#121214 60%,#0b0b0c 100%);padding:24px}
-    .wrap{width:min(1120px,100%);margin:0 auto}.hero,.section{background:var(--panel);border:1px solid var(--border);border-radius:22px;box-shadow:var(--shadow);backdrop-filter:blur(6px)}
-    .hero{padding:24px;margin-bottom:18px}.section{padding:20px;margin-bottom:14px} h1,h2,h3,p,ol,li,ul{margin:0} h1{font-size:32px;font-weight:950} h2{font-size:18px;font-weight:900;margin-bottom:12px} h3{font-size:14px;font-weight:900;margin-bottom:6px} p,li{line-height:1.68;color:var(--muted)}
-    .hero-top{display:flex;align-items:center;gap:16px;flex-wrap:wrap}.hero-copy{flex:1 1 520px}.hero-logo{width:68px;height:68px;border-radius:18px;border:1px solid rgba(255,255,255,0.12);box-shadow:var(--shadow)}
-    .actions{display:flex;gap:10px;flex-wrap:wrap;margin-top:16px}.btn{display:inline-flex;align-items:center;justify-content:center;min-height:44px;padding:0 14px;border-radius:12px;text-decoration:none;font-weight:900;color:var(--text);border:1px solid rgba(255,255,255,0.12);background:rgba(255,255,255,0.06)}
-    .btn-primary{background:linear-gradient(180deg, rgba(46,204,113,0.22), rgba(46,204,113,0.12));border-color:rgba(46,204,113,0.34);color:#d8ffe6}
-    .grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}.grid-3{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px}.mode-strip{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px}
-    .card,.rule,.fault-card,.mode-chip{padding:14px;border-radius:16px;background:rgba(255,255,255,0.04);border:1px solid rgba(255,255,255,0.08)}
-    .mode-chip{display:flex;gap:10px;align-items:flex-start}.mode-icon{width:36px;height:36px;flex:0 0 36px;border-radius:12px;display:flex;align-items:center;justify-content:center;background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.10)}
-    .mode-icon svg{width:18px;height:18px;fill:#f3f3f3}.mini{margin-top:8px;font-size:12px;color:var(--muted)} ol,ul{padding-left:20px;display:grid;gap:8px}.callout{margin-top:12px;padding:14px;border-radius:16px;background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,0.08)}
-    @media (max-width: 920px){body{padding:14px}.grid,.grid-3,.mode-strip{grid-template-columns:1fr}h1{font-size:26px}.btn{width:100%}}
+    :root{
+      color-scheme:dark;
+      --bg:#0d0d0f;
+      --panel:rgba(255,255,255,0.045);
+      --panel-strong:linear-gradient(180deg, rgba(44,44,47,0.95), rgba(22,22,24,0.95));
+      --border:rgba(255,255,255,0.10);
+      --text:#f5f5f5;
+      --muted:rgba(255,255,255,0.70);
+      --soft:rgba(255,255,255,0.54);
+      --shadow:0 16px 40px rgba(0,0,0,0.42);
+      --green:#2ecc71;
+      --blue:#4da3ff;
+      --amber:#f1c40f;
+      --orange:#ff9b42;
+      --red:#e85b53;
+      --purple:#9b6dff;
+      --teal:#19c6b3;
+      --radius:20px;
+    }
+    *{box-sizing:border-box}
+    html,body{margin:0;min-height:100%}
+    body{
+      font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif;
+      color:var(--text);
+      background:radial-gradient(1200px 700px at 50% -240px,#2a2a2d 0%,#121214 60%,#0b0b0c 100%);
+      padding:18px;
+      line-height:1.55;
+      -webkit-text-size-adjust:100%;
+    }
+    .wrap{width:min(1180px,100%);margin:0 auto}
+    .hero,.section{
+      border:1px solid var(--border);
+      border-radius:24px;
+      background:var(--panel);
+      box-shadow:var(--shadow);
+      backdrop-filter:blur(8px);
+    }
+    .hero{padding:22px;margin-bottom:14px}
+    .section{padding:18px;margin-bottom:12px}
+    h1,h2,h3,p,ul,ol,li{margin:0}
+    h1{font-size:clamp(28px,4vw,42px);font-weight:950;line-height:1.05;letter-spacing:-0.03em}
+    h2{font-size:clamp(18px,2vw,24px);font-weight:950;line-height:1.1;margin-bottom:12px}
+    h3{font-size:15px;font-weight:900;line-height:1.2}
+    p,li{color:var(--muted)}
+    .hero-top{display:flex;align-items:center;gap:14px;flex-wrap:wrap}
+    .hero-logo{width:56px;height:56px;border-radius:16px;border:1px solid rgba(255,255,255,0.12);box-shadow:var(--shadow);object-fit:cover}
+    .hero-copy{flex:1 1 520px;min-width:0}
+    .hero-sub{margin-top:8px;font-size:14px;color:var(--muted);max-width:760px}
+    .chip-row{display:flex;gap:8px;flex-wrap:wrap;margin-top:14px}
+    .btn,.chip-link{
+      display:inline-flex;align-items:center;justify-content:center;
+      min-height:40px;padding:0 12px;border-radius:12px;text-decoration:none;
+      font-size:13px;font-weight:900;color:var(--text);
+      border:1px solid rgba(255,255,255,0.12);background:rgba(255,255,255,0.06)
+    }
+    .btn-primary{background:linear-gradient(180deg, rgba(46,204,113,0.24), rgba(46,204,113,0.12));border-color:rgba(46,204,113,0.34);color:#d8ffe6}
+    .chip-link{background:rgba(255,255,255,0.05)}
+    .section-head{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:12px;flex-wrap:wrap}
+    .eyebrow{display:inline-flex;align-items:center;gap:8px;font-size:11px;font-weight:900;letter-spacing:.08em;text-transform:uppercase;color:var(--soft)}
+    .eyebrow .dot{width:8px;height:8px;border-radius:999px;background:var(--green);box-shadow:0 0 0 4px rgba(46,204,113,0.12)}
+    .eyebrow.blue .dot{background:var(--blue);box-shadow:0 0 0 4px rgba(77,163,255,0.12)}
+    .eyebrow.amber .dot{background:var(--amber);box-shadow:0 0 0 4px rgba(241,196,15,0.12)}
+    .eyebrow.red .dot{background:var(--red);box-shadow:0 0 0 4px rgba(232,91,83,0.12)}
+    .eyebrow.purple .dot{background:var(--purple);box-shadow:0 0 0 4px rgba(155,109,255,0.12)}
+    .eyebrow.teal .dot{background:var(--teal);box-shadow:0 0 0 4px rgba(25,198,179,0.12)}
+    .grid-2,.grid-3,.grid-4{display:grid;gap:10px}
+    .grid-2{grid-template-columns:repeat(2,minmax(0,1fr))}
+    .grid-3{grid-template-columns:repeat(3,minmax(0,1fr))}
+    .grid-4{grid-template-columns:repeat(4,minmax(0,1fr))}
+    .card,details{
+      background:var(--panel-strong);
+      border:1px solid rgba(255,255,255,0.10);
+      border-radius:18px;
+      padding:14px;
+      min-width:0;
+    }
+    .card p + p{margin-top:8px}
+    .mini{margin-top:8px;font-size:12px;color:var(--soft)}
+    .pill-row{display:flex;gap:8px;flex-wrap:wrap}
+    .pill{
+      display:inline-flex;align-items:center;justify-content:center;
+      min-height:32px;padding:0 10px;border-radius:999px;
+      border:1px solid rgba(255,255,255,0.10);
+      font-size:12px;font-weight:900
+    }
+    .pill-green{background:rgba(46,204,113,0.14);color:#bff5d4}
+    .pill-blue{background:rgba(77,163,255,0.14);color:#d9ebff}
+    .pill-amber{background:rgba(241,196,15,0.16);color:#fff0ae}
+    .pill-red{background:rgba(232,91,83,0.16);color:#ffd7d3}
+    .pill-purple{background:rgba(155,109,255,0.16);color:#ecdfff}
+    .pill-teal{background:rgba(25,198,179,0.16);color:#d5fffa}
+    .quick-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px}
+    .quick-card{padding:14px;border-radius:18px;border:1px solid rgba(255,255,255,0.10);background:var(--panel-strong)}
+    .quick-num{font-size:12px;font-weight:900;color:var(--soft);text-transform:uppercase;letter-spacing:.08em;margin-bottom:8px}
+    .quick-title{font-size:15px;font-weight:900;margin-bottom:6px}
+    .accent-green{box-shadow:inset 0 2px 0 rgba(46,204,113,0.65)}
+    .accent-blue{box-shadow:inset 0 2px 0 rgba(77,163,255,0.65)}
+    .accent-amber{box-shadow:inset 0 2px 0 rgba(241,196,15,0.65)}
+    .accent-orange{box-shadow:inset 0 2px 0 rgba(255,155,66,0.65)}
+    .accent-red{box-shadow:inset 0 2px 0 rgba(232,91,83,0.65)}
+    .accent-purple{box-shadow:inset 0 2px 0 rgba(155,109,255,0.65)}
+    .accent-teal{box-shadow:inset 0 2px 0 rgba(25,198,179,0.65)}
+    .metric-list{display:grid;gap:8px}
+    .metric-item{display:flex;gap:10px;align-items:flex-start;padding:10px 12px;border-radius:14px;background:rgba(255,255,255,0.04);border:1px solid rgba(255,255,255,0.08)}
+    .metric-badge{flex:0 0 auto;min-width:64px;height:28px;display:inline-flex;align-items:center;justify-content:center;border-radius:999px;font-size:11px;font-weight:900;border:1px solid rgba(255,255,255,0.10)}
+    .badge-time{background:rgba(77,163,255,0.14);color:#d9ebff}
+    .badge-freq{background:rgba(25,198,179,0.14);color:#d5fffa}
+    .badge-ui{background:rgba(241,196,15,0.14);color:#fff0ae}
+    .note{padding:12px 14px;border-radius:16px;border:1px solid rgba(255,255,255,0.10);background:rgba(255,255,255,0.05);font-size:13px;color:var(--muted)}
+    details{padding:0;overflow:hidden}
+    summary{list-style:none;cursor:pointer;padding:14px 16px;font-weight:900;display:flex;align-items:center;justify-content:space-between;gap:10px}
+    summary::-webkit-details-marker{display:none}
+    .summary-copy{font-size:13px;color:var(--soft);font-weight:700}
+    .details-body{padding:0 16px 16px;display:grid;gap:10px}
+    .details-body p,.details-body li{font-size:14px}
+    .details-body ul,.details-body ol{padding-left:20px;display:grid;gap:6px}
+    .kpi-grid{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:8px}
+    .kpi{padding:12px;border-radius:16px;background:rgba(255,255,255,0.04);border:1px solid rgba(255,255,255,0.08)}
+    .kpi strong{display:block;font-size:13px;margin-bottom:4px}
+    .kpi span{font-size:12px;color:var(--soft)}
+    .footer-space{height:8px}
+    @media (max-width:980px){
+      body{padding:14px}
+      .grid-4,.quick-grid,.kpi-grid{grid-template-columns:repeat(2,minmax(0,1fr))}
+      .grid-3{grid-template-columns:1fr}
+    }
+    @media (max-width:760px){
+      .hero{padding:18px}
+      .section{padding:14px}
+      .hero-logo{width:50px;height:50px;border-radius:14px}
+      .hero-sub{font-size:13px}
+      .chip-row{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}
+      .btn,.chip-link{width:100%;padding:0 10px;font-size:12px;min-height:38px}
+      .grid-2,.grid-4,.quick-grid,.kpi-grid{grid-template-columns:1fr}
+      .card,details{padding:12px}
+      summary{padding:12px 14px}
+      .details-body{padding:0 14px 14px}
+      p,li{font-size:14px;line-height:1.5}
+      .metric-item{padding:10px}
+    }
   </style>
 </head>
 <body>
@@ -28,109 +156,323 @@
         <img class="hero-logo" src="icons/icon-512.png" alt="TinyML Smart Plug icon" />
         <div class="hero-copy">
           <h1>TinyML Smart Plug Guide</h1>
+          <div class="hero-sub">A compact user guide for the current dashboard, controls, protections, and admin tools.</div>
         </div>
       </div>
-      <div class="actions">
+      <div class="chip-row">
         <a class="btn btn-primary" href="index.html">Go Back</a>
-        <a class="btn" href="#dashboard">Dashboard</a>
-        <a class="btn" href="#protections">Protection rules</a>
-        <a class="btn" href="#fault-actions">What to do after a fault</a>
-        <a class="btn" href="#reset">Reset after trip</a>
+        <a class="chip-link" href="#quickstart">Quick Start</a>
+        <a class="chip-link" href="#dashboard">Dashboard</a>
+        <a class="chip-link" href="#protections">Protections</a>
+        <a class="chip-link" href="#features">Feature Guide</a>
+        <a class="chip-link" href="#fault-actions">After a Fault</a>
+      </div>
+    </section>
+
+    <section class="section" id="quickstart">
+      <div class="section-head">
+        <div>
+          <div class="eyebrow"><span class="dot"></span>Quick Start</div>
+          <h2>How to use the dashboard</h2>
+        </div>
+        <div class="pill-row">
+          <span class="pill pill-green">User friendly</span>
+          <span class="pill pill-blue">Compact layout</span>
+          <span class="pill pill-amber">Protection aware</span>
+        </div>
+      </div>
+      <div class="quick-grid">
+        <div class="quick-card accent-green">
+          <div class="quick-num">Step 1</div>
+          <div class="quick-title">Read the top banner first</div>
+          <p>The large banner is the fastest summary. When live packets stop updating for about 30 seconds, the page treats the device as stale or disconnected so old values are not mistaken as current.</p>
+        </div>
+        <div class="quick-card accent-blue">
+          <div class="quick-num">Step 2</div>
+          <div class="quick-title">Check System Overview</div>
+          <p>Use this area for overall health, relay control, refresh, and clear-fault actions. It is the main place to confirm whether the device is healthy, idle, active, or offline.</p>
+        </div>
+        <div class="quick-card accent-amber">
+          <div class="quick-num">Step 3</div>
+          <div class="quick-title">Review the live cards</div>
+          <p>Voltage, current, apparent power, temperature, and waveform features help you understand both electrical load behavior and arc-related signal behavior.</p>
+        </div>
+        <div class="quick-card accent-red">
+          <div class="quick-num">Step 4</div>
+          <div class="quick-title">Treat trips seriously</div>
+          <p>If the device trips on heat, voltage, overload, or arc-related behavior, remove the cause first. Do not use the dashboard as a way to ignore a real fault.</p>
+        </div>
       </div>
     </section>
 
     <section class="section">
-      <h2>About the device</h2>
-      <div class="grid">
-        <div class="card">
-          <h3>What it is for</h3>
-          <p>The TinyML Smart Plug is an added protection layer for residential appliance use. It monitors voltage, current, socket temperature, and waveform behavior so it can warn or trip on conditions that ordinary breakers may not describe clearly, especially progressive or intermittent fault conditions.</p>
-          <div class="mini">It works as complementary protection. It does not replace proper wiring, proper breakers, or safe appliance selection.</div>
+      <div class="section-head">
+        <div>
+          <div class="eyebrow blue"><span class="dot"></span>Header Menu</div>
+          <h2>What is inside the menu</h2>
         </div>
-        <div class="card">
-          <h3>How it decides</h3>
-          <p>The device uses a hybrid method. Arc faults are evaluated by an AI model using waveform features. Overload, socket heating, short circuit, undervoltage, and overvoltage use direct threshold rules for faster and more predictable protection behavior.</p>
-          <div class="mini">Arc signatures used the AI model because they are complex, but for threshold-based faults, using AI may prove harmful instead.</div>
+      </div>
+      <div class="grid-2">
+        <div class="card accent-blue">
+          <h3>Notifications</h3>
+          <p>The menu lets the user enable alert notifications. When notifications are allowed by the browser, important status changes can create push-style alerts.</p>
+        </div>
+        <div class="card accent-purple">
+          <h3>User and Admin mode</h3>
+          <p>User mode keeps the dashboard cleaner. Admin mode reveals maintenance tools such as OTA publishing, Data Logger, and Plot Viewer.</p>
+        </div>
+        <div class="card accent-teal">
+          <h3>Change WiFi</h3>
+          <p>This sends a request to open the WiFi portal. The current page logic shows a success message that the hotspot request was sent and the access point should open for about 15 seconds.</p>
+        </div>
+        <div class="card accent-green">
+          <h3>Guide</h3>
+          <p>This page is intended to explain the dashboard in plain language, not just list labels from the UI.</p>
         </div>
       </div>
     </section>
 
     <section class="section" id="dashboard">
-      <h2>What you see on the dashboard</h2>
-      <div class="grid-3">
-        <div class="card"><h3>Status banner</h3><p>The large banner is the fastest summary of the current state. If fresh live data stops arriving for about 15 seconds, the dashboard changes to disconnected so stale values are not mistaken as current.</p></div>
-        <div class="card"><h3>System overview</h3><p>This summarizes overall health, connectivity, power condition, active protection state, the latest recorded event, and other quick health indicators.</p></div>
-        <div class="card"><h3>Live electrical data</h3><p>Voltage, current, apparent power, and temperature come from the latest live packet. On-card hints are intentionally short because the detailed explanations live here in the guide.</p></div>
-        <div class="card"><h3>Waveform data</h3><p>These cards show the 10 feature values used for waveform review and arc-evaluation context.</p></div>
-        <div class="card"><h3>History</h3><p>History shows important recorded states over time. Use the range filter to narrow the view and export the visible records as CSV.</p></div>
-        <div class="card"><h3>Maintenance sections</h3><p>OTA Updates, Data Logger, and Plot Viewer are available only in admin mode so the consumer view stays cleaner.</p></div>
+      <div class="section-head">
+        <div>
+          <div class="eyebrow amber"><span class="dot"></span>Dashboard Overview</div>
+          <h2>What each section means</h2>
+        </div>
       </div>
+      <div class="grid-3">
+        <div class="card accent-red">
+          <h3>Status Banner</h3>
+          <p>The top banner shows the effective operating state, such as monitoring, unplugged, disconnected, overvoltage, undervoltage, heating, overload, or arcing.</p>
+          <div class="mini">Use this first before reading the smaller cards.</div>
+        </div>
+        <div class="card accent-green">
+          <h3>System Overview</h3>
+          <p>This combines the current health summary with the main control actions. It helps you confirm if the device is healthy, active, idle, or offline, and it gives fast access to refresh, relay, and fault-clear actions.</p>
+        </div>
+        <div class="card accent-blue">
+          <h3>Status</h3>
+          <p>This block summarizes connection state, protection state, firmware version, and the latest event. It is the best place to confirm whether the page is seeing fresh data from the device.</p>
+        </div>
+        <div class="card accent-teal">
+          <h3>Live Electrical</h3>
+          <p>This shows voltage, current, apparent power, and temperature from the latest live packet. The small hints under each value are quick interpretations, not full diagnostics.</p>
+        </div>
+        <div class="card accent-purple">
+          <h3>Time and Frequency Features</h3>
+          <p>The dashboard separates feature values into Time Domain and Frequency Domain so the user can review signal behavior more clearly.</p>
+        </div>
+        <div class="card accent-amber">
+          <h3>History</h3>
+          <p>The history table shows recorded status events with time, voltage, current, temperature, and duration. The current dashboard supports Today, Yesterday, Last 7 days, and Last 30 days, plus CSV download.</p>
+        </div>
+      </div>
+      <div class="note" style="margin-top:10px;">The current dashboard also includes admin-only maintenance sections: OTA Updates, Data Logger, and Plot Viewer.</div>
     </section>
 
     <section class="section" id="protections">
-      <h2>Protection rules</h2>
-      <div class="grid">
-        <div class="rule"><h3>Arc Fault</h3><p>Trips when the AI model detects an arc signature from waveform features.</p></div>
-        <div class="rule"><h3>Overload</h3><p>Alarm at 10 A or above. If current reaches 14.5 A for 1 minute, status becomes Sustained Overload and the relay is pulsed OFF.</p></div>
-        <div class="rule"><h3>Socket Heating</h3><p>Trip at 70 °C or higher.</p></div>
-        <div class="rule"><h3>Short Circuit</h3><p>Trip above 20 A.</p></div>
-        <div class="rule"><h3>Undervoltage</h3><p>Validated below 200 V using a short persistence counter. Once valid, the relay is pulsed OFF and the device waits 5 minutes of stable voltage before auto-pulsing ON.</p></div>
-        <div class="rule"><h3>Overvoltage</h3><p>Validated above 250 V using a short persistence counter. Once valid, the relay is pulsed OFF and the device waits 5 minutes of stable voltage before auto-pulsing ON.</p></div>
+      <div class="section-head">
+        <div>
+          <div class="eyebrow red"><span class="dot"></span>Protection Rules</div>
+          <h2>What can alarm or trip the device</h2>
+        </div>
+      </div>
+      <div class="kpi-grid">
+        <div class="kpi"><strong>Overload alarm</strong><span>10 A and above</span></div>
+        <div class="kpi"><strong>Short circuit</strong><span>Above 20 A</span></div>
+        <div class="kpi"><strong>Warm socket</strong><span>60 °C hint level</span></div>
+        <div class="kpi"><strong>Heating trip</strong><span>70 °C and above</span></div>
+        <div class="kpi"><strong>Voltage faults</strong><span>&lt; 200 V or &gt; 250 V</span></div>
+      </div>
+      <div class="grid-2" style="margin-top:10px;">
+        <div class="card accent-red">
+          <h3>Arc Fault</h3>
+          <p>Arc-related detection is based on waveform features and model logic rather than on one simple threshold alone. Treat this as a serious electrical condition.</p>
+        </div>
+        <div class="card accent-amber">
+          <h3>Overload</h3>
+          <p>The dashboard warns at high current. The earlier guide logic also documents a sustained-overload trip condition after extended heavy current.</p>
+        </div>
+        <div class="card accent-orange">
+          <h3>Socket Heating</h3>
+          <p>Temperature is tracked continuously. Warm values deserve attention, and higher values trigger protective action.</p>
+        </div>
+        <div class="card accent-purple">
+          <h3>Undervoltage</h3>
+          <p>When mains stays below the validated range, the relay is pulsed off. The existing guide logic describes auto-reclose only after several minutes of stable mains.</p>
+        </div>
+        <div class="card accent-red">
+          <h3>Overvoltage</h3>
+          <p>High mains voltage can damage chargers, adapters, and appliance electronics very quickly. The dashboard treats this as a protective fault state.</p>
+        </div>
+        <div class="card accent-blue">
+          <h3>Unplugged or no mains</h3>
+          <p>Very low measured voltage is treated separately from normal voltage faults so the UI can distinguish absent mains from unhealthy mains.</p>
+        </div>
+      </div>
+    </section>
+
+    <section class="section" id="features">
+      <div class="section-head">
+        <div>
+          <div class="eyebrow teal"><span class="dot"></span>Waveform Feature Guide</div>
+          <h2>What the feature cards mean</h2>
+        </div>
+      </div>
+      <div class="metric-list">
+        <div class="metric-item"><span class="metric-badge badge-time">TIME</span><div><h3>Cycle NMSE</h3><p>Shows how different one cycle is from the next. Higher inconsistency can suggest unstable conduction.</p></div></div>
+        <div class="metric-item"><span class="metric-badge badge-time">TIME</span><div><h3>ZC Variance</h3><p>Measures how irregular the zero-cross timing is. Arcs can disturb normal behavior near crossing points.</p></div></div>
+        <div class="metric-item"><span class="metric-badge badge-time">TIME</span><div><h3>ZC Dwell Ratio</h3><p>Shows how long the signal stays near the zero region. Abnormal dwell can be useful during arc review.</p></div></div>
+        <div class="metric-item"><span class="metric-badge badge-time">TIME</span><div><h3>Pulse Count / Cycle</h3><p>Counts pulse-like activity inside each cycle. Unstable loads can create more pulse-like behavior.</p></div></div>
+        <div class="metric-item"><span class="metric-badge badge-time">TIME</span><div><h3>Peak Fluctuation CV</h3><p>Describes how much cycle peaks vary. Large variation usually means the waveform is less repeatable.</p></div></div>
+        <div class="metric-item"><span class="metric-badge badge-freq">FREQ</span><div><h3>HF Energy Ratio</h3><p>Compares high-frequency energy to the rest of the signal. Arcing often increases high-frequency content.</p></div></div>
+        <div class="metric-item"><span class="metric-badge badge-freq">FREQ</span><div><h3>Wavelet Entropy</h3><p>Shows how spread or disordered the signal becomes across wavelet bands.</p></div></div>
+        <div class="metric-item"><span class="metric-badge badge-freq">FREQ</span><div><h3>Spectral Entropy</h3><p>Measures how random or disorderly the frequency spectrum looks.</p></div></div>
+        <div class="metric-item"><span class="metric-badge badge-freq">FREQ</span><div><h3>Midband RMS</h3><p>Highlights residual mid-frequency content after smoother expected behavior is removed.</p></div></div>
+        <div class="metric-item"><span class="metric-badge badge-freq">FREQ</span><div><h3>THD Current</h3><p>Total harmonic distortion is a supporting distortion metric. It should not be treated as a complete arc decision by itself.</p></div></div>
       </div>
     </section>
 
     <section class="section">
-      <h2>Waveform feature guide</h2>
-      <div class="grid">
-        <div class="card"><h3>Cycle NMSE</h3><p>Measures how different one electrical cycle is from the next. Strong arcs often reduce cycle-to-cycle repeatability.</p></div>
-        <div class="card"><h3>Zero-Cross Variance</h3><p>Tracks irregularity in zero-cross timing, which is useful because arcs disturb expected current behavior around crossing points.</p></div>
-        <div class="card"><h3>Zero-Cross Dwell Ratio</h3><p>Shows how long the waveform stays near the zero region. This helps reveal abnormal conduction around zero crossings.</p></div>
-        <div class="card"><h3>Pulse Count per Cycle</h3><p>Counts pulse-like activity within a cycle. Increased pulse behavior can appear during unstable conduction and arcing.</p></div>
-        <div class="card"><h3>Peak Fluctuation CV</h3><p>Describes how much waveform peaks vary from cycle to cycle. Large variability can indicate instability.</p></div>
-        <div class="card"><h3>Midband Residual RMS</h3><p>Measures residual waveform energy after removing smoother expected behavior, helping expose abnormal mid-frequency content.</p></div>
-        <div class="card"><h3>HF Band Energy Ratio</h3><p>Looks at the amount of higher-frequency content relative to the signal. Arcing often increases high-frequency energy.</p></div>
-        <div class="card"><h3>Wavelet Packet Energy Entropy</h3><p>Captures how spread and disordered the signal energy becomes across wavelet bands.</p></div>
-        <div class="card"><h3>Spectral Entropy</h3><p>Measures randomness in the frequency spectrum. More disorder often means a less stable waveform.</p></div>
-        <div class="card"><h3>THD Current</h3><p>Total harmonic distortion of current. This is a supporting distortion feature, not a complete arc decision by itself.</p></div>
+      <div class="section-head">
+        <div>
+          <div class="eyebrow purple"><span class="dot"></span>Controls and Admin Tools</div>
+          <h2>What the buttons and extra tools do</h2>
+        </div>
       </div>
-    </section>
-
-
-    <section class="section">
-      <h2>Relay pulse behavior</h2>
-      <div class="grid">
-        <div class="card"><h3>Hardware latch</h3><p>The output relay is controlled by a hardware latch, so the firmware only sends short ON or OFF pulses. It does not hold the relay command continuously.</p></div>
-        <div class="card"><h3>Auto-off on unplugged</h3><p>When mains is absent long enough to qualify as unplugged, the device sends an OFF pulse so the latch returns to the safe state.</p></div>
-        <div class="card"><h3>Physical button override</h3><p>If current is detected while the software believes the relay is off, the firmware re-synchronizes by issuing an ON pulse. This allows the physical latch button to remain authoritative.</p></div>
-        <div class="card"><h3>Remote controls</h3><p>The app can send ON and OFF pulses only when the device is in a non-critical state. Remote relay controls are disabled during arc, heating, overload, sustained overload, undervoltage, and overvoltage events.</p></div>
+      <div class="grid-2">
+        <details open>
+          <summary>
+            <span>Relay and fault controls</span>
+            <span class="summary-copy">Everyday controls</span>
+          </summary>
+          <div class="details-body">
+            <p>The relay uses pulse-based control. The page sends short ON and OFF requests instead of continuously holding the relay state.</p>
+            <ul>
+              <li><strong>Relay ON</strong> sends a pulse request to close or re-enable the load path.</li>
+              <li><strong>Relay OFF</strong> sends a pulse request to open or disable the load path.</li>
+              <li><strong>Clear Fault</strong> sends a fault-clear request. This does not mean the electrical cause is already safe.</li>
+              <li>During critical or offline states, the page disables relay control buttons.</li>
+            </ul>
+          </div>
+        </details>
+        <details open>
+          <summary>
+            <span>OTA Updates</span>
+            <span class="summary-copy">Admin mode only</span>
+          </summary>
+          <div class="details-body">
+            <p>OTA lets the admin publish a target firmware version and firmware URL so the device can pull the update.</p>
+            <ul>
+              <li>View the currently published OTA version and link.</li>
+              <li>Set a version string and firmware bin name.</li>
+              <li>Apply a repo-based raw firmware link, then publish the update.</li>
+            </ul>
+          </div>
+        </details>
+        <details>
+          <summary>
+            <span>Data Logger</span>
+            <span class="summary-copy">Admin mode only</span>
+          </summary>
+          <div class="details-body">
+            <p>The Data Logger is used for waveform collection and model-training workflows.</p>
+            <ul>
+              <li>Set collection duration in seconds.</li>
+              <li>Set load type text for the session.</li>
+              <li>Choose a label override or leave it in auto mode.</li>
+              <li>Download the current session or compile all sessions.</li>
+              <li>Upload an external CSV into the Plot Viewer.</li>
+              <li>Clear all ML logs and sessions when needed.</li>
+            </ul>
+          </div>
+        </details>
+        <details>
+          <summary>
+            <span>Plot Viewer</span>
+            <span class="summary-copy">Admin mode only</span>
+          </summary>
+          <div class="details-body">
+            <p>The Plot Viewer is used to inspect logged sessions visually.</p>
+            <ul>
+              <li>Play or pause time playback.</li>
+              <li>Change speed and scrub through the session.</li>
+              <li>Choose which series to show.</li>
+              <li>Enable smoothing, normalization, statistics, event markers, and zoom reset.</li>
+            </ul>
+          </div>
+        </details>
       </div>
     </section>
 
     <section class="section" id="fault-actions">
-      <h2>How to respond to each fault type</h2>
-      <div class="grid">
-        <div class="fault-card"><h3>Arc Fault</h3><p>Stop using the appliance immediately. Unplug it and inspect the plug, cord, socket, and load for burning smell, carbonization, loose blades, or intermittent contact.</p><ul><li>Avoid repeated reconnection tests while the cause is still unknown.</li><li>Replace damaged plugs, loose sockets, or appliances with suspicious cords.</li></ul></div>
-        <div class="fault-card"><h3>Overload</h3><p>Reduce the load current before continuing use. Separate high-draw appliances and avoid stacking heaters, irons, kettles, or similar loads on the same protected outlet path.</p><ul><li>Use the dashboard current reading to verify the load returns below the safe range.</li><li>Avoid undersized extension cords for heavy loads.</li></ul></div>
-        <div class="fault-card"><h3>Socket Heating</h3><p>Let the outlet and plug cool first. Check for loose contact, discoloration, melted plastic, oxidized plug blades, or poor socket grip.</p><ul><li>Do not keep using a warm outlet just because the appliance still works.</li><li>Replace worn sockets and plugs before reuse.</li></ul></div>
-        <div class="fault-card"><h3>Short Circuit</h3><p>Do not reconnect the load until the cause is found. Inspect the appliance, cord, and wiring path for direct faults, liquid ingress, crushed insulation, or internal damage.</p><ul><li>If the source is not obvious, stop and use qualified electrical inspection.</li><li>This is a high-risk fault and should not be treated as a nuisance trip.</li></ul></div>
-        <div class="fault-card"><h3>Undervoltage</h3><p>Wait for the mains supply to stabilize before resetting. Brownout conditions can stress motors, compressors, and power supplies.</p><ul><li>Avoid repeated restarts during sagging mains.</li><li>Be especially cautious with refrigerators, pumps, and motor-driven loads.</li></ul></div>
-        <div class="fault-card"><h3>Overvoltage</h3><p>Keep sensitive electronics disconnected until mains returns to normal. Overvoltage can damage chargers, adapters, control boards, and power supplies very quickly.</p><ul><li>Wait for measured voltage to normalize before reuse.</li><li>Consider surge protection or checking the supply source if it repeats.</li></ul></div>
+      <div class="section-head">
+        <div>
+          <div class="eyebrow red"><span class="dot"></span>What To Do After a Fault</div>
+          <h2>Safe response guide</h2>
+        </div>
       </div>
-      <div class="callout">General rule: never treat a protection trip as something to bypass. Remove the cause first, then reset only after you have confirmed the appliance and outlet are safe.</div>
+      <div class="grid-2">
+        <details open>
+          <summary><span>Arc Fault</span><span class="summary-copy">Stop using the appliance</span></summary>
+          <div class="details-body">
+            <p>Unplug the load and inspect the plug, cord, socket, and appliance for burning smell, carbonization, looseness, or intermittent contact.</p>
+            <ul><li>Avoid repeated reconnection tests.</li><li>Replace suspicious cords, plugs, or outlets before reuse.</li></ul>
+          </div>
+        </details>
+        <details>
+          <summary><span>Overload or sustained overload</span><span class="summary-copy">Reduce the load</span></summary>
+          <div class="details-body">
+            <p>Separate high-draw appliances and verify that current returns to a safer level before continuing use.</p>
+            <ul><li>Avoid stacking heaters, irons, kettles, or similar heavy loads on the same outlet path.</li><li>Avoid undersized extension cords.</li></ul>
+          </div>
+        </details>
+        <details>
+          <summary><span>Socket heating</span><span class="summary-copy">Check the outlet physically</span></summary>
+          <div class="details-body">
+            <p>Allow the outlet and plug to cool. Inspect for loose grip, discoloration, melted plastic, corrosion, or blade wear.</p>
+            <ul><li>Do not keep using a warm outlet just because the appliance still powers on.</li><li>Replace worn sockets and plugs.</li></ul>
+          </div>
+        </details>
+        <details>
+          <summary><span>Undervoltage or overvoltage</span><span class="summary-copy">Wait for mains to stabilize</span></summary>
+          <div class="details-body">
+            <p>Low or high mains can stress motors, compressors, adapters, and appliance electronics.</p>
+            <ul><li>Avoid repeated restarts during unstable supply conditions.</li><li>For recurring overvoltage, inspect the power source or use proper surge protection.</li></ul>
+          </div>
+        </details>
+      </div>
+      <div class="note" style="margin-top:10px;">General rule: never treat a protection trip as something to bypass. Remove the cause first, then reset only after you have confirmed the appliance and outlet are safe.</div>
     </section>
 
-    <section class="section" id="reset">
-      <h2>How to reset the device after it trips</h2>
-      <ol>
-        <li>Stop using the connected appliance immediately.</li>
-        <li>Read the fault shown on the dashboard so you know what condition was detected.</li>
-        <li>Inspect the appliance, plug, socket, and nearby area for heat, damage, burning smell, moisture, loose contact, or abnormal wiring conditions.</li>
-        <li>Correct or remove the suspected cause first. Do not reset first and inspect later.</li>
-        <li>Only after you personally confirm the environment is safe, press the physical reset button on the device.</li>
-        <li>Reconnect and watch the dashboard again. If the same trip returns, discontinue use and inspect the appliance or installation more thoroughly.</li>
-      </ol>
-      <div class="callout">The relay uses pulse-based latch control. For critical faults, the dashboard disables remote relay controls until the fault clears. Voltage faults can auto-reclose only after five minutes of stable mains.</div>
+    <section class="section">
+      <div class="section-head">
+        <div>
+          <div class="eyebrow green"><span class="dot"></span>Reset Guidance</div>
+          <h2>How to reset after a trip</h2>
+        </div>
+      </div>
+      <div class="grid-2">
+        <div class="card accent-green">
+          <h3>Before resetting</h3>
+          <ol style="padding-left:20px;display:grid;gap:6px;margin-top:10px;">
+            <li>Read the fault shown on the dashboard.</li>
+            <li>Inspect the appliance, plug, socket, and nearby area.</li>
+            <li>Remove or correct the suspected cause first.</li>
+          </ol>
+        </div>
+        <div class="card accent-blue">
+          <h3>After resetting</h3>
+          <ol style="padding-left:20px;display:grid;gap:6px;margin-top:10px;">
+            <li>Reconnect only when you believe the condition is safe.</li>
+            <li>Watch the banner and overview again.</li>
+            <li>If the same fault returns, stop using the appliance and inspect more thoroughly.</li>
+          </ol>
+        </div>
+      </div>
+      <div class="note" style="margin-top:10px;">The current dashboard logic disables remote relay controls during critical states, and the existing guide logic documents that voltage faults may auto-reclose only after stable mains has returned for several minutes.</div>
     </section>
+
+    <div class="footer-space"></div>
   </div>
 </body>
 </html>
