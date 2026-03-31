@@ -22,7 +22,7 @@ private:
   int _pin;
   VoltageCalib _cal;
   float _adcFullScaleV = 3.3f;
-  uint32_t _windowUs = 120000;
+  uint32_t _windowUs = 500000;
   bool _sampling = false;
   uint32_t _startTime = 0;
   uint32_t _count = 0;
@@ -38,10 +38,18 @@ private:
   float _protVrms = 0.0f;
   bool  _dispInit = false;
   float _dispVrms = 0.0f;
-  float _avgTauS  = 1.4f;
-  float _avgJumpV = 10.0f;
+  float _avgTauS  = 2.6f;
+  float _avgJumpV = 18.0f;
   uint8_t _lowWindows = 0;
   uint8_t _noSignalWindows = 0;
+  uint8_t _faultVoteCount = 0;
+  uint8_t _healthyVoteCount = 0;
+
+  static constexpr uint8_t WINDOW_RING = 5;
+  float _winVrms[WINDOW_RING] = {0};
+  uint8_t _winValid[WINDOW_RING] = {0};
+  uint8_t _winPos = 0;
+  uint8_t _winCount = 0;
 
   static inline int _median5(int a, int b, int c, int d, int e) {
     int v[5] = {a, b, c, d, e};

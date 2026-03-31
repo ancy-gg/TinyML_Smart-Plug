@@ -1,7 +1,8 @@
-#include "ArcFeatures.h"
+#include "ArcDetection.h"
 #include <math.h>
 #include <string.h>
 
+#include "TinyML_RF.h"
 #include "esp_dsp.h"
 #include "dsps_fft2r.h"
 #include "dsps_wind_hann.h"
@@ -26,7 +27,6 @@ static inline float median3f(float a, float b, float c) {
   if (a > b) { const float t = a; a = b; b = t; }
   return b;
 }
-
 
 struct BiquadLPF {
   float b0 = 1.0f, b1 = 0.0f, b2 = 0.0f;
@@ -129,10 +129,10 @@ static inline ZcRegion classifyRegion(float x, float hys) {
   return ZC_MID;
 }
 
-bool ArcFeatures::compute(const uint16_t* raw, size_t n, float fs_hz,
-                          const CurrentCalib& cal, float mainsHz,
-                          ArcFeatOut& out) {
-  out = ArcFeatOut{};
+bool ArcDetection::compute(const uint16_t* raw, size_t n, float fs_hz,
+                           const CurrentCalib& cal, float mainsHz,
+                           ArcDetectionResult& out) {
+  out = ArcDetectionResult{};
   out.fs_hz = fs_hz;
 
   if (!raw || n != N_SAMP || fs_hz < 1000.0f) return false;
@@ -170,23 +170,17 @@ bool ArcFeatures::compute(const uint16_t* raw, size_t n, float fs_hz,
   }
 
   sigMed[0] = sig[0];
-  for (size_t i = 1; i + 1 < n; ++i) {
-    sigMed[i] = median3f(sig[i - 1], sig[i], sig[i + 1]);
-  }
+  for (size_t i = 1; i + 1 < n; ++i) sigMed[i] = median3f(sig[i - 1], sig[i], sig[i + 1]);
   sigMed[n - 1] = sig[n - 1];
 
   for (size_t i = 0; i < n; ++i) mean += sigMed[i];
   mean /= (double)n;
-
   for (size_t i = 0; i < n; ++i) sig[i] = sigMed[i] - (float)mean;
 
-  const bool useSoftAaf = CURRENT_SOFT_AAF_ENABLE;
-  if (useSoftAaf) {
+  if (CURRENT_SOFT_AAF_ENABLE) {
     BiquadLPF softAaf;
     if (makeLowpassBiquad(fs_hz, CURRENT_SOFT_AAF_CUTOFF_HZ, CURRENT_SOFT_AAF_Q, softAaf)) {
-      for (size_t i = 0; i < n; ++i) {
-        sigFilt[i] = softAaf.step(sig[i]);
-      }
+      for (size_t i = 0; i < n; ++i) sigFilt[i] = softAaf.step(sig[i]);
     } else {
       memcpy(sigFilt, sig, n * sizeof(float));
     }
@@ -220,12 +214,8 @@ bool ArcFeatures::compute(const uint16_t* raw, size_t n, float fs_hz,
   const uint16_t codeSpan = (uint16_t)(mxCode - mnCode);
 
   float irms = irmsWide;
-
-  if (irms < CURRENT_IDLE_SUPPRESS_A && codeSpan < LOW_CURRENT_CODE_SPAN) {
-    irms = 0.0f;
-  } else if (irms < IRMS_GATE_OFF_A) {
-    irms = 0.0f;
-  }
+  if (irms < CURRENT_IDLE_SUPPRESS_A && codeSpan < LOW_CURRENT_CODE_SPAN) irms = 0.0f;
+  else if (irms < IRMS_GATE_OFF_A) irms = 0.0f;
 
   if (irms > 0.0f) {
     irms = eval_cubic_horner(irms, cal.cubic3, cal.cubic2, cal.cubic1, cal.cubic0);
@@ -266,7 +256,6 @@ bool ArcFeatures::compute(const uint16_t* raw, size_t n, float fs_hz,
     const float a = sigClean[i - 1];
     const float b = sigClean[i];
     const ZcRegion r = classifyRegion(b, zcHys);
-
     if (r == ZC_POS || r == ZC_NEG) armedSide = r;
 
     if (armedSide == ZC_NEG && a <= 0.0f && b > 0.0f) {
@@ -458,10 +447,7 @@ bool ArcFeatures::compute(const uint16_t* raw, size_t n, float fs_hz,
   float fundP = 0.0f;
   for (int dk = -2; dk <= 2; ++dk) {
     const int k = clampi(kNom + dk, 1, half - 1);
-    if (sig[k] > fundP) {
-      fundP = sig[k];
-      k1 = k;
-    }
+    if (sig[k] > fundP) { fundP = sig[k]; k1 = k; }
   }
 
   const double avgNoise = pTotNoDc / (double)(half - 1);
@@ -494,7 +480,6 @@ bool ArcFeatures::compute(const uint16_t* raw, size_t n, float fs_hz,
   if (makeBandBins(SPEC_ENT_LO_HZ, SPEC_ENT_HI_HZ, binHz, half, kSpec0, kSpec1)) {
     double psum = 0.0;
     for (int k = kSpec0; k <= kSpec1; ++k) psum += (double)sig[k];
-
     if (psum > 1e-18) {
       double H = 0.0;
       const int bins = (kSpec1 - kSpec0 + 1);
@@ -527,10 +512,7 @@ bool ArcFeatures::compute(const uint16_t* raw, size_t n, float fs_hz,
         for (int h = 1; h <= 3; ++h) {
           const int kh = h * k1;
           if (kh >= half) break;
-          if (abs(k - kh) <= 2) {
-            skip = true;
-            break;
-          }
+          if (abs(k - kh) <= 2) { skip = true; break; }
         }
       }
       if (!skip) pResidual += (double)sig[k];
@@ -579,7 +561,40 @@ bool ArcFeatures::compute(const uint16_t* raw, size_t n, float fs_hz,
     }
   }
   out.wpe_entropy = computeEntropyFromBands(leafE, 8);
-
   out.feat_valid = true;
   return true;
+}
+
+int ArcDetection::predict(float cycle_nmse, float zcv, float zc_dwell_ratio,
+                          float pulse_count_per_cycle, float peak_fluct_cv,
+                          float midband_residual_rms, float hf_band_energy_ratio,
+                          float wpe_entropy, float spec_entropy, float thd_i,
+                          float v_rms, float i_rms, float temp_c) const {
+  (void)v_rms; (void)i_rms; (void)temp_c;
+  double input_features[10] = {
+    (double)cycle_nmse, (double)zcv, (double)zc_dwell_ratio,
+    (double)pulse_count_per_cycle, (double)peak_fluct_cv,
+    (double)midband_residual_rms, (double)hf_band_energy_ratio,
+    (double)wpe_entropy, (double)spec_entropy, (double)thd_i
+  };
+  double output_probs[2] = {0.0, 0.0};
+  arc_rf_predict(input_features, output_probs);
+  return (output_probs[1] >= ARC_THRESHOLD) ? 1 : 0;
+}
+
+int ArcDetection::computeAndPredict(const uint16_t* raw, size_t n, float fs_hz,
+                                    const CurrentCalib& cal, float mainsHz,
+                                    float v_rms, float temp_c,
+                                    ArcDetectionResult& out) {
+  if (!compute(raw, n, fs_hz, cal, mainsHz, out)) return 0;
+  if (!out.current_valid || !out.feat_valid || out.irms_a < ARC_MIN_IRMS_A) {
+    out.model_pred = 0;
+    return 0;
+  }
+  out.model_pred = (uint8_t)predict(out.cycle_nmse, out.zcv, out.zc_dwell_ratio,
+                                    out.pulse_count_per_cycle, out.peak_fluct_cv,
+                                    out.midband_residual_rms, out.hf_band_energy_ratio,
+                                    out.wpe_entropy, out.spec_entropy, out.thd_i,
+                                    v_rms, out.irms_a, temp_c);
+  return out.model_pred;
 }

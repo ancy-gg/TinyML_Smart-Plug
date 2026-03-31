@@ -1,5 +1,5 @@
 #include "UpdateManager.h"
-#include "FirebaseHandler.h"
+#include "FirebaseNetwork.h"
 #include <WiFi.h>
 #include <WiFiClient.h>
 #include <WiFiClientSecure.h>
@@ -78,7 +78,7 @@ void UpdateManager::bootGuardLoop_() {
   if (_pendingVerify) (void)confirmNow();
 }
 
-void UpdateManager::begin(const char* currentVersion, FirebaseHandler* cloud, uint32_t stableWindowMs, uint8_t maxCrashBoots) {
+void UpdateManager::begin(const char* currentVersion, FirebaseNetwork* cloud, uint32_t stableWindowMs, uint8_t maxCrashBoots) {
   _currentVersion = currentVersion ? currentVersion : "TSP-v0.0.0";
   _cloud = cloud;
   _checkNow = true;

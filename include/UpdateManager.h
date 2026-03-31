@@ -3,14 +3,14 @@
 
 #include <Arduino.h>
 
-class FirebaseHandler;
+class FirebaseNetwork;
 
 enum class OtaEvent : uint8_t { START, PROGRESS, SUCCESS, FAIL };
 using OtaEventCb = void (*)(OtaEvent, int progress);
 
 class UpdateManager {
 public:
-  void begin(const char* currentVersion, FirebaseHandler* cloud, uint32_t stableWindowMs = 12000, uint8_t maxCrashBoots = 3);
+  void begin(const char* currentVersion, FirebaseNetwork* cloud, uint32_t stableWindowMs = 12000, uint8_t maxCrashBoots = 3);
   void loop();
 
   void setPaths(const char* desiredVersionPath, const char* firmwareUrlPath);
@@ -30,7 +30,7 @@ private:
   void bootGuardLoop_();
 
   const char* _currentVersion = "TSP-v0.0.0";
-  FirebaseHandler* _cloud = nullptr;
+  FirebaseNetwork* _cloud = nullptr;
   const char* _pathDesired = "/ota/desired_version";
   const char* _pathUrl     = "/ota/firmware_url";
   uint32_t _intervalMs = 60000;

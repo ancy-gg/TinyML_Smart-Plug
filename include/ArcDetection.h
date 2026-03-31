@@ -2,7 +2,7 @@
 #include <Arduino.h>
 #include "MainConfiguration.h"
 
-struct ArcFeatOut {
+struct ArcDetectionResult {
   float fs_hz   = FS_TARGET_HZ;
   float irms_a  = 0.0f;
 
@@ -19,11 +19,23 @@ struct ArcFeatOut {
 
   bool feat_valid    = false;
   bool current_valid = false;
+  uint8_t model_pred = 0;
 };
 
-class ArcFeatures {
+class ArcDetection {
 public:
   bool compute(const uint16_t* raw, size_t n, float fs_hz,
                const CurrentCalib& cal, float mainsHz,
-               ArcFeatOut& out);
+               ArcDetectionResult& out);
+
+  int predict(float cycle_nmse, float zcv, float zc_dwell_ratio,
+              float pulse_count_per_cycle, float peak_fluct_cv,
+              float midband_residual_rms, float hf_band_energy_ratio,
+              float wpe_entropy, float spec_entropy, float thd_i,
+              float v_rms, float i_rms, float temp_c) const;
+
+  int computeAndPredict(const uint16_t* raw, size_t n, float fs_hz,
+                        const CurrentCalib& cal, float mainsHz,
+                        float v_rms, float temp_c,
+                        ArcDetectionResult& out);
 };

@@ -9,27 +9,24 @@
 
 #include "MainConfiguration.h"
 #include "WifiHandler.h"
-#include "FirebaseHandler.h"
+#include "FirebaseNetwork.h"
 #include "Notification.h"
 #include "UpdateManager.h"
 #include "CurrentSensor.h"
 #include "VoltageSensor.h"
 #include "TempSensor.h"
 #include "ProtectionManager.h"
-#include "ArcModel.h"
-#include "ArcFeatures.h"
-#include "DataLogger.h"
+#include "ArcDetection.h"
 
-Notification   notification(0x3C);
-WifiHandler wifiMgr;
-FirebaseHandler    firebase;
+Notification       notification(0x3C);
+WifiHandler        wifiMgr;
+FirebaseNetwork    network;
 UpdateManager      updater;
 VoltageSensor      voltSensor(PIN_VOLT_ADC);
 TempSensor         tempSensor(PIN_TEMP_ADC);
 ProtectionManager  protection;
-DataLogger         logger;
 CurrentSensor      curSensor;
-ArcFeatures        arcFeat;
+ArcDetection       arcDetect;
 CurrentCalib       curCalib;
 
 static uint16_t s_raw[N_SAMP];
@@ -165,44 +162,13 @@ static void handleCueEvents(float vRaw, float vProtect, float irms, bool mainsPr
   }
 }
 
-static void pollPortalControl(FirebaseHandler& firebase, WifiHandler& wifiMgr, bool paused, bool portalActive) {
-  static uint32_t lastPoll = 0; static String lastToken = ""; static bool tokenPrimed = false;
-  if (paused || portalActive || !wifiMgr.isConnected() || !firebase.isReady()) return;
-  if (millis() - lastPoll < CLOUD_CONTROL_POLL_MS) return; lastPoll = millis();
-  String token; if (!firebase.getString("/controls/open_portal_token", token)) return; token.trim(); if (!token.length()) return;
-  if (!tokenPrimed) { lastToken = token; tokenPrimed = true; return; }
-  if (token == lastToken) return;
-  lastToken = token; wifiMgr.requestPortal(false);
-}
-
-static void pollRelayControl(FirebaseHandler& firebase, WifiHandler& wifiMgr, ProtectionManager& protection, bool paused, bool portalActive, bool controlsLocked) {
-  static uint32_t lastPoll = 0; static String lastOnToken = "", lastOffToken = ""; static bool primed = false;
-  if (paused || portalActive || !wifiMgr.isConnected() || !firebase.isReady()) return;
-  if ((millis() - lastPoll) < CLOUD_CONTROL_POLL_MS) return; lastPoll = millis();
-  String onToken, offToken; firebase.getString("/controls/relay_on_token", onToken); firebase.getString("/controls/relay_off_token", offToken); onToken.trim(); offToken.trim();
-  if (!primed) { lastOnToken = onToken; lastOffToken = offToken; primed = true; return; }
-  if (!controlsLocked && onToken.length() && onToken != lastOnToken) { lastOnToken = onToken; protection.pulseRelayOn(); notification.notify(SND_RESET_ACK); }
-  else if (onToken.length()) lastOnToken = onToken;
-  if (!controlsLocked && offToken.length() && offToken != lastOffToken) { lastOffToken = offToken; protection.pulseRelayOff(); notification.notify(SND_RESET_ACK); }
-  else if (offToken.length()) lastOffToken = offToken;
-}
-
-static bool pollFaultClearControl(FirebaseHandler& firebase, WifiHandler& wifiMgr, bool paused, bool portalActive) {
-  static uint32_t lastPoll = 0; static String lastToken = ""; static bool primed = false;
-  if (paused || portalActive || !wifiMgr.isConnected() || !firebase.isReady()) return false;
-  if ((millis() - lastPoll) < CLOUD_CONTROL_POLL_MS) return false; lastPoll = millis();
-  String token; if (!firebase.getString("/controls/fault_clear_token", token)) return false; token.trim();
-  if (!primed) { lastToken = token; primed = true; return false; }
-  if (!token.length() || token == lastToken) return false; lastToken = token; return true;
-}
-
 static void onOtaEvent(OtaEvent ev, int progress) {
   if (ev == OtaEvent::START) {
     gPauseByOta = true; notification.setOta(true, 0); notification.notify(SND_OTA_START);
   } else if (ev == OtaEvent::PROGRESS) {
     notification.setOta(true, (uint8_t)constrain(progress, 0, 100));
   } else if (ev == OtaEvent::SUCCESS) {
-    notification.setOta(true, 100); notification.notify(SND_OTA_OK); firebase.logStatusEvent("FIRMWARE UPDATED", 0.0f, 0.0f, 0.0f, 0.0f);
+    notification.setOta(true, 100); notification.notify(SND_OTA_OK); network.logStatusEvent("FIRMWARE UPDATED", 0.0f, 0.0f, 0.0f, 0.0f);
   } else if (ev == OtaEvent::FAIL) {
     gPauseByOta = false; notification.setOta(false, 0); notification.notify(SND_OTA_FAIL);
   }
@@ -210,7 +176,7 @@ static void onOtaEvent(OtaEvent ev, int progress) {
 
 static void Core0Task(void* pv) {
   (void)pv;
-  ArcFeatOut out;
+  ArcDetectionResult out;
   FeatureFrame lastGood = {};
   bool hasGood = false;
   while (millis() < SENSOR_BOOT_SETTLE_MS) vTaskDelay(20 / portTICK_PERIOD_MS);
@@ -221,7 +187,7 @@ static void Core0Task(void* pv) {
     size_t got = curSensor.capture(s_raw, N_SAMP, &fs_hz);
     if (got != N_SAMP || fs_hz < CURRENT_FRAME_MIN_FS_HZ) { vTaskDelay(1); got = curSensor.capture(s_raw, N_SAMP, &fs_hz); }
     bool ok = false;
-    if (got == N_SAMP && fs_hz >= CURRENT_FRAME_MIN_FS_HZ) ok = arcFeat.compute(s_raw, N_SAMP, fs_hz, curCalib, MAINS_F0_HZ, out);
+    if (got == N_SAMP && fs_hz >= CURRENT_FRAME_MIN_FS_HZ) ok = arcDetect.compute(s_raw, N_SAMP, fs_hz, curCalib, MAINS_F0_HZ, out);
     if (ok && out.current_valid) {
       f.adc_fs_hz = out.fs_hz; f.irms = out.irms_a; f.current_valid = 1; f.feat_valid = out.feat_valid ? 1 : 0;
       if (out.feat_valid) {
@@ -240,26 +206,43 @@ static void Core0Task(void* pv) {
   }
 }
 
-static void pollMlControl(FirebaseHandler& firebase, DataLogger& logger, Notification& notifyUi) {
-  static uint32_t lastPoll = 0; static bool lastEnabled = false;
-  if (millis() - lastPoll < ML_CONTROL_POLL_MS) return; lastPoll = millis();
-  bool enabled = false; int dur = 10; int labelOv = -1; String sid = ""; String load = "unknown";
-  firebase.getBool("/ml_log/enabled", enabled); firebase.getInt("/ml_log/duration_s", dur); firebase.getInt("/ml_log/label_override", labelOv);
-  firebase.getString("/ml_log/session_id", sid); firebase.getString("/ml_log/load_type", load);
-  if (dur < ML_LOG_MIN_DURATION_S) dur = ML_LOG_MIN_DURATION_S; if (dur > ML_LOG_MAX_DURATION_S) dur = ML_LOG_MAX_DURATION_S;
-  if (enabled && sid.length() < 3) { logger.setEnabled(false); lastEnabled = false; return; }
-  logger.setDurationSeconds((uint16_t)dur); logger.setSession(sid, load, labelOv); logger.setEnabled(enabled);
+static void pollMlControl(FirebaseNetwork& network, Notification& notifyUi) {
+  static uint32_t lastPoll = 0;
+  static bool lastEnabled = false;
+  if (millis() - lastPoll < ML_CONTROL_POLL_MS) return;
+  lastPoll = millis();
+
+  bool enabled = false;
+  int dur = ML_LOG_DURATION_S;
+  int labelOv = ML_UNKNOWN_LABEL;
+  String sid = "";
+  String load = "unknown";
+  (void)network.fetchMlControl(enabled, dur, labelOv, sid, load);
+
+  if (dur < ML_LOG_MIN_DURATION_S) dur = ML_LOG_MIN_DURATION_S;
+  if (dur > ML_LOG_MAX_DURATION_S) dur = ML_LOG_MAX_DURATION_S;
+  if (enabled && sid.length() < 3) {
+    network.setLogEnabled(false);
+    lastEnabled = false;
+    return;
+  }
+
+  network.setLogDurationSeconds((uint16_t)dur);
+  network.setLogSession(sid, load, labelOv);
+  network.setLogEnabled(enabled);
   if (enabled && !lastEnabled) { notification.notify(SND_LOGGER_ON); notifyUi.triggerCollecting(1000); }
   lastEnabled = enabled;
 }
 
-static void maybeStartAutoArcCapture(DataLogger& logger, Notification& notifyUi, bool paused, bool safeMode, bool modelPositive) {
-  static bool lastPositive = false; static uint32_t lastAutoStartMs = 0;
-  const bool rising = (modelPositive && !lastPositive); lastPositive = modelPositive;
-  if (!paused && !safeMode && !logger.manualEnabled() && rising) {
+static void maybeStartAutoArcCapture(FirebaseNetwork& network, Notification& notifyUi, bool paused, bool safeMode, bool modelPositive) {
+  static bool lastPositive = false;
+  static uint32_t lastAutoStartMs = 0;
+  const bool rising = (modelPositive && !lastPositive);
+  lastPositive = modelPositive;
+  if (!paused && !safeMode && !network.manualEnabled() && rising) {
     const uint32_t now = millis();
     if ((now - lastAutoStartMs) >= AUTO_ARC_CAPTURE_COOLDOWN_MS) {
-      if (logger.startAutoCapture("model_arc", AUTO_ARC_CAPTURE_DURATION_S)) {
+      if (network.startAutoCapture("model_arc", AUTO_ARC_CAPTURE_DURATION_S)) {
         lastAutoStartMs = now; notification.notify(SND_LOGGER_ON); notifyUi.triggerCollecting(1000);
       }
     }
@@ -270,23 +253,27 @@ void setup() {
   esp_log_level_set("*", ESP_LOG_NONE);
   notification.begin(PIN_BUZZER_PWM);
   notification.startBootSequence(3600);
-  notification.begin(PIN_BUZZER_PWM);
-  notification.startBootSequence(3600);
   protection.begin(PIN_LATCH_ON, PIN_LATCH_OFF);
   notification.notify(SND_BOOT);
 
   voltSensor.begin();
-  voltSensor.setWindowMs(120);
+  voltSensor.setWindowMs(500);
   voltSensor.setClampHysteresis(12.0f, 24.0f);
-  voltSensor.setLongAverage(1.4f, 10.0f);
+  voltSensor.setLongAverage(2.6f, 18.0f);
   voltSensor.setCubicCalib(VOLTAGE_CAL_C3, VOLTAGE_CAL_C2, VOLTAGE_CAL_C1, VOLTAGE_CAL_C0);
 
   curCalib.cubic3 = CURRENT_CAL_C3; curCalib.cubic2 = CURRENT_CAL_C2; curCalib.cubic1 = CURRENT_CAL_C1; curCalib.cubic0 = CURRENT_CAL_C0;
   curSensor.setCalib(curCalib);
   tempSensor.begin(); tempSensor.setLongAverage(8.0f, 1.0f);
 
-  firebase.begin(FIREBASE_API_KEY, FIREBASE_DB_URL); firebase.setFirmwareVersion(FW_VERSION); firebase.setNormalIntervalMs(CLOUD_LIVE_NORMAL_INTERVAL_MS); firebase.setFaultIntervalMs(CLOUD_LIVE_FAULT_INTERVAL_MS);
-  updater.begin(FW_VERSION, &firebase, 12000, 3); updater.setEventCallback(onOtaEvent); updater.setPaths(OTA_DESIRED_VERSION_PATH, OTA_FIRMWARE_URL_PATH);
+  network.begin(FIREBASE_API_KEY, FIREBASE_DB_URL);
+  network.setFirmwareVersion(FW_VERSION);
+  network.setNormalIntervalMs(CLOUD_LIVE_NORMAL_INTERVAL_MS);
+  network.setFaultIntervalMs(CLOUD_LIVE_FAULT_INTERVAL_MS);
+
+  updater.begin(FW_VERSION, &network, 12000, 3);
+  updater.setEventCallback(onOtaEvent);
+  updater.setPaths(OTA_DESIRED_VERSION_PATH, OTA_FIRMWARE_URL_PATH);
   updater.setCheckInterval(60000UL);
   gSafeMode = updater.safeMode();
 
@@ -303,12 +290,13 @@ void setup() {
   }
 
   wifiMgr.begin([](WiFiManager* wm) { (void)wm; });
-  logger.begin(&firebase); logger.setEnabled(false); logger.setDurationSeconds(ML_LOG_DURATION_S);
+  network.setLogEnabled(false);
+  network.setLogDurationSeconds(ML_LOG_DURATION_S);
   if (!gSafeMode) (void)updater.confirmNow();
 }
 
 void loop() {
-  firebase.updateClock();
+  network.updateClock();
   wifiMgr.update();
   updater.loop();
 
@@ -349,7 +337,8 @@ void loop() {
     }
   } else { memset(&f, 0, sizeof(f)); f.uptime_ms = millis(); }
 
-  static float vRms = 0.0f, vFast = 0.0f, vRaw = 0.0f, tC = 0.0f; static uint32_t tTemp = 0;
+  static float vRms = 0.0f, vFast = 0.0f, vRaw = 0.0f, tC = 0.0f;
+  static uint32_t tTemp = 0;
   float newV = voltSensor.update();
   if (newV >= 0.0f) { vRms = newV; vFast = voltSensor.protectVrms(); vRaw = voltSensor.rawVrms(); }
   if (millis() - tTemp >= 500) { tTemp = millis(); float newT = tempSensor.readTempC(); if (newT > -50.0f && newT < 150.0f) tC = newT; }
@@ -368,14 +357,16 @@ void loop() {
   const bool arcEligible = (!gSafeMode && !paused && !bootSettling && !protectionInhibit && voltageNormal &&
                             arcInputStable(f.current_valid, f.feat_valid, irmsRawForLogic));
 
-  const bool faultClearRequested = (!gSafeMode) ? pollFaultClearControl(firebase, wifiMgr, paused, portalActive) : false;
+  network.pollControls(!gSafeMode && !paused && !portalActive && wifiConnected, portalActive);
+
+  const bool faultClearRequested = (!gSafeMode) ? network.consumeFaultClearRequest() : false;
   if (faultClearRequested) { protection.resetLatch(); notification.notify(SND_RESET_ACK); notification.clearFaultAlert(); }
 
   int pred = 0;
   if (arcEligible) {
-    pred = ArcPredict(f.cycle_nmse, f.zcv, f.zc_dwell_ratio, f.pulse_count_per_cycle, f.peak_fluct_cv,
-                      f.midband_residual_rms, f.hf_band_energy_ratio, f.wpe_entropy, f.spec_entropy, f.thd_i,
-                      f.vrms, irmsRawForLogic, f.temp_c);
+    pred = arcDetect.predict(f.cycle_nmse, f.zcv, f.zc_dwell_ratio, f.pulse_count_per_cycle, f.peak_fluct_cv,
+                             f.midband_residual_rms, f.hf_band_energy_ratio, f.wpe_entropy, f.spec_entropy, f.thd_i,
+                             f.vrms, irmsRawForLogic, f.temp_c);
   }
   f.model_pred = (uint8_t)pred;
 
@@ -387,8 +378,9 @@ void loop() {
   const bool unpluggedLiveCtl = classifyUnpluggedSocket(vRaw, vFast, irmsRawForLogic, f.current_valid != 0, st, &noPowerSinceMsCtl);
   const bool controlsLocked = gSafeMode || paused || bootSettling || protectionInhibit || unpluggedLiveCtl || protection.webControlLocked() || protection.voltageLockoutActive();
   if (!gSafeMode) {
-    pollPortalControl(firebase, wifiMgr, paused, portalActive);
-    pollRelayControl(firebase, wifiMgr, protection, paused, portalActive, controlsLocked);
+    if (network.consumePortalRequest() && !controlsLocked) wifiMgr.requestPortal(false);
+    if (network.consumeRelayOnRequest() && !controlsLocked) { protection.pulseRelayOn(); notification.notify(SND_RESET_ACK); }
+    if (network.consumeRelayOffRequest() && !controlsLocked) { protection.pulseRelayOff(); notification.notify(SND_RESET_ACK); }
   }
 
   const bool tripOffEdge = protection.consumeTripOffEdge();
@@ -401,18 +393,19 @@ void loop() {
   const bool mainsPresentStable = debouncedMainsPresentForState(vFast);
   handleCueEvents(vRaw, vFast, irmsRawForLogic, mainsPresentStable, paused || gSafeMode || protectionInhibit, st);
 
-  maybeStartAutoArcCapture(logger, notification, paused || protectionInhibit, gSafeMode, (arcEligible && f.model_pred == 1));
-  if (!paused && !gSafeMode) pollMlControl(firebase, logger, notification); else logger.setEnabled(false);
+  maybeStartAutoArcCapture(network, notification, paused || protectionInhibit, gSafeMode, (arcEligible && f.model_pred == 1));
+  if (!paused && !gSafeMode) pollMlControl(network, notification); else network.setLogEnabled(false);
   if (!paused && !gSafeMode) {
     static uint32_t lastMl = 0;
     const uint32_t period = 1000UL / ML_LOG_RATE_HZ;
     if (millis() - lastMl >= period) {
-      lastMl = millis(); f.epoch_ms = firebase.isSynced() ? firebase.nowEpochMs() : 0;
-      FeatureFrame fLog = f; fLog.irms = irmsRawForLogic; logger.ingest(fLog, st, protection.arcCounter());
+      lastMl = millis(); f.epoch_ms = network.isSynced() ? network.nowEpochMs() : 0;
+      FeatureFrame fLog = f; fLog.irms = irmsRawForLogic; network.ingestLog(fLog, st, protection.arcCounter());
     }
   }
 
-  static FaultState displayFaultState = STATE_NORMAL; static uint32_t displayFaultUntil = 0;
+  static FaultState displayFaultState = STATE_NORMAL;
+  static uint32_t displayFaultUntil = 0;
   if (faultClearRequested) { displayFaultState = STATE_NORMAL; displayFaultUntil = 0; }
   if (st != STATE_NORMAL) { displayFaultState = st; displayFaultUntil = millis() + FAULT_ALERT_MIN_MS; }
   else if (displayFaultState != STATE_NORMAL && (int32_t)(millis() - displayFaultUntil) >= 0) { displayFaultState = STATE_NORMAL; displayFaultUntil = 0; }
@@ -439,9 +432,9 @@ void loop() {
   notification.render();
 
   static FaultState lastImmediateFaultState = STATE_NORMAL;
-  if (!gSafeMode && !paused && !bootSettling && firebase.isReady()) {
+  if (!gSafeMode && !paused && !bootSettling) {
     if (st != STATE_NORMAL && (st != lastImmediateFaultState || tripOffEdge)) {
-      FeatureFrame fHist = f; fHist.irms = irmsRawForLogic; (void)firebase.logFeatureEvent(String(stateToCstr(st)), fHist, apparentPowerVa, tripOffEdge);
+      FeatureFrame fHist = f; fHist.irms = irmsRawForLogic; (void)network.logFeatureEvent(String(stateToCstr(st)), fHist, apparentPowerVa, tripOffEdge);
     }
     lastImmediateFaultState = st;
   }
@@ -458,14 +451,14 @@ void loop() {
     else if (gSafeMode) stateStr = "SAFE_MODE";
     else if (unpluggedLive && st != STATE_ARCING && st != STATE_HEATING) stateStr = "UNPLUGGED";
     else stateStr = String(stateToCstr(st));
-    firebase.update(vRms, f.irms, apparentPowerVa, tC,
-                    f.cycle_nmse, f.zcv, f.zc_dwell_ratio,
-                    f.pulse_count_per_cycle, f.peak_fluct_cv,
-                    f.midband_residual_rms, f.hf_band_energy_ratio,
-                    f.wpe_entropy, f.spec_entropy, f.thd_i,
-                    f.model_pred, stateStr);
+    network.requestLiveUpdate(vRms, f.irms, apparentPowerVa, tC,
+                              f.cycle_nmse, f.zcv, f.zc_dwell_ratio,
+                              f.pulse_count_per_cycle, f.peak_fluct_cv,
+                              f.midband_residual_rms, f.hf_band_energy_ratio,
+                              f.wpe_entropy, f.spec_entropy, f.thd_i,
+                              f.model_pred, stateStr);
   }
 
-  if (!paused && !gSafeMode) logger.loop();
+  network.loop();
   delay(2);
 }
