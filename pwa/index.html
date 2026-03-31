@@ -100,21 +100,20 @@
           </div>
 
           <div class="overview-stack overview-stack-inline">
-            <div class="summary-card summary-card-health">
+            <div class="summary-card summary-card-health summary-card-health-mixed">
               <div class="summary-head">
                 <div class="summary-kicker">Overall Health</div>
                 <div id="overviewHealthBadge" class="mini-badge mini-badge-OK">Healthy</div>
               </div>
-              <div id="overviewPrimary" class="summary-title">Waiting for device…</div>
-              <div id="overviewSecondary" class="summary-copy">Waiting for data.</div>
-              <div id="overviewMeta" class="summary-meta">Last update: — • Waiting for device…</div>
-            </div>
 
-            <div class="summary-card controls-card controls-card-inline">
-              <div class="summary-kicker">Controls</div>
-              <div class="control-boxes control-boxes-inline">
-                <div class="control-box control-panel control-panel-relay">
-                  <div class="control-label">Relay</div>
+              <div class="health-main-row">
+                <div class="health-copy-block">
+                  <div id="overviewPrimary" class="summary-title">Waiting for device…</div>
+                  <div id="overviewSecondary" class="summary-copy">Waiting for data.</div>
+                  <div id="overviewMeta" class="summary-meta">Last update: — • Waiting for device…</div>
+                </div>
+
+                <div class="health-controls-wrap">
                   <div class="relay-rocker" id="relayRocker">
                     <button type="button" class="rocker-btn" id="btnRelayOn">ON</button>
                     <button type="button" class="rocker-btn" id="btnRelayOff">OFF</button>
@@ -122,7 +121,6 @@
                 </div>
               </div>
             </div>
-
           </div>
         </section>
 
