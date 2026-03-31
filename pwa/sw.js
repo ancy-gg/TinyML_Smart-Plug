@@ -1,4 +1,4 @@
-const BUILD_VERSION = "Web-v1.1.2";
+const BUILD_VERSION = "Web-v1.1.3";
 const CACHE_NAME = BUILD_VERSION;
 const APP_SHELL = [
   "./",

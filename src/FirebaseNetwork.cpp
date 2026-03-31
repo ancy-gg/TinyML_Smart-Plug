@@ -35,6 +35,33 @@ String FirebaseNetwork::sanitizeToken(const String& s) {
   return o;
 }
 
+void FirebaseNetwork::updateControlToken_(const String& tokenIn, bool& primed, String& cache, String& handled, bool& pendingFlag) {
+  String token = tokenIn;
+  token.trim();
+
+  if (!primed) {
+    cache = token;
+    primed = true;
+    pendingFlag = false;
+    return;
+  }
+
+  if (token.length() == 0) {
+    cache = "";
+    pendingFlag = false;
+    return;
+  }
+
+  if (token == handled) {
+    cache = token;
+    pendingFlag = false;
+    return;
+  }
+
+  if (token != cache) pendingFlag = true;
+  cache = token;
+}
+
 void FirebaseNetwork::begin(const char* apiKey, const char* dbUrl, const char* tz, const char* ntp1, const char* ntp2) {
   (void)apiKey;
   config.database_url = dbUrl;
@@ -141,36 +168,37 @@ void FirebaseNetwork::clearControlToken_(const char* path, String& cache, bool& 
 
 bool FirebaseNetwork::consumePortalRequest() {
   const bool v = _portalRequestPending;
-  if (v) clearControlToken_("/controls/open_portal_token", _portalToken, _portalRequestPending);
-  else _portalRequestPending = false;
+  if (v) {
+    _portalTokenHandled = _portalToken;
+    clearControlToken_("/controls/open_portal_token", _portalToken, _portalRequestPending);
+  } else _portalRequestPending = false;
   return v;
 }
 
 bool FirebaseNetwork::consumeRelayOnRequest() {
   const bool v = _relayOnPending;
-  if (v) clearControlToken_("/controls/relay_on_token", _relayOnToken, _relayOnPending);
-  else _relayOnPending = false;
+  if (v) {
+    _relayOnTokenHandled = _relayOnToken;
+    clearControlToken_("/controls/relay_on_token", _relayOnToken, _relayOnPending);
+  } else _relayOnPending = false;
   return v;
 }
 
 bool FirebaseNetwork::consumeRelayOffRequest() {
   const bool v = _relayOffPending;
-  if (v) clearControlToken_("/controls/relay_off_token", _relayOffToken, _relayOffPending);
-  else _relayOffPending = false;
+  if (v) {
+    _relayOffTokenHandled = _relayOffToken;
+    clearControlToken_("/controls/relay_off_token", _relayOffToken, _relayOffPending);
+  } else _relayOffPending = false;
   return v;
 }
 
 bool FirebaseNetwork::consumeFaultClearRequest() {
   const bool v = _faultClearPending;
-  if (v) clearControlToken_("/controls/fault_clear_token", _faultClearToken, _faultClearPending);
-  else _faultClearPending = false;
-  return v;
-}
-
-bool FirebaseNetwork::consumeRevertFirmwareRequest() {
-  const bool v = _revertFwPending;
-  if (v) clearControlToken_("/controls/revert_fw_token", _revertFwToken, _revertFwPending);
-  else _revertFwPending = false;
+  if (v) {
+    _faultClearTokenHandled = _faultClearToken;
+    clearControlToken_("/controls/fault_clear_token", _faultClearToken, _faultClearPending);
+  } else _faultClearPending = false;
   return v;
 }
 
@@ -193,62 +221,50 @@ void FirebaseNetwork::pollControls(bool allowNet, bool portalActive) {
     case 0: {
       String token;
       if (Firebase.RTDB.getString(&fbRead, "/controls/open_portal_token")) {
-        token = fbRead.stringData(); token.trim();
-        if (_portalTokenPrimed && token.length() && token != _portalToken) _portalRequestPending = true;
-        _portalToken = token; _portalTokenPrimed = true;
+        token = fbRead.stringData();
+        updateControlToken_(token, _portalTokenPrimed, _portalToken, _portalTokenHandled, _portalRequestPending);
       }
     } break;
     case 1: {
       String token;
       if (Firebase.RTDB.getString(&fbRead, "/controls/relay_on_token")) {
-        token = fbRead.stringData(); token.trim();
-        if (_relayOnTokenPrimed && token.length() && token != _relayOnToken) _relayOnPending = true;
-        _relayOnToken = token; _relayOnTokenPrimed = true;
+        token = fbRead.stringData();
+        updateControlToken_(token, _relayOnTokenPrimed, _relayOnToken, _relayOnTokenHandled, _relayOnPending);
       }
     } break;
     case 2: {
       String token;
       if (Firebase.RTDB.getString(&fbRead, "/controls/relay_off_token")) {
-        token = fbRead.stringData(); token.trim();
-        if (_relayOffTokenPrimed && token.length() && token != _relayOffToken) _relayOffPending = true;
-        _relayOffToken = token; _relayOffTokenPrimed = true;
+        token = fbRead.stringData();
+        updateControlToken_(token, _relayOffTokenPrimed, _relayOffToken, _relayOffTokenHandled, _relayOffPending);
       }
     } break;
     case 3: {
       String token;
       if (Firebase.RTDB.getString(&fbRead, "/controls/fault_clear_token")) {
-        token = fbRead.stringData(); token.trim();
-        if (_faultClearTokenPrimed && token.length() && token != _faultClearToken) _faultClearPending = true;
-        _faultClearToken = token; _faultClearTokenPrimed = true;
+        token = fbRead.stringData();
+        updateControlToken_(token, _faultClearTokenPrimed, _faultClearToken, _faultClearTokenHandled, _faultClearPending);
       }
     } break;
-    case 4: {
-      String token;
-      if (Firebase.RTDB.getString(&fbRead, "/controls/revert_fw_token")) {
-        token = fbRead.stringData(); token.trim();
-        if (_revertFwTokenPrimed && token.length() && token != _revertFwToken) _revertFwPending = true;
-        _revertFwToken = token; _revertFwTokenPrimed = true;
-      }
-    } break;
-    case 5:
+    case 4:
       if (Firebase.RTDB.getBool(&fbRead, "/ml_log/enabled")) _mlEnabledCache = fbRead.boolData();
       break;
-    case 6:
+    case 5:
       if (Firebase.RTDB.getInt(&fbRead, "/ml_log/duration_s")) _mlDurationCache = fbRead.intData();
       break;
-    case 7:
+    case 6:
       if (Firebase.RTDB.getInt(&fbRead, "/ml_log/label_override")) _mlLabelOverrideCache = fbRead.intData();
       break;
-    case 8:
+    case 7:
       if (Firebase.RTDB.getString(&fbRead, "/ml_log/session_id")) { _mlSessionIdCache = fbRead.stringData(); _mlSessionIdCache.trim(); }
       break;
-    case 9:
+    case 8:
       if (Firebase.RTDB.getString(&fbRead, "/ml_log/load_type")) { _mlLoadTypeCache = fbRead.stringData(); _mlLoadTypeCache.trim(); }
       break;
     default:
       break;
   }
-  _controlPollSlot = (uint8_t)((_controlPollSlot + 1U) % 10U);
+  _controlPollSlot = (uint8_t)((_controlPollSlot + 1U) % 9U);
 }
 
 void FirebaseNetwork::requestLiveUpdate(float v, float c, float apparentPower, float t,
