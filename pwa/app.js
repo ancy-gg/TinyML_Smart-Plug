@@ -264,6 +264,7 @@ modeToggle?.addEventListener("change", () => {
 const menuTrigger = el("menuTrigger");
 const headerMenu = el("headerMenu");
 const btnChangeWifi = el("btnChangeWifi");
+const btnRevertFirmware = el("btnRevertFirmware");
 const btnRelayOn = el("btnRelayOn");
 const btnRelayOff = el("btnRelayOff");
 const relayRocker = el("relayRocker");
@@ -333,6 +334,31 @@ btnChangeWifi?.addEventListener("click", async () => {
   } finally {
     btnChangeWifi.disabled = false;
     btnChangeWifi.textContent = oldText || "Change WiFi";
+  }
+});
+
+btnRevertFirmware?.addEventListener("click", async () => {
+  setHeaderMenuOpen(false);
+  const confirmed = window.confirm("Reboot into the previous OTA firmware slot? Use this when the current firmware OTA is broken.");
+  if (!confirmed) return;
+
+  const oldText = btnRevertFirmware.textContent || "Revert Firmware";
+  btnRevertFirmware.disabled = true;
+  btnRevertFirmware.textContent = "Reverting...";
+
+  try {
+    const token = `revert_fw_${Date.now()}`;
+    await db.ref("/controls").update({
+      revert_fw_token: token,
+      revert_fw_requested_at: firebase.database.ServerValue.TIMESTAMP
+    });
+    toast("Firmware revert requested. Device will reboot into the previous OTA slot if available.", "warn");
+  } catch (e) {
+    console.error("Firmware revert write failed:", e);
+    toast("Failed to request firmware revert.", "err");
+  } finally {
+    btnRevertFirmware.disabled = false;
+    btnRevertFirmware.textContent = oldText;
   }
 });
 
@@ -1166,9 +1192,13 @@ document.addEventListener("visibilitychange", () => {
     btnPublishOta.textContent = "Publishing...";
 
     try {
+      const currentSnap = await db.ref("ota").get();
+      const current = currentSnap.val() || {};
       await db.ref("ota").update({
         desired_version: desired,
         firmware_url: url,
+        previous_desired_version: (current.desired_version || "").toString(),
+        previous_firmware_url: (current.firmware_url || "").toString(),
         published_at: firebase.database.ServerValue.TIMESTAMP
       });
       toast("OTA published. Devices will pull on next check.", "ok");

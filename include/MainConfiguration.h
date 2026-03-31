@@ -13,7 +13,7 @@ static constexpr bool ENABLE_AUTO_ARC_CAPTURE = true;
 // Cloud / OTA configuration
 static constexpr const char* FIREBASE_API_KEY = "AIzaSyAmJlZZszyWPJFgIkTAAl_TbIySys1nvEw";
 static constexpr const char* FIREBASE_DB_URL  = "tinyml-smart-plug-default-rtdb.asia-southeast1.firebasedatabase.app";
-static constexpr const char* FW_VERSION       = "TSP-v4.0.2-p-mcp";
+static constexpr const char* FW_VERSION       = "TSP-v4.1.0-p-mcp";
 static constexpr const char* OTA_DESIRED_VERSION_PATH = "/ota/desired_version";
 static constexpr const char* OTA_FIRMWARE_URL_PATH    = "/ota/firmware_url";
 
@@ -78,6 +78,10 @@ static constexpr uint8_t BUZZER_PWM_DUTY    = 128;
 static constexpr bool BUZZER_STATUS_ENABLED = true;
 static constexpr uint32_t BUZZER_STARTUP_MUTE_MS = 700;
 static constexpr uint32_t SYSTEM_READY_CHIME_DELAY_MS = 1000;
+static constexpr uint32_t BUZZER_ARTIFACT_SUPPRESS_HOLD_MS = 260UL;
+static constexpr float    BUZZER_ARTIFACT_MAX_A = 0.60f;
+static constexpr uint16_t BUZZER_STATUS_MAX_HZ = 820;
+static constexpr uint8_t  BUZZER_STATUS_MAX_DUTY = 26;
 
 // =========================
 // Sampling and FFT
@@ -98,6 +102,7 @@ static constexpr uint32_t WIFI_BOOT_CONNECT_MS      = 10000UL;
 static constexpr uint32_t WIFI_CONNECT_TIMEOUT_MS   = 10000UL;
 static constexpr uint32_t WIFI_PORTAL_TIMEOUT_MS    = 30000UL;
 static constexpr uint32_t WIFI_BACKGROUND_RETRY_MS  = 60000UL;
+static constexpr uint32_t WIFI_BOOT_NO_CRED_AP_WINDOW_MS = 10000UL;
 static constexpr uint32_t WIFI_MANUAL_AP_WINDOW_MS  = 15000UL;
 static constexpr uint32_t WIFI_PORTAL_AP_GRACE_MS   = 1500UL;
 static constexpr const char* WIFI_PORTAL_SSID       = "TinyML-SmartPlug";

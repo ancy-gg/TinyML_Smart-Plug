@@ -298,7 +298,6 @@ void setup() {
   wifiMgr.begin([](WiFiManager* wm) { (void)wm; });
   network.setLogEnabled(false);
   network.setLogDurationSeconds(ML_LOG_DURATION_S);
-  if (!gSafeMode) (void)updater.confirmNow();
 }
 
 void loop() {
@@ -352,7 +351,7 @@ void loop() {
   f.vrms = vRms; f.temp_c = tC;
   const float irmsRawMeasured = f.irms;
   float irmsRawForLogic = cleanLogicCurrent(irmsRawMeasured, f.current_valid != 0, vRaw, vFast);
-  if (notification.shouldSuppressCurrentArtifacts() && irmsRawForLogic < 0.35f) {
+  if (notification.shouldSuppressCurrentArtifacts() && irmsRawForLogic < BUZZER_ARTIFACT_MAX_A) {
     irmsRawForLogic = 0.0f;
     f.current_valid = 0;
     f.feat_valid = 0;
@@ -368,10 +367,17 @@ void loop() {
   const bool arcEligible = (!gSafeMode && !paused && !bootSettling && !protectionInhibit && voltageNormal &&
                             arcInputStable(f.current_valid, f.feat_valid, irmsRawForLogic));
 
-  network.pollControls(!gSafeMode && !paused && !portalActive && wifiConnected, portalActive);
+  network.pollControls(!paused && !portalActive && wifiConnected, portalActive);
 
   const bool faultClearRequested = (!gSafeMode) ? network.consumeFaultClearRequest() : false;
+  const bool revertFirmwareRequested = network.consumeRevertFirmwareRequest();
   if (faultClearRequested) { protection.resetLatch(); notification.notify(SND_RESET_ACK); notification.clearFaultAlert(); }
+  if (revertFirmwareRequested) {
+    network.logStatusEvent("FIRMWARE REVERT REQUESTED", 0.0f, 0.0f, 0.0f, 0.0f);
+    if (!updater.rollbackToPrevious()) {
+      network.logStatusEvent("FIRMWARE REVERT FAILED", 0.0f, 0.0f, 0.0f, 0.0f);
+    }
+  }
 
   int pred = 0;
   if (arcEligible) {

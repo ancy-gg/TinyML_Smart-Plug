@@ -38,7 +38,7 @@ void WifiHandler::startStaConnect_() {
   _phaseStartMs = millis();
 }
 
-void WifiHandler::startApWait_(bool disconnectSta, bool manualRequest) {
+void WifiHandler::startApWait_(bool disconnectSta, bool manualRequest, uint32_t windowMs) {
   _portalRequested = manualRequest;
   _portalDisconnectSta = disconnectSta;
   _portalStartMs = 0;
@@ -58,7 +58,8 @@ void WifiHandler::startApWait_(bool disconnectSta, bool manualRequest) {
   WiFi.softAP(WIFI_PORTAL_SSID);
   delay(60);
   _lastApStations = apStations_();
-  _apWindowUntilMs = millis() + (manualRequest ? WIFI_MANUAL_AP_WINDOW_MS : WIFI_PORTAL_TIMEOUT_MS);
+  const uint32_t openMs = (windowMs > 0UL) ? windowMs : (manualRequest ? WIFI_MANUAL_AP_WINDOW_MS : WIFI_PORTAL_TIMEOUT_MS);
+  _apWindowUntilMs = millis() + openMs;
   _phase = PHASE_AP_WAIT_CLIENT;
   _phaseStartMs = millis();
 }
@@ -86,7 +87,8 @@ void WifiHandler::closeApAndRecover_(uint32_t now) {
   _lastApStations = 0;
   if (WiFi.status() == WL_CONNECTED) { _phase = PHASE_CONNECTED; _phaseStartMs = now; return; }
   if (hasSavedCredentials_()) { WiFi.begin(); _phase = PHASE_CONNECTING; _phaseStartMs = now; return; }
-  startApWait_(true, false);
+  _phase = PHASE_TIMEOUT;
+  _phaseStartMs = now;
 }
 
 void WifiHandler::requestPortal(bool disconnectSta) { startApWait_(disconnectSta, true); }
@@ -114,7 +116,7 @@ void WifiHandler::begin(void (*apCallback)(WiFiManager*)) {
   _phase = PHASE_BOOT_CONNECT;
   _phaseStartMs = millis();
   if (hasSavedCredentials_()) startStaConnect_();
-  else startApWait_(true, false);
+  else startApWait_(true, false, WIFI_BOOT_NO_CRED_AP_WINDOW_MS);
 }
 
 void WifiHandler::update() {
@@ -153,7 +155,10 @@ void WifiHandler::update() {
   }
 
   if (_phase == PHASE_TIMEOUT) {
-    if (!hasSavedCredentials_()) { startApWait_(true, false); return; }
+    if (!hasSavedCredentials_()) {
+      if ((now - _phaseStartMs) >= WIFI_BACKGROUND_RETRY_MS) startApWait_(true, false, WIFI_BOOT_NO_CRED_AP_WINDOW_MS);
+      return;
+    }
     if ((now - _phaseStartMs) >= WIFI_BACKGROUND_RETRY_MS) startStaConnect_();
   }
 }

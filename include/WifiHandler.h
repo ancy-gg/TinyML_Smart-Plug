@@ -38,7 +38,7 @@ private:
   void (*_userApCb)(WiFiManager*) = nullptr;
 
   void startStaConnect_();
-  void startApWait_(bool disconnectSta, bool manualRequest);
+  void startApWait_(bool disconnectSta, bool manualRequest, uint32_t windowMs = 0);
   void startPortal_();
   void closeApAndRecover_(uint32_t now);
   uint8_t apStations_() const;

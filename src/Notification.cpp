@@ -56,6 +56,7 @@ static uint32_t s_t0 = 0;
 static uint8_t s_activePrio = 0;
 static uint8_t s_faultHoldSound = 255;
 static uint32_t s_faultHoldUntil = 0;
+static uint32_t s_artifactSuppressUntil = 0;
 
 static inline bool isFaultPattern(uint8_t id) {
   return id == SND_FAULT_ARC || id == SND_FAULT_HEAT || id == SND_FAULT_OVER || id == SND_FAULT_UNDERVOLT || id == SND_FAULT_OVERVOLT;
@@ -93,8 +94,8 @@ static void pwmTone(uint16_t hz, uint8_t duty) {
   if (isFaultPattern(s_activeId)) {
     if (duty > 104) duty = 104;
   } else {
-    if (duty > 44) duty = 44;
-    if (hz > 1200) hz = 1200;
+    if (duty > BUZZER_STATUS_MAX_DUTY) duty = BUZZER_STATUS_MAX_DUTY;
+    if (hz > BUZZER_STATUS_MAX_HZ) hz = BUZZER_STATUS_MAX_HZ;
   }
 #if defined(ESP_ARDUINO_VERSION_MAJOR) && (ESP_ARDUINO_VERSION_MAJOR >= 3)
   ledcWriteTone(s_buzzPin, hz); ledcWrite(s_buzzPin, duty);
@@ -103,12 +104,16 @@ static void pwmTone(uint16_t hz, uint8_t duty) {
 #endif
 }
 static void soundBegin(int pinBuzzer) { s_buzzPin = pinBuzzer; pwmAttachIfNeeded(pinBuzzer); pwmStop(); }
-static void soundStop() { pwmStop(); s_activeId = 255; s_step = 0; s_t0 = 0; s_activePrio = 0; }
+static void soundStop() {
+  if (isArtifactSensitiveStatusPattern(s_activeId)) s_artifactSuppressUntil = millis() + BUZZER_ARTIFACT_SUPPRESS_HOLD_MS;
+  pwmStop(); s_activeId = 255; s_step = 0; s_t0 = 0; s_activePrio = 0;
+}
 static void soundStart(uint8_t id) {
   if (id >= (sizeof(PATTERNS) / sizeof(PATTERNS[0])) || s_activeId == id || !eventSoundAllowed(id)) return;
   const TonePattern& p = PATTERNS[id];
   if (s_activeId != 255 && p.priority < s_activePrio) return;
   s_activeId = id; s_activePrio = p.priority; s_step = 0; s_t0 = 0;
+  if (isArtifactSensitiveStatusPattern(id)) s_artifactSuppressUntil = millis() + BUZZER_ARTIFACT_SUPPRESS_HOLD_MS;
 }
 static void soundLoop() {
   if (s_activeId == 255) return;
@@ -495,7 +500,7 @@ void Notification::clear() {
 void Notification::notify(SoundEvent ev) { soundBegin(_pinBuzzer); soundStart((uint8_t)ev); }
 
 bool Notification::shouldSuppressCurrentArtifacts() const {
-  return isArtifactSensitiveStatusPattern(s_activeId) && !isFaultPattern(s_activeId);
+  return ((isArtifactSensitiveStatusPattern(s_activeId) && !isFaultPattern(s_activeId)) || ((int32_t)(s_artifactSuppressUntil - millis()) > 0));
 }
 
 void Notification::clearFaultAlert() {

@@ -35,6 +35,7 @@ public:
   bool consumeRelayOnRequest();
   bool consumeRelayOffRequest();
   bool consumeFaultClearRequest();
+  bool consumeRevertFirmwareRequest();
   bool fetchMlControl(bool& enabled, int& dur, int& labelOv, String& sid, String& load) const;
 
   void requestLiveUpdate(float v, float c, float apparentPower, float t,
@@ -141,14 +142,17 @@ private:
   bool _relayOnTokenPrimed = false;
   bool _relayOffTokenPrimed = false;
   bool _faultClearTokenPrimed = false;
+  bool _revertFwTokenPrimed = false;
   String _portalToken = "";
   String _relayOnToken = "";
   String _relayOffToken = "";
   String _faultClearToken = "";
+  String _revertFwToken = "";
   bool _portalRequestPending = false;
   bool _relayOnPending = false;
   bool _relayOffPending = false;
   bool _faultClearPending = false;
+  bool _revertFwPending = false;
   bool _mlEnabledCache = false;
   int  _mlDurationCache = ML_LOG_DURATION_S;
   int  _mlLabelOverrideCache = ML_UNKNOWN_LABEL;

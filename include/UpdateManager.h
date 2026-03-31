@@ -2,6 +2,7 @@
 #define UPDATE_MANAGER_H
 
 #include <Arduino.h>
+#include <esp_partition.h>
 
 class FirebaseNetwork;
 
@@ -22,10 +23,14 @@ public:
   bool safeMode() const { return _safeMode; }
   bool pendingVerify() const { return _pendingVerify; }
   bool confirmNow();
+  bool rollbackToPrevious();
+
 
 private:
   bool fetchOtaTargets(String& desiredVersion, String& firmwareUrl);
   bool performUpdateFromUrl(const String& url);
+  bool findRollbackPartition_(const esp_partition_t*& out) const;
+  static String normalizeFirmwareUrl_(String url);
   void bootGuardBegin_(uint32_t stableWindowMs, uint8_t maxCrashBoots);
   void bootGuardLoop_();
 

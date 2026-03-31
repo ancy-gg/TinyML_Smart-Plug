@@ -9,6 +9,7 @@
 #include <esp_partition.h>
 #include <esp_system.h>
 #include <esp_attr.h>
+#include <esp_app_format.h>
 
 RTC_DATA_ATTR static uint32_t s_magic = 0;
 RTC_DATA_ATTR static uint32_t s_lastAppAddr = 0;
@@ -16,8 +17,9 @@ RTC_DATA_ATTR static uint8_t  s_crashBoots = 0;
 RTC_DATA_ATTR static uint8_t  s_safeMode = 0;
 static constexpr uint32_t MAGIC = 0xC0FFEE42;
 static const uint32_t OTA_HTTP_TIMEOUT_MS = 60000;
-static const uint32_t OTA_STREAM_IDLE_MS  = 12000;
+static const uint32_t OTA_STREAM_IDLE_MS  = 25000;
 static const uint32_t OTA_RESTART_DELAY_MS = 1200;
+static const size_t OTA_MIN_BIN_BYTES = 128 * 1024;
 
 static bool isCrashReset(esp_reset_reason_t r) {
   switch (r) {
@@ -35,6 +37,47 @@ static bool getPendingVerifyState_() {
   esp_ota_img_states_t st;
   if (esp_ota_get_state_partition(running, &st) != ESP_OK) return false;
   return (st == ESP_OTA_IMG_PENDING_VERIFY);
+}
+
+String UpdateManager::normalizeFirmwareUrl_(String url) {
+  url.trim();
+  url.replace("?raw=1", "");
+  if (!url.startsWith("https://github.com/")) return url;
+  const String prefix = "https://github.com/";
+  String tail = url.substring(prefix.length());
+  const int blobAt = tail.indexOf("/blob/");
+  if (blobAt < 0) return url;
+  const String head = tail.substring(0, blobAt);
+  const String rest = tail.substring(blobAt + 6);
+  return String("https://raw.githubusercontent.com/") + head + "/" + rest;
+}
+
+bool UpdateManager::findRollbackPartition_(const esp_partition_t*& out) const {
+  out = nullptr;
+  const esp_partition_t* running = esp_ota_get_running_partition();
+  if (!running) return false;
+  const esp_partition_t* candidate = esp_ota_get_next_update_partition(running);
+  if (!candidate || candidate == running) return false;
+
+  esp_app_desc_t desc = {};
+  if (esp_ota_get_partition_description(candidate, &desc) != ESP_OK) return false;
+
+  uint8_t magic = 0;
+  if (esp_partition_read(candidate, 0, &magic, sizeof(magic)) != ESP_OK) return false;
+  if (magic != ESP_IMAGE_HEADER_MAGIC) return false;
+
+  out = candidate;
+  return true;
+}
+
+bool UpdateManager::rollbackToPrevious() {
+  const esp_partition_t* part = nullptr;
+  if (!findRollbackPartition_(part)) return false;
+  const esp_err_t e = esp_ota_set_boot_partition(part);
+  if (e != ESP_OK) return false;
+  delay(120);
+  ESP.restart();
+  return true;
 }
 
 bool UpdateManager::confirmNow() {
@@ -95,8 +138,8 @@ void UpdateManager::setInsecureTLS(bool en) { _insecureTLS = en; }
 
 void UpdateManager::loop() {
   bootGuardLoop_();
+  if (_pendingVerify) return;
   if (WiFi.status() != WL_CONNECTED || !_cloud || !_cloud->isReady()) return;
-  if (!confirmNow()) return;
   const uint32_t now = millis();
   if (!_checkNow && (uint32_t)(now - _lastCheckMs) < _intervalMs) return;
   _checkNow = false; _lastCheckMs = now;
@@ -123,48 +166,78 @@ bool UpdateManager::fetchOtaTargets(String& desiredVersion, String& firmwareUrl)
   return true;
 }
 
-bool UpdateManager::performUpdateFromUrl(const String& url) {
+bool UpdateManager::performUpdateFromUrl(const String& rawUrl) {
+  const String url = normalizeFirmwareUrl_(rawUrl);
   const bool isHttps = url.startsWith("https://");
   const bool isHttp  = url.startsWith("http://");
   if (!isHttps && !isHttp) return false;
+
   HTTPClient http;
   http.setTimeout(OTA_HTTP_TIMEOUT_MS);
   http.setFollowRedirects(HTTPC_STRICT_FOLLOW_REDIRECTS);
   http.useHTTP10(true);
+  http.setReuse(false);
+  http.addHeader("Cache-Control", "no-cache");
 
   bool begun = false;
-  WiFiClient plainClient; WiFiClientSecure secureClient;
-  if (isHttps) { secureClient.setTimeout(OTA_HTTP_TIMEOUT_MS); if (_insecureTLS) secureClient.setInsecure(); begun = http.begin(secureClient, url); }
-  else { plainClient.setTimeout(OTA_HTTP_TIMEOUT_MS); begun = http.begin(plainClient, url); }
+  WiFiClient plainClient;
+  WiFiClientSecure secureClient;
+  if (isHttps) {
+    secureClient.setTimeout(OTA_HTTP_TIMEOUT_MS);
+    if (_insecureTLS) secureClient.setInsecure();
+    begun = http.begin(secureClient, url);
+  } else {
+    plainClient.setTimeout(OTA_HTTP_TIMEOUT_MS);
+    begun = http.begin(plainClient, url);
+  }
   if (!begun) return false;
 
+  const char* wantedHeaders[] = {"Content-Type", "Content-Length"};
+  http.collectHeaders(wantedHeaders, 2);
   const int code = http.GET();
   if (code != HTTP_CODE_OK) { http.end(); return false; }
+
+  const String contentType = http.header("Content-Type");
+  if (contentType.length() && contentType.indexOf("application/octet-stream") < 0 && contentType.indexOf("application/x-binary") < 0) {
+    if (contentType.indexOf("text/plain") < 0) { http.end(); return false; }
+  }
+
   const int total = http.getSize();
+  if (total > 0 && total < (int)OTA_MIN_BIN_BYTES) { http.end(); return false; }
   if (!Update.begin(total > 0 ? (size_t)total : UPDATE_SIZE_UNKNOWN, U_FLASH)) { http.end(); return false; }
 
   WiFiClient* stream = http.getStreamPtr();
-  size_t written = 0; uint8_t buf[2048]; uint32_t lastDataMs = millis(); int lastPct = -1;
+  size_t written = 0;
+  uint8_t buf[2048];
+  uint32_t lastDataMs = millis();
+  int lastPct = -1;
   while (http.connected() && (total < 0 || (int)written < total)) {
     const size_t avail = stream->available();
     if (!avail) {
       if ((millis() - lastDataMs) > OTA_STREAM_IDLE_MS) { Update.abort(); http.end(); return false; }
-      delay(1); continue;
+      delay(1);
+      continue;
     }
+
     const int r = stream->readBytes(buf, (avail > sizeof(buf)) ? sizeof(buf) : avail);
     if (r <= 0) {
       if ((millis() - lastDataMs) > OTA_STREAM_IDLE_MS) { Update.abort(); http.end(); return false; }
-      delay(1); continue;
+      delay(1);
+      continue;
     }
+
     lastDataMs = millis();
     const size_t w = Update.write(buf, (size_t)r);
     if (w != (size_t)r) { Update.abort(); http.end(); return false; }
     written += w;
+
     if (total > 0 && _cb) {
       const int pct = (int)((100.0f * (float)written) / (float)total);
       if (pct != lastPct) { lastPct = pct; _cb(OtaEvent::PROGRESS, pct); }
     }
   }
+
+  if (written < OTA_MIN_BIN_BYTES) { Update.abort(); http.end(); return false; }
   if (!Update.end(true) || !Update.isFinished()) { http.end(); return false; }
   http.end();
   return true;
