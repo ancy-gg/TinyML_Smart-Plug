@@ -41,18 +41,26 @@
           <button type="button" class="menu-trigger" id="menuTrigger" aria-label="Open display menu" aria-expanded="false" aria-controls="headerMenu" title="Menu">☰</button>
           <div class="header-menu" id="headerMenu" hidden>
             <div class="menu-section">
-              <div class="menu-label">Display</div>
-              <div class="menu-row menu-row-split" role="group" aria-label="Display density">
-                <button type="button" class="menu-chip" data-density="compact">Compact</button>
-                <button type="button" class="menu-chip" data-density="comfortable">Comfortable</button>
-              </div>
+              <div class="menu-label">Notifications</div>
+              <label class="menu-switch-row menu-switch-row-dual" for="alertEnable">
+                <span class="menu-side-label" id="alertLabelLeft">Silent</span>
+                <span class="switch switch-wide switch-dual">
+                  <input type="checkbox" id="alertEnable" />
+                  <span class="switch-slider"></span>
+                </span>
+                <span class="menu-side-label" id="alertLabelRight">Alert</span>
+              </label>
             </div>
             <div class="menu-section">
               <div class="menu-label">Mode</div>
-              <div class="menu-row menu-row-split" role="group" aria-label="Dashboard mode">
-                <button type="button" class="menu-chip" data-mode="consumer">User</button>
-                <button type="button" class="menu-chip" data-mode="admin">Admin</button>
-              </div>
+              <label class="menu-switch-row" for="modeToggle">
+                <span class="menu-side-label" id="modeLabelLeft">User</span>
+                <span class="switch switch-wide switch-dual">
+                  <input type="checkbox" id="modeToggle" />
+                  <span class="switch-slider"></span>
+                </span>
+                <span class="menu-side-label" id="modeLabelRight">Admin</span>
+              </label>
             </div>
             <div class="menu-section menu-section-links">
               <button type="button" class="menu-link" id="btnChangeWifi">Change WiFi</button>
@@ -64,31 +72,6 @@
 
       <div class="status-wrap">
         <div id="statusBadge" class="status status-DISCONNECTED">DISCONNECTED</div>
-
-        <div class="subline">
-          <span class="label">Last update:</span>
-          <span id="lastUpdateText" class="mono">—</span>
-          <span class="dot-sep">•</span>
-          <span id="freshnessText">Waiting for device…</span>
-        </div>
-
-        <div id="deviceIpLine" class="subline" style="display:none;">
-          <span class="label">Device IP:</span>
-          <span id="deviceIpText" class="mono">—</span>
-          <span class="dot-sep">•</span>
-          <span id="deviceMdnsText" class="mono">tinyml-smart-plug.local</span>
-        </div>
-
-        <div class="alertbar">
-          <label class="toggle">
-            <input type="checkbox" id="alertEnable" />
-            Notification Alerts
-          </label>
-          <label class="toggle">
-            <input type="checkbox" id="soundEnable" />
-            Enable Sound
-          </label>
-        </div>
       </div>
     </header>
 
@@ -104,161 +87,148 @@
       </div>
     </section>
 
-    <section class="overview-block">
-      <div class="section-head">
-        <div>
-          <h2 class="section-title">System Overview</h2>
-          
-        </div>
-        <div class="section-actions">
-          <button id="btnRefreshNow" class="btn btn-small" type="button">Refresh</button>
-        </div>
-      </div>
-
-      <div class="overview-grid">
-        <div class="summary-card summary-card-wide">
-          <div class="summary-head">
-            <div class="summary-kicker">Overall Health</div>
-            <div id="overviewHealthBadge" class="mini-badge mini-badge-OK">Healthy</div>
+    <div class="dashboard-grid">
+      <section class="overview-block dashboard-overview">
+          <div class="section-head section-head-tight">
+            <div>
+              <h2 class="section-title">System Overview</h2>
+            </div>
+            <div class="section-actions overview-actions-stack">
+              <button id="btnRefreshNow" class="btn btn-small" type="button">Refresh</button>
+              <button id="btnFaultCleared" class="btn btn-danger btn-small btn-overview-clear" type="button">Clear Fault</button>
+            </div>
           </div>
-          <div id="overviewPrimary" class="summary-title">Waiting for device…</div>
-          <div id="overviewSecondary" class="summary-copy">Waiting for data.</div>
 
-          <div class="overview-toolbar">
-            <div class="overview-control">
-              <div class="overview-control-label">Relay Pulse</div>
-              <div class="relay-rocker" id="relayRocker">
-                <button type="button" class="rocker-btn" id="btnRelayOn">ON</button>
-                <button type="button" class="rocker-btn" id="btnRelayOff">OFF</button>
+          <div class="overview-stack overview-stack-inline">
+            <div class="summary-card summary-card-health">
+              <div class="summary-head">
+                <div class="summary-kicker">Overall Health</div>
+                <div id="overviewHealthBadge" class="mini-badge mini-badge-OK">Healthy</div>
+              </div>
+              <div id="overviewPrimary" class="summary-title">Waiting for device…</div>
+              <div id="overviewSecondary" class="summary-copy">Waiting for data.</div>
+              <div id="overviewMeta" class="summary-meta">Last update: — • Waiting for device…</div>
+            </div>
+
+            <div class="summary-card controls-card controls-card-inline">
+              <div class="summary-kicker">Controls</div>
+              <div class="control-boxes control-boxes-inline">
+                <div class="control-box control-panel control-panel-relay">
+                  <div class="control-label">Relay</div>
+                  <div class="relay-rocker" id="relayRocker">
+                    <button type="button" class="rocker-btn" id="btnRelayOn">ON</button>
+                    <button type="button" class="rocker-btn" id="btnRelayOff">OFF</button>
+                  </div>
+                </div>
               </div>
             </div>
 
-            <div class="overview-control">
-              <div class="overview-control-label">Fault State</div>
-              <button id="btnFaultClear" class="btn btn-small btn-info" type="button">Fault Cleared</button>
+          </div>
+        </section>
+
+        <section class="overview-block dashboard-meta">
+          <div class="section-head section-head-tight">
+            <div>
+              <h2 class="section-title">Status</h2>
             </div>
           </div>
-        </div>
 
-        <div class="summary-card">
-          <div class="summary-kicker">Connectivity</div>
-          <div id="ovConnectivity" class="summary-value">Offline</div>
-          <div id="ovConnectivitySub" class="summary-copy">No live link.</div>
-        </div>
+          <div class="meta-grid">
+            <div class="summary-card meta-card">
+              <div class="summary-kicker">Connection</div>
+              <div id="ovConnectivity" class="summary-value">Offline</div>
+              <div id="ovConnectivitySub" class="summary-copy">No live link.</div>
+            </div>
 
-        <div class="summary-card">
-          <div class="summary-kicker">Power Condition</div>
-          <div id="ovPowerCondition" class="summary-value">Unknown</div>
-          <div id="ovPowerSub" class="summary-copy">Waiting for voltage.</div>
-        </div>
+            <div class="summary-card meta-card">
+              <div class="summary-kicker">Protection</div>
+              <div id="ovProtection" class="summary-value">Monitoring</div>
+              <div id="ovProtectionSub" class="summary-copy">No active trip.</div>
+            </div>
 
-        <div class="summary-card">
-          <div class="summary-kicker">Protection</div>
-          <div id="ovProtection" class="summary-value">Monitoring</div>
-          <div id="ovProtectionSub" class="summary-copy">No active trip.</div>
-        </div>
+            <div class="summary-card meta-card">
+              <div class="summary-kicker">Firmware</div>
+              <div id="ovFirmware" class="summary-value">—</div>
+              <div id="ovFirmwareSub" class="summary-copy">—</div>
+            </div>
 
-        <div class="summary-card">
-          <div class="summary-kicker">Firmware</div>
-          <div id="ovFirmware" class="summary-value">—</div>
-          <div id="ovFirmwareSub" class="summary-copy">—</div>
-        </div>
-
-        <div class="summary-card">
-          <div class="summary-kicker">Last Event</div>
-          <div id="ovLastEvent" class="summary-value">—</div>
-          <div id="ovLastEventSub" class="summary-copy">No history.</div>
-        </div>
-
-        <div class="summary-card summary-card-wide">
-          <div class="summary-kicker">Protection Rules</div>
-          <div class="rules-grid rules-grid-cards">
-            <div class="rule-mini-card"><strong>Arc Fault</strong><span>Trip on AI-detected arcs</span></div>
-            <div class="rule-mini-card"><strong>Overload</strong><span>Alarm at 10 A+</span></div>
-            <div class="rule-mini-card"><strong>Socket Heating</strong><span>Trip at 70 °C+</span></div>
-            <div class="rule-mini-card"><strong>Short Circuit</strong><span>Trip above 20 A</span></div>
-            <div class="rule-mini-card"><strong>Undervoltage</strong><span>Trip below 200 V</span></div>
-            <div class="rule-mini-card"><strong>Overvoltage</strong><span>Trip above 250 V</span></div>
+            <div class="summary-card meta-card">
+              <div class="summary-kicker">Last Event</div>
+              <div id="ovLastEvent" class="summary-value">—</div>
+              <div id="ovLastEventSub" class="summary-copy">No history.</div>
+            </div>
           </div>
-        </div>
-      </div>
-    </section>
+        </section>
 
-    <section class="metrics-block">
-      <div class="section-head">
-        <div>
-          <h2 class="section-title">Live Electrical Data</h2>
-          
-        </div>
-        <div class="section-hint" data-live-state-hint>LIVE</div>
-      </div>
-
-      <div class="metric-grid-top">
-        <div class="card live-card">
-          <div class="card-label">Voltage</div>
-          <div class="card-value"><span id="vVal">—</span><span class="unit">V</span></div>
-          <div id="vHint" class="metric-note">—</div>
-        </div>
-
-        <div class="card live-card">
-          <div class="card-label">Current</div>
-          <div class="card-value"><span id="iVal">—</span><span class="unit">A</span></div>
-          <div id="iHint" class="metric-note">—</div>
-        </div>
-
-        <div class="card live-card">
-          <div class="card-label">Apparent Power</div>
-          <div class="card-value"><span id="pVal">—</span><span class="unit">VA</span></div>
-          <div id="pHint" class="metric-note">—</div>
-        </div>
-
-        <div class="card live-card">
-          <div class="card-label">Temperature</div>
-          <div class="card-value"><span id="tVal">—</span><span class="unit">°C</span></div>
-          <div id="tHint" class="metric-note">—</div>
-        </div>
-      </div>
-    </section>
-
-    <section class="features-block">
-      <div class="section-head">
-        <div>
-          <h2 class="section-title">Waveform Features</h2>
-          
-        </div>
-        <div class="section-hint" data-live-state-hint>LIVE</div>
-      </div>
-
-      <div class="wave-grid">
-        <div class="feature-group-card">
-          <div class="group-head">
-            <h3 class="group-title">Time and Cycle Domain</h3>
-            <div class="muted small">Primary discriminants</div>
+      <section class="metrics-block dashboard-live">
+          <div class="section-head section-head-tight">
+            <div>
+              <h2 class="section-title">Live Electrical</h2>
+            </div>
+            <div class="section-hint" data-live-state-hint>LIVE</div>
           </div>
-          <div class="feature-grid feature-grid-2col">
+
+          <div class="metric-grid-top metric-grid-compact">
+            <div class="card live-card">
+              <div class="card-label">Voltage</div>
+              <div class="card-value"><span id="vVal">—</span><span class="unit">V</span></div>
+              <div id="vHint" class="metric-note">—</div>
+            </div>
+
+            <div class="card live-card">
+              <div class="card-label">Current</div>
+              <div class="card-value"><span id="iVal">—</span><span class="unit">A</span></div>
+              <div id="iHint" class="metric-note">—</div>
+            </div>
+
+            <div class="card live-card">
+              <div class="card-label">Apparent Power</div>
+              <div class="card-value"><span id="pVal">—</span><span class="unit">VA</span></div>
+              <div id="pHint" class="metric-note">—</div>
+            </div>
+
+            <div class="card live-card">
+              <div class="card-label">Temperature</div>
+              <div class="card-value"><span id="tVal">—</span><span class="unit">°C</span></div>
+              <div id="tHint" class="metric-note">—</div>
+            </div>
+          </div>
+        </section>
+
+        <section class="features-block dashboard-time">
+          <div class="section-head section-head-tight">
+            <div>
+              <h2 class="section-title">Time Domain</h2>
+            </div>
+            <div class="section-hint" data-live-state-hint>LIVE</div>
+          </div>
+
+          <div class="feature-grid feature-grid-2col feature-grid-tight">
             <div class="card feature-card"><div class="card-label">Cycle NMSE</div><div class="card-value"><span id="cycleNmseVal">—</span></div></div>
-            <div class="card feature-card"><div class="card-label">Zero-Cross Variance</div><div class="card-value"><span id="zcvVal">—</span></div></div>
-            <div class="card feature-card"><div class="card-label">Zero-Cross Dwell Ratio</div><div class="card-value"><span id="zcDwellVal">—</span></div></div>
+            <div class="card feature-card"><div class="card-label">ZC Variance</div><div class="card-value"><span id="zcvVal">—</span></div></div>
+            <div class="card feature-card"><div class="card-label">ZC Dwell Ratio</div><div class="card-value"><span id="zcDwellVal">—</span></div></div>
             <div class="card feature-card"><div class="card-label">Pulse Count / Cycle</div><div class="card-value"><span id="pulseCountVal">—</span></div></div>
             <div class="card feature-card"><div class="card-label">Peak Fluctuation CV</div><div class="card-value"><span id="peakFluctVal">—</span></div></div>
-            <div class="card feature-card"><div class="card-label">Midband Residual RMS</div><div class="card-value"><span id="midbandResidVal">—</span></div></div>
-          </div>
-        </div>
+                      </div>
+        </section>
 
-        <div class="feature-group-card">
-          <div class="group-head">
-            <h3 class="group-title">Frequency and Energy Domain</h3>
-            <div class="muted small">Context features</div>
+        <section class="features-block dashboard-freq">
+          <div class="section-head section-head-tight">
+            <div>
+              <h2 class="section-title">Frequency Domain</h2>
+            </div>
+            <div class="section-hint" data-live-state-hint>LIVE</div>
           </div>
-          <div class="feature-grid feature-grid-2col">
-            <div class="card feature-card"><div class="card-label">HF Band Energy Ratio</div><div class="card-value"><span id="hfEnergyVal">—</span></div></div>
-            <div class="card feature-card"><div class="card-label">Wavelet Packet Energy Entropy</div><div class="card-value"><span id="wpeEntropyVal">—</span></div></div>
+
+          <div class="feature-grid feature-grid-2col feature-grid-tight">
+            <div class="card feature-card"><div class="card-label">HF Energy Ratio</div><div class="card-value"><span id="hfEnergyVal">—</span></div></div>
+            <div class="card feature-card"><div class="card-label">Wavelet Entropy</div><div class="card-value"><span id="wpeEntropyVal">—</span></div></div>
             <div class="card feature-card"><div class="card-label">Spectral Entropy</div><div class="card-value"><span id="specEntropyVal">—</span></div></div>
+            <div class="card feature-card"><div class="card-label">Midband RMS</div><div class="card-value"><span id="midbandResidVal">—</span></div></div>
             <div class="card feature-card"><div class="card-label">THD Current</div><div class="card-value"><span id="thdVal">—</span><span class="unit">%</span></div></div>
           </div>
-        </div>
-      </div>
-    </section>
+        </section>
+    </div>
 
     <section class="history">
       <div class="history-head">
@@ -363,7 +333,7 @@
             </span>
           </label>
 
-          <input id="mlLogDur" class="ota-input mono ml-seconds-input" type="number" inputmode="numeric" min="1" step="1" value="10" placeholder="seconds" />
+          <input id="mlLogDur" class="ota-input mono" inputmode="numeric" pattern="[0-9]*" value="10" placeholder="seconds" />
 
           <input id="mlLoadType" class="ota-input mono" placeholder="load type (fan_max, laptop_charger...)" />
 

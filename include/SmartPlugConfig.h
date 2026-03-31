@@ -223,8 +223,16 @@ struct VoltageCalib {
 // =========================
 // Logging
 // =========================
-static constexpr uint16_t ML_LOG_RATE_HZ     = 30;
-static constexpr uint16_t ML_LOG_DURATION_S  = 10;
+static constexpr uint16_t ML_LOG_RATE_HZ          = 30;
+static constexpr uint16_t ML_LOG_DURATION_S      = 10;
+static constexpr uint16_t ML_LOG_CHUNK_DURATION_S = 10;
+static constexpr uint16_t ML_LOG_MIN_DURATION_S   = 1;
+static constexpr uint16_t ML_LOG_MAX_DURATION_S   = 7200;
+static constexpr uint16_t ML_LOG_AUTO_MIN_DURATION_S = 5;
+static constexpr uint16_t ML_LOG_AUTO_MAX_DURATION_S = 60;
+
+static constexpr uint32_t CLOUD_LIVE_NORMAL_INTERVAL_MS = 10000UL;
+static constexpr uint32_t CLOUD_LIVE_FAULT_INTERVAL_MS  = 2500UL;
 
 // =========================
 // Current display cleanup

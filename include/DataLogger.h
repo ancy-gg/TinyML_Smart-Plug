@@ -68,6 +68,7 @@ private:
   SessionSpec _manual;
   SessionSpec _auto;
 
+  uint32_t _sessionStartMs = 0;
   uint32_t _chunkStartMs = 0;
   uint32_t _lastFlushAttemptMs = 0;
 
@@ -78,6 +79,8 @@ private:
   const SessionSpec& activeSpec() const;
   bool activeIsAuto() const { return (!_manualEnabled && _autoEnabled); }
   bool flushToFirebase(bool finalFlush);
+  void resetRuntimeState_();
+  void closeManualSession_(const String& finishedSessionId);
   static String sanitizeToken(const String& s);
 #else
   CloudHandler* _cloud = nullptr;

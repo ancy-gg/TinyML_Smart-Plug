@@ -1,7 +1,12 @@
 #include "DataLogger.h"
 #include "CloudHandler.h"
 
-void DataLogger::begin(CloudHandler* cloud) { _cloud = cloud; }
+// Local fallbacks so DataLogger.cpp still compiles even if an older SmartPlugConfig.h
+// is what the IDE/compiler sees first.
+static constexpr uint16_t LOCAL_ML_LOG_MIN_DURATION_S = 1;
+static constexpr uint16_t LOCAL_ML_LOG_MAX_DURATION_S = 7200;
+
+void DataLogger::begin(CloudHandler* cloud) { _cloud = cloud; resetRuntimeState_(); }
 
 String DataLogger::sanitizeToken(const String& s) {
   String o = s;
@@ -33,6 +38,9 @@ void DataLogger::setSession(const String& sessionId, const String& loadType, int
 
 void DataLogger::setEnabled(bool en) {
 #if ENABLE_ML_LOGGER
+  if (en && !_manualEnabled) {
+    resetRuntimeState_();
+  }
   _manualEnabled = en;
 #else
   (void)en;
@@ -40,8 +48,8 @@ void DataLogger::setEnabled(bool en) {
 }
 
 void DataLogger::setDurationSeconds(uint16_t sec) {
-  if (sec < 5) sec = 5;
-  if (sec > 60) sec = 60;
+  if (sec < LOCAL_ML_LOG_MIN_DURATION_S) sec = LOCAL_ML_LOG_MIN_DURATION_S;
+  if (sec > LOCAL_ML_LOG_MAX_DURATION_S) sec = LOCAL_ML_LOG_MAX_DURATION_S;
 #if ENABLE_ML_LOGGER
   _manual.durationS = sec;
 #endif
@@ -50,17 +58,15 @@ void DataLogger::setDurationSeconds(uint16_t sec) {
 bool DataLogger::startAutoCapture(const String& reason, uint16_t sec) {
 #if ENABLE_ML_LOGGER
   if (_manualEnabled || _autoEnabled) return false;
-  if (sec < 5) sec = 5;
-  if (sec > 60) sec = 60;
+  if (sec < ML_LOG_AUTO_MIN_DURATION_S) sec = ML_LOG_AUTO_MIN_DURATION_S;
+  if (sec > ML_LOG_AUTO_MAX_DURATION_S) sec = ML_LOG_AUTO_MAX_DURATION_S;
 
   _auto.sessionId = sanitizeToken(String("auto_") + reason + String("_") + String((unsigned long)millis()));
   _auto.loadType = sanitizeToken(String("auto_") + reason);
   _auto.labelOverride = ML_UNKNOWN_LABEL;
   _auto.durationS = sec;
   _autoEnabled = true;
-  _count = 0;
-  _chunkStartMs = 0;
-  _lastFlushAttemptMs = 0;
+  resetRuntimeState_();
   return true;
 #else
   (void)reason; (void)sec;
@@ -71,6 +77,7 @@ bool DataLogger::startAutoCapture(const String& reason, uint16_t sec) {
 void DataLogger::stopAutoCapture() {
 #if ENABLE_ML_LOGGER
   _autoEnabled = false;
+  resetRuntimeState_();
 #endif
 }
 
@@ -81,6 +88,7 @@ void DataLogger::ingest(const FeatureFrame& f, FaultState st, int arcCounter) {
   if (spec.sessionId.length() < 3) return;
   if (_count >= MAX_REC) return;
 
+  if (_sessionStartMs == 0) _sessionStartMs = millis();
   if (_count == 0) _chunkStartMs = millis();
 
   Rec& r = _buf[_count++];
@@ -121,60 +129,82 @@ void DataLogger::loop() {
   if (!_cloud || !_cloud->isReady()) return;
 
   if (_wasEnabled && !enabled()) {
-    if (_count > 0) {
-      flushToFirebase(true);
-      _count = 0;
-      _chunkStartMs = 0;
-    }
+    if (_count > 0) (void)flushToFirebase(true);
+    resetRuntimeState_();
   }
   _wasEnabled = enabled();
 
   if (!enabled()) return;
   const SessionSpec& spec = activeSpec();
   if (spec.sessionId.length() < 3) return;
-  if (_count == 0) return;
 
   const uint32_t now = millis();
-  const uint32_t elapsed = now - _chunkStartMs;
-  const bool timeUp = (elapsed >= (uint32_t)spec.durationS * 1000UL);
-  const bool full   = (_count >= MAX_REC);
-  if (!timeUp && !full) return;
+  if (_sessionStartMs == 0) _sessionStartMs = now;
 
-  if (_lastFlushAttemptMs && (now - _lastFlushAttemptMs) < 2000) return;
+  const bool manualTimeUp = (_manualEnabled && !_autoEnabled) && ((now - _sessionStartMs) >= ((uint32_t)spec.durationS * 1000UL));
+  const bool autoTimeUp   = activeIsAuto() && ((now - _sessionStartMs) >= ((uint32_t)spec.durationS * 1000UL));
+  const bool chunkTimeUp  = (_count > 0) && (_chunkStartMs != 0) && ((now - _chunkStartMs) >= ((uint32_t)ML_LOG_CHUNK_DURATION_S * 1000UL));
+  const bool full         = (_count >= MAX_REC);
+
+  if (_count == 0) {
+    if (manualTimeUp) {
+      closeManualSession_(spec.sessionId);
+      resetRuntimeState_();
+    } else if (autoTimeUp) {
+      _autoEnabled = false;
+      resetRuntimeState_();
+    }
+    return;
+  }
+
+  if (!manualTimeUp && !autoTimeUp && !chunkTimeUp && !full) return;
+
+  if (_lastFlushAttemptMs && (now - _lastFlushAttemptMs) < 2000UL) return;
   _lastFlushAttemptMs = now;
 
-  const bool manualTimeUp = (_manualEnabled && !_autoEnabled && timeUp);
-  const bool finalFlush = activeIsAuto() || manualTimeUp;
-
+  const bool finalFlush = manualTimeUp || autoTimeUp;
   if (flushToFirebase(finalFlush)) {
     const String finishedSessionId = spec.sessionId;
     _count = 0;
     _chunkStartMs = 0;
     _lastFlushAttemptMs = 0;
 
-    if (activeIsAuto()) {
+    if (autoTimeUp) {
       _autoEnabled = false;
+      _sessionStartMs = 0;
     } else if (manualTimeUp) {
-      _manualEnabled = false;
-
-      FirebaseJson mlState;
-      mlState.set("enabled", false);
-      mlState.set("last_completed_session_id", finishedSessionId);
-      mlState.set("last_completed_at/.sv", "timestamp");
-      (void)_cloud->updateJSON("/ml_log", mlState);
-
-      String sessPath = "/ml_sessions/";
-      sessPath += finishedSessionId;
-      FirebaseJson sessMeta;
-      sessMeta.set("end_ms/.sv", "timestamp");
-      sessMeta.set("closed_by_device", true);
-      (void)_cloud->updateJSON(sessPath.c_str(), sessMeta);
+      closeManualSession_(finishedSessionId);
+      _sessionStartMs = 0;
     }
   }
 #endif
 }
 
 #if ENABLE_ML_LOGGER
+void DataLogger::resetRuntimeState_() {
+  _sessionStartMs = 0;
+  _chunkStartMs = 0;
+  _lastFlushAttemptMs = 0;
+  _count = 0;
+}
+
+void DataLogger::closeManualSession_(const String& finishedSessionId) {
+  _manualEnabled = false;
+
+  FirebaseJson mlState;
+  mlState.set("enabled", false);
+  mlState.set("last_completed_session_id", finishedSessionId);
+  mlState.set("last_completed_at/.sv", "timestamp");
+  (void)_cloud->updateJSON("/ml_log", mlState);
+
+  String sessPath = "/ml_sessions/";
+  sessPath += finishedSessionId;
+  FirebaseJson sessMeta;
+  sessMeta.set("end_ms/.sv", "timestamp");
+  sessMeta.set("closed_by_device", true);
+  (void)_cloud->updateJSON(sessPath.c_str(), sessMeta);
+}
+
 bool DataLogger::flushToFirebase(bool finalFlush) {
   if (!_cloud || !_cloud->isReady()) return false;
   const SessionSpec& spec = activeSpec();

@@ -16,6 +16,13 @@
 #include "PullOTA.h"
 #include "BootGuard.h"
 
+// Local fallbacks so main.cpp still compiles even if an older SmartPlugConfig.h
+// is in the include cache or workspace. Keep these aligned with SmartPlugConfig.h.
+static constexpr uint16_t LOCAL_ML_LOG_MIN_DURATION_S = 1;
+static constexpr uint16_t LOCAL_ML_LOG_MAX_DURATION_S = 7200;
+static constexpr uint32_t LOCAL_CLOUD_LIVE_NORMAL_INTERVAL_MS = 10000UL;
+static constexpr uint32_t LOCAL_CLOUD_LIVE_FAULT_INTERVAL_MS  = 2500UL;
+
 #include "CurrentSensor.h"
 #include "VoltageSensor.h"
 #include "TempSensor.h"
@@ -30,7 +37,7 @@
 
 #define API_KEY "AIzaSyAmJlZZszyWPJFgIkTAAl_TbIySys1nvEw"
 #define DATABASE_URL "tinyml-smart-plug-default-rtdb.asia-southeast1.firebasedatabase.app"
-static const char* FW_VERSION = "TSP-v3.7.6-p-mcp";   //m - set calib to 0.0 (1.0 for first-order var)
+static const char* FW_VERSION = "TSP-v3.7.7-p-mcp";   //m - set calib to 0.0 (1.0 for first-order var)
                                                       //p - change 0 relay, with calibration
                                                       //c - change 1 relay, with calibration
                                                       
@@ -499,8 +506,8 @@ static void pollMlControl(CloudHandler& cloud, DataLogger& logger, NotificationO
   cloud.getString("/ml_log/session_id", sid);
   cloud.getString("/ml_log/load_type", load);
 
-  if (dur < 5) dur = 5;
-  if (dur > 60) dur = 60;
+  if (dur < LOCAL_ML_LOG_MIN_DURATION_S) dur = LOCAL_ML_LOG_MIN_DURATION_S;
+  if (dur > LOCAL_ML_LOG_MAX_DURATION_S) dur = LOCAL_ML_LOG_MAX_DURATION_S;
 
   if (enabled && sid.length() < 3) {
     logger.setEnabled(false);
@@ -595,14 +602,14 @@ void setup() {
 
   cloud.begin(API_KEY, DATABASE_URL);
   cloud.setFirmwareVersion(FW_VERSION);
-  cloud.setNormalIntervalMs(6000);
-  cloud.setFaultIntervalMs(1000);
+  cloud.setNormalIntervalMs(LOCAL_CLOUD_LIVE_NORMAL_INTERVAL_MS);
+  cloud.setFaultIntervalMs(LOCAL_CLOUD_LIVE_FAULT_INTERVAL_MS);
   timeSync.begin();
 
 #if ENABLE_ML_LOGGER
   logger.begin(&cloud);
   logger.setEnabled(false);
-  logger.setDurationSeconds(10);
+  logger.setDurationSeconds(ML_LOG_DURATION_S);
 #endif
 
   ota.begin(FW_VERSION, &cloud);
