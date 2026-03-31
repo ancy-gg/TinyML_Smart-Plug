@@ -185,6 +185,7 @@ private:
   bool activeIsAuto() const { return (!_manualEnabled && _autoEnabled); }
 
   bool pushHistoryRecord_(const HistoryJob& job);
+  void clearControlToken_(const char* path, String& cache, bool& pendingFlag);
   bool enqueueHistory_(const HistoryJob& job);
   bool dequeueHistory_(HistoryJob& job);
   bool serviceLive_();

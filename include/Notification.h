@@ -70,6 +70,7 @@ public:
   void clear();
 
   void notify(SoundEvent ev);
+  bool shouldSuppressCurrentArtifacts() const;
   void clearFaultAlert();
   void updateBuzzer(FaultState st, float vProtect, float i, float t);
 

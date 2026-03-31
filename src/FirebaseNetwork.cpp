@@ -132,27 +132,38 @@ bool FirebaseNetwork::dequeueHistory_(HistoryJob& job) {
   return true;
 }
 
+void FirebaseNetwork::clearControlToken_(const char* path, String& cache, bool& pendingFlag) {
+  pendingFlag = false;
+  cache = "";
+  if (!isReady() || !path || !*path) return;
+  Firebase.RTDB.setString(&fbLog, path, "");
+}
+
 bool FirebaseNetwork::consumePortalRequest() {
   const bool v = _portalRequestPending;
-  _portalRequestPending = false;
+  if (v) clearControlToken_("/controls/open_portal_token", _portalToken, _portalRequestPending);
+  else _portalRequestPending = false;
   return v;
 }
 
 bool FirebaseNetwork::consumeRelayOnRequest() {
   const bool v = _relayOnPending;
-  _relayOnPending = false;
+  if (v) clearControlToken_("/controls/relay_on_token", _relayOnToken, _relayOnPending);
+  else _relayOnPending = false;
   return v;
 }
 
 bool FirebaseNetwork::consumeRelayOffRequest() {
   const bool v = _relayOffPending;
-  _relayOffPending = false;
+  if (v) clearControlToken_("/controls/relay_off_token", _relayOffToken, _relayOffPending);
+  else _relayOffPending = false;
   return v;
 }
 
 bool FirebaseNetwork::consumeFaultClearRequest() {
   const bool v = _faultClearPending;
-  _faultClearPending = false;
+  if (v) clearControlToken_("/controls/fault_clear_token", _faultClearToken, _faultClearPending);
+  else _faultClearPending = false;
   return v;
 }
 
@@ -483,8 +494,15 @@ bool FirebaseNetwork::startAutoCapture(const String& reason, uint16_t sec) {
   if (_manualEnabled || _autoEnabled || _mlUploadActive) return false;
   if (sec < ML_LOG_AUTO_MIN_DURATION_S) sec = ML_LOG_AUTO_MIN_DURATION_S;
   if (sec > ML_LOG_AUTO_MAX_DURATION_S) sec = ML_LOG_AUTO_MAX_DURATION_S;
-  _auto.sessionId = sanitizeToken(String("auto_") + reason + String("_") + String((unsigned long)millis()));
-  _auto.loadType = sanitizeToken(String("auto_") + reason);
+  String autoSession = String("auto_");
+  autoSession += reason;
+  autoSession += "_";
+  autoSession += String((unsigned long)millis());
+  _auto.sessionId = sanitizeToken(autoSession);
+
+  String autoLoadType = String("auto_");
+  autoLoadType += reason;
+  _auto.loadType = sanitizeToken(autoLoadType);
   _auto.labelOverride = ML_UNKNOWN_LABEL;
   _auto.durationS = sec;
   _autoEnabled = true;

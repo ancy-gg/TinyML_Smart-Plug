@@ -88,10 +88,12 @@ static float cleanDisplayCurrent(float irmsRaw, bool currentValid, bool featVali
   static double floorSqAcc = 0.0;
   static uint32_t floorCount = 0;
   static float learnedFloorA = 0.0f, dispIrms = 0.0f;
+  static float shownIrms = 0.0f;
+  static uint32_t shownAtMs = 0;
   const uint32_t now = millis();
   const bool mainsOn = (vProtect >= MAINS_PRESENT_ON_V);
 
-  if (vRaw <= MAINS_PRESENT_OFF_V) { dispIrms = 0.0f; displayGateOn = false; lastUpdateMs = now; return 0.0f; }
+  if (vRaw <= MAINS_PRESENT_OFF_V) { dispIrms = 0.0f; shownIrms = 0.0f; displayGateOn = false; lastUpdateMs = now; shownAtMs = now; return 0.0f; }
   if (!learnStarted && mainsOn) { learnStarted = true; learnStartMs = now; }
 
   const bool canLearnIdle = CURRENT_IDLE_LEARN_ENABLE && learnStarted && !floorLocked && mainsOn && currentValid && !featValid &&
@@ -120,7 +122,11 @@ static float cleanDisplayCurrent(float irmsRaw, bool currentValid, bool featVali
   if (displayGateOn) { if (dispIrms < CURRENT_DISPLAY_GATE_OFF_A) displayGateOn = false; }
   else { if (dispIrms > CURRENT_DISPLAY_GATE_ON_A) displayGateOn = true; }
   if (!displayGateOn) dispIrms = 0.0f;
-  return dispIrms;
+  if ((now - shownAtMs) >= 250UL) {
+    shownIrms = dispIrms;
+    shownAtMs = now;
+  }
+  return shownIrms;
 }
 
 static float cleanLogicCurrent(float irmsRaw, bool currentValid, float vRaw, float vProtect) {
@@ -345,7 +351,12 @@ void loop() {
 
   f.vrms = vRms; f.temp_c = tC;
   const float irmsRawMeasured = f.irms;
-  const float irmsRawForLogic = cleanLogicCurrent(irmsRawMeasured, f.current_valid != 0, vRaw, vFast);
+  float irmsRawForLogic = cleanLogicCurrent(irmsRawMeasured, f.current_valid != 0, vRaw, vFast);
+  if (notification.shouldSuppressCurrentArtifacts() && irmsRawForLogic < 0.35f) {
+    irmsRawForLogic = 0.0f;
+    f.current_valid = 0;
+    f.feat_valid = 0;
+  }
   f.irms = cleanDisplayCurrent(irmsRawForLogic, f.current_valid != 0, f.feat_valid != 0, vRaw, vFast);
   if (irmsRawForLogic < FEATURE_MIN_IRMS_A) {
     f.feat_valid = 0; f.cycle_nmse = f.zcv = f.zc_dwell_ratio = f.pulse_count_per_cycle = f.peak_fluct_cv = 0.0f;
@@ -375,7 +386,16 @@ void loop() {
   if (gSafeMode) st = STATE_NORMAL;
 
   static uint32_t noPowerSinceMsCtl = 0;
+  static bool unpluggedOffIssued = false;
   const bool unpluggedLiveCtl = classifyUnpluggedSocket(vRaw, vFast, irmsRawForLogic, f.current_valid != 0, st, &noPowerSinceMsCtl);
+  if (unpluggedLiveCtl) {
+    if (!unpluggedOffIssued) {
+      protection.pulseRelayOff();
+      unpluggedOffIssued = true;
+    }
+  } else {
+    unpluggedOffIssued = false;
+  }
   const bool controlsLocked = gSafeMode || paused || bootSettling || protectionInhibit || unpluggedLiveCtl || protection.webControlLocked() || protection.voltageLockoutActive();
   if (!gSafeMode) {
     if (network.consumePortalRequest() && !controlsLocked) wifiMgr.requestPortal(false);

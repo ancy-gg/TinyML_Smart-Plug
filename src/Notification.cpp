@@ -11,7 +11,7 @@ struct TonePattern { const ToneStep* steps; uint8_t count; bool repeat; uint8_t 
 static constexpr ToneStep P_BOOT[] = {{1850,80,112},{0,40,0},{2350,90,120},{0,40,0},{2950,130,128}};
 static constexpr ToneStep P_WIFI_PORTAL[] = {{880,120,112},{0,70,0},{1175,120,116},{0,70,0},{1568,150,120}};
 static constexpr ToneStep P_WIFI_OK[] = {{1800,60,110},{0,25,0},{2400,70,118},{0,25,0},{3200,110,126}};
-static constexpr ToneStep P_LOGGER_ON[] = {{1150,55,104},{0,35,0},{1500,55,110},{0,35,0},{1950,85,118}};
+static constexpr ToneStep P_LOGGER_ON[] = {{620,36,36},{0,22,0},{820,42,42}};
 static constexpr ToneStep P_OTA_START[] = {{1500,80,112},{0,30,0},{1300,90,112},{0,30,0},{1100,120,118}};
 static constexpr ToneStep P_OTA_OK[] = {{1300,60,110},{0,25,0},{1800,60,118},{0,25,0},{2500,140,126}};
 static constexpr ToneStep P_OTA_FAIL[] = {{520,200,132},{0,80,0},{420,240,136},{0,80,0},{320,320,140}};
@@ -19,13 +19,13 @@ static constexpr ToneStep P_MAINS_LOST[] = {{430,240,128},{0,90,0},{330,320,128}
 static constexpr ToneStep P_MAINS_RESTORED[] = {{1700,70,110},{0,30,0},{2300,80,118},{0,30,0},{3000,110,126}};
 static constexpr ToneStep P_VOLT_LOW[] = {{700,180,120},{0,70,0},{620,220,124}};
 static constexpr ToneStep P_VOLT_HIGH[] = {{2500,120,118},{0,60,0},{2900,150,124}};
-static constexpr ToneStep P_DEVICE_PLUG[] = {{1400,55,108},{0,25,0},{1750,85,116}};
+static constexpr ToneStep P_DEVICE_PLUG[] = {{720,34,34},{0,18,0},{900,44,40}};
 static constexpr ToneStep P_FAULT_ARC[] = {{4100,28,132},{0,18,0},{3450,34,132},{0,20,0},{3900,30,132},{0,24,0},{3000,48,132},{0,140,0}};
 static constexpr ToneStep P_FAULT_HEAT[] = {{1650,180,126},{0,70,0},{1650,180,126},{0,70,0},{1650,180,126},{0,220,0}};
 static constexpr ToneStep P_FAULT_OVER[] = {{2450,120,118},{0,100,0},{2450,120,118},{0,280,0}};
 static constexpr ToneStep P_FAULT_UNDERVOLT[] = {{760,180,124},{0,70,0},{680,220,128},{0,220,0}};
 static constexpr ToneStep P_FAULT_OVERVOLT[] = {{2600,140,126},{0,60,0},{3200,160,130},{0,220,0}};
-static constexpr ToneStep P_RESET_ACK[] = {{1200,80,110},{0,40,0},{1200,80,110}};
+static constexpr ToneStep P_RESET_ACK[] = {{520,34,34}};
 
 static constexpr TonePattern PATTERNS[] = {
   {P_BOOT,(uint8_t)(sizeof(P_BOOT)/sizeof(P_BOOT[0])),false,1},
@@ -60,6 +60,12 @@ static uint32_t s_faultHoldUntil = 0;
 static inline bool isFaultPattern(uint8_t id) {
   return id == SND_FAULT_ARC || id == SND_FAULT_HEAT || id == SND_FAULT_OVER || id == SND_FAULT_UNDERVOLT || id == SND_FAULT_OVERVOLT;
 }
+static inline bool isArtifactSensitiveStatusPattern(uint8_t id) {
+  return id == SND_BOOT || id == SND_WIFI_PORTAL || id == SND_WIFI_OK || id == SND_LOGGER_ON ||
+         id == SND_OTA_START || id == SND_OTA_OK || id == SND_OTA_FAIL || id == SND_MAINS_LOST ||
+         id == SND_MAINS_RESTORED || id == SND_VOLT_LOW || id == SND_VOLT_HIGH ||
+         id == SND_DEVICE_PLUG || id == SND_RESET_ACK;
+}
 static inline bool statusSoundAllowed() { return BUZZER_STATUS_ENABLED && millis() >= BUZZER_STARTUP_MUTE_MS; }
 static inline bool eventSoundAllowed(uint8_t id) { return isFaultPattern(id) || statusSoundAllowed(); }
 
@@ -84,6 +90,12 @@ static void pwmStop() {
 static void pwmTone(uint16_t hz, uint8_t duty) {
   if (!s_pwmReady || s_buzzPin < 0) return;
   if (hz == 0 || duty == 0) { pwmStop(); return; }
+  if (isFaultPattern(s_activeId)) {
+    if (duty > 104) duty = 104;
+  } else {
+    if (duty > 44) duty = 44;
+    if (hz > 1200) hz = 1200;
+  }
 #if defined(ESP_ARDUINO_VERSION_MAJOR) && (ESP_ARDUINO_VERSION_MAJOR >= 3)
   ledcWriteTone(s_buzzPin, hz); ledcWrite(s_buzzPin, duty);
 #else
@@ -481,6 +493,10 @@ void Notification::clear() {
 
 
 void Notification::notify(SoundEvent ev) { soundBegin(_pinBuzzer); soundStart((uint8_t)ev); }
+
+bool Notification::shouldSuppressCurrentArtifacts() const {
+  return isArtifactSensitiveStatusPattern(s_activeId) && !isFaultPattern(s_activeId);
+}
 
 void Notification::clearFaultAlert() {
   s_faultHoldSound = 255;
