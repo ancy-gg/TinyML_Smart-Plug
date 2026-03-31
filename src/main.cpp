@@ -31,6 +31,7 @@ CurrentCalib       curCalib;
 
 static uint16_t s_raw[N_SAMP];
 static QueueHandle_t qFeat = nullptr;
+static TaskHandle_t gCore0SenseTask = nullptr;
 static bool gSafeMode = false;
 static volatile bool gPauseByOta = false;
 
@@ -185,13 +186,35 @@ static void Core0Task(void* pv) {
   ArcDetectionResult out;
   FeatureFrame lastGood = {};
   bool hasGood = false;
+
   while (millis() < SENSOR_BOOT_SETTLE_MS) vTaskDelay(20 / portTICK_PERIOD_MS);
+
   while (true) {
+    if (gPauseByOta || gSafeMode) {
+      vTaskDelay(20 / portTICK_PERIOD_MS);
+      continue;
+    }
+
     FeatureFrame f = {};
     f.uptime_ms = millis();
     float fs_hz = FS_TARGET_HZ;
     size_t got = curSensor.capture(s_raw, N_SAMP, &fs_hz);
-    if (got != N_SAMP || fs_hz < CURRENT_FRAME_MIN_FS_HZ) { vTaskDelay(1); got = curSensor.capture(s_raw, N_SAMP, &fs_hz); }
+
+    if (gPauseByOta || gSafeMode) {
+      vTaskDelay(20 / portTICK_PERIOD_MS);
+      continue;
+    }
+
+    if (got != N_SAMP || fs_hz < CURRENT_FRAME_MIN_FS_HZ) {
+      vTaskDelay(1);
+      got = curSensor.capture(s_raw, N_SAMP, &fs_hz);
+    }
+
+    if (gPauseByOta || gSafeMode) {
+      vTaskDelay(20 / portTICK_PERIOD_MS);
+      continue;
+    }
+
     bool ok = false;
     if (got == N_SAMP && fs_hz >= CURRENT_FRAME_MIN_FS_HZ) ok = arcDetect.compute(s_raw, N_SAMP, fs_hz, curCalib, MAINS_F0_HZ, out);
     if (ok && out.current_valid) {
@@ -211,6 +234,7 @@ static void Core0Task(void* pv) {
     vTaskDelay(1);
   }
 }
+
 
 static void pollMlControl(FirebaseNetwork& network, Notification& notifyUi) {
   static uint32_t lastPoll = 0;
@@ -286,7 +310,7 @@ void setup() {
   if (!gSafeMode) {
     if (curSensor.begin()) {
       qFeat = xQueueCreate(1, sizeof(FeatureFrame));
-      xTaskCreatePinnedToCore(Core0Task, "Core0Sense", 16384, nullptr, 3, nullptr, 0);
+      xTaskCreatePinnedToCore(Core0Task, "Core0Sense", 16384, nullptr, 3, &gCore0SenseTask, 0);
       notification.showStatus("Sensors", "MCP3204 ready");
     } else {
       notification.showStatus("WARN", "No MCP3204"); delay(700);
@@ -298,7 +322,6 @@ void setup() {
   wifiMgr.begin([](WiFiManager* wm) { (void)wm; });
   network.setLogEnabled(false);
   network.setLogDurationSeconds(ML_LOG_DURATION_S);
-  if (!gSafeMode) (void)updater.confirmNow();
 }
 
 void loop() {
@@ -352,7 +375,7 @@ void loop() {
   f.vrms = vRms; f.temp_c = tC;
   const float irmsRawMeasured = f.irms;
   float irmsRawForLogic = cleanLogicCurrent(irmsRawMeasured, f.current_valid != 0, vRaw, vFast);
-  if (notification.shouldSuppressCurrentArtifacts() && irmsRawForLogic < 0.35f) {
+  if (notification.shouldSuppressCurrentArtifacts() && irmsRawForLogic < BUZZER_ARTIFACT_MAX_A) {
     irmsRawForLogic = 0.0f;
     f.current_valid = 0;
     f.feat_valid = 0;
@@ -371,7 +394,14 @@ void loop() {
   network.pollControls(!gSafeMode && !paused && !portalActive && wifiConnected, portalActive);
 
   const bool faultClearRequested = (!gSafeMode) ? network.consumeFaultClearRequest() : false;
+  const bool revertFirmwareRequested = network.consumeRevertFirmwareRequest();
   if (faultClearRequested) { protection.resetLatch(); notification.notify(SND_RESET_ACK); notification.clearFaultAlert(); }
+  if (revertFirmwareRequested) {
+    network.logStatusEvent("FIRMWARE REVERT REQUESTED", 0.0f, 0.0f, 0.0f, 0.0f);
+    if (!updater.rollbackToPrevious()) {
+      network.logStatusEvent("FIRMWARE REVERT FAILED", 0.0f, 0.0f, 0.0f, 0.0f);
+    }
+  }
 
   int pred = 0;
   if (arcEligible) {

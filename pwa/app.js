@@ -264,6 +264,7 @@ modeToggle?.addEventListener("change", () => {
 const menuTrigger = el("menuTrigger");
 const headerMenu = el("headerMenu");
 const btnChangeWifi = el("btnChangeWifi");
+const btnRevertFirmware = el("btnRevertFirmware");
 const btnRelayOn = el("btnRelayOn");
 const btnRelayOff = el("btnRelayOff");
 const relayRocker = el("relayRocker");
@@ -297,7 +298,6 @@ async function sendControlPulse(buttonEl, busyText, okText, errText, payload) {
   setHeaderMenuOpen(false);
   const now = Date.now();
   if (buttonEl && buttonEl._tspBusyUntil && now < buttonEl._tspBusyUntil) return;
-
   const oldText = buttonEl?.textContent || "";
   if (buttonEl) {
     buttonEl._tspBusyUntil = now + CONTROL_PULSE_DEBOUNCE_MS;
@@ -313,7 +313,7 @@ async function sendControlPulse(buttonEl, busyText, okText, errText, payload) {
   } finally {
     if (buttonEl) {
       setTimeout(() => {
-        buttonEl.disabled = relayControlsLocked ? relayControlsLocked() : false;
+        buttonEl.disabled = false;
         buttonEl.textContent = oldText;
       }, CONTROL_PULSE_DEBOUNCE_MS);
     }
@@ -346,6 +346,36 @@ btnChangeWifi?.addEventListener("click", async () => {
     setTimeout(() => {
       btnChangeWifi.disabled = false;
       btnChangeWifi.textContent = oldText || "Change WiFi";
+    }, CONTROL_PULSE_DEBOUNCE_MS);
+  }
+});
+
+btnRevertFirmware?.addEventListener("click", async () => {
+  setHeaderMenuOpen(false);
+  const now = Date.now();
+  if (btnRevertFirmware._tspBusyUntil && now < btnRevertFirmware._tspBusyUntil) return;
+  const confirmed = window.confirm("Reboot into the previous OTA firmware slot? Use this when the current firmware OTA is broken.");
+  if (!confirmed) return;
+
+  const oldText = btnRevertFirmware.textContent || "Revert Firmware";
+  btnRevertFirmware._tspBusyUntil = now + CONTROL_PULSE_DEBOUNCE_MS;
+  btnRevertFirmware.disabled = true;
+  btnRevertFirmware.textContent = "Reverting...";
+
+  try {
+    const token = `revert_fw_${Date.now()}`;
+    await db.ref("/controls").update({
+      revert_fw_token: token,
+      revert_fw_requested_at: firebase.database.ServerValue.TIMESTAMP
+    });
+    toast("Firmware revert requested. Device will reboot into the previous OTA slot if available.", "warn");
+  } catch (e) {
+    console.error("Firmware revert write failed:", e);
+    toast("Failed to request firmware revert.", "err");
+  } finally {
+    setTimeout(() => {
+      btnRevertFirmware.disabled = false;
+      btnRevertFirmware.textContent = oldText;
     }, CONTROL_PULSE_DEBOUNCE_MS);
   }
 });
@@ -1182,9 +1212,13 @@ document.addEventListener("visibilitychange", () => {
     btnPublishOta.textContent = "Publishing...";
 
     try {
+      const currentSnap = await db.ref("ota").get();
+      const current = currentSnap.val() || {};
       await db.ref("ota").update({
         desired_version: desired,
         firmware_url: url,
+        previous_desired_version: (current.desired_version || "").toString(),
+        previous_firmware_url: (current.firmware_url || "").toString(),
         published_at: firebase.database.ServerValue.TIMESTAMP
       });
       toast("OTA published. Devices will pull on next check.", "ok");
