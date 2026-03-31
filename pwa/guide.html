@@ -278,10 +278,10 @@
       </div>
       <div class="kpi-grid">
         <div class="kpi"><strong>Overload alarm</strong><span>10 A and above</span></div>
-        <div class="kpi"><strong>Short circuit</strong><span>Above 20 A</span></div>
+        <div class="kpi"><strong>Sustained overload trip</strong><span>14.5 A for 60 s</span></div>
         <div class="kpi"><strong>Warm socket</strong><span>60 °C hint level</span></div>
         <div class="kpi"><strong>Heating trip</strong><span>70 °C and above</span></div>
-        <div class="kpi"><strong>Voltage faults</strong><span>&lt; 200 V or &gt; 250 V</span></div>
+        <div class="kpi"><strong>Normal mains</strong><span>207 V to 253 V</span></div>
       </div>
       <div class="grid-2" style="margin-top:10px;">
         <div class="card accent-red">
@@ -298,15 +298,15 @@
         </div>
         <div class="card accent-purple">
           <h3>Undervoltage</h3>
-          <p>When mains stays below the validated range, the relay is pulsed off. The existing guide logic describes auto-reclose only after several minutes of stable mains.</p>
+          <p>Undervoltage now uses staged timing. Around 200 V to 207 V it must persist much longer, around 170 V to 200 V it trips after several seconds, and below about 170 V it is treated as a fast trip. Values collapsing toward 0 V are treated as unplugged or mains-loss behavior, not as undervoltage.</p>
         </div>
         <div class="card accent-red">
           <h3>Overvoltage</h3>
-          <p>High mains voltage can damage chargers, adapters, and appliance electronics very quickly. The dashboard treats this as a protective fault state.</p>
+          <p>High mains voltage now uses staged timing too. Around 250 V to 265 V it must persist for several seconds, while above about 265 V it is treated as a fast trip.</p>
         </div>
         <div class="card accent-blue">
           <h3>Unplugged or no mains</h3>
-          <p>Very low measured voltage is treated separately from normal voltage faults so the UI can distinguish absent mains from unhealthy mains.</p>
+          <p>Very low measured voltage is treated separately from normal voltage faults so the UI can distinguish absent mains from unhealthy mains. A 0 V style collapse is not shown as undervoltage.</p>
         </div>
       </div>
     </section>

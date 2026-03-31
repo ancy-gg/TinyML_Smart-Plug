@@ -92,10 +92,13 @@ const OTA_DEFAULT_BIN   = "firmware.bin";
 
 const UI_OVERLOAD_WARN_A = 10;
 const UI_SHORT_CIRCUIT_A = 20;
-const UI_NORMAL_V_MIN = 200;
-const UI_NORMAL_V_MAX = 240;
-const UI_UNDERVOLTAGE_V = 200;
-const UI_OVERVOLTAGE_V = 250;
+const UI_NORMAL_V_MIN = 207;
+const UI_NORMAL_V_MAX = 253;
+const UI_UNDERVOLTAGE_MIN_V = 170;
+const UI_UNDERVOLTAGE_V = 207;
+const UI_OVERVOLTAGE_V = 253;
+const UI_OVERVOLTAGE_DELAY_V = 250;
+const UI_OVERVOLTAGE_FAST_V = 265;
 const UI_MAINS_ABSENT_V = 20;
 const UI_TEMP_COLD_ABNORMAL_C = 10;
 const UI_TEMP_WARM_C = 60;
@@ -565,10 +568,17 @@ function latestLiveEpoch() {
 function derivePowerConditionFromLive(data) {
   const v = Number(data?.voltage ?? 0);
   const raw = classifyStatus(data?.power_condition || data?.status || "NORMAL");
-  if (raw === "OVERVOLTAGE" || v >= UI_OVERVOLTAGE_V) return "OVERVOLTAGE";
+  if (raw === "OVERVOLTAGE") return "OVERVOLTAGE";
   if (raw === "UNPLUGGED" || v < UI_MAINS_ABSENT_V) return "UNPLUGGED";
-  if (raw === "UNDERVOLTAGE" || (v >= UI_MAINS_ABSENT_V && v < UI_UNDERVOLTAGE_V)) return "UNDERVOLTAGE";
-  if (v > UI_NORMAL_V_MAX && v < UI_OVERVOLTAGE_V) return "HIGH_LINE";
+  if (raw === "UNDERVOLTAGE") return "UNDERVOLTAGE";
+
+  // Fallback classification when the device-side power_condition is absent:
+  // - deep collapses are treated as mains loss / collapse, not undervoltage
+  // - staged undervoltage is only shown in the intended 170 V to 206 V band
+  // - overvoltage fallback follows the normal-band ceiling, while the hint text
+  //   still documents the delayed / fast trip regions used by protection logic
+  if (v >= UI_UNDERVOLTAGE_MIN_V && v < UI_UNDERVOLTAGE_V) return "UNDERVOLTAGE";
+  if (v > UI_NORMAL_V_MAX) return "OVERVOLTAGE";
   if (v >= UI_NORMAL_V_MIN && v <= UI_NORMAL_V_MAX) return "NORMAL";
   return "UNKNOWN";
 }
@@ -679,10 +689,11 @@ function applyMetricHints(data) {
   const powerKind = effectivePowerCondition();
 
   if (vHint) {
+    const vNow = Number(data?.voltage ?? 0);
     if (powerKind === "UNPLUGGED") vHint.textContent = "No mains.";
-    else if (powerKind === "UNDERVOLTAGE") vHint.textContent = `< ${UI_NORMAL_V_MIN} V`;
-    else if (powerKind === "OVERVOLTAGE") vHint.textContent = `> ${UI_OVERVOLTAGE_V} V`;
-    else if (powerKind === "HIGH_LINE") vHint.textContent = `${UI_NORMAL_V_MAX}-${UI_OVERVOLTAGE_V - 1} V`;
+    else if (powerKind === "UNDERVOLTAGE") vHint.textContent = `${UI_UNDERVOLTAGE_MIN_V}-${UI_NORMAL_V_MIN - 1} V staged`;
+    else if (powerKind === "OVERVOLTAGE") vHint.textContent = `>${UI_NORMAL_V_MAX} V staged`;
+    else if (vNow >= UI_MAINS_ABSENT_V && vNow < UI_UNDERVOLTAGE_MIN_V) vHint.textContent = "Collapse / mains loss";
     else vHint.textContent = `${UI_NORMAL_V_MIN}-${UI_NORMAL_V_MAX} V`;
   }
 
@@ -750,7 +761,8 @@ function renderOverview() {
     else if (status === "SUSTAINED_OVERLOAD") overviewSecondary.textContent = "Trip";
     else if (status === "HEATING") overviewSecondary.textContent = "Heat trip";
     else if (status === "ARCING") overviewSecondary.textContent = "Arc trip";
-    else if (status === "UNDERVOLTAGE" || status === "OVERVOLTAGE") overviewSecondary.textContent = "Voltage trip";
+    else if (status === "UNDERVOLTAGE") overviewSecondary.textContent = "Low line trip";
+    else if (status === "OVERVOLTAGE") overviewSecondary.textContent = "High line trip";
     else overviewSecondary.textContent = "Monitoring";
   }
 
