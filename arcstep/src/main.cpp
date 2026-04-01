@@ -7,7 +7,7 @@
 #include "Pins.h"
 #include "MotionConfig.h"
 
-// 28BYJ-48 works properly with HALF4WIRE and this pin order: IN1, IN3, IN2, IN4
+// 28BYJ-48 + ULN2003 usually works in HALF4WIRE with IN1, IN3, IN2, IN4 order
 AccelStepper stepper(
   AccelStepper::HALF4WIRE,
   Pins::STEPPER_IN1,
@@ -20,9 +20,7 @@ enum MotionMode {
   MODE_IDLE,
   MODE_MANUAL,
   MODE_TARGET,
-  MODE_SWEEP,
-  MODE_ARC,
-  MODE_BURST
+  MODE_ARC_ONESHOT
 };
 
 struct ButtonSnapshot {
@@ -44,24 +42,9 @@ ButtonSnapshot curBtn;
 
 bool outputsEnabled = false;
 long homePosition = 0;
-
-long sweepCenter = 0;
-long sweepSpan = MotionConfig::DEFAULT_SWEEP_SPAN;
-
-long arcCenter = 0;
-uint8_t arcStrength = MotionConfig::DEFAULT_ARC_STRENGTH;
-unsigned long arcKickIntervalMs = MotionConfig::DEFAULT_ARC_INTERVAL_MS;
-unsigned long lastArcKickMs = 0;
-
-long burstBasePosition = 0;
-uint8_t burstRemaining = 0;
-bool burstForward = true;
-
-static float mapFloat(float x, float in_min, float in_max, float out_min, float out_max) {
-  if (x <= in_min) return out_min;
-  if (x >= in_max) return out_max;
-  return (x - in_min) * (out_max - out_min) / (in_max - in_min) + out_min;
-}
+long arcOrigin = 0;
+long arcPeak = 0;
+bool arcReturnPhase = false;
 
 static bool rising(bool now, bool before) {
   return now && !before;
@@ -85,13 +68,15 @@ void stopMotion(bool releaseMotor) {
   stepper.stop();
   stepper.setSpeed(0);
   mode = MODE_IDLE;
-  burstRemaining = 0;
+  arcReturnPhase = false;
 
   if (releaseMotor) {
     disableMotorOutputs();
   } else {
     enableMotorOutputs();
   }
+
+  Serial.println("STOP");
 }
 
 void goRelative(long steps) {
@@ -100,30 +85,26 @@ void goRelative(long steps) {
   stepper.moveTo(stepper.currentPosition() + steps);
 }
 
-void startSweep(long spanSteps) {
+void goHome() {
   enableMotorOutputs();
-  sweepCenter = stepper.currentPosition();
-  sweepSpan = spanSteps;
-  mode = MODE_SWEEP;
-  stepper.moveTo(sweepCenter + sweepSpan);
+  mode = MODE_TARGET;
+  stepper.moveTo(homePosition);
+  Serial.print("GO HOME -> ");
+  Serial.println(homePosition);
 }
 
-void startArcMode(uint8_t strengthLevel, unsigned long intervalMs) {
+void startArcShot(long strokeSteps) {
   enableMotorOutputs();
-  arcCenter = stepper.currentPosition();
-  arcStrength = strengthLevel;
-  arcKickIntervalMs = intervalMs;
-  lastArcKickMs = 0;
-  mode = MODE_ARC;
-}
+  arcOrigin = stepper.currentPosition();
+  arcPeak = arcOrigin + strokeSteps;
+  arcReturnPhase = false;
+  mode = MODE_ARC_ONESHOT;
+  stepper.moveTo(arcPeak);
 
-void startBurst(uint8_t count, long pulseSteps) {
-  enableMotorOutputs();
-  burstBasePosition = stepper.currentPosition();
-  burstRemaining = count * 2;
-  burstForward = true;
-  mode = MODE_BURST;
-  stepper.moveTo(burstBasePosition + pulseSteps);
+  Serial.print("ARC SHOT -> origin: ");
+  Serial.print(arcOrigin);
+  Serial.print(", peak: ");
+  Serial.println(arcPeak);
 }
 
 void readButtons() {
@@ -141,57 +122,68 @@ void readButtons() {
 
 void printHelp() {
   Serial.println();
-  Serial.println("=== Dabble 28BYJ-48 Stepper Control ===");
-  Serial.println("Joystick Left/Right : manual continuous control");
-  Serial.println("Joystick Up/Down    : scales speed or effect strength");
-  Serial.println("Right               : small CW pulse");
-  Serial.println("Left                : small CCW pulse");
-  Serial.println("Up                  : large CW pulse");
-  Serial.println("Down                : large CCW pulse");
-  Serial.println("Triangle            : continuous to-and-fro sweep");
-  Serial.println("Circle              : continuous arc-like jitter mode");
-  Serial.println("Square              : pulse burst train");
-  Serial.println("Cross               : stop and release motor");
-  Serial.println("Start               : save current position as home");
-  Serial.println("Select              : return to saved home");
-  Serial.println("=======================================");
+  Serial.println("=== Dabble Arc Generator Control ===");
+  Serial.println("Use GamePad in DIGITAL MODE");
+  Serial.println("Right (hold)  : manual CW motion");
+  Serial.println("Left (hold)   : manual CCW motion");
+  Serial.println("Up            : one arc shot forward then back");
+  Serial.println("Down          : one arc shot backward then forward");
+  Serial.println("Triangle      : small forward nudge");
+  Serial.println("Circle        : small backward nudge");
+  Serial.println("Square        : stop and hold");
+  Serial.println("Cross         : stop and release motor");
+  Serial.println("Start         : save current position as home");
+  Serial.println("Select        : go to saved home");
+  Serial.println("====================================");
   Serial.println();
 }
 
+void startupWiggle() {
+  Serial.println("Startup wiggle test...");
+  enableMotorOutputs();
+
+  stepper.moveTo(MotionConfig::STARTUP_WIGGLE_STEPS);
+  while (stepper.distanceToGo() != 0) {
+    stepper.run();
+  }
+  delay(180);
+
+  stepper.moveTo(-MotionConfig::STARTUP_WIGGLE_STEPS);
+  while (stepper.distanceToGo() != 0) {
+    stepper.run();
+  }
+  delay(180);
+
+  stepper.moveTo(0);
+  while (stepper.distanceToGo() != 0) {
+    stepper.run();
+  }
+
+  disableMotorOutputs();
+  Serial.println("Startup wiggle done.");
+}
+
 void handleButtonActions() {
-  if (rising(curBtn.right, prevBtn.right)) {
-    goRelative(+MotionConfig::SMALL_PULSE_STEPS);
-  }
-
-  if (rising(curBtn.left, prevBtn.left)) {
-    goRelative(-MotionConfig::SMALL_PULSE_STEPS);
-  }
-
   if (rising(curBtn.up, prevBtn.up)) {
-    goRelative(+MotionConfig::LARGE_PULSE_STEPS);
+    startArcShot(+MotionConfig::ARC_SHOT_STEPS);
   }
 
   if (rising(curBtn.down, prevBtn.down)) {
-    goRelative(-MotionConfig::LARGE_PULSE_STEPS);
+    startArcShot(-MotionConfig::ARC_SHOT_STEPS);
   }
 
   if (rising(curBtn.triangle, prevBtn.triangle)) {
-    float y = fabs(GamePad.getYaxisData());
-    long span = (long)mapFloat(y, 0.0f, 7.0f, 90.0f, 240.0f);
-    startSweep(span);
+    Serial.println("TRIANGLE -> small forward nudge");
+    goRelative(+MotionConfig::NUDGE_STEPS);
   }
 
   if (rising(curBtn.circle, prevBtn.circle)) {
-    float y = fabs(GamePad.getYaxisData());
-    uint8_t strength = (uint8_t)round(mapFloat(y, 0.0f, 7.0f, 1.0f, 5.0f));
-    unsigned long intervalMs = (unsigned long)mapFloat(y, 0.0f, 7.0f, 40.0f, 12.0f);
-    startArcMode(strength, intervalMs);
+    Serial.println("CIRCLE -> small backward nudge");
+    goRelative(-MotionConfig::NUDGE_STEPS);
   }
 
   if (rising(curBtn.square, prevBtn.square)) {
-    float y = fabs(GamePad.getYaxisData());
-    uint8_t count = (uint8_t)round(mapFloat(y, 0.0f, 7.0f, 4.0f, 12.0f));
-    startBurst(count, MotionConfig::BURST_PULSE_STEPS);
+    stopMotion(false);
   }
 
   if (rising(curBtn.cross, prevBtn.cross)) {
@@ -201,44 +193,44 @@ void handleButtonActions() {
   if (rising(curBtn.start, prevBtn.start)) {
     homePosition = stepper.currentPosition();
     enableMotorOutputs();
-    Serial.print("Home saved at: ");
+    Serial.print("HOME SAVED -> ");
     Serial.println(homePosition);
   }
 
   if (rising(curBtn.select, prevBtn.select)) {
-    enableMotorOutputs();
-    mode = MODE_TARGET;
-    stepper.moveTo(homePosition);
+    goHome();
   }
 }
 
-void handleManualJoystick() {
-  float x = GamePad.getXaxisData();
-  float y = fabs(GamePad.getYaxisData());
-
-  if (fabs(x) > MotionConfig::JOY_DEADZONE) {
+void handleManualDpad() {
+  if (curBtn.right && !curBtn.left) {
     enableMotorOutputs();
     mode = MODE_MANUAL;
+    stepper.setSpeed(MotionConfig::MANUAL_SPEED);
+    stepper.runSpeed();
+    return;
+  }
 
-    float speedScale = mapFloat(y, 0.0f, 7.0f, 0.55f, 1.0f);
-    float speedMag = mapFloat(fabs(x), MotionConfig::JOY_DEADZONE, 7.0f,
-                              MotionConfig::MIN_MANUAL_SPEED,
-                              MotionConfig::MAX_MANUAL_SPEED);
-    float signedSpeed = (x > 0.0f ? 1.0f : -1.0f) * speedMag * speedScale;
-    stepper.setSpeed(signedSpeed);
-  } else {
-    if (mode == MODE_MANUAL) {
-      stepper.setSpeed(0);
-      mode = MODE_IDLE;
-      disableMotorOutputs();
-    }
+  if (curBtn.left && !curBtn.right) {
+    enableMotorOutputs();
+    mode = MODE_MANUAL;
+    stepper.setSpeed(-MotionConfig::MANUAL_SPEED);
+    stepper.runSpeed();
+    return;
+  }
+
+  if (mode == MODE_MANUAL) {
+    stepper.setSpeed(0);
+    mode = MODE_IDLE;
+    disableMotorOutputs();
+    Serial.println("MANUAL RELEASE");
   }
 }
 
 void updateMotion() {
   switch (mode) {
     case MODE_MANUAL:
-      stepper.runSpeed();
+      // runSpeed() is already called from handleManualDpad() while button is held
       break;
 
     case MODE_TARGET:
@@ -248,43 +240,18 @@ void updateMotion() {
       }
       break;
 
-    case MODE_SWEEP:
+    case MODE_ARC_ONESHOT:
+      stepper.run();
       if (stepper.distanceToGo() == 0) {
-        long current = stepper.currentPosition();
-        if (current >= (sweepCenter + sweepSpan)) {
-          stepper.moveTo(sweepCenter - sweepSpan);
+        if (!arcReturnPhase) {
+          arcReturnPhase = true;
+          stepper.moveTo(arcOrigin);
         } else {
-          stepper.moveTo(sweepCenter + sweepSpan);
-        }
-      }
-      stepper.run();
-      break;
-
-    case MODE_ARC:
-      if (millis() - lastArcKickMs >= arcKickIntervalMs && stepper.distanceToGo() == 0) {
-        lastArcKickMs = millis();
-        long kick = random(-18 * arcStrength, 19 * arcStrength);
-        if (kick == 0) kick = 1;
-        stepper.moveTo(arcCenter + kick);
-      }
-      stepper.run();
-      break;
-
-    case MODE_BURST:
-      if (stepper.distanceToGo() == 0) {
-        if (burstRemaining == 0) {
           mode = MODE_IDLE;
-          break;
+          arcReturnPhase = false;
+          Serial.println("ARC SHOT DONE");
         }
-
-        burstRemaining--;
-        burstForward = !burstForward;
-        long target = burstForward
-                        ? burstBasePosition + MotionConfig::BURST_PULSE_STEPS
-                        : burstBasePosition - MotionConfig::BURST_PULSE_STEPS;
-        stepper.moveTo(target);
       }
-      stepper.run();
       break;
 
     case MODE_IDLE:
@@ -295,18 +262,18 @@ void updateMotion() {
 
 void setup() {
   Serial.begin(115200);
-  delay(300);
+  delay(500);
 
-  randomSeed((uint32_t)micros());
-
-  stepper.setMaxSpeed(MotionConfig::MAX_MANUAL_SPEED);
-  stepper.setAcceleration(MotionConfig::DEFAULT_ACCEL);
+  stepper.setMaxSpeed(MotionConfig::MAX_SPEED);
+  stepper.setAcceleration(MotionConfig::ACCELERATION);
   stepper.setCurrentPosition(0);
   stepper.disableOutputs();
   outputsEnabled = false;
 
   Dabble.begin(MotionConfig::BLE_NAME);
+
   printHelp();
+  startupWiggle();
 }
 
 void loop() {
@@ -314,7 +281,7 @@ void loop() {
 
   readButtons();
   handleButtonActions();
-  handleManualJoystick();
+  handleManualDpad();
   updateMotion();
 
   prevBtn = curBtn;

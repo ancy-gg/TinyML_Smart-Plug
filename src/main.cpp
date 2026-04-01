@@ -302,7 +302,7 @@ void setup() {
   network.setNormalIntervalMs(CLOUD_LIVE_NORMAL_INTERVAL_MS);
   network.setFaultIntervalMs(CLOUD_LIVE_FAULT_INTERVAL_MS);
 
-  updater.begin(FW_VERSION, &network, 12000, 3);
+  updater.begin(FW_VERSION, &network, 45000, 3);
   updater.setEventCallback(onOtaEvent);
   updater.setPaths(OTA_DESIRED_VERSION_PATH, OTA_FIRMWARE_URL_PATH);
   updater.setCheckInterval(60000UL);
@@ -330,6 +330,13 @@ void loop() {
   wifiMgr.update();
   updater.loop();
 
+  static String s_lastOtaErr = "";
+  const String otaErr = updater.lastError();
+  if (otaErr.length() && otaErr != s_lastOtaErr) {
+    s_lastOtaErr = otaErr;
+    network.logStatusEvent(otaErr, 0.0f, 0.0f, 0.0f, 0.0f);
+  }
+
   const bool portalActive = wifiMgr.inConfigPortal();
   const bool paused = gPauseByOta;
   const bool bootSettling = (millis() < SENSOR_BOOT_SETTLE_MS);
@@ -348,10 +355,7 @@ void loop() {
     else if (wifiPhase == WifiHandler::PHASE_AP_WAIT_CLIENT) { wifiBannerUntilMs = 0; wifiTimedOutUi = false; notification.notify(SND_WIFI_PORTAL); }
     lastWiFiPhase = wifiPhase;
   }
-  if (wifiConnected && !lastWiFiConnected) {
-    notification.notify(SND_WIFI_OK);
-    updater.requestCheckNow();
-  }
+  if (wifiConnected && !lastWiFiConnected) notification.notify(SND_WIFI_OK);
   lastWiFiConnected = wifiConnected;
 
   static FeatureFrame lastF = {};

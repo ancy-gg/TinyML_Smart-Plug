@@ -30,6 +30,10 @@ static bool isCrashReset(esp_reset_reason_t r) {
     case ESP_RST_TASK_WDT:
     case ESP_RST_WDT:
       return true;
+    // Intentionally exclude brownout here. On this board, intentional EN-off
+    // or collapsing supply can look like a brownout during shutdown and create
+    // false crash streaks that interfere with OTA recovery.
+    case ESP_RST_BROWNOUT:
     default:
       return false;
   }
@@ -199,8 +203,9 @@ void UpdateManager::setInsecureTLS(bool en) {
 void UpdateManager::loop() {
   bootGuardLoop_();
 
-  // Do not hard-block OTA checks here. Pending-verify confirmation is handled
-  // by bootGuardLoop_() after the firmware survives the stable window.
+  // Confirm as early as possible after a successful boot.
+  if (!confirmNow()) return;
+
   if (WiFi.status() != WL_CONNECTED || !_cloud || !_cloud->isReady()) return;
 
   const uint32_t now = millis();
@@ -260,21 +265,10 @@ bool UpdateManager::performUpdateFromUrl(const String& rawUrl) {
     return false;
   }
 
-  const esp_partition_t* target = esp_ota_get_next_update_partition(nullptr);
-  if (!target) {
-    _lastError = otaErr_("OTA_NO_TARGET_PARTITION");
-    return false;
-  }
-
   HTTPClient http;
   http.setTimeout(OTA_HTTP_TIMEOUT_MS);
   http.setFollowRedirects(HTTPC_STRICT_FOLLOW_REDIRECTS);
   http.useHTTP10(true);
-  http.setReuse(false);
-  http.addHeader("Cache-Control", "no-cache");
-
-  static const char* hdrKeys[] = {"Content-Type", "Content-Length", "Location"};
-  http.collectHeaders(hdrKeys, 3);
 
   bool begun = false;
   WiFiClient plainClient;
@@ -301,27 +295,7 @@ bool UpdateManager::performUpdateFromUrl(const String& rawUrl) {
     return false;
   }
 
-  const String ctype = http.header("Content-Type");
-  if (ctype.startsWith("text/") || ctype.indexOf("html") >= 0 || ctype.indexOf("json") >= 0) {
-    _lastError = String("OTA_BAD_CONTENT_TYPE: ") + ctype;
-    http.end();
-    return false;
-  }
-
   const int total = http.getSize();
-  if (total > 0) {
-    if ((size_t)total < OTA_MIN_BIN_BYTES) {
-      _lastError = otaErr_("OTA_IMAGE_TOO_SMALL", total);
-      http.end();
-      return false;
-    }
-    if ((size_t)total > target->size) {
-      _lastError = otaErr_("OTA_IMAGE_TOO_LARGE", total);
-      http.end();
-      return false;
-    }
-  }
-
   if (!Update.begin(total > 0 ? (size_t)total : UPDATE_SIZE_UNKNOWN, U_FLASH)) {
     _lastError = otaErr_("OTA_BEGIN_FAILED", Update.getError());
     http.end();
@@ -330,10 +304,9 @@ bool UpdateManager::performUpdateFromUrl(const String& rawUrl) {
 
   WiFiClient* stream = http.getStreamPtr();
   size_t written = 0;
-  uint8_t buf[4096];
+  uint8_t buf[2048];
   uint32_t lastDataMs = millis();
   int lastPct = -1;
-  bool firstChunk = true;
 
   while (http.connected() && (total < 0 || (int)written < total)) {
     const size_t avail = stream->available();
@@ -360,18 +333,7 @@ bool UpdateManager::performUpdateFromUrl(const String& rawUrl) {
       continue;
     }
 
-    if (firstChunk) {
-      firstChunk = false;
-      if (buf[0] != ESP_IMAGE_HEADER_MAGIC) {
-        _lastError = otaErr_("OTA_BAD_IMAGE_HEADER", buf[0]);
-        Update.abort();
-        http.end();
-        return false;
-      }
-    }
-
     lastDataMs = millis();
-
     const size_t w = Update.write(buf, (size_t)r);
     if (w != (size_t)r) {
       _lastError = otaErr_("OTA_WRITE_FAILED", Update.getError());
@@ -391,15 +353,13 @@ bool UpdateManager::performUpdateFromUrl(const String& rawUrl) {
     }
   }
 
-  if (written < OTA_MIN_BIN_BYTES) {
-    _lastError = otaErr_("OTA_WRITTEN_TOO_SMALL", (int)written);
-    Update.abort();
+  if (!Update.end(true)) {
+    _lastError = otaErr_("OTA_END_FAILED", Update.getError());
     http.end();
     return false;
   }
-
-  if (!Update.end(true) || !Update.isFinished()) {
-    _lastError = otaErr_("OTA_END_FAILED", Update.getError());
+  if (!Update.isFinished()) {
+    _lastError = otaErr_("OTA_NOT_FINISHED");
     http.end();
     return false;
   }
