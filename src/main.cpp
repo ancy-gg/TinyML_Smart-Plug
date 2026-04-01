@@ -1,543 +1,539 @@
 #include <Arduino.h>
-#include <Wire.h>
 #include <WiFi.h>
-#include <freertos/FreeRTOS.h>
-#include <freertos/task.h>
-#include <freertos/queue.h>
-#include <esp_log.h>
-#include <math.h>
+#include <WiFiClientSecure.h>
+#include <WiFiManager.h>
+#include <PubSubClient.h>
+#include <WebServer.h>
+#include <Update.h>
+#include <ArduinoOTA.h>
 
-#include "MainConfiguration.h"
-#include "WifiHandler.h"
-#include "FirebaseNetwork.h"
-#include "Notification.h"
-#include "UpdateManager.h"
-#include "CurrentSensor.h"
-#include "VoltageSensor.h"
-#include "TempSensor.h"
-#include "ProtectionManager.h"
-#include "ArcDetection.h"
+#include "Pins.h"
+#include "Secrets.h"
+#include "MotionConfig.h"
 
-Notification       notification(0x3C);
-WifiHandler        wifiMgr;
-FirebaseNetwork    network;
-UpdateManager      updater;
-VoltageSensor      voltSensor(PIN_VOLT_ADC);
-TempSensor         tempSensor(PIN_TEMP_ADC);
-ProtectionManager  protection;
-CurrentSensor      curSensor;
-ArcDetection       arcDetect;
-CurrentCalib       curCalib;
+namespace {
 
-static uint16_t s_raw[N_SAMP];
-static QueueHandle_t qFeat = nullptr;
-static TaskHandle_t gCore0SenseTask = nullptr;
-static bool gSafeMode = false;
-static volatile bool gPauseByOta = false;
+constexpr uint8_t HALFSTEP_SEQ[8][4] = {
+  {1, 0, 0, 0},
+  {1, 1, 0, 0},
+  {0, 1, 0, 0},
+  {0, 1, 1, 0},
+  {0, 0, 1, 0},
+  {0, 0, 1, 1},
+  {0, 0, 0, 1},
+  {1, 0, 0, 1},
+};
 
-static bool arcInputStable(bool currentValid, bool featValid, float irms) {
-  static uint32_t stableSince = 0;
-  static float refIrms = 0.0f;
-  const uint32_t now = millis();
-  if (!currentValid || !featValid || irms < ARC_MIN_IRMS_A) {
-    stableSince = 0; refIrms = irms; return false;
-  }
-  if (stableSince == 0) { stableSince = now; refIrms = irms; return false; }
-  const float tol = fmaxf(0.08f, 0.25f * fmaxf(refIrms, 0.10f));
-  if (fabsf(irms - refIrms) > tol) { stableSince = now; refIrms = irms; return false; }
-  refIrms += 0.08f * (irms - refIrms);
-  return (now - stableSince) >= 1200UL;
+WiFiManager wm;
+WiFiClientSecure net;
+PubSubClient mqtt(net);
+WebServer server(80);
+
+int seqIndex = 0;
+long logicalPosition = 0;
+long homePosition = 0;
+
+int32_t manualSteps = DEFAULT_MANUAL_STEPS;
+int32_t testSteps = DEFAULT_TEST_STEPS;
+uint32_t nudgeStepUs = DEFAULT_NUDGE_STEP_US;
+uint32_t jogStepUs = DEFAULT_JOG_STEP_US;
+uint32_t shotStepUs = DEFAULT_SHOT_STEP_US;
+uint32_t testStepUs = DEFAULT_TEST_STEP_US;
+uint32_t testPauseMs = DEFAULT_TEST_PAUSE_MS;
+
+bool stopRequested = false;
+bool releaseAfterStop = false;
+bool motionActive = false;
+String motionState = "idle";
+
+bool portalRequested = false;
+bool portalRunning = false;
+bool portalStartedThisBoot = false;
+uint32_t portalOpenedMs = 0;
+uint32_t lastMqttReconnectMs = 0;
+char deviceName[32] = {0};
+
+String ipToString(const IPAddress& ip) {
+  return String(ip[0]) + "." + String(ip[1]) + "." + String(ip[2]) + "." + String(ip[3]);
 }
 
-static bool debouncedMainsPresentForState(float vProtect) {
-  static bool init = false, stable = false;
-  static int8_t pending = -1;
-  static uint32_t pendingSince = 0;
-  const uint32_t now = millis();
-  const bool rawOn = (vProtect >= MAINS_PRESENT_ON_V);
-  const bool rawOff = (vProtect <= MAINS_PRESENT_OFF_V);
-  if (!init) { stable = rawOn; init = true; }
-  int8_t target = -1;
-  if (rawOn) target = 1; else if (rawOff) target = 0;
-  if (target >= 0 && target != (stable ? 1 : 0)) {
-    if (pending != target) { pending = target; pendingSince = now; }
-    else if ((now - pendingSince) >= MAINS_EDGE_DEBOUNCE_MS) { stable = (target != 0); pending = -1; pendingSince = 0; }
-  } else if (target == (stable ? 1 : 0)) {
-    pending = -1; pendingSince = 0;
-  }
-  return stable;
+void applyOutputs(uint8_t a, uint8_t b, uint8_t c, uint8_t d) {
+  digitalWrite(IN1_PIN, a);
+  digitalWrite(IN2_PIN, b);
+  digitalWrite(IN3_PIN, c);
+  digitalWrite(IN4_PIN, d);
 }
 
-static bool classifyUnpluggedSocket(float vRaw, float vProtect, float irmsA, bool currentValid, FaultState st, uint32_t* sinceMs) {
-  if (!sinceMs) return false;
-  const bool rawGone  = (vRaw <= MAINS_PRESENT_OFF_V);
-  const bool protGone = (vProtect <= MAINS_PRESENT_OFF_V);
-  const bool zeroLike = rawGone || protGone;
-  const bool noLoad = (!currentValid) || (irmsA <= LOAD_OFF_DETECT_A);
-  const bool faultKeep = (st == STATE_ARCING) || (st == STATE_HEATING);
-  if (zeroLike && noLoad && !faultKeep) {
-    if (*sinceMs == 0) *sinceMs = millis();
-  } else if (vRaw >= MAINS_PRESENT_ON_V || vProtect >= MAINS_PRESENT_ON_V || !noLoad || faultKeep) {
-    *sinceMs = 0;
-  }
-  return (*sinceMs != 0) && ((millis() - *sinceMs) >= UNPLUGGED_STATE_DELAY_MS);
+void releaseMotor() {
+  applyOutputs(0, 0, 0, 0);
 }
 
-static float cleanDisplayCurrent(float irmsRaw, bool currentValid, bool featValid, float vRaw, float vProtect) {
-  static bool learnStarted = false, floorLocked = false, displayGateOn = false;
-  static uint32_t learnStartMs = 0, lastUpdateMs = 0;
-  static double floorSqAcc = 0.0;
-  static uint32_t floorCount = 0;
-  static float learnedFloorA = 0.0f, dispIrms = 0.0f;
-  static float shownIrms = 0.0f;
-  static uint32_t shownAtMs = 0;
-  const uint32_t now = millis();
-  const bool mainsOn = (vProtect >= MAINS_PRESENT_ON_V);
-
-  if (vRaw <= MAINS_PRESENT_OFF_V) { dispIrms = 0.0f; shownIrms = 0.0f; displayGateOn = false; lastUpdateMs = now; shownAtMs = now; return 0.0f; }
-  if (!learnStarted && mainsOn) { learnStarted = true; learnStartMs = now; }
-
-  const bool canLearnIdle = CURRENT_IDLE_LEARN_ENABLE && learnStarted && !floorLocked && mainsOn && currentValid && !featValid &&
-                            irmsRaw > 0.005f && irmsRaw < CURRENT_IDLE_LEARN_MAX_A && ((now - learnStartMs) <= CURRENT_IDLE_LEARN_WINDOW_MS);
-  if (canLearnIdle) {
-    floorSqAcc += (double)irmsRaw * (double)irmsRaw; floorCount++;
-    learnedFloorA = sqrtf((float)(floorSqAcc / (double)floorCount));
-  }
-  if (CURRENT_IDLE_LEARN_ENABLE && learnStarted && !floorLocked && ((now - learnStartMs) > CURRENT_IDLE_LEARN_WINDOW_MS)) {
-    floorLocked = (floorCount >= CURRENT_IDLE_LEARN_MIN_FRAMES);
-  }
-
-  float irms = irmsRaw;
-  if (floorLocked && learnedFloorA > 0.005f) {
-    const float floorUsed = fmaxf(0.0f, learnedFloorA - CURRENT_IDLE_FLOOR_MARGIN_A);
-    irms = sqrtf(fmaxf(0.0f, (irms * irms) - (floorUsed * floorUsed)));
-  }
-  if (!currentValid) irms = 0.0f;
-
-  const uint32_t dtMs = (lastUpdateMs == 0) ? 0 : (now - lastUpdateMs);
-  lastUpdateMs = now;
-  const float dtS = (dtMs > 0) ? (dtMs / 1000.0f) : 0.0f;
-  const float tau = (irms <= CURRENT_DISPLAY_SMOOTH_SPLIT_A) ? CURRENT_DISPLAY_SMOOTH_TAU_LOW_S : CURRENT_DISPLAY_SMOOTH_TAU_HIGH_S;
-  const float alpha = (dtS <= 0.0f) ? 1.0f : fminf(1.0f, dtS / fmaxf(0.02f, tau));
-  dispIrms += alpha * (irms - dispIrms);
-  if (displayGateOn) { if (dispIrms < CURRENT_DISPLAY_GATE_OFF_A) displayGateOn = false; }
-  else { if (dispIrms > CURRENT_DISPLAY_GATE_ON_A) displayGateOn = true; }
-  if (!displayGateOn) dispIrms = 0.0f;
-  if ((now - shownAtMs) >= 250UL) {
-    shownIrms = dispIrms;
-    shownAtMs = now;
-  }
-  return shownIrms;
+int appDirToMotorDir(int dir) {
+  int out = (dir >= 0) ? +1 : -1;
+  return INVERT_APPLICATION_DIR ? -out : out;
 }
 
-static float cleanLogicCurrent(float irmsRaw, bool currentValid, float vRaw, float vProtect) {
-  static uint32_t mainsGoneSinceMs = 0;
-  const uint32_t now = millis();
-  const bool rawGone = (vRaw <= MAINS_PRESENT_OFF_V);
-  const bool protGone = (vProtect <= MAINS_PRESENT_OFF_V);
-  if (rawGone || protGone) {
-    if (mainsGoneSinceMs == 0) mainsGoneSinceMs = now;
-    if ((now - mainsGoneSinceMs) >= 450UL) return 0.0f;
-  } else mainsGoneSinceMs = 0;
-  if (!currentValid) return 0.0f;
-  return irmsRaw;
+void stepOnceMotor(int motorDir) {
+  seqIndex += (motorDir >= 0) ? 1 : -1;
+  if (seqIndex < 0) seqIndex = 7;
+  if (seqIndex > 7) seqIndex = 0;
+
+  applyOutputs(
+    HALFSTEP_SEQ[seqIndex][0],
+    HALFSTEP_SEQ[seqIndex][1],
+    HALFSTEP_SEQ[seqIndex][2],
+    HALFSTEP_SEQ[seqIndex][3]
+  );
 }
 
-static void handleCueEvents(float vRaw, float vProtect, float irms, bool mainsPresent, bool paused, FaultState st) {
-  static uint32_t lowSinceMs = 0, highSinceMs = 0, lastVoltWarnMs = 0;
-  static float loadBaseA = 0.0f, prevIrms = 0.0f;
-  static uint32_t stableSinceMs = 0, lastLoadCueMs = 0, mainsStableSinceMs = 0;
-  const uint32_t now = millis();
-  if (paused) return;
-  const bool stateNormal = (st == STATE_NORMAL);
-  const bool lowWarn  = (vProtect >= VOLT_UV_CANDIDATE_RAW_MIN_V && vProtect < VOLT_NORMAL_MIN_V);
-  const bool highWarn = (vProtect >= VOLT_OV_DELAY_V);
-  if (lowWarn) { if (lowSinceMs == 0) lowSinceMs = now; } else lowSinceMs = 0;
-  if (highWarn) { if (highSinceMs == 0) highSinceMs = now; } else highSinceMs = 0;
-  if (lowSinceMs && (now - lowSinceMs >= 1500U) && (now - lastVoltWarnMs >= 8000U)) { lastVoltWarnMs = now; notification.notify(SND_VOLT_LOW); }
-  if (highSinceMs && (now - highSinceMs >= 1000U) && (now - lastVoltWarnMs >= 8000U)) { lastVoltWarnMs = now; notification.notify(SND_VOLT_HIGH); }
-  if (!mainsPresent || vProtect < VOLT_UV_DELAY_V || !stateNormal) { loadBaseA = 0.0f; prevIrms = irms; stableSinceMs = 0; mainsStableSinceMs = 0; return; }
-  if (mainsStableSinceMs == 0) mainsStableSinceMs = now;
-  const float dI = fabsf(irms - prevIrms); prevIrms = irms;
-  if (dI < 0.08f) { if (stableSinceMs == 0) stableSinceMs = now; } else stableSinceMs = 0;
-  if (stableSinceMs && (now - stableSinceMs >= DEVICE_PLUG_STABLE_MS)) loadBaseA += 0.02f * (irms - loadBaseA);
-  const bool cueAllowed = ((now - mainsStableSinceMs) >= DEVICE_PLUG_CUE_INHIBIT_MS);
-  const bool firstLoad = (loadBaseA < 0.15f && irms >= 0.35f);
-  const bool addedLoad = (loadBaseA >= 0.15f && (irms - loadBaseA) >= 0.45f && dI < 0.15f);
-  if (cueAllowed && (firstLoad || addedLoad) && (now - lastLoadCueMs >= DEVICE_PLUG_CUE_COOLDOWN_MS)) {
-    notification.notify(SND_DEVICE_PLUG); lastLoadCueMs = now; loadBaseA = irms; stableSinceMs = 0;
+void publishDebug(const String& msg) {
+  String line = String("[") + String(millis()) + " ms] " + msg;
+  Serial.println(line);
+  if (mqtt.connected()) mqtt.publish(TOPIC_DEBUG, line.c_str(), false);
+}
+
+void publishDebug(const String& tag, const String& msg) {
+  publishDebug(tag + " | " + msg);
+}
+
+void publishStatus(const String& state) {
+  String s = "{";
+  s += "\"state\":\"" + state + "\",";
+  s += "\"ip\":\"" + ipToString(WiFi.localIP()) + "\",";
+  s += "\"portal\":" + String(portalRunning ? 1 : 0) + ",";
+  s += "\"saved\":" + String(wm.getWiFiIsSaved() ? 1 : 0) + ",";
+  s += "\"pos\":" + String(logicalPosition) + ",";
+  s += "\"home\":" + String(homePosition) + ",";
+  s += "\"manual_steps\":" + String(manualSteps) + ",";
+  s += "\"test_steps\":" + String(testSteps) + ",";
+  s += "\"test_us\":" + String(testStepUs) + ",";
+  s += "\"test_pause_ms\":" + String(testPauseMs) + ",";
+  s += "\"moving\":" + String(motionActive ? 1 : 0) + ",";
+  s += "\"motion\":\"" + motionState + "\"";
+  s += "}";
+  if (mqtt.connected()) mqtt.publish(TOPIC_STATUS, s.c_str(), true);
+}
+
+void pumpServices() {
+  if (portalRunning) wm.process();
+  server.handleClient();
+  ArduinoOTA.handle();
+  if (mqtt.connected()) mqtt.loop();
+}
+
+void setMotionState(const String& s) {
+  motionState = s;
+  publishStatus(s);
+}
+
+bool shouldAbortMotion() {
+  if (stopRequested) {
+    publishDebug("STOP", releaseAfterStop ? "Released" : "Stopped");
+    motionActive = false;
+    if (releaseAfterStop) releaseMotor();
+    setMotionState("idle");
+    stopRequested = false;
+    releaseAfterStop = false;
+    return true;
   }
+  return false;
 }
 
-static void onOtaEvent(OtaEvent ev, int progress) {
-  if (ev == OtaEvent::START) {
-    gPauseByOta = true; notification.setOta(true, 0); notification.notify(SND_OTA_START);
-  } else if (ev == OtaEvent::PROGRESS) {
-    notification.setOta(true, (uint8_t)constrain(progress, 0, 100));
-  } else if (ev == OtaEvent::SUCCESS) {
-    notification.setOta(true, 100); notification.notify(SND_OTA_OK); network.logStatusEvent("FIRMWARE UPDATED", 0.0f, 0.0f, 0.0f, 0.0f);
-  } else if (ev == OtaEvent::FAIL) {
-    gPauseByOta = false; notification.setOta(false, 0); notification.notify(SND_OTA_FAIL);
-  }
-}
+bool stepBlockingApp(int appDir, uint32_t stepUs, int32_t steps) {
+  const int motorDir = appDirToMotorDir(appDir);
+  motionActive = true;
+  uint32_t lastServiceUs = micros();
 
-static void Core0Task(void* pv) {
-  (void)pv;
-  ArcDetectionResult out;
-  FeatureFrame lastGood = {};
-  bool hasGood = false;
+  for (int32_t i = 0; i < steps; ++i) {
+    if (shouldAbortMotion()) return false;
 
-  while (millis() < SENSOR_BOOT_SETTLE_MS) vTaskDelay(20 / portTICK_PERIOD_MS);
+    stepOnceMotor(motorDir);
+    logicalPosition += (appDir >= 0) ? 1 : -1;
+    delayMicroseconds(stepUs);
 
-  while (true) {
-    if (gPauseByOta || gSafeMode) {
-      vTaskDelay(20 / portTICK_PERIOD_MS);
-      continue;
+    const uint32_t nowUs = micros();
+    if ((uint32_t)(nowUs - lastServiceUs) >= 5000UL) {
+      pumpServices();
+      if (shouldAbortMotion()) return false;
+      lastServiceUs = nowUs;
+      yield();
     }
+  }
 
-    FeatureFrame f = {};
-    f.uptime_ms = millis();
-    float fs_hz = FS_TARGET_HZ;
-    size_t got = curSensor.capture(s_raw, N_SAMP, &fs_hz);
+  motionActive = false;
+  return true;
+}
 
-    if (gPauseByOta || gSafeMode) {
-      vTaskDelay(20 / portTICK_PERIOD_MS);
-      continue;
-    }
+void clampSettings() {
+  if (manualSteps < MIN_STROKE_STEPS) manualSteps = MIN_STROKE_STEPS;
+  if (manualSteps > MAX_STROKE_STEPS) manualSteps = MAX_STROKE_STEPS;
+  if (testSteps < MIN_STROKE_STEPS) testSteps = MIN_STROKE_STEPS;
+  if (testSteps > MAX_STROKE_STEPS) testSteps = MAX_STROKE_STEPS;
 
-    if (got != N_SAMP || fs_hz < CURRENT_FRAME_MIN_FS_HZ) {
-      vTaskDelay(1);
-      got = curSensor.capture(s_raw, N_SAMP, &fs_hz);
-    }
+  if (nudgeStepUs < MIN_STEP_US) nudgeStepUs = MIN_STEP_US;
+  if (nudgeStepUs > MAX_STEP_US) nudgeStepUs = MAX_STEP_US;
+  if (jogStepUs < MIN_STEP_US) jogStepUs = MIN_STEP_US;
+  if (jogStepUs > MAX_STEP_US) jogStepUs = MAX_STEP_US;
+  if (shotStepUs < MIN_STEP_US) shotStepUs = MIN_STEP_US;
+  if (shotStepUs > MAX_STEP_US) shotStepUs = MAX_STEP_US;
+  if (testStepUs < MIN_STEP_US) testStepUs = MIN_STEP_US;
+  if (testStepUs > MAX_STEP_US) testStepUs = MAX_STEP_US;
 
-    if (gPauseByOta || gSafeMode) {
-      vTaskDelay(20 / portTICK_PERIOD_MS);
-      continue;
-    }
+  if (testPauseMs > 2000) testPauseMs = 2000;
+}
 
-    bool ok = false;
-    if (got == N_SAMP && fs_hz >= CURRENT_FRAME_MIN_FS_HZ) ok = arcDetect.compute(s_raw, N_SAMP, fs_hz, curCalib, MAINS_F0_HZ, out);
-    if (ok && out.current_valid) {
-      f.adc_fs_hz = out.fs_hz; f.irms = out.irms_a; f.current_valid = 1; f.feat_valid = out.feat_valid ? 1 : 0;
-      if (out.feat_valid) {
-        f.cycle_nmse = out.cycle_nmse; f.zcv = out.zcv; f.zc_dwell_ratio = out.zc_dwell_ratio;
-        f.pulse_count_per_cycle = out.pulse_count_per_cycle; f.peak_fluct_cv = out.peak_fluct_cv;
-        f.midband_residual_rms = out.midband_residual_rms; f.hf_band_energy_ratio = out.hf_band_energy_ratio;
-        f.wpe_entropy = out.wpe_entropy; f.spec_entropy = out.spec_entropy; f.thd_i = out.thd_i;
+void doStartupWiggle() {
+  publishDebug("BOOT", "Startup wiggle begin");
+  setMotionState("startup");
+  stepBlockingApp(+1, STARTUP_STEP_US, STARTUP_WIGGLE_STEPS);
+  delay(80);
+  stepBlockingApp(-1, STARTUP_STEP_US, STARTUP_WIGGLE_STEPS * 2);
+  delay(80);
+  stepBlockingApp(+1, STARTUP_STEP_US, STARTUP_WIGGLE_STEPS);
+  releaseMotor();
+  publishDebug("BOOT", "Startup wiggle end");
+  setMotionState("idle");
+}
+
+void doSelfTest() {
+  publishDebug("TEST", "Self-test wiggle");
+  doStartupWiggle();
+}
+
+void doMove(const char* tag, int appDir, uint32_t stepUs, int32_t steps) {
+  stopRequested = false;
+  releaseAfterStop = false;
+  publishDebug("MOVE", String(tag));
+  setMotionState(tag);
+  bool ok = stepBlockingApp(appDir, stepUs, steps);
+  if (ok) {
+    releaseMotor();
+    setMotionState("idle");
+  }
+}
+
+void doTestArc(int appDir) {
+  stopRequested = false;
+  releaseAfterStop = false;
+  publishDebug("TEST", appDir > 0 ? "Arc forward-back" : "Arc reverse-back");
+  setMotionState("test");
+  bool ok = stepBlockingApp(appDir, testStepUs, testSteps);
+  if (ok && testPauseMs > 0) {
+    const uint32_t pauseStart = millis();
+    while ((uint32_t)(millis() - pauseStart) < testPauseMs) {
+      pumpServices();
+      if (shouldAbortMotion()) {
+        ok = false;
+        break;
       }
-      lastGood = f; hasGood = true; if (qFeat) xQueueOverwrite(qFeat, &f);
-    } else {
-      FeatureFrame invalid = {};
-      invalid.uptime_ms = millis();
-      hasGood = false;
-      if (qFeat) xQueueOverwrite(qFeat, &invalid);
+      delay(1);
     }
-    vTaskDelay(1);
+  }
+  if (ok) {
+    ok = stepBlockingApp(-appDir, testStepUs, testSteps);
+  }
+  if (ok) {
+    releaseMotor();
+    setMotionState("idle");
   }
 }
 
+void goHome() {
+  long delta = homePosition - logicalPosition;
+  if (delta == 0) {
+    publishDebug("HOME", "Already at home");
+    return;
+  }
+  stopRequested = false;
+  releaseAfterStop = false;
+  publishDebug("HOME", "Going home");
+  setMotionState("go_home");
+  int dir = (delta > 0) ? +1 : -1;
+  bool ok = stepBlockingApp(dir, jogStepUs, labs(delta));
+  if (ok) {
+    releaseMotor();
+    setMotionState("idle");
+  }
+}
 
-static void pollMlControl(FirebaseNetwork& network, Notification& notifyUi) {
-  static uint32_t lastPoll = 0;
-  static bool lastEnabled = false;
-  if (millis() - lastPoll < ML_CONTROL_POLL_MS) return;
-  lastPoll = millis();
+void requestStop(bool release) {
+  stopRequested = true;
+  releaseAfterStop = release;
+  if (!motionActive) {
+    if (release) releaseMotor();
+    setMotionState("idle");
+    stopRequested = false;
+    releaseAfterStop = false;
+  }
+}
 
-  bool enabled = false;
-  int dur = ML_LOG_DURATION_S;
-  int labelOv = ML_UNKNOWN_LABEL;
-  String sid = "";
-  String load = "unknown";
-  (void)network.fetchMlControl(enabled, dur, labelOv, sid, load);
+void onPortalTimeout() {
+  publishDebug("PORTAL", "Timeout reached");
+}
 
-  if (dur < ML_LOG_MIN_DURATION_S) dur = ML_LOG_MIN_DURATION_S;
-  if (dur > ML_LOG_MAX_DURATION_S) dur = ML_LOG_MAX_DURATION_S;
-  if (enabled && sid.length() < 3) {
-    network.setLogEnabled(false);
-    lastEnabled = false;
+void startPortalWindow(const char* reason) {
+  if (portalRunning) {
+    publishDebug("PORTAL", String("Already open (") + reason + ")");
     return;
   }
 
-  network.setLogDurationSeconds((uint16_t)dur);
-  network.setLogSession(sid, load, labelOv);
-  network.setLogEnabled(enabled);
-  if (enabled && !lastEnabled) { notification.notify(SND_LOGGER_ON); notifyUi.triggerCollecting(1000); }
-  lastEnabled = enabled;
+  WiFi.mode(WIFI_AP_STA);
+  publishDebug("PORTAL", String("Opened (") + reason + ") SSID: " + CONFIG_AP_NAME);
+  wm.startConfigPortal(CONFIG_AP_NAME, CONFIG_AP_PASS);
+  portalRunning = true;
+  portalOpenedMs = millis();
+  publishStatus("portal");
 }
 
-static void maybeStartAutoArcCapture(FirebaseNetwork& network, Notification& notifyUi, bool paused, bool safeMode, bool modelPositive) {
-  static bool lastPositive = false;
-  static uint32_t lastAutoStartMs = 0;
-  const bool rising = (modelPositive && !lastPositive);
-  lastPositive = modelPositive;
-  if (!paused && !safeMode && !network.manualEnabled() && rising) {
-    const uint32_t now = millis();
-    if ((now - lastAutoStartMs) >= AUTO_ARC_CAPTURE_COOLDOWN_MS) {
-      if (network.startAutoCapture("model_arc", AUTO_ARC_CAPTURE_DURATION_S)) {
-        lastAutoStartMs = now; notification.notify(SND_LOGGER_ON); notifyUi.triggerCollecting(1000);
-      }
+void stopPortalWindow(const char* reason) {
+  if (!portalRunning) return;
+  publishDebug("PORTAL", String("Closed (") + reason + ")");
+  wm.stopConfigPortal();
+  portalRunning = false;
+  if (WiFi.status() == WL_CONNECTED) {
+    WiFi.mode(WIFI_STA);
+  }
+  publishStatus(WiFi.status() == WL_CONNECTED ? "idle" : "offline");
+}
+
+void handlePortalLifecycle() {
+  if (portalRunning) {
+    wm.process();
+    if ((uint32_t)(millis() - portalOpenedMs) >= (uint32_t)CONFIG_PORTAL_TIMEOUT_S * 1000UL) {
+      stopPortalWindow("timeout");
     }
   }
 }
+
+void handleRoot() {
+  String html;
+  html += "<html><head><meta name='viewport' content='width=device-width,initial-scale=1'>";
+  html += "<title>Arc Generator</title></head><body style='font-family:Arial,sans-serif;padding:20px'>";
+  html += "<h2>Arc Generator</h2>";
+  html += "<p>IP: " + ipToString(WiFi.localIP()) + "</p>";
+  html += "<p>Position: " + String(logicalPosition) + "</p>";
+  html += "<p>Home: " + String(homePosition) + "</p>";
+  html += "<p>Manual steps: " + String(manualSteps) + "</p>";
+  html += "<p>Test steps: " + String(testSteps) + "</p>";
+  html += "<p>Test step us: " + String(testStepUs) + "</p>";
+  html += "<p>Test pause ms: " + String(testPauseMs) + "</p>";
+  html += "<p>Portal: " + String(portalRunning ? "OPEN" : "CLOSED") + "</p>";
+  html += "<p><a href='/update'>Open OTA Update</a></p>";
+  html += "</body></html>";
+  server.send(200, "text/html", html);
+}
+
+void handleUpdatePage() {
+  String html;
+  html += "<html><body style='font-family:Arial,sans-serif;padding:20px'>";
+  html += "<h2>ESP32 OTA Upload</h2>";
+  html += "<form method='POST' action='/update' enctype='multipart/form-data'>";
+  html += "<input type='file' name='update'><br><br>";
+  html += "<input type='submit' value='Upload'>";
+  html += "</form></body></html>";
+  server.send(200, "text/html", html);
+}
+
+void handleUpdateUpload() {
+  HTTPUpload& upload = server.upload();
+  if (upload.status == UPLOAD_FILE_START) {
+    publishDebug("OTA", "Upload started");
+    requestStop(true);
+    if (!Update.begin(UPDATE_SIZE_UNKNOWN)) {
+      Update.printError(Serial);
+    }
+  } else if (upload.status == UPLOAD_FILE_WRITE) {
+    if (Update.write(upload.buf, upload.currentSize) != upload.currentSize) {
+      Update.printError(Serial);
+    }
+  } else if (upload.status == UPLOAD_FILE_END) {
+    if (Update.end(true)) {
+      publishDebug("OTA", "Upload successful, rebooting");
+    } else {
+      Update.printError(Serial);
+      publishDebug("OTA", "Upload failed");
+    }
+  }
+}
+
+void setupWebOta() {
+  server.on("/", HTTP_GET, handleRoot);
+  server.on("/update", HTTP_GET, handleUpdatePage);
+  server.on(
+    "/update", HTTP_POST,
+    []() {
+      bool ok = !Update.hasError();
+      server.send(200, "text/plain", ok ? "OK, rebooting" : "FAIL");
+      delay(250);
+      if (ok) ESP.restart();
+    },
+    handleUpdateUpload
+  );
+  server.begin();
+}
+
+void setupArduinoOta() {
+  ArduinoOTA.setHostname(deviceName);
+  ArduinoOTA.onStart([]() { publishDebug("OTA", "ArduinoOTA start"); });
+  ArduinoOTA.onEnd([]() { publishDebug("OTA", "ArduinoOTA end"); });
+  ArduinoOTA.onError([](ota_error_t error) {
+    publishDebug("OTA", String("ArduinoOTA error ") + String((int)error));
+  });
+  ArduinoOTA.begin();
+}
+
+void mqttCallback(char* topic, byte* payload, unsigned int length) {
+  String t(topic);
+  String msg;
+  msg.reserve(length);
+  for (unsigned int i = 0; i < length; ++i) msg += (char)payload[i];
+  msg.trim();
+
+  publishDebug("MQTT", String("RX ") + t + " = " + msg);
+
+  if (t == TOPIC_CMD) {
+    if (msg == "NUDGE_FWD") doMove("nudge_fwd", +1, nudgeStepUs, manualSteps);
+    else if (msg == "NUDGE_REV") doMove("nudge_rev", -1, nudgeStepUs, manualSteps);
+    else if (msg == "JOG_FWD") doMove("jog_fwd", +1, jogStepUs, manualSteps);
+    else if (msg == "JOG_REV") doMove("jog_rev", -1, jogStepUs, manualSteps);
+    else if (msg == "SHOT_FWD") doMove("shot_fwd", +1, shotStepUs, manualSteps);
+    else if (msg == "SHOT_REV") doMove("shot_rev", -1, shotStepUs, manualSteps);
+    else if (msg == "TEST" || msg == "TEST_FWD") doTestArc(+1);
+    else if (msg == "TEST_REV") doTestArc(-1);
+    else if (msg == "STOP") requestStop(false);
+    else if (msg == "RELEASE") requestStop(true);
+    else if (msg == "SAVE_HOME") { homePosition = logicalPosition; publishDebug("HOME", "Saved home position"); setMotionState("idle"); }
+    else if (msg == "GO_HOME") goHome();
+    else if (msg == "SELFTEST") doSelfTest();
+    else if (msg == "OPEN_AP") { portalRequested = true; publishDebug("PORTAL", "Open requested by MQTT"); }
+    else if (msg.startsWith("SET_MANUAL_STEPS ")) { manualSteps = msg.substring(17).toInt(); clampSettings(); publishDebug("CFG", String("Manual steps = ") + String(manualSteps)); setMotionState("idle"); }
+    else if (msg.startsWith("SET_TEST_STEPS ")) { testSteps = msg.substring(15).toInt(); clampSettings(); publishDebug("CFG", String("Test steps = ") + String(testSteps)); setMotionState("idle"); }
+    else if (msg.startsWith("SET_TEST_US ")) { testStepUs = msg.substring(12).toInt(); clampSettings(); publishDebug("CFG", String("Test speed us = ") + String(testStepUs)); setMotionState("idle"); }
+    else if (msg.startsWith("SET_TEST_PAUSE_MS ")) { testPauseMs = msg.substring(18).toInt(); clampSettings(); publishDebug("CFG", String("Test pause ms = ") + String(testPauseMs)); setMotionState("idle"); }
+    else {
+      publishDebug("MQTT", "Unknown command");
+    }
+    return;
+  }
+
+  if (t == TOPIC_SLIDER_MANUAL_STEPS) {
+    manualSteps = msg.toInt();
+    clampSettings();
+    publishDebug("CFG", String("Manual steps = ") + String(manualSteps));
+    setMotionState("idle");
+  } else if (t == TOPIC_SLIDER_TEST_STEPS) {
+    testSteps = msg.toInt();
+    clampSettings();
+    publishDebug("CFG", String("Test steps = ") + String(testSteps));
+    setMotionState("idle");
+  } else if (t == TOPIC_SLIDER_TEST_US) {
+    testStepUs = msg.toInt();
+    clampSettings();
+    publishDebug("CFG", String("Test speed us = ") + String(testStepUs));
+    setMotionState("idle");
+  } else if (t == TOPIC_SLIDER_TEST_PAUSE_MS) {
+    testPauseMs = msg.toInt();
+    clampSettings();
+    publishDebug("CFG", String("Test pause ms = ") + String(testPauseMs));
+    setMotionState("idle");
+  }
+}
+
+void connectMqtt() {
+  mqtt.setServer(MQTT_HOST, MQTT_PORT);
+  mqtt.setCallback(mqttCallback);
+  mqtt.setBufferSize(512);
+
+  if (mqtt.connected()) return;
+  if (WiFi.status() != WL_CONNECTED) return;
+
+  const uint32_t now = millis();
+  if (now - lastMqttReconnectMs < 2000) return;
+  lastMqttReconnectMs = now;
+
+  publishDebug("MQTT", "Connecting");
+  if (mqtt.connect(deviceName, MQTT_USER, MQTT_PASS)) {
+    mqtt.subscribe(TOPIC_CMD);
+    mqtt.subscribe(TOPIC_SLIDER_MANUAL_STEPS);
+    mqtt.subscribe(TOPIC_SLIDER_TEST_STEPS);
+    mqtt.subscribe(TOPIC_SLIDER_TEST_US);
+    mqtt.subscribe(TOPIC_SLIDER_TEST_PAUSE_MS);
+    publishDebug("MQTT", "Connected");
+    publishStatus("idle");
+  } else {
+    publishDebug("MQTT", String("Connect failed rc=") + String(mqtt.state()));
+  }
+}
+
+void startStartupPortalWindow() {
+  wm.setConfigPortalBlocking(false);
+  wm.setConfigPortalTimeout(CONFIG_PORTAL_TIMEOUT_S);
+  wm.setConfigPortalTimeoutCallback(onPortalTimeout);
+  wm.setWiFiAutoReconnect(true);
+  wm.setConnectTimeout(8);
+  wm.setConnectRetries(1);
+  wm.setBreakAfterConfig(false);
+
+  WiFi.mode(WIFI_AP_STA);
+  WiFi.setAutoReconnect(true);
+  startPortalWindow("boot");
+
+  if (wm.getWiFiIsSaved()) {
+    publishDebug("WIFI", String("Saved SSID: ") + wm.getWiFiSSID());
+    WiFi.begin();
+  } else {
+    publishDebug("WIFI", "No saved Wi-Fi");
+  }
+
+  portalStartedThisBoot = true;
+}
+
+} // namespace
 
 void setup() {
-  esp_log_level_set("*", ESP_LOG_NONE);
-  notification.begin(PIN_BUZZER_PWM);
-  notification.startBootSequence(3600);
-  protection.begin(PIN_LATCH_ON, PIN_LATCH_OFF);
-  notification.notify(SND_BOOT);
+  pinMode(IN1_PIN, OUTPUT);
+  pinMode(IN2_PIN, OUTPUT);
+  pinMode(IN3_PIN, OUTPUT);
+  pinMode(IN4_PIN, OUTPUT);
+  releaseMotor();
 
-  voltSensor.begin();
-  voltSensor.setWindowMs(500);
-  voltSensor.setClampHysteresis(12.0f, 24.0f);
-  voltSensor.setLongAverage(2.6f, 18.0f);
-  voltSensor.setCubicCalib(VOLTAGE_CAL_C3, VOLTAGE_CAL_C2, VOLTAGE_CAL_C1, VOLTAGE_CAL_C0);
+  Serial.begin(115200);
+  delay(300);
 
-  curCalib.cubic3 = CURRENT_CAL_C3; curCalib.cubic2 = CURRENT_CAL_C2; curCalib.cubic1 = CURRENT_CAL_C1; curCalib.cubic0 = CURRENT_CAL_C0;
-  curSensor.setCalib(curCalib);
-  tempSensor.begin(); tempSensor.setLongAverage(8.0f, 1.0f);
+  uint64_t chip = ESP.getEfuseMac();
+  snprintf(deviceName, sizeof(deviceName), "ArcGen-%04X", (uint16_t)(chip & 0xFFFF));
 
-  network.begin(FIREBASE_API_KEY, FIREBASE_DB_URL);
-  network.setFirmwareVersion(FW_VERSION);
-  network.setNormalIntervalMs(CLOUD_LIVE_NORMAL_INTERVAL_MS);
-  network.setFaultIntervalMs(CLOUD_LIVE_FAULT_INTERVAL_MS);
+  net.setInsecure();
 
-  updater.begin(FW_VERSION, &network, 45000, 3);
-  updater.setEventCallback(onOtaEvent);
-  updater.setPaths(OTA_DESIRED_VERSION_PATH, OTA_FIRMWARE_URL_PATH);
-  updater.setCheckInterval(10000UL);
-  gSafeMode = updater.safeMode();
-
-  if (!gSafeMode) {
-    if (curSensor.begin()) {
-      qFeat = xQueueCreate(1, sizeof(FeatureFrame));
-      xTaskCreatePinnedToCore(Core0Task, "Core0Sense", 16384, nullptr, 3, &gCore0SenseTask, 0);
-      notification.showStatus("Sensors", "MCP3204 ready");
-    } else {
-      notification.showStatus("WARN", "No MCP3204"); delay(700);
-    }
-  } else {
-    notification.showStatus("SAFE MODE", "OTA only");
-  }
-
-  wifiMgr.begin([](WiFiManager* wm) { (void)wm; });
-  network.setLogEnabled(false);
-  network.setLogDurationSeconds(ML_LOG_DURATION_S);
+  startStartupPortalWindow();
+  setupWebOta();
+  setupArduinoOta();
+  doStartupWiggle();
 }
 
 void loop() {
-  network.updateClock();
-  wifiMgr.update();
-  updater.loop();
+  handlePortalLifecycle();
+  server.handleClient();
+  ArduinoOTA.handle();
 
-  static String s_lastOtaErr = "";
-  const String otaErr = updater.lastError();
-  if (otaErr.length() && otaErr != s_lastOtaErr) {
-    s_lastOtaErr = otaErr;
-    network.logStatusEvent(otaErr, 0.0f, 0.0f, 0.0f, 0.0f);
+  if (!mqtt.connected()) connectMqtt();
+  mqtt.loop();
+
+  if (portalRequested) {
+    portalRequested = false;
+    startPortalWindow("mqtt_cmd");
   }
 
-  const bool portalActive = wifiMgr.inConfigPortal();
-  const bool paused = gPauseByOta;
-  const bool bootSettling = (millis() < SENSOR_BOOT_SETTLE_MS);
-  const bool protectionInhibit = (millis() < (SENSOR_BOOT_SETTLE_MS + PROTECTION_INHIBIT_MS));
-
-  static WifiHandler::Phase lastWiFiPhase = WifiHandler::PHASE_BOOT_CONNECT;
-  static bool lastWiFiConnected = false;
-  static uint32_t wifiBannerUntilMs = 0;
-  static bool wifiTimedOutUi = false;
-  const auto wifiPhase = wifiMgr.phase();
-  const bool wifiConnected = wifiMgr.isConnected();
-  if (wifiPhase != lastWiFiPhase) {
-    if (wifiPhase == WifiHandler::PHASE_CONNECTING) { wifiBannerUntilMs = millis() + 2500UL; wifiTimedOutUi = false; }
-    else if (wifiPhase == WifiHandler::PHASE_TIMEOUT) { wifiBannerUntilMs = millis() + 2500UL; wifiTimedOutUi = true; }
-    else if (wifiPhase == WifiHandler::PHASE_CONNECTED) { wifiBannerUntilMs = 0; wifiTimedOutUi = false; notification.triggerConnected(1500UL); }
-    else if (wifiPhase == WifiHandler::PHASE_AP_WAIT_CLIENT) { wifiBannerUntilMs = 0; wifiTimedOutUi = false; notification.notify(SND_WIFI_PORTAL); }
-    lastWiFiPhase = wifiPhase;
-  }
-  if (wifiConnected && !lastWiFiConnected) notification.notify(SND_WIFI_OK);
-  lastWiFiConnected = wifiConnected;
-
-  static FeatureFrame lastF = {};
-  static bool hasLast = false;
-  static uint32_t lastFeatRxMs = 0;
-  FeatureFrame f;
-  if (qFeat && xQueueReceive(qFeat, &f, 0) == pdTRUE) {
-    lastF = f; hasLast = true; lastFeatRxMs = millis();
-  } else if (hasLast) {
-    f = lastF;
-    if ((millis() - lastFeatRxMs) > FEAT_STALE_MS) {
-      f.irms = 0.0f; f.current_valid = 0; f.feat_valid = 0; f.model_pred = 0; f.adc_fs_hz = 0.0f;
-      f.cycle_nmse = f.zcv = f.zc_dwell_ratio = f.pulse_count_per_cycle = f.peak_fluct_cv = 0.0f;
-      f.midband_residual_rms = f.hf_band_energy_ratio = f.wpe_entropy = f.spec_entropy = f.thd_i = 0.0f;
-      lastF = f;
-    }
-  } else { memset(&f, 0, sizeof(f)); f.uptime_ms = millis(); }
-
-  static float vRms = 0.0f, vFast = 0.0f, vRaw = 0.0f, tC = 0.0f;
-  static uint32_t tTemp = 0;
-  float newV = voltSensor.update();
-  if (newV >= 0.0f) { vRms = newV; vFast = voltSensor.protectVrms(); vRaw = voltSensor.rawVrms(); }
-  if (millis() - tTemp >= 500) { tTemp = millis(); float newT = tempSensor.readTempC(); if (newT > -50.0f && newT < 150.0f) tC = newT; }
-
-  static bool lastMainsPresentForFeat = false;
-  const bool mainsPresentForFeat = (vFast >= MAINS_PRESENT_ON_V);
-  if (mainsPresentForFeat && !lastMainsPresentForFeat) {
-    hasLast = false;
-    lastFeatRxMs = 0;
-    memset(&lastF, 0, sizeof(lastF));
-  }
-  lastMainsPresentForFeat = mainsPresentForFeat;
-
-  f.vrms = vRms; f.temp_c = tC;
-  const float irmsRawMeasured = f.irms;
-  float irmsRawForLogic = cleanLogicCurrent(irmsRawMeasured, f.current_valid != 0, vRaw, vFast);
-  if (notification.shouldSuppressCurrentArtifacts() && irmsRawForLogic < BUZZER_ARTIFACT_MAX_A) {
-    irmsRawForLogic = 0.0f;
-    f.current_valid = 0;
-    f.feat_valid = 0;
-  }
-  f.irms = cleanDisplayCurrent(irmsRawForLogic, f.current_valid != 0, f.feat_valid != 0, vRaw, vFast);
-  if (irmsRawForLogic < FEATURE_MIN_IRMS_A) {
-    f.feat_valid = 0; f.cycle_nmse = f.zcv = f.zc_dwell_ratio = f.pulse_count_per_cycle = f.peak_fluct_cv = 0.0f;
-    f.midband_residual_rms = f.hf_band_energy_ratio = f.wpe_entropy = f.spec_entropy = f.thd_i = 0.0f;
-  }
-
-  const float apparentPowerVa = (vRms > 0.10f && f.irms > 0.001f) ? (vRms * f.irms) : 0.0f;
-  const bool voltageNormal = (vFast >= VOLT_NORMAL_MIN_V && vFast <= VOLT_NORMAL_MAX_V);
-  const bool arcEligible = (!gSafeMode && !paused && !bootSettling && !protectionInhibit && voltageNormal &&
-                            arcInputStable(f.current_valid, f.feat_valid, irmsRawForLogic));
-
-  network.pollControls(!gSafeMode && !paused && !portalActive && wifiConnected, portalActive);
-
-  const bool faultClearRequested = (!gSafeMode) ? network.consumeFaultClearRequest() : false;
-  const bool revertFirmwareRequested = network.consumeRevertFirmwareRequest();
-  const bool otaCheckRequested = network.consumeOtaCheckRequest();
-  if (otaCheckRequested) updater.requestCheckNow();
-  if (faultClearRequested) { protection.resetLatch(); notification.notify(SND_RESET_ACK); notification.clearFaultAlert(); }
-  if (revertFirmwareRequested) {
-    network.logStatusEvent("FIRMWARE REVERT REQUESTED", 0.0f, 0.0f, 0.0f, 0.0f);
-    if (!updater.rollbackToPrevious()) {
-      network.logStatusEvent("FIRMWARE REVERT FAILED", 0.0f, 0.0f, 0.0f, 0.0f);
+  static wl_status_t lastWifi = WL_IDLE_STATUS;
+  wl_status_t nowStatus = WiFi.status();
+  if (nowStatus != lastWifi) {
+    lastWifi = nowStatus;
+    if (nowStatus == WL_CONNECTED) {
+      publishDebug("WIFI", String("Connected to ") + WiFi.SSID() + " | IP: " + ipToString(WiFi.localIP()));
+      publishStatus("idle");
+    } else {
+      publishDebug("WIFI", String("Status = ") + String((int)nowStatus));
+      if (!portalRunning && portalStartedThisBoot) publishStatus("offline");
     }
   }
-
-  int pred = 0;
-  if (arcEligible) {
-    pred = arcDetect.predict(f.cycle_nmse, f.zcv, f.zc_dwell_ratio, f.pulse_count_per_cycle, f.peak_fluct_cv,
-                             f.midband_residual_rms, f.hf_band_energy_ratio, f.wpe_entropy, f.spec_entropy, f.thd_i,
-                             f.vrms, irmsRawForLogic, f.temp_c);
-  }
-  f.model_pred = (uint8_t)pred;
-
-  FaultState st = STATE_NORMAL;
-  if (!bootSettling) st = protection.update(vFast, vRaw, tC, irmsRawForLogic, f.model_pred, arcEligible);
-  if (gSafeMode) st = STATE_NORMAL;
-
-  static uint32_t noPowerSinceMsCtl = 0;
-  static bool unpluggedOffIssued = false;
-  const bool unpluggedLiveCtl = classifyUnpluggedSocket(vRaw, vFast, irmsRawForLogic, f.current_valid != 0, st, &noPowerSinceMsCtl);
-  if (unpluggedLiveCtl) {
-    if (!unpluggedOffIssued) {
-      protection.pulseRelayOff();
-      unpluggedOffIssued = true;
-    }
-  } else {
-    unpluggedOffIssued = false;
-  }
-  const bool controlsLocked = gSafeMode || paused || bootSettling || protectionInhibit || unpluggedLiveCtl || protection.webControlLocked() || protection.voltageLockoutActive();
-  const bool portalRequested = (!gSafeMode) ? network.consumePortalRequest() : false;
-  const bool relayOnRequested = (!gSafeMode) ? network.consumeRelayOnRequest() : false;
-  const bool relayOffRequested = (!gSafeMode) ? network.consumeRelayOffRequest() : false;
-  if (!gSafeMode) {
-    if (portalRequested && !controlsLocked) wifiMgr.requestPortal(true);
-    if (!controlsLocked) {
-      if (relayOffRequested) {
-        protection.pulseRelayOff();
-        notification.notify(SND_RESET_ACK);
-      } else if (relayOnRequested) {
-        protection.pulseRelayOn();
-        notification.notify(SND_RESET_ACK);
-      }
-    }
-  }
-
-  const bool tripOffEdge = protection.consumeTripOffEdge();
-  const bool autoOnEdge  = protection.consumeAutoOnEdge();
-  if (tripOffEdge) protection.pulseRelayOff();
-  if (autoOnEdge && !controlsLocked) protection.pulseRelayOn();
-
-  protection.apply(st, vRms, vFast, irmsRawForLogic, tC);
-  notification.updateBuzzer(st, vFast, irmsRawForLogic, tC);
-  const bool mainsPresentStable = debouncedMainsPresentForState(vFast);
-  handleCueEvents(vRaw, vFast, irmsRawForLogic, mainsPresentStable, paused || gSafeMode || protectionInhibit, st);
-
-  maybeStartAutoArcCapture(network, notification, paused || protectionInhibit, gSafeMode, (arcEligible && f.model_pred == 1));
-  if (!paused && !gSafeMode) pollMlControl(network, notification); else network.setLogEnabled(false);
-  if (!paused && !gSafeMode) {
-    static uint32_t lastMl = 0;
-    const uint32_t period = 1000UL / ML_LOG_RATE_HZ;
-    if (millis() - lastMl >= period) {
-      lastMl = millis(); f.epoch_ms = network.isSynced() ? network.nowEpochMs() : 0;
-      FeatureFrame fLog = f; fLog.irms = irmsRawForLogic; network.ingestLog(fLog, st, protection.arcCounter());
-    }
-  }
-
-  static FaultState displayFaultState = STATE_NORMAL;
-  static uint32_t displayFaultUntil = 0;
-  if (faultClearRequested) { displayFaultState = STATE_NORMAL; displayFaultUntil = 0; }
-  if (st != STATE_NORMAL) { displayFaultState = st; displayFaultUntil = millis() + FAULT_ALERT_MIN_MS; }
-  else if (displayFaultState != STATE_NORMAL && (int32_t)(millis() - displayFaultUntil) >= 0) { displayFaultState = STATE_NORMAL; displayFaultUntil = 0; }
-  const bool displayFaultActive = (displayFaultState != STATE_NORMAL) && ((int32_t)(displayFaultUntil - millis()) > 0);
-
-  static uint32_t noPowerSinceMsOled = 0;
-  const bool unpluggedLiveOled = classifyUnpluggedSocket(vRaw, vFast, irmsRawForLogic, f.current_valid != 0, st, &noPowerSinceMsOled);
-  OledOverlay ov = OledOverlay::NONE;
-  if (!gPauseByOta && !bootSettling) {
-    if (displayFaultActive) {
-      if (displayFaultState == STATE_HEATING) ov = OledOverlay::FAULT_HEAT;
-      else if (displayFaultState == STATE_ARCING) ov = OledOverlay::FAULT_ARC;
-      else if (displayFaultState == STATE_OVERVOLTAGE) ov = OledOverlay::FAULT_OVERVOLT;
-      else if (displayFaultState == STATE_UNDERVOLTAGE) ov = OledOverlay::FAULT_UNDERVOLT;
-      else if (displayFaultState == STATE_OVERLOAD || displayFaultState == STATE_SUSTAINED_OVERLOAD) ov = OledOverlay::FAULT_OVERLOAD;
-    } else if (unpluggedLiveOled) ov = OledOverlay::UNPLUGGED;
-  }
-
-  notification.setOverlay(ov); notification.setState(displayFaultActive ? displayFaultState : st); notification.setMeasurements(vRms, f.irms, apparentPowerVa, tC);
-  const bool showWifiWait = (!wifiConnected && (wifiPhase == WifiHandler::PHASE_CONNECTING || wifiPhase == WifiHandler::PHASE_AP_WAIT_CLIENT || wifiPhase == WifiHandler::PHASE_PORTAL_ACTIVE)) &&
-                            ((wifiBannerUntilMs == 0) || ((int32_t)(wifiBannerUntilMs - millis()) > 0) || portalActive || wifiPhase == WifiHandler::PHASE_AP_WAIT_CLIENT);
-  notification.setWiFi(wifiConnected, wifiMgr.rssi(), wifiMgr.isBlockingPhase(), portalActive, wifiTimedOutUi, wifiPhase == WifiHandler::PHASE_AP_WAIT_CLIENT);
-  if (gPauseByOta) notification.setOta(true, 0); else if (!showWifiWait) notification.setOta(false, 0);
-  notification.render();
-
-  static FaultState lastImmediateFaultState = STATE_NORMAL;
-  if (!gSafeMode && !paused && !bootSettling) {
-    if (st != STATE_NORMAL && (st != lastImmediateFaultState || tripOffEdge)) {
-      FeatureFrame fHist = f; fHist.irms = irmsRawForLogic; (void)network.logFeatureEvent(String(stateToCstr(st)), fHist, apparentPowerVa, tripOffEdge);
-    }
-    lastImmediateFaultState = st;
-  }
-
-  static uint32_t lastLive = 0;
-  if (millis() - lastLive > 1000) {
-    lastLive = millis();
-    static uint32_t noPowerSinceMs = 0;
-    const bool unpluggedLive = classifyUnpluggedSocket(vRaw, vFast, irmsRawForLogic, f.current_valid != 0, st, &noPowerSinceMs);
-    String stateStr;
-    if (gPauseByOta) stateStr = "OTA_UPDATING";
-    else if (portalActive) stateStr = "CONFIG_PORTAL";
-    else if (bootSettling || protectionInhibit) stateStr = "STARTUP_STABILIZING";
-    else if (gSafeMode) stateStr = "SAFE_MODE";
-    else if (unpluggedLive && st != STATE_ARCING && st != STATE_HEATING) stateStr = "UNPLUGGED";
-    else stateStr = String(stateToCstr(st));
-    network.requestLiveUpdate(vRms, f.irms, apparentPowerVa, tC,
-                              f.cycle_nmse, f.zcv, f.zc_dwell_ratio,
-                              f.pulse_count_per_cycle, f.peak_fluct_cv,
-                              f.midband_residual_rms, f.hf_band_energy_ratio,
-                              f.wpe_entropy, f.spec_entropy, f.thd_i,
-                              f.model_pred, stateStr);
-  }
-
-  network.loop();
-  delay(2);
 }

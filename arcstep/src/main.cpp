@@ -3,19 +3,17 @@
 #include <WiFiClientSecure.h>
 #include <WiFiManager.h>
 #include <PubSubClient.h>
+#include <WebServer.h>
+#include <Update.h>
+#include <ArduinoOTA.h>
 
 #include "Pins.h"
 #include "Secrets.h"
 #include "MotionConfig.h"
 
-struct Segment {
-  int32_t steps = 0;
-  int8_t dir = 1;            // +1 forward, -1 backward
-  uint32_t stepUs = 800;
-  const char* label = "";
-};
+namespace {
 
-static const uint8_t HALFSTEP_SEQ[8][4] = {
+constexpr uint8_t HALFSTEP_SEQ[8][4] = {
   {1, 0, 0, 0},
   {1, 1, 0, 0},
   {0, 1, 0, 0},
@@ -23,367 +21,485 @@ static const uint8_t HALFSTEP_SEQ[8][4] = {
   {0, 0, 1, 0},
   {0, 0, 1, 1},
   {0, 0, 0, 1},
-  {1, 0, 0, 1}
+  {1, 0, 0, 1},
 };
 
-WiFiClientSecure secureClient;
-PubSubClient mqtt(secureClient);
 WiFiManager wm;
+WiFiClientSecure net;
+PubSubClient mqtt(net);
+WebServer server(80);
 
-String topicCmd;
-String topicSetStroke;
-String topicSetArcUs;
-String topicSetNudgeUs;
-String topicSetJogUs;
-String topicSetNudgeSteps;
-String topicStatus;
-String topicDebug;
-String topicPos;
-String topicCfg;
+int seqIndex = 0;
+long logicalPosition = 0;
+long homePosition = 0;
 
-Segment plan[4];
-uint8_t planCount = 0;
-uint8_t planIndex = 0;
-int32_t segmentStepsRemaining = 0;
-uint32_t currentStepUs = DEFAULT_ARC_STEP_US;
-int8_t currentDir = 1;
-bool releaseAfterPlan = true;
-bool motorEnabled = false;
-uint8_t phaseIndex = 0;
-int32_t currentPos = 0;
-int32_t homePos = 0;
-
-int32_t arcStrokeSteps = DEFAULT_ARC_STROKE_STEPS;
-int32_t nudgeSteps = DEFAULT_NUDGE_STEPS;
-uint32_t arcStepUs = DEFAULT_ARC_STEP_US;
+int32_t manualSteps = DEFAULT_MANUAL_STEPS;
+int32_t testSteps = DEFAULT_TEST_STEPS;
 uint32_t nudgeStepUs = DEFAULT_NUDGE_STEP_US;
-uint32_t homeStepUs = DEFAULT_HOME_STEP_US;
 uint32_t jogStepUs = DEFAULT_JOG_STEP_US;
+uint32_t shotStepUs = DEFAULT_SHOT_STEP_US;
+uint32_t testStepUs = DEFAULT_TEST_STEP_US;
+uint32_t testPauseMs = DEFAULT_TEST_PAUSE_MS;
 
-unsigned long lastStepMicros = 0;
-unsigned long lastWiFiAttemptMs = 0;
-unsigned long lastMqttAttemptMs = 0;
-unsigned long lastStatusMs = 0;
+bool stopRequested = false;
+bool releaseAfterStop = false;
+bool motionActive = false;
+String motionState = "idle";
 
-void publishDebug(const String& msg) {
-  Serial.println(msg);
-  if (mqtt.connected()) mqtt.publish(topicDebug.c_str(), msg.c_str(), false);
+bool portalRequested = false;
+bool portalRunning = false;
+bool portalStartedThisBoot = false;
+uint32_t portalOpenedMs = 0;
+uint32_t lastMqttReconnectMs = 0;
+char deviceName[32] = {0};
+
+String ipToString(const IPAddress& ip) {
+  return String(ip[0]) + "." + String(ip[1]) + "." + String(ip[2]) + "." + String(ip[3]);
 }
 
-void publishStatus(const String& msg, bool retained = false) {
-  Serial.println(msg);
-  if (mqtt.connected()) mqtt.publish(topicStatus.c_str(), msg.c_str(), retained);
-}
-
-void publishPos() {
-  char buf[24];
-  snprintf(buf, sizeof(buf), "%ld", static_cast<long>(currentPos));
-  if (mqtt.connected()) mqtt.publish(topicPos.c_str(), buf, false);
-}
-
-void publishConfig() {
-  char buf[128];
-  snprintf(buf, sizeof(buf),
-           "stroke=%ld,arc_us=%lu,nudge_steps=%ld,nudge_us=%lu,jog_us=%lu,home=%ld,pos=%ld",
-           static_cast<long>(arcStrokeSteps),
-           static_cast<unsigned long>(arcStepUs),
-           static_cast<long>(nudgeSteps),
-           static_cast<unsigned long>(nudgeStepUs),
-           static_cast<unsigned long>(jogStepUs),
-           static_cast<long>(homePos),
-           static_cast<long>(currentPos));
-  if (mqtt.connected()) mqtt.publish(topicCfg.c_str(), buf, true);
-}
-
-void setOutputs(uint8_t a, uint8_t b, uint8_t c, uint8_t d) {
+void applyOutputs(uint8_t a, uint8_t b, uint8_t c, uint8_t d) {
   digitalWrite(IN1_PIN, a);
   digitalWrite(IN2_PIN, b);
   digitalWrite(IN3_PIN, c);
   digitalWrite(IN4_PIN, d);
 }
 
-void applyPhase(uint8_t idx) {
-  setOutputs(HALFSTEP_SEQ[idx][0], HALFSTEP_SEQ[idx][1], HALFSTEP_SEQ[idx][2], HALFSTEP_SEQ[idx][3]);
-}
-
-void enableMotor() {
-  if (!motorEnabled) {
-    motorEnabled = true;
-    applyPhase(phaseIndex);
-  }
-}
-
 void releaseMotor() {
-  setOutputs(0, 0, 0, 0);
-  motorEnabled = false;
+  applyOutputs(0, 0, 0, 0);
 }
 
-void stepOnce(int8_t dir) {
-  enableMotor();
-  phaseIndex = static_cast<uint8_t>((phaseIndex + (dir > 0 ? 1 : 7)) & 0x07);
-  applyPhase(phaseIndex);
-  currentPos += (dir > 0 ? 1 : -1);
+int appDirToMotorDir(int dir) {
+  int out = (dir >= 0) ? +1 : -1;
+  return INVERT_APPLICATION_DIR ? -out : out;
 }
 
-void clearPlan(bool releaseMotorNow) {
-  planCount = 0;
-  planIndex = 0;
-  segmentStepsRemaining = 0;
-  if (releaseMotorNow) releaseMotor();
+void stepOnceMotor(int motorDir) {
+  seqIndex += (motorDir >= 0) ? 1 : -1;
+  if (seqIndex < 0) seqIndex = 7;
+  if (seqIndex > 7) seqIndex = 0;
+
+  applyOutputs(
+    HALFSTEP_SEQ[seqIndex][0],
+    HALFSTEP_SEQ[seqIndex][1],
+    HALFSTEP_SEQ[seqIndex][2],
+    HALFSTEP_SEQ[seqIndex][3]
+  );
 }
 
-bool loadPlan(const Segment* segments, uint8_t count, bool releaseAfter, const char* name) {
-  if (count == 0 || count > 4) return false;
-  for (uint8_t i = 0; i < count; ++i) plan[i] = segments[i];
-  planCount = count;
-  planIndex = 0;
-  segmentStepsRemaining = plan[0].steps;
-  currentDir = plan[0].dir;
-  currentStepUs = plan[0].stepUs;
-  releaseAfterPlan = releaseAfter;
-  lastStepMicros = micros();
-  publishDebug(String("PLAN ") + name);
+void publishDebug(const String& msg) {
+  String line = String("[") + String(millis()) + " ms] " + msg;
+  Serial.println(line);
+  if (mqtt.connected()) mqtt.publish(TOPIC_DEBUG, line.c_str(), false);
+}
+
+void publishDebug(const String& tag, const String& msg) {
+  publishDebug(tag + " | " + msg);
+}
+
+void publishStatus(const String& state) {
+  String s = "{";
+  s += "\"state\":\"" + state + "\",";
+  s += "\"ip\":\"" + ipToString(WiFi.localIP()) + "\",";
+  s += "\"portal\":" + String(portalRunning ? 1 : 0) + ",";
+  s += "\"saved\":" + String(wm.getWiFiIsSaved() ? 1 : 0) + ",";
+  s += "\"pos\":" + String(logicalPosition) + ",";
+  s += "\"home\":" + String(homePosition) + ",";
+  s += "\"manual_steps\":" + String(manualSteps) + ",";
+  s += "\"test_steps\":" + String(testSteps) + ",";
+  s += "\"test_us\":" + String(testStepUs) + ",";
+  s += "\"test_pause_ms\":" + String(testPauseMs) + ",";
+  s += "\"moving\":" + String(motionActive ? 1 : 0) + ",";
+  s += "\"motion\":\"" + motionState + "\"";
+  s += "}";
+  if (mqtt.connected()) mqtt.publish(TOPIC_STATUS, s.c_str(), true);
+}
+
+void pumpServices() {
+  if (portalRunning) wm.process();
+  server.handleClient();
+  ArduinoOTA.handle();
+  if (mqtt.connected()) mqtt.loop();
+}
+
+void setMotionState(const String& s) {
+  motionState = s;
+  publishStatus(s);
+}
+
+bool shouldAbortMotion() {
+  if (stopRequested) {
+    publishDebug("STOP", releaseAfterStop ? "Released" : "Stopped");
+    motionActive = false;
+    if (releaseAfterStop) releaseMotor();
+    setMotionState("idle");
+    stopRequested = false;
+    releaseAfterStop = false;
+    return true;
+  }
+  return false;
+}
+
+bool stepBlockingApp(int appDir, uint32_t stepUs, int32_t steps) {
+  const int motorDir = appDirToMotorDir(appDir);
+  motionActive = true;
+  uint32_t lastServiceUs = micros();
+
+  for (int32_t i = 0; i < steps; ++i) {
+    if (shouldAbortMotion()) return false;
+
+    stepOnceMotor(motorDir);
+    logicalPosition += (appDir >= 0) ? 1 : -1;
+    delayMicroseconds(stepUs);
+
+    const uint32_t nowUs = micros();
+    if ((uint32_t)(nowUs - lastServiceUs) >= 5000UL) {
+      pumpServices();
+      if (shouldAbortMotion()) return false;
+      lastServiceUs = nowUs;
+      yield();
+    }
+  }
+
+  motionActive = false;
   return true;
 }
 
-bool startArcForward() {
-  Segment segs[2] = {
-    {arcStrokeSteps, +1, arcStepUs, "out_fwd"},
-    {arcStrokeSteps, -1, arcStepUs, "back_rev"}
-  };
-  return loadPlan(segs, 2, true, "SHOT_FWD");
+void clampSettings() {
+  if (manualSteps < MIN_STROKE_STEPS) manualSteps = MIN_STROKE_STEPS;
+  if (manualSteps > MAX_STROKE_STEPS) manualSteps = MAX_STROKE_STEPS;
+  if (testSteps < MIN_STROKE_STEPS) testSteps = MIN_STROKE_STEPS;
+  if (testSteps > MAX_STROKE_STEPS) testSteps = MAX_STROKE_STEPS;
+
+  if (nudgeStepUs < MIN_STEP_US) nudgeStepUs = MIN_STEP_US;
+  if (nudgeStepUs > MAX_STEP_US) nudgeStepUs = MAX_STEP_US;
+  if (jogStepUs < MIN_STEP_US) jogStepUs = MIN_STEP_US;
+  if (jogStepUs > MAX_STEP_US) jogStepUs = MAX_STEP_US;
+  if (shotStepUs < MIN_STEP_US) shotStepUs = MIN_STEP_US;
+  if (shotStepUs > MAX_STEP_US) shotStepUs = MAX_STEP_US;
+  if (testStepUs < MIN_STEP_US) testStepUs = MIN_STEP_US;
+  if (testStepUs > MAX_STEP_US) testStepUs = MAX_STEP_US;
+
+  if (testPauseMs > 2000) testPauseMs = 2000;
 }
 
-bool startArcReverse() {
-  Segment segs[2] = {
-    {arcStrokeSteps, -1, arcStepUs, "out_rev"},
-    {arcStrokeSteps, +1, arcStepUs, "back_fwd"}
-  };
-  return loadPlan(segs, 2, true, "SHOT_REV");
+void doStartupWiggle() {
+  publishDebug("BOOT", "Startup wiggle begin");
+  setMotionState("startup");
+  stepBlockingApp(+1, STARTUP_STEP_US, STARTUP_WIGGLE_STEPS);
+  delay(80);
+  stepBlockingApp(-1, STARTUP_STEP_US, STARTUP_WIGGLE_STEPS * 2);
+  delay(80);
+  stepBlockingApp(+1, STARTUP_STEP_US, STARTUP_WIGGLE_STEPS);
+  releaseMotor();
+  publishDebug("BOOT", "Startup wiggle end");
+  setMotionState("idle");
 }
 
-bool startNudge(int8_t dir) {
-  Segment segs[1] = {
-    {nudgeSteps, dir, nudgeStepUs, dir > 0 ? "nudge_fwd" : "nudge_rev"}
-  };
-  return loadPlan(segs, 1, true, dir > 0 ? "NUDGE_FWD" : "NUDGE_REV");
+void doSelfTest() {
+  publishDebug("TEST", "Self-test wiggle");
+  doStartupWiggle();
 }
 
-bool startJog(int8_t dir, int32_t steps) {
-  Segment segs[1] = {
-    {steps, dir, jogStepUs, dir > 0 ? "jog_fwd" : "jog_rev"}
-  };
-  return loadPlan(segs, 1, true, dir > 0 ? "JOG_FWD" : "JOG_REV");
-}
-
-bool startGoHome() {
-  int32_t delta = homePos - currentPos;
-  if (delta == 0) {
-    publishDebug("Already at HOME");
-    return true;
+void doMove(const char* tag, int appDir, uint32_t stepUs, int32_t steps) {
+  stopRequested = false;
+  releaseAfterStop = false;
+  publishDebug("MOVE", String(tag));
+  setMotionState(tag);
+  bool ok = stepBlockingApp(appDir, stepUs, steps);
+  if (ok) {
+    releaseMotor();
+    setMotionState("idle");
   }
-  Segment segs[1] = {
-    {abs(delta), delta > 0 ? +1 : -1, homeStepUs, "go_home"}
-  };
-  return loadPlan(segs, 1, true, "GO_HOME");
 }
 
-void startupWiggle() {
-  publishDebug("Startup wiggle...");
-  Segment segs[3] = {
-    {STARTUP_WIGGLE_STEPS, +1, STARTUP_STEP_US, "wiggle_fwd"},
-    {STARTUP_WIGGLE_STEPS * 2, -1, STARTUP_STEP_US, "wiggle_back"},
-    {STARTUP_WIGGLE_STEPS, +1, STARTUP_STEP_US, "wiggle_center"}
-  };
-  loadPlan(segs, 3, true, "SELFTEST");
+void doTestArc(int appDir) {
+  stopRequested = false;
+  releaseAfterStop = false;
+  publishDebug("TEST", appDir > 0 ? "Arc forward-back" : "Arc reverse-back");
+  setMotionState("test");
+  bool ok = stepBlockingApp(appDir, testStepUs, testSteps);
+  if (ok && testPauseMs > 0) {
+    const uint32_t pauseStart = millis();
+    while ((uint32_t)(millis() - pauseStart) < testPauseMs) {
+      pumpServices();
+      if (shouldAbortMotion()) {
+        ok = false;
+        break;
+      }
+      delay(1);
+    }
+  }
+  if (ok) {
+    ok = stepBlockingApp(-appDir, testStepUs, testSteps);
+  }
+  if (ok) {
+    releaseMotor();
+    setMotionState("idle");
+  }
 }
 
-void updateMotion() {
-  if (planCount == 0 || segmentStepsRemaining <= 0) return;
+void goHome() {
+  long delta = homePosition - logicalPosition;
+  if (delta == 0) {
+    publishDebug("HOME", "Already at home");
+    return;
+  }
+  stopRequested = false;
+  releaseAfterStop = false;
+  publishDebug("HOME", "Going home");
+  setMotionState("go_home");
+  int dir = (delta > 0) ? +1 : -1;
+  bool ok = stepBlockingApp(dir, jogStepUs, labs(delta));
+  if (ok) {
+    releaseMotor();
+    setMotionState("idle");
+  }
+}
 
-  unsigned long nowUs = micros();
-  if (static_cast<uint32_t>(nowUs - lastStepMicros) < currentStepUs) return;
-  lastStepMicros = nowUs;
+void requestStop(bool release) {
+  stopRequested = true;
+  releaseAfterStop = release;
+  if (!motionActive) {
+    if (release) releaseMotor();
+    setMotionState("idle");
+    stopRequested = false;
+    releaseAfterStop = false;
+  }
+}
 
-  stepOnce(currentDir);
-  segmentStepsRemaining--;
-
-  if (segmentStepsRemaining > 0) return;
-
-  planIndex++;
-  if (planIndex >= planCount) {
-    publishDebug("PLAN DONE");
-    planCount = 0;
-    planIndex = 0;
-    segmentStepsRemaining = 0;
-    publishPos();
-    publishConfig();
-    if (releaseAfterPlan) releaseMotor();
+void startPortalWindow(const char* reason) {
+  if (portalRunning) {
+    publishDebug("PORTAL", String("Already open (") + reason + ")");
     return;
   }
 
-  currentDir = plan[planIndex].dir;
-  currentStepUs = plan[planIndex].stepUs;
-  segmentStepsRemaining = plan[planIndex].steps;
+  WiFi.mode(WIFI_AP_STA);
+  portalOpenedMs = millis();
+  publishDebug("PORTAL", String("Opened (") + reason + ") SSID: " + CONFIG_AP_NAME);
+  wm.startConfigPortal(CONFIG_AP_NAME, CONFIG_AP_PASS);
+  portalRunning = true;
+  publishStatus("portal");
 }
 
-void ensureWiFi() {
-  if (WiFi.status() == WL_CONNECTED) return;
-  unsigned long now = millis();
-  if (now - lastWiFiAttemptMs < WIFI_RECONNECT_MS) return;
-  lastWiFiAttemptMs = now;
-
-  publishDebug("Reconnecting Wi-Fi...");
-  WiFi.mode(WIFI_STA);
-  WiFi.reconnect();
+void stopPortalWindow(const char* reason) {
+  if (!portalRunning) return;
+  portalRunning = false;
+  publishDebug("PORTAL", String("Closed (") + reason + ")");
+  wm.stopConfigPortal();
+  delay(10);
+  if (WiFi.status() == WL_CONNECTED) {
+    WiFi.mode(WIFI_STA);
+  }
+  publishStatus(WiFi.status() == WL_CONNECTED ? "idle" : "offline");
 }
 
-void setupWiFiManager() {
-  WiFi.mode(WIFI_STA);
-  WiFi.persistent(true);
-  WiFi.setAutoReconnect(true);
+void handlePortalLifecycle() {
+  if (!portalRunning) return;
 
-  wm.setConfigPortalTimeout(WM_PORTAL_TIMEOUT_S);
-  wm.setConnectTimeout(20);
-  wm.setBreakAfterConfig(true);
+  wm.process();
 
-  publishDebug("Starting WiFiManager...");
-  bool ok = wm.autoConnect(WM_AP_NAME, WM_AP_PASS);
-  if (ok) {
-    publishDebug(String("Wi-Fi connected: ") + WiFi.SSID() + " | IP=" + WiFi.localIP().toString());
-  } else {
-    publishDebug("WiFiManager portal timeout or connect failed");
+  const uint32_t elapsed = (uint32_t)(millis() - portalOpenedMs);
+  if (elapsed >= (uint32_t)CONFIG_PORTAL_TIMEOUT_S * 1000UL) {
+    // Use only our own timeout path. Do not enable WiFiManager's internal
+    // config-portal timeout in non-blocking mode, because that can race with
+    // stopConfigPortal() and cause repeated close attempts / crashes.
+    portalRunning = false;
+    publishDebug("PORTAL", "Closed (timeout)");
+    wm.stopConfigPortal();
+    delay(10);
+    if (WiFi.status() == WL_CONNECTED) {
+      WiFi.mode(WIFI_STA);
+      publishStatus("idle");
+    } else {
+      publishStatus("offline");
+    }
   }
 }
 
-String makeClientId() {
-  uint64_t chipid = ESP.getEfuseMac();
-  char buf[32];
-  snprintf(buf, sizeof(buf), "arcgen-%04X%08lX",
-           static_cast<unsigned>((chipid >> 32) & 0xFFFF),
-           static_cast<unsigned long)(chipid & 0xFFFFFFFF));
-  return String(buf);
+void handleRoot() {
+  String html;
+  html += "<html><head><meta name='viewport' content='width=device-width,initial-scale=1'>";
+  html += "<title>Arc Generator</title></head><body style='font-family:Arial,sans-serif;padding:20px'>";
+  html += "<h2>Arc Generator</h2>";
+  html += "<p>IP: " + ipToString(WiFi.localIP()) + "</p>";
+  html += "<p>Position: " + String(logicalPosition) + "</p>";
+  html += "<p>Home: " + String(homePosition) + "</p>";
+  html += "<p>Manual steps: " + String(manualSteps) + "</p>";
+  html += "<p>Test steps: " + String(testSteps) + "</p>";
+  html += "<p>Test step us: " + String(testStepUs) + "</p>";
+  html += "<p>Test pause ms: " + String(testPauseMs) + "</p>";
+  html += "<p>Portal: " + String(portalRunning ? "OPEN" : "CLOSED") + "</p>";
+  html += "<p><a href='/update'>Open OTA Update</a></p>";
+  html += "</body></html>";
+  server.send(200, "text/html", html);
 }
 
-void ensureMqtt() {
-  if (WiFi.status() != WL_CONNECTED) return;
-  if (mqtt.connected()) return;
+void handleUpdatePage() {
+  String html;
+  html += "<html><body style='font-family:Arial,sans-serif;padding:20px'>";
+  html += "<h2>ESP32 OTA Upload</h2>";
+  html += "<form method='POST' action='/update' enctype='multipart/form-data'>";
+  html += "<input type='file' name='update'><br><br>";
+  html += "<input type='submit' value='Upload'>";
+  html += "</form></body></html>";
+  server.send(200, "text/html", html);
+}
 
-  unsigned long now = millis();
-  if (now - lastMqttAttemptMs < MQTT_RECONNECT_MS) return;
-  lastMqttAttemptMs = now;
-
-  String clientId = makeClientId();
-  publishDebug("Connecting MQTT...");
-
-  if (mqtt.connect(clientId.c_str(), MQTT_USER, MQTT_PASS,
-                   topicStatus.c_str(), 0, true, "offline")) {
-    mqtt.subscribe(topicCmd.c_str());
-    mqtt.subscribe(topicSetStroke.c_str());
-    mqtt.subscribe(topicSetArcUs.c_str());
-    mqtt.subscribe(topicSetNudgeUs.c_str());
-    mqtt.subscribe(topicSetJogUs.c_str());
-    mqtt.subscribe(topicSetNudgeSteps.c_str());
-    publishStatus("online", true);
-    publishDebug("MQTT connected");
-    publishConfig();
-    publishPos();
-  } else {
-    publishDebug(String("MQTT failed rc=") + mqtt.state());
+void handleUpdateUpload() {
+  HTTPUpload& upload = server.upload();
+  if (upload.status == UPLOAD_FILE_START) {
+    publishDebug("OTA", "Upload started");
+    requestStop(true);
+    if (!Update.begin(UPDATE_SIZE_UNKNOWN)) {
+      Update.printError(Serial);
+    }
+  } else if (upload.status == UPLOAD_FILE_WRITE) {
+    if (Update.write(upload.buf, upload.currentSize) != upload.currentSize) {
+      Update.printError(Serial);
+    }
+  } else if (upload.status == UPLOAD_FILE_END) {
+    if (Update.end(true)) {
+      publishDebug("OTA", "Upload successful, rebooting");
+    } else {
+      Update.printError(Serial);
+      publishDebug("OTA", "Upload failed");
+    }
   }
 }
 
-void handleCommand(const String& cmd) {
-  String c = cmd;
-  c.trim();
-  c.toUpperCase();
+void setupWebOta() {
+  server.on("/", HTTP_GET, handleRoot);
+  server.on("/update", HTTP_GET, handleUpdatePage);
+  server.on(
+    "/update", HTTP_POST,
+    []() {
+      bool ok = !Update.hasError();
+      server.send(200, "text/plain", ok ? "OK, rebooting" : "FAIL");
+      delay(250);
+      if (ok) ESP.restart();
+    },
+    handleUpdateUpload
+  );
+  server.begin();
+}
 
-  publishDebug(String("CMD ") + c);
-
-  if (c == "SHOT_FWD") {
-    startArcForward();
-  } else if (c == "SHOT_REV") {
-    startArcReverse();
-  } else if (c == "NUDGE_FWD") {
-    startNudge(+1);
-  } else if (c == "NUDGE_REV") {
-    startNudge(-1);
-  } else if (c == "JOG_FWD") {
-    startJog(+1, arcStrokeSteps);
-  } else if (c == "JOG_REV") {
-    startJog(-1, arcStrokeSteps);
-  } else if (c == "STOP") {
-    clearPlan(false);
-    publishDebug("STOP hold");
-  } else if (c == "RELEASE") {
-    clearPlan(true);
-    publishDebug("RELEASE");
-  } else if (c == "SAVE_HOME") {
-    homePos = currentPos;
-    publishDebug(String("HOME SAVED ") + homePos);
-    publishConfig();
-  } else if (c == "GO_HOME") {
-    startGoHome();
-  } else if (c == "SELFTEST") {
-    startupWiggle();
-  } else {
-    publishDebug(String("Unknown cmd: ") + c);
-  }
+void setupArduinoOta() {
+  ArduinoOTA.setHostname(deviceName);
+  ArduinoOTA.onStart([]() { publishDebug("OTA", "ArduinoOTA start"); });
+  ArduinoOTA.onEnd([]() { publishDebug("OTA", "ArduinoOTA end"); });
+  ArduinoOTA.onError([](ota_error_t error) {
+    publishDebug("OTA", String("ArduinoOTA error ") + String((int)error));
+  });
+  ArduinoOTA.begin();
 }
 
 void mqttCallback(char* topic, byte* payload, unsigned int length) {
-  String t = String(topic);
+  String t(topic);
   String msg;
   msg.reserve(length);
-  for (unsigned int i = 0; i < length; ++i) msg += static_cast<char>(payload[i]);
+  for (unsigned int i = 0; i < length; ++i) msg += (char)payload[i];
+  msg.trim();
 
-  Serial.print("TOPIC: ");
-  Serial.print(t);
-  Serial.print(" | PAYLOAD: ");
-  Serial.println(msg);
+  publishDebug("MQTT", String("RX ") + t + " = " + msg);
 
-  if (t == topicCmd) {
-    handleCommand(msg);
+  if (t == TOPIC_CMD) {
+    if (msg == "NUDGE_FWD") doMove("nudge_fwd", +1, nudgeStepUs, manualSteps);
+    else if (msg == "NUDGE_REV") doMove("nudge_rev", -1, nudgeStepUs, manualSteps);
+    else if (msg == "JOG_FWD") doMove("jog_fwd", +1, jogStepUs, manualSteps);
+    else if (msg == "JOG_REV") doMove("jog_rev", -1, jogStepUs, manualSteps);
+    else if (msg == "SHOT_FWD") doMove("shot_fwd", +1, shotStepUs, manualSteps);
+    else if (msg == "SHOT_REV") doMove("shot_rev", -1, shotStepUs, manualSteps);
+    else if (msg == "TEST" || msg == "TEST_FWD") doTestArc(+1);
+    else if (msg == "TEST_REV") doTestArc(-1);
+    else if (msg == "STOP") requestStop(false);
+    else if (msg == "RELEASE") requestStop(true);
+    else if (msg == "SAVE_HOME") { homePosition = logicalPosition; publishDebug("HOME", "Saved home position"); setMotionState("idle"); }
+    else if (msg == "GO_HOME") goHome();
+    else if (msg == "SELFTEST") doSelfTest();
+    else if (msg == "OPEN_AP") { portalRequested = true; publishDebug("PORTAL", "Open requested by MQTT"); }
+    else if (msg.startsWith("SET_MANUAL_STEPS ")) { manualSteps = msg.substring(17).toInt(); clampSettings(); publishDebug("CFG", String("Manual steps = ") + String(manualSteps)); setMotionState("idle"); }
+    else if (msg.startsWith("SET_TEST_STEPS ")) { testSteps = msg.substring(15).toInt(); clampSettings(); publishDebug("CFG", String("Test steps = ") + String(testSteps)); setMotionState("idle"); }
+    else if (msg.startsWith("SET_TEST_US ")) { testStepUs = msg.substring(12).toInt(); clampSettings(); publishDebug("CFG", String("Test speed us = ") + String(testStepUs)); setMotionState("idle"); }
+    else if (msg.startsWith("SET_TEST_PAUSE_MS ")) { testPauseMs = msg.substring(18).toInt(); clampSettings(); publishDebug("CFG", String("Test pause ms = ") + String(testPauseMs)); setMotionState("idle"); }
+    else {
+      publishDebug("MQTT", "Unknown command");
+    }
     return;
   }
 
-  long v = msg.toInt();
-  if (t == topicSetStroke) {
-    arcStrokeSteps = constrain(static_cast<int32_t>(v), 20, 1200);
-    publishDebug(String("stroke=") + arcStrokeSteps);
-    publishConfig();
-  } else if (t == topicSetArcUs) {
-    arcStepUs = constrain(static_cast<uint32_t>(v), 250, 5000);
-    publishDebug(String("arc_us=") + arcStepUs);
-    publishConfig();
-  } else if (t == topicSetNudgeUs) {
-    nudgeStepUs = constrain(static_cast<uint32_t>(v), 250, 5000);
-    publishDebug(String("nudge_us=") + nudgeStepUs);
-    publishConfig();
-  } else if (t == topicSetJogUs) {
-    jogStepUs = constrain(static_cast<uint32_t>(v), 250, 5000);
-    homeStepUs = jogStepUs;
-    publishDebug(String("jog_us=") + jogStepUs);
-    publishConfig();
-  } else if (t == topicSetNudgeSteps) {
-    nudgeSteps = constrain(static_cast<int32_t>(v), 1, 500);
-    publishDebug(String("nudge_steps=") + nudgeSteps);
-    publishConfig();
+  if (t == TOPIC_SLIDER_MANUAL_STEPS) {
+    manualSteps = msg.toInt();
+    clampSettings();
+    publishDebug("CFG", String("Manual steps = ") + String(manualSteps));
+    setMotionState("idle");
+  } else if (t == TOPIC_SLIDER_TEST_STEPS) {
+    testSteps = msg.toInt();
+    clampSettings();
+    publishDebug("CFG", String("Test steps = ") + String(testSteps));
+    setMotionState("idle");
+  } else if (t == TOPIC_SLIDER_TEST_US) {
+    testStepUs = msg.toInt();
+    clampSettings();
+    publishDebug("CFG", String("Test speed us = ") + String(testStepUs));
+    setMotionState("idle");
+  } else if (t == TOPIC_SLIDER_TEST_PAUSE_MS) {
+    testPauseMs = msg.toInt();
+    clampSettings();
+    publishDebug("CFG", String("Test pause ms = ") + String(testPauseMs));
+    setMotionState("idle");
   }
 }
 
-void initTopics() {
-  topicCmd          = String(MQTT_BASE) + "/cmd";
-  topicSetStroke    = String(MQTT_BASE) + "/set/stroke";
-  topicSetArcUs     = String(MQTT_BASE) + "/set/arc_us";
-  topicSetNudgeUs   = String(MQTT_BASE) + "/set/nudge_us";
-  topicSetJogUs     = String(MQTT_BASE) + "/set/jog_us";
-  topicSetNudgeSteps= String(MQTT_BASE) + "/set/nudge_steps";
-  topicStatus       = String(MQTT_BASE) + "/status";
-  topicDebug        = String(MQTT_BASE) + "/debug";
-  topicPos          = String(MQTT_BASE) + "/pos";
-  topicCfg          = String(MQTT_BASE) + "/cfg";
+void connectMqtt() {
+  mqtt.setServer(MQTT_HOST, MQTT_PORT);
+  mqtt.setCallback(mqttCallback);
+  mqtt.setBufferSize(512);
+
+  if (mqtt.connected()) return;
+  if (WiFi.status() != WL_CONNECTED) return;
+
+  const uint32_t now = millis();
+  if (now - lastMqttReconnectMs < 2000) return;
+  lastMqttReconnectMs = now;
+
+  publishDebug("MQTT", "Connecting");
+  if (mqtt.connect(deviceName, MQTT_USER, MQTT_PASS)) {
+    mqtt.subscribe(TOPIC_CMD);
+    mqtt.subscribe(TOPIC_SLIDER_MANUAL_STEPS);
+    mqtt.subscribe(TOPIC_SLIDER_TEST_STEPS);
+    mqtt.subscribe(TOPIC_SLIDER_TEST_US);
+    mqtt.subscribe(TOPIC_SLIDER_TEST_PAUSE_MS);
+    publishDebug("MQTT", "Connected");
+    publishStatus("idle");
+  } else {
+    publishDebug("MQTT", String("Connect failed rc=") + String(mqtt.state()));
+  }
 }
+
+void startStartupPortalWindow() {
+  wm.setConfigPortalBlocking(false);
+  // IMPORTANT: keep WiFiManager's own portal timeout disabled here.
+  // We enforce the 30 s timeout ourselves in handlePortalLifecycle().
+  wm.setWiFiAutoReconnect(true);
+  wm.setConnectTimeout(8);
+  wm.setConnectRetries(1);
+  wm.setBreakAfterConfig(false);
+
+  WiFi.mode(WIFI_AP_STA);
+  WiFi.setAutoReconnect(true);
+  startPortalWindow("boot");
+
+  if (wm.getWiFiIsSaved()) {
+    publishDebug("WIFI", String("Saved SSID: ") + wm.getWiFiSSID());
+    WiFi.begin();
+  } else {
+    publishDebug("WIFI", "No saved Wi-Fi");
+  }
+
+  portalStartedThisBoot = true;
+}
+
+} // namespace
 
 void setup() {
   pinMode(IN1_PIN, OUTPUT);
@@ -393,46 +509,42 @@ void setup() {
   releaseMotor();
 
   Serial.begin(115200);
-  delay(500);
+  delay(300);
 
-  initTopics();
+  uint64_t chip = ESP.getEfuseMac();
+  snprintf(deviceName, sizeof(deviceName), "ArcGen-%04X", (uint16_t)(chip & 0xFFFF));
 
-  Serial.println();
-  Serial.println("=== ESP32-C3 MQTT Arc Generator ===");
-  Serial.println("Topics:");
-  Serial.println(topicCmd);
-  Serial.println(topicSetStroke);
-  Serial.println(topicSetArcUs);
-  Serial.println(topicSetNudgeUs);
-  Serial.println(topicSetJogUs);
-  Serial.println(topicSetNudgeSteps);
-  Serial.println(topicStatus);
-  Serial.println(topicDebug);
-  Serial.println(topicPos);
-  Serial.println(topicCfg);
-  Serial.println("===================================");
-  Serial.println("WiFiManager AP: ArcGenerator-Setup");
-  Serial.println("Portal password: 12345678");
-  Serial.println("If no saved Wi-Fi works, connect to the AP and set your Wi-Fi.");
-  Serial.println();
-  secureClient.setInsecure();
-  mqtt.setServer(MQTT_HOST, MQTT_PORT);
-  mqtt.setCallback(mqttCallback);
-  mqtt.setBufferSize(512);
+  net.setInsecure();
 
-  startupWiggle();
-  setupWiFiManager();
+  startStartupPortalWindow();
+  setupWebOta();
+  setupArduinoOta();
+  doStartupWiggle();
 }
 
 void loop() {
-  ensureWiFi();
-  ensureMqtt();
-  mqtt.loop();
-  updateMotion();
+  handlePortalLifecycle();
+  server.handleClient();
+  ArduinoOTA.handle();
 
-  unsigned long now = millis();
-  if (mqtt.connected() && now - lastStatusMs >= STATUS_PUBLISH_MS) {
-    lastStatusMs = now;
-    publishPos();
+  if (!mqtt.connected()) connectMqtt();
+  mqtt.loop();
+
+  if (portalRequested) {
+    portalRequested = false;
+    startPortalWindow("mqtt_cmd");
+  }
+
+  static wl_status_t lastWifi = WL_IDLE_STATUS;
+  wl_status_t nowStatus = WiFi.status();
+  if (nowStatus != lastWifi) {
+    lastWifi = nowStatus;
+    if (nowStatus == WL_CONNECTED) {
+      publishDebug("WIFI", String("Connected to ") + WiFi.SSID() + " | IP: " + ipToString(WiFi.localIP()));
+      publishStatus("idle");
+    } else {
+      publishDebug("WIFI", String("Status = ") + String((int)nowStatus));
+      if (!portalRunning && portalStartedThisBoot) publishStatus("offline");
+    }
   }
 }
