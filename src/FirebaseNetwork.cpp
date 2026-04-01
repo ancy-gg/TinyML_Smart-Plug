@@ -143,6 +143,36 @@ bool FirebaseNetwork::getInt(const char* path, int& out) {
   return true;
 }
 
+bool FirebaseNetwork::publishOtaDebug(const String& phase, const String& detail, int progress) {
+  if (!isReady()) return false;
+
+  const uint64_t epochMs = nowEpochMs();
+  const String iso = nowISO8601Ms();
+
+  FirebaseJson json;
+  json.set("phase", phase);
+  json.set("detail", detail);
+  if (progress >= 0) json.set("progress", progress);
+  json.set("wifi_connected", WiFi.status() == WL_CONNECTED);
+  json.set("fw_version", _fwVersion);
+  if (epochMs > 0) json.set("ts_epoch_ms", (double)epochMs);
+  if (iso.length()) json.set("ts_iso", iso);
+  json.set("server_ts/.sv", "timestamp");
+
+  bool okDbg = Firebase.RTDB.updateNode(&fbLog, "/debug/ota", &json);
+
+  FirebaseJson live;
+  live.set("ota_phase", phase);
+  live.set("ota_last_error", detail);
+  if (progress >= 0) live.set("ota_progress", progress);
+  if (epochMs > 0) live.set("ota_debug_epoch_ms", (double)epochMs);
+  if (iso.length()) live.set("ota_debug_iso", iso);
+  live.set("server_ts/.sv", "timestamp");
+
+  bool okLive = Firebase.RTDB.updateNode(&fbLive, "/live_data", &live);
+  return okDbg && okLive;
+}
+
 bool FirebaseNetwork::enqueueHistory_(const HistoryJob& job) {
   if (_historyCount >= HISTORY_QUEUE_MAX) return false;
   _historyQueue[_historyTail] = job;

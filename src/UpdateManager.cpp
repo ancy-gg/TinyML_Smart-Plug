@@ -241,6 +241,10 @@ void UpdateManager::loop() {
     ESP.restart();
   } else {
     if (_cb) _cb(OtaEvent::FAIL, 0);
+    if (_cloud && _cloud->isReady() && _lastError.length()) {
+      _cloud->publishOtaDebug("FAIL", _lastError, -1);
+      _cloud->logStatusEvent(_lastError, 0.0f, 0.0f, 0.0f, 0.0f);
+    }
   }
 }
 
@@ -307,61 +311,89 @@ bool UpdateManager::performUpdateFromUrl(const String& rawUrl) {
       return false;
     }
 
+    if (total > 0 && (size_t)total < OTA_MIN_BIN_BYTES) {
+      _lastError = otaErr_("OTA_FILE_TOO_SMALL", total);
+      http.end();
+      return false;
+    }
+
+    WiFiClient* stream = http.getStreamPtr();
+    const uint32_t firstWaitMs = millis();
+    while (stream->available() == 0 && http.connected() && (millis() - firstWaitMs) < 5000UL) {
+      delay(1);
+    }
+    if (stream->available() > 0) {
+      const int firstByte = stream->peek();
+      if (firstByte != ESP_IMAGE_HEADER_MAGIC) {
+        _lastError = otaErr_("OTA_BAD_IMAGE_HEADER", firstByte);
+        http.end();
+        return false;
+      }
+    }
+
+    Update.abort();
     if (!Update.begin(total > 0 ? (size_t)total : UPDATE_SIZE_UNKNOWN, U_FLASH)) {
       _lastError = otaErr_("OTA_BEGIN_FAILED", Update.getError());
       http.end();
       return false;
     }
 
-    WiFiClient* stream = http.getStreamPtr();
     size_t written = 0;
     uint8_t buf[2048];
     uint32_t lastDataMs = millis();
     int lastPct = -1;
 
-    while (http.connected() && (total < 0 || (int)written < total)) {
+    while (true) {
       const size_t avail = stream->available();
-      if (!avail) {
-        if ((millis() - lastDataMs) > OTA_STREAM_IDLE_MS) {
-          _lastError = otaErr_("OTA_STREAM_IDLE_TIMEOUT");
-          Update.abort();
-          http.end();
-          return false;
+
+      if (avail > 0) {
+        const size_t want = (avail > sizeof(buf)) ? sizeof(buf) : avail;
+        const int r = stream->readBytes(buf, want);
+
+        if (r > 0) {
+          lastDataMs = millis();
+
+          const size_t w = Update.write(buf, (size_t)r);
+          if (w != (size_t)r) {
+            _lastError = otaErr_("OTA_WRITE_FAILED", Update.getError());
+            Update.abort();
+            http.end();
+            return false;
+          }
+
+          written += w;
+
+          if (total > 0 && _cb) {
+            const int pct = (int)((100.0f * (float)written) / (float)total);
+            if (pct != lastPct) {
+              lastPct = pct;
+              _cb(OtaEvent::PROGRESS, pct);
+            }
+          }
+
+          continue;
         }
-        delay(1);
-        continue;
       }
 
-      const int r = stream->readBytes(buf, (avail > sizeof(buf)) ? sizeof(buf) : avail);
-      if (r <= 0) {
-        if ((millis() - lastDataMs) > OTA_STREAM_IDLE_MS) {
-          _lastError = otaErr_("OTA_STREAM_READ_TIMEOUT");
-          Update.abort();
-          http.end();
-          return false;
-        }
-        delay(1);
-        continue;
-      }
+      const bool doneByLength = (total > 0) && (written >= (size_t)total);
+      const bool doneByEof = (total <= 0) && !http.connected() && (stream->available() == 0);
+      if (doneByLength || doneByEof) break;
 
-      lastDataMs = millis();
-
-      const size_t w = Update.write(buf, (size_t)r);
-      if (w != (size_t)r) {
-        _lastError = otaErr_("OTA_WRITE_FAILED", Update.getError());
+      if ((millis() - lastDataMs) > OTA_STREAM_IDLE_MS) {
+        _lastError = otaErr_("OTA_STREAM_IDLE_TIMEOUT");
         Update.abort();
         http.end();
         return false;
       }
-      written += w;
 
-      if (total > 0 && _cb) {
-        const int pct = (int)((100.0f * (float)written) / (float)total);
-        if (pct != lastPct) {
-          lastPct = pct;
-          _cb(OtaEvent::PROGRESS, pct);
-        }
-      }
+      delay(1);
+    }
+
+    if (total > 0 && written != (size_t)total) {
+      _lastError = otaErr_("OTA_INCOMPLETE_IMAGE", (int)written);
+      Update.abort();
+      http.end();
+      return false;
     }
 
     if (!Update.end(true) || !Update.isFinished()) {
