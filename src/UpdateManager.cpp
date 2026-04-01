@@ -16,25 +16,29 @@ RTC_DATA_ATTR static uint32_t s_magic = 0;
 RTC_DATA_ATTR static uint32_t s_lastAppAddr = 0;
 RTC_DATA_ATTR static uint8_t  s_crashBoots = 0;
 RTC_DATA_ATTR static uint8_t  s_safeMode = 0;
+
 static constexpr uint32_t MAGIC = 0xC0FFEE42;
-static const uint32_t OTA_HTTP_TIMEOUT_MS = 60000;
-static const uint32_t OTA_STREAM_IDLE_MS  = 30000;
-static const uint32_t OTA_RESTART_DELAY_MS = 1200;
-static const size_t OTA_MIN_BIN_BYTES = 128 * 1024;
+static const uint32_t OTA_HTTP_TIMEOUT_MS   = 60000;
+static const uint32_t OTA_STREAM_IDLE_MS    = 30000;
+static const uint32_t OTA_RESTART_DELAY_MS  = 1200;
+static const size_t   OTA_MIN_BIN_BYTES     = 128 * 1024;
 
 static bool isCrashReset(esp_reset_reason_t r) {
   switch (r) {
     case ESP_RST_PANIC:
     case ESP_RST_INT_WDT:
     case ESP_RST_TASK_WDT:
-    case ESP_RST_WDT: return true;
-    default: return false;
+    case ESP_RST_WDT:
+      return true;
+    default:
+      return false;
   }
 }
 
 static bool getPendingVerifyState_() {
   const esp_partition_t* running = esp_ota_get_running_partition();
   if (!running) return false;
+
   esp_ota_img_states_t st;
   if (esp_ota_get_state_partition(running, &st) != ESP_OK) return false;
   return (st == ESP_OTA_IMG_PENDING_VERIFY);
@@ -44,26 +48,38 @@ String UpdateManager::normalizeFirmwareUrl_(String url) {
   url.trim();
   url.replace("?raw=1", "");
   if (!url.startsWith("https://github.com/")) return url;
+
   const String prefix = "https://github.com/";
   String tail = url.substring(prefix.length());
   const int blobAt = tail.indexOf("/blob/");
   if (blobAt < 0) return url;
+
   const String head = tail.substring(0, blobAt);
   const String rest = tail.substring(blobAt + 6);
-  return String("https://raw.githubusercontent.com/") + head + "/" + rest;
-}
 
+  String out = "https://raw.githubusercontent.com/";
+  out += head;
+  out += "/";
+  out += rest;
+  return out;
+}
 
 static inline String otaErr_(const char* msg, int code = 0) {
   String s = msg ? String(msg) : String("OTA_ERROR");
-  if (code != 0) { s += " ("; s += String(code); s += ")"; }
+  if (code != 0) {
+    s += " (";
+    s += String(code);
+    s += ")";
+  }
   return s;
 }
 
 bool UpdateManager::findRollbackPartition_(const esp_partition_t*& out) const {
   out = nullptr;
+
   const esp_partition_t* running = esp_ota_get_running_partition();
   if (!running) return false;
+
   const esp_partition_t* candidate = esp_ota_get_next_update_partition(running);
   if (!candidate || candidate == running) return false;
 
@@ -81,8 +97,10 @@ bool UpdateManager::findRollbackPartition_(const esp_partition_t*& out) const {
 bool UpdateManager::rollbackToPrevious() {
   const esp_partition_t* part = nullptr;
   if (!findRollbackPartition_(part)) return false;
+
   const esp_err_t e = esp_ota_set_boot_partition(part);
   if (e != ESP_OK) return false;
+
   delay(120);
   ESP.restart();
   return true;
@@ -90,6 +108,7 @@ bool UpdateManager::rollbackToPrevious() {
 
 bool UpdateManager::confirmNow() {
   if (!_pendingVerify) return true;
+
   const esp_err_t e = esp_ota_mark_app_valid_cancel_rollback();
   if (e == ESP_OK) {
     _pendingVerify = false;
@@ -105,27 +124,49 @@ void UpdateManager::bootGuardBegin_(uint32_t stableWindowMs, uint8_t maxCrashBoo
   _maxCrashBoots  = (maxCrashBoots < 1) ? 1 : maxCrashBoots;
   _bootMs0 = millis();
 
-  if (s_magic != MAGIC) { s_magic = MAGIC; s_lastAppAddr = 0; s_crashBoots = 0; s_safeMode = 0; }
+  if (s_magic != MAGIC) {
+    s_magic = MAGIC;
+    s_lastAppAddr = 0;
+    s_crashBoots = 0;
+    s_safeMode = 0;
+  }
+
   const esp_partition_t* running = esp_ota_get_running_partition();
   const uint32_t runAddr = running ? running->address : 0;
-  if (runAddr != 0 && s_lastAppAddr != 0 && runAddr != s_lastAppAddr) { s_crashBoots = 0; s_safeMode = 0; }
+
+  if (runAddr != 0 && s_lastAppAddr != 0 && runAddr != s_lastAppAddr) {
+    s_crashBoots = 0;
+    s_safeMode = 0;
+  }
   if (runAddr != 0) s_lastAppAddr = runAddr;
 
   const bool crash = isCrashReset(esp_reset_reason());
-  if (crash) { if (s_crashBoots < 255) s_crashBoots++; } else s_crashBoots = 0;
+  if (crash) {
+    if (s_crashBoots < 255) s_crashBoots++;
+  } else {
+    s_crashBoots = 0;
+  }
+
   _crashBoots = s_crashBoots;
   _pendingVerify = getPendingVerifyState_();
-  if (_pendingVerify && crash && s_crashBoots >= _maxCrashBoots) (void)esp_ota_mark_app_invalid_rollback_and_reboot();
+
+  if (_pendingVerify && crash && s_crashBoots >= _maxCrashBoots) {
+    (void)esp_ota_mark_app_invalid_rollback_and_reboot();
+  }
+
   if (crash && s_crashBoots >= _maxCrashBoots) s_safeMode = 1;
   _safeMode = (s_safeMode != 0);
 }
 
 void UpdateManager::bootGuardLoop_() {
   if (_safeMode) return;
+
   const uint32_t up = millis() - _bootMs0;
   if (up < _stableWindowMs) return;
+
   s_crashBoots = 0;
   _crashBoots = 0;
+
   if (_pendingVerify) (void)confirmNow();
 }
 
@@ -134,22 +175,38 @@ void UpdateManager::begin(const char* currentVersion, FirebaseNetwork* cloud, ui
   _cloud = cloud;
   _checkNow = true;
   _lastCheckMs = 0;
+  _lastError = "";
   bootGuardBegin_(stableWindowMs, maxCrashBoots);
 }
+
 void UpdateManager::setPaths(const char* desiredVersionPath, const char* firmwareUrlPath) {
   if (desiredVersionPath && strlen(desiredVersionPath)) _pathDesired = desiredVersionPath;
   if (firmwareUrlPath && strlen(firmwareUrlPath)) _pathUrl = firmwareUrlPath;
 }
-void UpdateManager::setCheckInterval(uint32_t ms) { _intervalMs = ms; }
-void UpdateManager::requestCheckNow() { _checkNow = true; }
-void UpdateManager::setInsecureTLS(bool en) { _insecureTLS = en; }
+
+void UpdateManager::setCheckInterval(uint32_t ms) {
+  _intervalMs = ms;
+}
+
+void UpdateManager::requestCheckNow() {
+  _checkNow = true;
+}
+
+void UpdateManager::setInsecureTLS(bool en) {
+  _insecureTLS = en;
+}
 
 void UpdateManager::loop() {
   bootGuardLoop_();
-  if (WiFi.status() != WL_CONNECTED || !_cloud || !_cloud->isReady()) return;
+
+  // Confirm as early as possible after a successful boot.
   if (!confirmNow()) return;
+
+  if (WiFi.status() != WL_CONNECTED || !_cloud || !_cloud->isReady()) return;
+
   const uint32_t now = millis();
   if (!_checkNow && (uint32_t)(now - _lastCheckMs) < _intervalMs) return;
+
   _checkNow = false;
   _lastCheckMs = now;
   _lastError = "";
@@ -162,14 +219,22 @@ void UpdateManager::loop() {
 
   desiredVer.trim();
   fwUrl.trim();
-  if (!desiredVer.length()) { _lastError = otaErr_("OTA_EMPTY_VERSION"); return; }
-  if (!fwUrl.length())     { _lastError = otaErr_("OTA_EMPTY_URL"); return; }
+
+  if (!desiredVer.length()) {
+    _lastError = otaErr_("OTA_EMPTY_VERSION");
+    return;
+  }
+  if (!fwUrl.length()) {
+    _lastError = otaErr_("OTA_EMPTY_URL");
+    return;
+  }
   if (desiredVer.equals(_currentVersion)) {
     _lastError = otaErr_("OTA_SKIP_SAME_VERSION");
     return;
   }
 
   if (_cb) _cb(OtaEvent::START, 0);
+
   if (performUpdateFromUrl(fwUrl)) {
     if (_cb) _cb(OtaEvent::SUCCESS, 100);
     delay(OTA_RESTART_DELAY_MS);
@@ -190,6 +255,7 @@ bool UpdateManager::performUpdateFromUrl(const String& rawUrl) {
   const String url = normalizeFirmwareUrl_(rawUrl);
   const bool isHttps = url.startsWith("https://");
   const bool isHttp  = url.startsWith("http://");
+
   if (!isHttps && !isHttp) {
     _lastError = otaErr_("OTA_BAD_URL");
     return false;
@@ -214,6 +280,7 @@ bool UpdateManager::performUpdateFromUrl(const String& rawUrl) {
   bool begun = false;
   WiFiClient plainClient;
   WiFiClientSecure secureClient;
+
   if (isHttps) {
     secureClient.setTimeout(OTA_HTTP_TIMEOUT_MS);
     if (_insecureTLS) secureClient.setInsecure();
@@ -222,6 +289,7 @@ bool UpdateManager::performUpdateFromUrl(const String& rawUrl) {
     plainClient.setTimeout(OTA_HTTP_TIMEOUT_MS);
     begun = http.begin(plainClient, url);
   }
+
   if (!begun) {
     _lastError = otaErr_("OTA_HTTP_BEGIN_FAILED");
     return false;
@@ -304,6 +372,7 @@ bool UpdateManager::performUpdateFromUrl(const String& rawUrl) {
     }
 
     lastDataMs = millis();
+
     const size_t w = Update.write(buf, (size_t)r);
     if (w != (size_t)r) {
       _lastError = otaErr_("OTA_WRITE_FAILED", Update.getError());
@@ -311,6 +380,7 @@ bool UpdateManager::performUpdateFromUrl(const String& rawUrl) {
       http.end();
       return false;
     }
+
     written += w;
 
     if (total > 0 && _cb) {

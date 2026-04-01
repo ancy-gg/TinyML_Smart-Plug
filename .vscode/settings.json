@@ -1,4 +1,7 @@
 {
     "idf.currentSetup": "C:\\Users\\annam\\esp\\v5.5.2\\esp-idf",
-    "python-envs.defaultEnvManager": "ms-python.python:system"
+    "python-envs.defaultEnvManager": "ms-python.python:system",
+    "files.exclude": {
+        "arcgenerator/": true
+    }
 }

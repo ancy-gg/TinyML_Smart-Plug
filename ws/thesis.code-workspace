@@ -4,6 +4,7 @@
 			"path": ".."
 		},
 		{
+			"name": "arcgenerator",
 			"path": "../arcgenerator"
 		}
 	],

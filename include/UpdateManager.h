@@ -26,7 +26,6 @@ public:
   bool confirmNow();
   bool rollbackToPrevious();
 
-
 private:
   bool fetchOtaTargets(String& desiredVersion, String& firmwareUrl);
   bool performUpdateFromUrl(const String& url);
