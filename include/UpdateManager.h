@@ -21,6 +21,7 @@ public:
   void setEventCallback(OtaEventCb cb) { _cb = cb; }
 
   bool safeMode() const { return _safeMode; }
+  const String& lastError() const { return _lastError; }
   bool pendingVerify() const { return _pendingVerify; }
   bool confirmNow();
   bool rollbackToPrevious();
@@ -50,6 +51,7 @@ private:
   bool _pendingVerify = false;
   bool _safeMode = false;
   uint8_t _crashBoots = 0;
+  String _lastError = "";
 };
 
 #endif

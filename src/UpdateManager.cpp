@@ -10,6 +10,7 @@
 #include <esp_system.h>
 #include <esp_attr.h>
 #include <esp_app_format.h>
+#include <esp_http_client.h>
 
 RTC_DATA_ATTR static uint32_t s_magic = 0;
 RTC_DATA_ATTR static uint32_t s_lastAppAddr = 0;
@@ -50,6 +51,13 @@ String UpdateManager::normalizeFirmwareUrl_(String url) {
   const String head = tail.substring(0, blobAt);
   const String rest = tail.substring(blobAt + 6);
   return String("https://raw.githubusercontent.com/") + head + "/" + rest;
+}
+
+
+static inline String otaErr_(const char* msg, int code = 0) {
+  String s = msg ? String(msg) : String("OTA_ERROR");
+  if (code != 0) { s += " ("; s += String(code); s += ")"; }
+  return s;
 }
 
 bool UpdateManager::findRollbackPartition_(const esp_partition_t*& out) const {
@@ -142,12 +150,24 @@ void UpdateManager::loop() {
   if (!confirmNow()) return;
   const uint32_t now = millis();
   if (!_checkNow && (uint32_t)(now - _lastCheckMs) < _intervalMs) return;
-  _checkNow = false; _lastCheckMs = now;
+  _checkNow = false;
+  _lastCheckMs = now;
+  _lastError = "";
 
   String desiredVer, fwUrl;
-  if (!fetchOtaTargets(desiredVer, fwUrl)) return;
-  desiredVer.trim(); fwUrl.trim();
-  if (!desiredVer.length() || !fwUrl.length() || desiredVer.equals(_currentVersion)) return;
+  if (!fetchOtaTargets(desiredVer, fwUrl)) {
+    _lastError = otaErr_("OTA_TARGET_FETCH_FAILED");
+    return;
+  }
+
+  desiredVer.trim();
+  fwUrl.trim();
+  if (!desiredVer.length()) { _lastError = otaErr_("OTA_EMPTY_VERSION"); return; }
+  if (!fwUrl.length())     { _lastError = otaErr_("OTA_EMPTY_URL"); return; }
+  if (desiredVer.equals(_currentVersion)) {
+    _lastError = otaErr_("OTA_SKIP_SAME_VERSION");
+    return;
+  }
 
   if (_cb) _cb(OtaEvent::START, 0);
   if (performUpdateFromUrl(fwUrl)) {
@@ -170,7 +190,16 @@ bool UpdateManager::performUpdateFromUrl(const String& rawUrl) {
   const String url = normalizeFirmwareUrl_(rawUrl);
   const bool isHttps = url.startsWith("https://");
   const bool isHttp  = url.startsWith("http://");
-  if (!isHttps && !isHttp) return false;
+  if (!isHttps && !isHttp) {
+    _lastError = otaErr_("OTA_BAD_URL");
+    return false;
+  }
+
+  const esp_partition_t* target = esp_ota_get_next_update_partition(nullptr);
+  if (!target) {
+    _lastError = otaErr_("OTA_NO_TARGET_PARTITION");
+    return false;
+  }
 
   HTTPClient http;
   http.setTimeout(OTA_HTTP_TIMEOUT_MS);
@@ -178,6 +207,9 @@ bool UpdateManager::performUpdateFromUrl(const String& rawUrl) {
   http.useHTTP10(true);
   http.setReuse(false);
   http.addHeader("Cache-Control", "no-cache");
+
+  static const char* hdrKeys[] = {"Content-Type", "Content-Length", "Location"};
+  http.collectHeaders(hdrKeys, 3);
 
   bool begun = false;
   WiFiClient plainClient;
@@ -190,35 +222,57 @@ bool UpdateManager::performUpdateFromUrl(const String& rawUrl) {
     plainClient.setTimeout(OTA_HTTP_TIMEOUT_MS);
     begun = http.begin(plainClient, url);
   }
-  if (!begun) return false;
+  if (!begun) {
+    _lastError = otaErr_("OTA_HTTP_BEGIN_FAILED");
+    return false;
+  }
 
   const int code = http.GET();
   if (code != HTTP_CODE_OK) {
+    _lastError = otaErr_("OTA_HTTP_GET_FAILED", code);
+    http.end();
+    return false;
+  }
+
+  const String ctype = http.header("Content-Type");
+  if (ctype.startsWith("text/") || ctype.indexOf("html") >= 0 || ctype.indexOf("json") >= 0) {
+    _lastError = otaErr_("OTA_BAD_CONTENT_TYPE");
     http.end();
     return false;
   }
 
   const int total = http.getSize();
-  if (total > 0 && (size_t)total < OTA_MIN_BIN_BYTES) {
-    http.end();
-    return false;
+  if (total > 0) {
+    if ((size_t)total < OTA_MIN_BIN_BYTES) {
+      _lastError = otaErr_("OTA_IMAGE_TOO_SMALL", total);
+      http.end();
+      return false;
+    }
+    if ((size_t)total > target->size) {
+      _lastError = otaErr_("OTA_IMAGE_TOO_LARGE", total);
+      http.end();
+      return false;
+    }
   }
+
   if (!Update.begin(total > 0 ? (size_t)total : UPDATE_SIZE_UNKNOWN, U_FLASH)) {
+    _lastError = otaErr_("OTA_BEGIN_FAILED", Update.getError());
     http.end();
     return false;
   }
 
   WiFiClient* stream = http.getStreamPtr();
   size_t written = 0;
-  uint8_t buf[2048];
+  uint8_t buf[4096];
   uint32_t lastDataMs = millis();
   int lastPct = -1;
-  bool checkedMagic = false;
+  bool firstChunk = true;
 
   while (http.connected() && (total < 0 || (int)written < total)) {
     const size_t avail = stream->available();
     if (!avail) {
       if ((millis() - lastDataMs) > OTA_STREAM_IDLE_MS) {
+        _lastError = otaErr_("OTA_STREAM_IDLE_TIMEOUT");
         Update.abort();
         http.end();
         return false;
@@ -230,6 +284,7 @@ bool UpdateManager::performUpdateFromUrl(const String& rawUrl) {
     const int r = stream->readBytes(buf, (avail > sizeof(buf)) ? sizeof(buf) : avail);
     if (r <= 0) {
       if ((millis() - lastDataMs) > OTA_STREAM_IDLE_MS) {
+        _lastError = otaErr_("OTA_STREAM_READ_TIMEOUT");
         Update.abort();
         http.end();
         return false;
@@ -238,17 +293,20 @@ bool UpdateManager::performUpdateFromUrl(const String& rawUrl) {
       continue;
     }
 
-    lastDataMs = millis();
-    if (!checkedMagic) {
-      checkedMagic = true;
-      if ((uint8_t)buf[0] != ESP_IMAGE_HEADER_MAGIC) {
+    if (firstChunk) {
+      firstChunk = false;
+      if (buf[0] != ESP_IMAGE_HEADER_MAGIC) {
+        _lastError = otaErr_("OTA_BAD_IMAGE_HEADER", buf[0]);
         Update.abort();
         http.end();
         return false;
       }
     }
+
+    lastDataMs = millis();
     const size_t w = Update.write(buf, (size_t)r);
     if (w != (size_t)r) {
+      _lastError = otaErr_("OTA_WRITE_FAILED", Update.getError());
       Update.abort();
       http.end();
       return false;
@@ -265,16 +323,19 @@ bool UpdateManager::performUpdateFromUrl(const String& rawUrl) {
   }
 
   if (written < OTA_MIN_BIN_BYTES) {
+    _lastError = otaErr_("OTA_WRITTEN_TOO_SMALL", (int)written);
     Update.abort();
     http.end();
     return false;
   }
 
   if (!Update.end(true) || !Update.isFinished()) {
+    _lastError = otaErr_("OTA_END_FAILED", Update.getError());
     http.end();
     return false;
   }
 
   http.end();
+  _lastError = "";
   return true;
 }
