@@ -4,8 +4,8 @@
 			"path": ".."
 		},
 		{
-			"name": "arcgenerator",
-			"path": "../arcgenerator"
+			"name": "arcstep",
+			"path": "../arcstep"
 		}
 	],
 	"settings": {

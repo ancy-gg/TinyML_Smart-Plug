@@ -199,10 +199,8 @@ void UpdateManager::setInsecureTLS(bool en) {
 void UpdateManager::loop() {
   bootGuardLoop_();
 
-  // Let bootGuardLoop_() handle pending verification after the stable window.
-  // Do not hard-block future OTA checks here if validation is not ready yet.
-  if (_pendingVerify) return;
-
+  // Do not hard-block OTA checks here. Pending-verify confirmation is handled
+  // by bootGuardLoop_() after the firmware survives the stable window.
   if (WiFi.status() != WL_CONNECTED || !_cloud || !_cloud->isReady()) return;
 
   const uint32_t now = millis();

@@ -31,6 +31,7 @@ private:
   Phase _phase = PHASE_BOOT_CONNECT;
   volatile bool _portalRequested = false;
   bool _portalDisconnectSta = false;
+  bool _autoApWindowOffered = false;
   uint32_t _phaseStartMs = 0;
   uint32_t _portalStartMs = 0;
   uint32_t _portalTimeoutMs = 0;

@@ -31,6 +31,7 @@ void WifiHandler::startStaConnect_() {
   WiFi.begin();
   _portalRequested = false;
   _portalDisconnectSta = false;
+  _autoApWindowOffered = false;
   _portalStartMs = 0;
   _portalTimeoutMs = 0;
   _apWindowUntilMs = 0;
@@ -84,6 +85,7 @@ void WifiHandler::closeApAndRecover_(uint32_t now) {
   delay(30);
   _portalRequested = false;
   _portalDisconnectSta = false;
+  _autoApWindowOffered = false;
   _portalStartMs = 0;
   _portalTimeoutMs = 0;
   _apWindowUntilMs = 0;
@@ -94,7 +96,9 @@ void WifiHandler::closeApAndRecover_(uint32_t now) {
   _phaseStartMs = now;
 }
 
-void WifiHandler::requestPortal(bool disconnectSta) { (void)disconnectSta; startApWait_(true, true, WIFI_MANUAL_AP_WINDOW_MS); }
+void WifiHandler::requestPortal(bool disconnectSta) {
+  startApWait_(disconnectSta, true, WIFI_MANUAL_AP_WINDOW_MS);
+}
 
 void WifiHandler::apTrampoline(WiFiManager* wmgr) {
   if (!s_inst) return;
@@ -116,6 +120,7 @@ void WifiHandler::begin(void (*apCallback)(WiFiManager*)) {
   WiFi.setAutoReconnect(true);
   WiFi.mode(WIFI_STA);
   delay(60);
+  _autoApWindowOffered = false;
   _phase = PHASE_BOOT_CONNECT;
   _phaseStartMs = millis();
   if (hasSavedCredentials_()) startStaConnect_();
@@ -140,11 +145,20 @@ void WifiHandler::update() {
   }
 
   if (_phase == PHASE_CONNECTING || _phase == PHASE_BOOT_CONNECT) {
-    if (WiFi.status() == WL_CONNECTED) { _phase = PHASE_CONNECTED; _phaseStartMs = now; return; }
-    if ((now - _phaseStartMs) >= WIFI_CONNECT_TIMEOUT_MS) {
-      _phase = PHASE_TIMEOUT;
+    if (WiFi.status() == WL_CONNECTED) {
+      _phase = PHASE_CONNECTED;
       _phaseStartMs = now;
-      startApWait_(true, false);
+      _autoApWindowOffered = false;
+      return;
+    }
+    if ((now - _phaseStartMs) >= WIFI_CONNECT_TIMEOUT_MS) {
+      if (!_autoApWindowOffered) {
+        _autoApWindowOffered = true;
+        startApWait_(true, false);
+      } else {
+        _phase = PHASE_TIMEOUT;
+        _phaseStartMs = now;
+      }
       return;
     }
     return;
@@ -152,17 +166,22 @@ void WifiHandler::update() {
 
   if (_phase == PHASE_CONNECTED) {
     if (WiFi.status() == WL_CONNECTED) return;
-    if (hasSavedCredentials_()) startStaConnect_();
-    else startApWait_(true, false);
+    _phase = PHASE_TIMEOUT;
+    _phaseStartMs = now;
     return;
   }
 
   if (_phase == PHASE_TIMEOUT) {
     if (!hasSavedCredentials_()) {
-      if ((now - _phaseStartMs) >= WIFI_BACKGROUND_RETRY_MS) startApWait_(true, false, WIFI_BOOT_NO_CRED_AP_WINDOW_MS);
+      if ((now - _phaseStartMs) >= WIFI_BACKGROUND_RETRY_MS) {
+        _autoApWindowOffered = false;
+        startApWait_(true, false, WIFI_BOOT_NO_CRED_AP_WINDOW_MS);
+      }
       return;
     }
-    if ((now - _phaseStartMs) >= WIFI_BACKGROUND_RETRY_MS) startStaConnect_();
+    if ((now - _phaseStartMs) >= WIFI_BACKGROUND_RETRY_MS) {
+      startStaConnect_();
+    }
   }
 }
 

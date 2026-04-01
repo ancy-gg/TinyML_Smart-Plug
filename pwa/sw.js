@@ -1,4 +1,4 @@
-const BUILD_VERSION = "Web-v1.1.5-ota-fix";
+const BUILD_VERSION = "Web-v1.2.0";
 const CACHE_NAME = BUILD_VERSION;
 const APP_SHELL = [
   "./",

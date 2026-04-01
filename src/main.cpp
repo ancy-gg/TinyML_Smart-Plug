@@ -348,7 +348,10 @@ void loop() {
     else if (wifiPhase == WifiHandler::PHASE_AP_WAIT_CLIENT) { wifiBannerUntilMs = 0; wifiTimedOutUi = false; notification.notify(SND_WIFI_PORTAL); }
     lastWiFiPhase = wifiPhase;
   }
-  if (wifiConnected && !lastWiFiConnected) notification.notify(SND_WIFI_OK);
+  if (wifiConnected && !lastWiFiConnected) {
+    notification.notify(SND_WIFI_OK);
+    updater.requestCheckNow();
+  }
   lastWiFiConnected = wifiConnected;
 
   static FeatureFrame lastF = {};
