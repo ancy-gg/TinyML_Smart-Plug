@@ -330,13 +330,6 @@ void loop() {
   wifiMgr.update();
   updater.loop();
 
-  static String s_lastOtaErr = "";
-  const String otaErr = updater.lastError();
-  if (otaErr.length() && otaErr != s_lastOtaErr) {
-    s_lastOtaErr = otaErr;
-    network.logStatusEvent(otaErr, 0.0f, 0.0f, 0.0f, 0.0f);
-  }
-
   const bool portalActive = wifiMgr.inConfigPortal();
   const bool paused = gPauseByOta;
   const bool bootSettling = (millis() < SENSOR_BOOT_SETTLE_MS);

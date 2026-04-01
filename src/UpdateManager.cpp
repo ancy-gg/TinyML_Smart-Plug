@@ -199,8 +199,9 @@ void UpdateManager::setInsecureTLS(bool en) {
 void UpdateManager::loop() {
   bootGuardLoop_();
 
-  // Confirm as early as possible after a successful boot.
-  if (!confirmNow()) return;
+  // Let bootGuardLoop_() handle pending verification after the stable window.
+  // Do not hard-block future OTA checks here if validation is not ready yet.
+  if (_pendingVerify) return;
 
   if (WiFi.status() != WL_CONNECTED || !_cloud || !_cloud->isReady()) return;
 
@@ -304,7 +305,7 @@ bool UpdateManager::performUpdateFromUrl(const String& rawUrl) {
 
   const String ctype = http.header("Content-Type");
   if (ctype.startsWith("text/") || ctype.indexOf("html") >= 0 || ctype.indexOf("json") >= 0) {
-    _lastError = otaErr_("OTA_BAD_CONTENT_TYPE");
+    _lastError = String("OTA_BAD_CONTENT_TYPE: ") + ctype;
     http.end();
     return false;
   }

@@ -1,4 +1,4 @@
-const BUILD_VERSION = "Web-v1.1.4";
+const BUILD_VERSION = "Web-v1.1.5-ota-fix";
 const CACHE_NAME = BUILD_VERSION;
 const APP_SHELL = [
   "./",
@@ -65,7 +65,12 @@ self.addEventListener("fetch", (event) => {
     return;
   }
 
-  if (sameOrigin && ["style", "script", "image", "font"].includes(req.destination)) {
+  if (sameOrigin && ["style", "script", "manifest"].includes(req.destination)) {
+    event.respondWith(networkFirst(req, "./index.html"));
+    return;
+  }
+
+  if (sameOrigin && ["image", "font"].includes(req.destination)) {
     event.respondWith(staleWhileRevalidate(req));
     return;
   }
