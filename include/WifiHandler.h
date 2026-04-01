@@ -33,6 +33,7 @@ private:
   bool _portalDisconnectSta = false;
   uint32_t _phaseStartMs = 0;
   uint32_t _portalStartMs = 0;
+  uint32_t _portalTimeoutMs = 0;
   uint32_t _apWindowUntilMs = 0;
   uint8_t  _lastApStations = 0;
   void (*_userApCb)(WiFiManager*) = nullptr;

@@ -226,10 +226,11 @@ static void Core0Task(void* pv) {
         f.wpe_entropy = out.wpe_entropy; f.spec_entropy = out.spec_entropy; f.thd_i = out.thd_i;
       }
       lastGood = f; hasGood = true; if (qFeat) xQueueOverwrite(qFeat, &f);
-    } else if (hasGood && qFeat) {
-      xQueueOverwrite(qFeat, &lastGood);
-    } else if (qFeat) {
-      xQueueOverwrite(qFeat, &f);
+    } else {
+      FeatureFrame invalid = {};
+      invalid.uptime_ms = millis();
+      hasGood = false;
+      if (qFeat) xQueueOverwrite(qFeat, &invalid);
     }
     vTaskDelay(1);
   }
@@ -372,6 +373,15 @@ void loop() {
   if (newV >= 0.0f) { vRms = newV; vFast = voltSensor.protectVrms(); vRaw = voltSensor.rawVrms(); }
   if (millis() - tTemp >= 500) { tTemp = millis(); float newT = tempSensor.readTempC(); if (newT > -50.0f && newT < 150.0f) tC = newT; }
 
+  static bool lastMainsPresentForFeat = false;
+  const bool mainsPresentForFeat = (vFast >= MAINS_PRESENT_ON_V);
+  if (mainsPresentForFeat && !lastMainsPresentForFeat) {
+    hasLast = false;
+    lastFeatRxMs = 0;
+    memset(&lastF, 0, sizeof(lastF));
+  }
+  lastMainsPresentForFeat = mainsPresentForFeat;
+
   f.vrms = vRms; f.temp_c = tC;
   const float irmsRawMeasured = f.irms;
   float irmsRawForLogic = cleanLogicCurrent(irmsRawMeasured, f.current_valid != 0, vRaw, vFast);
@@ -431,7 +441,7 @@ void loop() {
   const bool relayOnRequested = (!gSafeMode) ? network.consumeRelayOnRequest() : false;
   const bool relayOffRequested = (!gSafeMode) ? network.consumeRelayOffRequest() : false;
   if (!gSafeMode) {
-    if (portalRequested && !controlsLocked) wifiMgr.requestPortal(false);
+    if (portalRequested && !controlsLocked) wifiMgr.requestPortal(true);
     if (!controlsLocked) {
       if (relayOffRequested) {
         protection.pulseRelayOff();

@@ -199,6 +199,10 @@ bool UpdateManager::performUpdateFromUrl(const String& rawUrl) {
   }
 
   const int total = http.getSize();
+  if (total > 0 && (size_t)total < OTA_MIN_BIN_BYTES) {
+    http.end();
+    return false;
+  }
   if (!Update.begin(total > 0 ? (size_t)total : UPDATE_SIZE_UNKNOWN, U_FLASH)) {
     http.end();
     return false;
@@ -209,6 +213,7 @@ bool UpdateManager::performUpdateFromUrl(const String& rawUrl) {
   uint8_t buf[2048];
   uint32_t lastDataMs = millis();
   int lastPct = -1;
+  bool checkedMagic = false;
 
   while (http.connected() && (total < 0 || (int)written < total)) {
     const size_t avail = stream->available();
@@ -234,6 +239,14 @@ bool UpdateManager::performUpdateFromUrl(const String& rawUrl) {
     }
 
     lastDataMs = millis();
+    if (!checkedMagic) {
+      checkedMagic = true;
+      if ((uint8_t)buf[0] != ESP_IMAGE_HEADER_MAGIC) {
+        Update.abort();
+        http.end();
+        return false;
+      }
+    }
     const size_t w = Update.write(buf, (size_t)r);
     if (w != (size_t)r) {
       Update.abort();
@@ -249,6 +262,12 @@ bool UpdateManager::performUpdateFromUrl(const String& rawUrl) {
         _cb(OtaEvent::PROGRESS, pct);
       }
     }
+  }
+
+  if (written < OTA_MIN_BIN_BYTES) {
+    Update.abort();
+    http.end();
+    return false;
   }
 
   if (!Update.end(true) || !Update.isFinished()) {

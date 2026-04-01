@@ -32,6 +32,7 @@ void WifiHandler::startStaConnect_() {
   _portalRequested = false;
   _portalDisconnectSta = false;
   _portalStartMs = 0;
+  _portalTimeoutMs = 0;
   _apWindowUntilMs = 0;
   _lastApStations = 0;
   _phase = PHASE_CONNECTING;
@@ -40,12 +41,13 @@ void WifiHandler::startStaConnect_() {
 
 void WifiHandler::startApWait_(bool disconnectSta, bool manualRequest, uint32_t windowMs) {
   _portalRequested = manualRequest;
-  _portalDisconnectSta = disconnectSta;
+  _portalDisconnectSta = disconnectSta || manualRequest;
   _portalStartMs = 0;
+  _portalTimeoutMs = manualRequest ? WIFI_MANUAL_PORTAL_TIMEOUT_MS : WIFI_PORTAL_TIMEOUT_MS;
   _lastApStations = 0;
   WiFi.setSleep(false);
-  WiFi.setAutoReconnect(!disconnectSta);
-  if (disconnectSta || WiFi.status() != WL_CONNECTED) {
+  WiFi.setAutoReconnect(!_portalDisconnectSta);
+  if (_portalDisconnectSta || WiFi.status() != WL_CONNECTED) {
     WiFi.disconnect(true, false);
     delay(40);
     WiFi.mode(WIFI_AP);
@@ -68,7 +70,7 @@ void WifiHandler::startPortal_() {
   wm.setDebugOutput(false);
   wm.setConfigPortalBlocking(false);
   wm.setBreakAfterConfig(true);
-  wm.setConfigPortalTimeout((int)(WIFI_PORTAL_TIMEOUT_MS / 1000UL));
+  wm.setConfigPortalTimeout((int)(_portalTimeoutMs / 1000UL));
   _phase = PHASE_PORTAL_ACTIVE;
   _phaseStartMs = millis();
   _portalStartMs = _phaseStartMs;
@@ -83,6 +85,7 @@ void WifiHandler::closeApAndRecover_(uint32_t now) {
   _portalRequested = false;
   _portalDisconnectSta = false;
   _portalStartMs = 0;
+  _portalTimeoutMs = 0;
   _apWindowUntilMs = 0;
   _lastApStations = 0;
   if (WiFi.status() == WL_CONNECTED) { _phase = PHASE_CONNECTED; _phaseStartMs = now; return; }
@@ -91,7 +94,7 @@ void WifiHandler::closeApAndRecover_(uint32_t now) {
   _phaseStartMs = now;
 }
 
-void WifiHandler::requestPortal(bool disconnectSta) { startApWait_(disconnectSta, true); }
+void WifiHandler::requestPortal(bool disconnectSta) { (void)disconnectSta; startApWait_(true, true, WIFI_MANUAL_AP_WINDOW_MS); }
 
 void WifiHandler::apTrampoline(WiFiManager* wmgr) {
   if (!s_inst) return;
@@ -124,7 +127,7 @@ void WifiHandler::update() {
   if (_phase == PHASE_PORTAL_ACTIVE) {
     wm.process();
     if (WiFi.status() == WL_CONNECTED) { closeApAndRecover_(now); return; }
-    if (_portalStartMs && (now - _portalStartMs) >= WIFI_PORTAL_TIMEOUT_MS) { closeApAndRecover_(now); return; }
+    if (_portalStartMs && (now - _portalStartMs) >= _portalTimeoutMs) { closeApAndRecover_(now); return; }
     return;
   }
 
