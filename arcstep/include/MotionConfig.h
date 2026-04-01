@@ -1,19 +1,19 @@
 #pragma once
 
-namespace MotionConfig {
-  static constexpr const char* BLE_NAME = "ESP32C3_ArcStepper";
+#include <Arduino.h>
 
-  // Stepper tuning kept intentionally slow/stable for 28BYJ-48 on USB power
-  static constexpr float MAX_SPEED = 320.0f;        // steps/s
-  static constexpr float ACCELERATION = 220.0f;     // steps/s^2
-  static constexpr float MANUAL_SPEED = 220.0f;     // steps/s while D-pad is held
+// Aggressive defaults for a 5V 28BYJ-48. If the motor chatters or skips,
+// raise STEP_US values toward 800-1200 us.
+static const uint32_t DEFAULT_ARC_STEP_US    = 500;
+static const uint32_t DEFAULT_NUDGE_STEP_US  = 700;
+static const uint32_t DEFAULT_HOME_STEP_US   = 700;
+static const uint32_t DEFAULT_JOG_STEP_US    = 600;
+static const uint32_t STARTUP_STEP_US        = 900;
 
-  // One-shot arc movement: go out once, then come back once
-  static constexpr long ARC_SHOT_STEPS = 96;
+static const int32_t DEFAULT_ARC_STROKE_STEPS = 300;  // one-shot out and back
+static const int32_t DEFAULT_NUDGE_STEPS      = 40;
+static const int32_t STARTUP_WIGGLE_STEPS     = 80;
 
-  // Small manual nudges on face buttons
-  static constexpr long NUDGE_STEPS = 24;
-
-  // Startup hardware confidence check
-  static constexpr long STARTUP_WIGGLE_STEPS = 40;
-}
+static const uint32_t MQTT_RECONNECT_MS       = 2500;
+static const uint32_t WIFI_RECONNECT_MS       = 5000;
+static const uint32_t STATUS_PUBLISH_MS       = 5000;

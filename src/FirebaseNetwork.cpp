@@ -211,6 +211,15 @@ bool FirebaseNetwork::consumeRevertFirmwareRequest() {
   return v;
 }
 
+bool FirebaseNetwork::consumeOtaCheckRequest() {
+  const bool v = _otaCheckPending;
+  if (v) {
+    _otaCheckTokenHandled = _otaCheckToken;
+    clearControlToken_("/controls/ota_check_token", _otaCheckToken, _otaCheckPending);
+  } else _otaCheckPending = false;
+  return v;
+}
+
 bool FirebaseNetwork::fetchMlControl(bool& enabled, int& dur, int& labelOv, String& sid, String& load) const {
   enabled = _mlEnabledCache;
   dur = _mlDurationCache;
@@ -262,25 +271,32 @@ void FirebaseNetwork::pollControls(bool allowNet, bool portalActive) {
         updateControlToken_(token, _revertFwTokenPrimed, _revertFwToken, _revertFwTokenHandled, _revertFwPending);
       }
     } break;
-    case 5:
+    case 5: {
+      String token;
+      if (Firebase.RTDB.getString(&fbRead, "/controls/ota_check_token")) {
+        token = fbRead.stringData();
+        updateControlToken_(token, _otaCheckTokenPrimed, _otaCheckToken, _otaCheckTokenHandled, _otaCheckPending);
+      }
+    } break;
+    case 6:
       if (Firebase.RTDB.getBool(&fbRead, "/ml_log/enabled")) _mlEnabledCache = fbRead.boolData();
       break;
-    case 6:
+    case 7:
       if (Firebase.RTDB.getInt(&fbRead, "/ml_log/duration_s")) _mlDurationCache = fbRead.intData();
       break;
-    case 7:
+    case 8:
       if (Firebase.RTDB.getInt(&fbRead, "/ml_log/label_override")) _mlLabelOverrideCache = fbRead.intData();
       break;
-    case 8:
+    case 9:
       if (Firebase.RTDB.getString(&fbRead, "/ml_log/session_id")) { _mlSessionIdCache = fbRead.stringData(); _mlSessionIdCache.trim(); }
       break;
-    case 9:
+    case 10:
       if (Firebase.RTDB.getString(&fbRead, "/ml_log/load_type")) { _mlLoadTypeCache = fbRead.stringData(); _mlLoadTypeCache.trim(); }
       break;
     default:
       break;
   }
-  _controlPollSlot = (uint8_t)((_controlPollSlot + 1U) % 10U);
+  _controlPollSlot = (uint8_t)((_controlPollSlot + 1U) % 11U);
 }
 
 void FirebaseNetwork::requestLiveUpdate(float v, float c, float apparentPower, float t,

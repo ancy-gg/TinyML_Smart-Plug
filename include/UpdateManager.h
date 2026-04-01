@@ -11,7 +11,7 @@ using OtaEventCb = void (*)(OtaEvent, int progress);
 
 class UpdateManager {
 public:
-  void begin(const char* currentVersion, FirebaseNetwork* cloud, uint32_t stableWindowMs = 45000, uint8_t maxCrashBoots = 3);
+  void begin(const char* currentVersion, FirebaseNetwork* cloud, uint32_t stableWindowMs = 12000, uint8_t maxCrashBoots = 3);
   void loop();
 
   void setPaths(const char* desiredVersionPath, const char* firmwareUrlPath);
@@ -44,7 +44,7 @@ private:
   bool _insecureTLS = true;
   OtaEventCb _cb = nullptr;
 
-  uint32_t _stableWindowMs = 45000;
+  uint32_t _stableWindowMs = 12000;
   uint8_t  _maxCrashBoots  = 3;
   uint32_t _bootMs0 = 0;
   bool _pendingVerify = false;

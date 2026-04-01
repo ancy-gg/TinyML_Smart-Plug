@@ -2,9 +2,7 @@
 
 #include <Arduino.h>
 
-namespace Pins {
-  static constexpr uint8_t STEPPER_IN1 = 1;  // ULN2003 IN1
-  static constexpr uint8_t STEPPER_IN2 = 2;  // ULN2003 IN2
-  static constexpr uint8_t STEPPER_IN3 = 3;  // ULN2003 IN3
-  static constexpr uint8_t STEPPER_IN4 = 4;  // ULN2003 IN4
-}
+static const uint8_t IN1_PIN = 1;  // A1 on many ESP32-C3 SuperMini boards
+static const uint8_t IN2_PIN = 2;  // A2
+static const uint8_t IN3_PIN = 3;  // A3
+static const uint8_t IN4_PIN = 4;  // A4

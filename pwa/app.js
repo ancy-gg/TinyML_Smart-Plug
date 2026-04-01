@@ -152,10 +152,9 @@ function applyViewPrefs() {
   modeLabelRight?.classList.toggle("is-active", mode === "admin");
 }
 
-function buildRepoFirmwareUrl(binName, cacheKey = "") {
+function buildRepoFirmwareUrl(binName) {
   const name = (binName || OTA_DEFAULT_BIN).trim();
-  const qs = cacheKey ? (`?v=${encodeURIComponent(cacheKey)}`) : "";
-  return OTA_REPO_RAW_BASE + encodeURIComponent(name) + qs;
+  return OTA_REPO_RAW_BASE + encodeURIComponent(name);
 }
 function isLikelyVersion(v) {
   return typeof v === "string" && v.trim().length >= 3;
@@ -1190,8 +1189,7 @@ document.addEventListener("visibilitychange", () => {
   });
 
   btnFillRepoUrl?.addEventListener("click", () => {
-    const cacheKey = (otaDesiredVer?.value || "").trim() || String(Date.now());
-    const url = buildRepoFirmwareUrl(otaBinName?.value || OTA_DEFAULT_BIN, cacheKey);
+    const url = buildRepoFirmwareUrl(otaBinName?.value || OTA_DEFAULT_BIN);
     if (otaFirmwareUrl) otaFirmwareUrl.value = url;
     toast("Repo firmware URL filled.", "ok");
   });
@@ -1199,7 +1197,7 @@ document.addEventListener("visibilitychange", () => {
   btnPublishOta.addEventListener("click", async () => {
     const desired = (otaDesiredVer.value || "").trim();
     let url = (otaFirmwareUrl?.value || "").trim();
-    if (!url) url = buildRepoFirmwareUrl(otaBinName?.value || OTA_DEFAULT_BIN, desired);
+    if (!url) url = buildRepoFirmwareUrl(otaBinName?.value || OTA_DEFAULT_BIN);
     if (!isLikelyVersion(desired)) {
       toast("Enter a valid desired version (e.g., TSP-v0.1.1).", "err");
       return;
@@ -1214,23 +1212,30 @@ document.addEventListener("visibilitychange", () => {
     btnPublishOta.textContent = "Publishing...";
 
     try {
+      const publishTs = Date.now();
+      try {
+        const u = new URL(url);
+        u.searchParams.set("v", desired);
+        u.searchParams.set("t", String(publishTs));
+        url = u.toString();
+      } catch {}
+
       const currentSnap = await db.ref("ota").get();
       const current = currentSnap.val() || {};
-      await db.ref("ota").update({
-        desired_version: desired,
-        firmware_url: url,
-        previous_desired_version: (current.desired_version || "").toString(),
-        previous_firmware_url: (current.firmware_url || "").toString(),
-        published_at: firebase.database.ServerValue.TIMESTAMP
-      });
-      if ("serviceWorker" in navigator) {
-        const reg = await navigator.serviceWorker.getRegistration();
-        if (reg) {
-          await reg.update();
-          reg.waiting?.postMessage({ type: "SKIP_WAITING" });
-        }
-      }
-      toast("OTA published. Devices will pull on next check.", "ok");
+      await Promise.all([
+        db.ref("ota").update({
+          desired_version: desired,
+          firmware_url: url,
+          previous_desired_version: (current.desired_version || "").toString(),
+          previous_firmware_url: (current.firmware_url || "").toString(),
+          published_at: firebase.database.ServerValue.TIMESTAMP
+        }),
+        db.ref("/controls").update({
+          ota_check_token: `ota_check_${publishTs}`,
+          ota_check_requested_at: firebase.database.ServerValue.TIMESTAMP
+        })
+      ]);
+      toast("OTA published. Device asked to check now.", "ok");
     } catch (e) {
       console.error(e);
       toast("Publish failed (Firebase rules may block writes).", "err");

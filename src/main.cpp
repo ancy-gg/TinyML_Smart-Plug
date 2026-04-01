@@ -305,7 +305,7 @@ void setup() {
   updater.begin(FW_VERSION, &network, 45000, 3);
   updater.setEventCallback(onOtaEvent);
   updater.setPaths(OTA_DESIRED_VERSION_PATH, OTA_FIRMWARE_URL_PATH);
-  updater.setCheckInterval(60000UL);
+  updater.setCheckInterval(10000UL);
   gSafeMode = updater.safeMode();
 
   if (!gSafeMode) {
@@ -412,6 +412,8 @@ void loop() {
 
   const bool faultClearRequested = (!gSafeMode) ? network.consumeFaultClearRequest() : false;
   const bool revertFirmwareRequested = network.consumeRevertFirmwareRequest();
+  const bool otaCheckRequested = network.consumeOtaCheckRequest();
+  if (otaCheckRequested) updater.requestCheckNow();
   if (faultClearRequested) { protection.resetLatch(); notification.notify(SND_RESET_ACK); notification.clearFaultAlert(); }
   if (revertFirmwareRequested) {
     network.logStatusEvent("FIRMWARE REVERT REQUESTED", 0.0f, 0.0f, 0.0f, 0.0f);

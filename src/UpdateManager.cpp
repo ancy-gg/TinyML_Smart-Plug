@@ -30,10 +30,6 @@ static bool isCrashReset(esp_reset_reason_t r) {
     case ESP_RST_TASK_WDT:
     case ESP_RST_WDT:
       return true;
-    // Intentionally exclude brownout here. On this board, intentional EN-off
-    // or collapsing supply can look like a brownout during shutdown and create
-    // false crash streaks that interfere with OTA recovery.
-    case ESP_RST_BROWNOUT:
     default:
       return false;
   }
@@ -256,115 +252,144 @@ bool UpdateManager::fetchOtaTargets(String& desiredVersion, String& firmwareUrl)
 }
 
 bool UpdateManager::performUpdateFromUrl(const String& rawUrl) {
-  const String url = normalizeFirmwareUrl_(rawUrl);
-  const bool isHttps = url.startsWith("https://");
-  const bool isHttp  = url.startsWith("http://");
+  String baseUrl = normalizeFirmwareUrl_(rawUrl);
+  const bool isHttps = baseUrl.startsWith("https://");
+  const bool isHttp  = baseUrl.startsWith("http://");
 
   if (!isHttps && !isHttp) {
     _lastError = otaErr_("OTA_BAD_URL");
     return false;
   }
 
-  HTTPClient http;
-  http.setTimeout(OTA_HTTP_TIMEOUT_MS);
-  http.setFollowRedirects(HTTPC_STRICT_FOLLOW_REDIRECTS);
-  http.useHTTP10(true);
-
-  bool begun = false;
-  WiFiClient plainClient;
-  WiFiClientSecure secureClient;
-
-  if (isHttps) {
-    secureClient.setTimeout(OTA_HTTP_TIMEOUT_MS);
-    if (_insecureTLS) secureClient.setInsecure();
-    begun = http.begin(secureClient, url);
-  } else {
-    plainClient.setTimeout(OTA_HTTP_TIMEOUT_MS);
-    begun = http.begin(plainClient, url);
-  }
-
-  if (!begun) {
-    _lastError = otaErr_("OTA_HTTP_BEGIN_FAILED");
+  const esp_partition_t* target = esp_ota_get_next_update_partition(nullptr);
+  if (!target) {
+    _lastError = otaErr_("OTA_NO_TARGET_PARTITION");
     return false;
   }
 
-  const int code = http.GET();
-  if (code != HTTP_CODE_OK) {
-    _lastError = otaErr_("OTA_HTTP_GET_FAILED", code);
-    http.end();
-    return false;
-  }
+  auto doAttempt = [&](const String& url) -> bool {
+    HTTPClient http;
+    http.setTimeout(OTA_HTTP_TIMEOUT_MS);
+    http.setFollowRedirects(HTTPC_STRICT_FOLLOW_REDIRECTS);
+    http.useHTTP10(true);
+    http.setReuse(false);
+    http.addHeader("Cache-Control", "no-cache");
 
-  const int total = http.getSize();
-  if (!Update.begin(total > 0 ? (size_t)total : UPDATE_SIZE_UNKNOWN, U_FLASH)) {
-    _lastError = otaErr_("OTA_BEGIN_FAILED", Update.getError());
-    http.end();
-    return false;
-  }
+    bool begun = false;
+    WiFiClient plainClient;
+    WiFiClientSecure secureClient;
 
-  WiFiClient* stream = http.getStreamPtr();
-  size_t written = 0;
-  uint8_t buf[2048];
-  uint32_t lastDataMs = millis();
-  int lastPct = -1;
-
-  while (http.connected() && (total < 0 || (int)written < total)) {
-    const size_t avail = stream->available();
-    if (!avail) {
-      if ((millis() - lastDataMs) > OTA_STREAM_IDLE_MS) {
-        _lastError = otaErr_("OTA_STREAM_IDLE_TIMEOUT");
-        Update.abort();
-        http.end();
-        return false;
-      }
-      delay(1);
-      continue;
+    if (url.startsWith("https://")) {
+      secureClient.setTimeout(OTA_HTTP_TIMEOUT_MS);
+      if (_insecureTLS) secureClient.setInsecure();
+      begun = http.begin(secureClient, url);
+    } else {
+      plainClient.setTimeout(OTA_HTTP_TIMEOUT_MS);
+      begun = http.begin(plainClient, url);
     }
 
-    const int r = stream->readBytes(buf, (avail > sizeof(buf)) ? sizeof(buf) : avail);
-    if (r <= 0) {
-      if ((millis() - lastDataMs) > OTA_STREAM_IDLE_MS) {
-        _lastError = otaErr_("OTA_STREAM_READ_TIMEOUT");
-        Update.abort();
-        http.end();
-        return false;
-      }
-      delay(1);
-      continue;
+    if (!begun) {
+      _lastError = otaErr_("OTA_HTTP_BEGIN_FAILED");
+      return false;
     }
 
-    lastDataMs = millis();
-    const size_t w = Update.write(buf, (size_t)r);
-    if (w != (size_t)r) {
-      _lastError = otaErr_("OTA_WRITE_FAILED", Update.getError());
-      Update.abort();
+    const int code = http.GET();
+    if (code != HTTP_CODE_OK) {
+      _lastError = otaErr_("OTA_HTTP_GET_FAILED", code);
       http.end();
       return false;
     }
 
-    written += w;
+    const int total = http.getSize();
+    if (total > 0 && (size_t)total > target->size) {
+      _lastError = otaErr_("OTA_IMAGE_TOO_LARGE", total);
+      http.end();
+      return false;
+    }
 
-    if (total > 0 && _cb) {
-      const int pct = (int)((100.0f * (float)written) / (float)total);
-      if (pct != lastPct) {
-        lastPct = pct;
-        _cb(OtaEvent::PROGRESS, pct);
+    if (!Update.begin(total > 0 ? (size_t)total : UPDATE_SIZE_UNKNOWN, U_FLASH)) {
+      _lastError = otaErr_("OTA_BEGIN_FAILED", Update.getError());
+      http.end();
+      return false;
+    }
+
+    WiFiClient* stream = http.getStreamPtr();
+    size_t written = 0;
+    uint8_t buf[2048];
+    uint32_t lastDataMs = millis();
+    int lastPct = -1;
+
+    while (http.connected() && (total < 0 || (int)written < total)) {
+      const size_t avail = stream->available();
+      if (!avail) {
+        if ((millis() - lastDataMs) > OTA_STREAM_IDLE_MS) {
+          _lastError = otaErr_("OTA_STREAM_IDLE_TIMEOUT");
+          Update.abort();
+          http.end();
+          return false;
+        }
+        delay(1);
+        continue;
+      }
+
+      const int r = stream->readBytes(buf, (avail > sizeof(buf)) ? sizeof(buf) : avail);
+      if (r <= 0) {
+        if ((millis() - lastDataMs) > OTA_STREAM_IDLE_MS) {
+          _lastError = otaErr_("OTA_STREAM_READ_TIMEOUT");
+          Update.abort();
+          http.end();
+          return false;
+        }
+        delay(1);
+        continue;
+      }
+
+      lastDataMs = millis();
+
+      const size_t w = Update.write(buf, (size_t)r);
+      if (w != (size_t)r) {
+        _lastError = otaErr_("OTA_WRITE_FAILED", Update.getError());
+        Update.abort();
+        http.end();
+        return false;
+      }
+      written += w;
+
+      if (total > 0 && _cb) {
+        const int pct = (int)((100.0f * (float)written) / (float)total);
+        if (pct != lastPct) {
+          lastPct = pct;
+          _cb(OtaEvent::PROGRESS, pct);
+        }
       }
     }
+
+    if (!Update.end(true) || !Update.isFinished()) {
+      _lastError = otaErr_("OTA_END_FAILED", Update.getError());
+      http.end();
+      return false;
+    }
+
+    http.end();
+    _lastError = "";
+    return true;
+  };
+
+  String lastErr = "";
+  for (int attempt = 0; attempt < 3; ++attempt) {
+    String tryUrl = baseUrl;
+    const String sep = (tryUrl.indexOf('?') >= 0) ? "&" : "?";
+    tryUrl += sep;
+    tryUrl += "cb=";
+    tryUrl += String((uint32_t)millis());
+    tryUrl += "_";
+    tryUrl += String(attempt + 1);
+
+    if (doAttempt(tryUrl)) return true;
+    lastErr = _lastError;
+    delay(1200);
   }
 
-  if (!Update.end(true)) {
-    _lastError = otaErr_("OTA_END_FAILED", Update.getError());
-    http.end();
-    return false;
-  }
-  if (!Update.isFinished()) {
-    _lastError = otaErr_("OTA_NOT_FINISHED");
-    http.end();
-    return false;
-  }
-
-  http.end();
-  _lastError = "";
-  return true;
+  _lastError = lastErr.length() ? lastErr : otaErr_("OTA_ALL_ATTEMPTS_FAILED");
+  return false;
 }
