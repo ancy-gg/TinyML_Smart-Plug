@@ -38,9 +38,9 @@ private:
   FirebaseNetwork* _cloud = nullptr;
   const char* _pathDesired = "/ota/desired_version";
   const char* _pathUrl     = "/ota/firmware_url";
-  uint32_t _intervalMs = 60000;
+  uint32_t _intervalMs = 0;
   uint32_t _lastCheckMs = 0;
-  bool _checkNow = true;
+  bool _checkNow = false;
   bool _insecureTLS = true;
   OtaEventCb _cb = nullptr;
 

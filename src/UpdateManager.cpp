@@ -11,6 +11,7 @@
 #include <esp_attr.h>
 #include <esp_app_format.h>
 #include <esp_http_client.h>
+#include <esp_heap_caps.h>
 #include <memory>
 #include <stdlib.h>
 
@@ -21,7 +22,7 @@ RTC_DATA_ATTR static uint8_t  s_safeMode = 0;
 
 static constexpr uint32_t MAGIC = 0xC0FFEE42;
 static const uint32_t OTA_HTTP_TIMEOUT_MS   = 60000;
-static const uint32_t OTA_STREAM_IDLE_MS    = 30000;
+static const uint32_t OTA_STREAM_IDLE_MS    = 60000;
 static const uint32_t OTA_RESTART_DELAY_MS  = 1200;
 static const size_t   OTA_MIN_BIN_BYTES     = 128 * 1024;
 
@@ -65,6 +66,23 @@ String UpdateManager::normalizeFirmwareUrl_(String url) {
   out += rest;
   return out;
 }
+
+static String otaHeapInfo_() {
+  String s;
+  s.reserve(48);
+  s += "free=";
+  s += String(ESP.getFreeHeap());
+  s += " max=";
+  s += String(heap_caps_get_largest_free_block(MALLOC_CAP_8BIT));
+  return s;
+}
+
+template <typename T>
+static auto setTlsBuffersIfSupported_(T& client, int rx, int tx) -> decltype(client.setBufferSizes(rx, tx), void()) {
+  client.setBufferSizes(rx, tx);
+}
+
+static void setTlsBuffersIfSupported_(...) {}
 
 static inline String otaErr_(const char* msg, int code = 0) {
   String s = msg ? String(msg) : String("OTA_ERROR");
@@ -175,7 +193,7 @@ void UpdateManager::bootGuardLoop_() {
 void UpdateManager::begin(const char* currentVersion, FirebaseNetwork* cloud, uint32_t stableWindowMs, uint8_t maxCrashBoots) {
   _currentVersion = currentVersion ? currentVersion : "TSP-v0.0.0";
   _cloud = cloud;
-  _checkNow = true;
+  _checkNow = false;
   _lastCheckMs = 0;
   _lastError = "";
   bootGuardBegin_(stableWindowMs, maxCrashBoots);
@@ -191,7 +209,7 @@ void UpdateManager::setCheckInterval(uint32_t ms) {
 }
 
 void UpdateManager::requestCheckNow() {
-  _checkNow = true;
+  _checkNow = false;
 }
 
 void UpdateManager::setInsecureTLS(bool en) {
@@ -207,7 +225,8 @@ void UpdateManager::loop() {
   if (WiFi.status() != WL_CONNECTED || !_cloud || !_cloud->isReady()) return;
 
   const uint32_t now = millis();
-  if (!_checkNow && (uint32_t)(now - _lastCheckMs) < _intervalMs) return;
+  const bool periodicDue = (_intervalMs > 0UL) && ((uint32_t)(now - _lastCheckMs) >= _intervalMs);
+  if (!_checkNow && !periodicDue) return;
 
   auto publishDebug = [&](const String& phase, const String& detail, int progress = -1) {
     if (_cloud && _cloud->isReady()) (void)_cloud->publishOtaDebug(phase, detail, progress);
@@ -461,8 +480,9 @@ bool UpdateManager::performUpdateFromUrl(const String& rawUrl) {
 
       if (_cloud) {
         _cloud->stopAllClients();
-        delay(150);
+        delay(250);
       }
+      delay(20);
 
       IPAddress resolvedIp;
       if (!WiFi.hostByName(u.host.c_str(), resolvedIp)) {
@@ -475,9 +495,15 @@ bool UpdateManager::performUpdateFromUrl(const String& rawUrl) {
       Client* client = nullptr;
       if (u.https) {
         secure.reset(new WiFiClientSecure());
-        if (!secure) { _lastError = otaErr_("OTA_CLIENT_ALLOC_FAIL"); return false; }
+        if (!secure) {
+          _lastError = otaErr_("OTA_CLIENT_ALLOC_FAIL");
+          _lastError += " | ";
+          _lastError += otaHeapInfo_();
+          return false;
+        }
         secure->setTimeout(OTA_HTTP_TIMEOUT_MS / 1000);
-        secure->setHandshakeTimeout(20);
+        secure->setHandshakeTimeout(30);
+        setTlsBuffersIfSupported_(*secure, 4096, 1024);
         if (_insecureTLS) secure->setInsecure();
         client = secure.get();
       } else {
@@ -499,6 +525,8 @@ bool UpdateManager::performUpdateFromUrl(const String& rawUrl) {
           }
         }
 
+        detail += " | ";
+        detail += otaHeapInfo_();
         _lastError = detail;
         return false;
       }

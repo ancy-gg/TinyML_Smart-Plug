@@ -323,7 +323,7 @@ void setup() {
   updater.begin(FW_VERSION, &network, 45000, 3);
   updater.setEventCallback(onOtaEvent);
   updater.setPaths(OTA_DESIRED_VERSION_PATH, OTA_FIRMWARE_URL_PATH);
-  updater.setCheckInterval(10000UL);
+  updater.setCheckInterval(0UL);
   gSafeMode = updater.safeMode();
 
   if (!gSafeMode) {
@@ -346,7 +346,6 @@ void setup() {
 void loop() {
   network.updateClock();
   wifiMgr.update();
-  updater.loop();
 
   static String s_lastOtaErr = String("__BOOT__");
   const String otaErr = updater.lastError();
@@ -430,12 +429,18 @@ void loop() {
   const bool arcEligible = (!gSafeMode && !paused && !bootSettling && !protectionInhibit && voltageNormal &&
                             arcInputStable(f.current_valid, f.feat_valid, irmsRawForLogic));
 
-  network.pollControls(!gSafeMode && !paused && !portalActive && wifiConnected, portalActive);
+  network.pollControls(!paused && !portalActive && wifiConnected, portalActive);
 
   const bool faultClearRequested = (!gSafeMode) ? network.consumeFaultClearRequest() : false;
   const bool revertFirmwareRequested = network.consumeRevertFirmwareRequest();
   const bool otaCheckRequested = network.consumeOtaCheckRequest();
-  if (otaCheckRequested) updater.requestCheckNow();
+  if (otaCheckRequested && !portalActive && wifiConnected) {
+    (void)network.publishOtaDebug("CHECKING", "Manual OTA check requested", -1);
+    network.stopAllClients();
+    delay(180);
+    updater.requestCheckNow();
+  }
+  updater.loop();
   if (faultClearRequested) { protection.resetLatch(); notification.notify(SND_RESET_ACK); notification.clearFaultAlert(); }
   if (revertFirmwareRequested) {
     network.logStatusEvent("FIRMWARE REVERT REQUESTED", 0.0f, 0.0f, 0.0f, 0.0f);
