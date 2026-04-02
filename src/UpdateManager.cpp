@@ -11,7 +11,6 @@
 #include <esp_attr.h>
 #include <esp_app_format.h>
 #include <esp_http_client.h>
-#include <esp_heap_caps.h>
 #include <memory>
 #include <stdlib.h>
 
@@ -210,6 +209,10 @@ void UpdateManager::loop() {
   const uint32_t now = millis();
   if (!_checkNow && (uint32_t)(now - _lastCheckMs) < _intervalMs) return;
 
+  auto publishDebug = [&](const String& phase, const String& detail, int progress = -1) {
+    if (_cloud && _cloud->isReady()) (void)_cloud->publishOtaDebug(phase, detail, progress);
+  };
+
   _checkNow = false;
   _lastCheckMs = now;
   _lastError = "";
@@ -217,6 +220,7 @@ void UpdateManager::loop() {
   String desiredVer, fwUrl;
   if (!fetchOtaTargets(desiredVer, fwUrl)) {
     _lastError = otaErr_("OTA_TARGET_FETCH_FAILED");
+    publishDebug("FAIL", _lastError, -1);
     return;
   }
 
@@ -225,24 +229,30 @@ void UpdateManager::loop() {
 
   if (!desiredVer.length()) {
     _lastError = otaErr_("OTA_EMPTY_VERSION");
+    publishDebug("FAIL", _lastError, -1);
     return;
   }
   if (!fwUrl.length()) {
     _lastError = otaErr_("OTA_EMPTY_URL");
+    publishDebug("FAIL", _lastError, -1);
     return;
   }
   if (desiredVer.equals(_currentVersion)) {
     _lastError = otaErr_("OTA_SKIP_SAME_VERSION");
+    publishDebug("IDLE", _lastError, -1);
     return;
   }
 
   if (_cb) _cb(OtaEvent::START, 0);
 
   if (performUpdateFromUrl(fwUrl)) {
+    _lastError = "";
     if (_cb) _cb(OtaEvent::SUCCESS, 100);
     delay(OTA_RESTART_DELAY_MS);
     ESP.restart();
   } else {
+    if (!_lastError.length()) _lastError = otaErr_("OTA_FAILED");
+    publishDebug("FAIL", _lastError, -1);
     if (_cb) _cb(OtaEvent::FAIL, 0);
   }
 }
@@ -460,48 +470,35 @@ bool UpdateManager::performUpdateFromUrl(const String& rawUrl) {
         return false;
       }
 
-      const uint32_t heapBeforeClient = ESP.getFreeHeap();
-      const uint32_t largestBeforeClient = heap_caps_get_largest_free_block(MALLOC_CAP_8BIT);
-
       std::unique_ptr<WiFiClient> plain;
       std::unique_ptr<WiFiClientSecure> secure;
       Client* client = nullptr;
       if (u.https) {
         secure.reset(new WiFiClientSecure());
-        if (!secure) {
-          _lastError = String("OTA_CLIENT_ALLOC_FAIL heap=") + String(heapBeforeClient) +
-                       String(" largest=") + String(largestBeforeClient);
-          return false;
-        }
+        if (!secure) { _lastError = otaErr_("OTA_CLIENT_ALLOC_FAIL"); return false; }
         secure->setTimeout(OTA_HTTP_TIMEOUT_MS / 1000);
         secure->setHandshakeTimeout(20);
         if (_insecureTLS) secure->setInsecure();
         client = secure.get();
       } else {
         plain.reset(new WiFiClient());
-        if (!plain) {
-          _lastError = String("OTA_CLIENT_ALLOC_FAIL heap=") + String(heapBeforeClient) +
-                       String(" largest=") + String(largestBeforeClient);
-          return false;
-        }
+        if (!plain) { _lastError = otaErr_("OTA_CLIENT_ALLOC_FAIL"); return false; }
         plain->setTimeout(OTA_HTTP_TIMEOUT_MS / 1000);
         client = plain.get();
       }
 
-      const uint32_t heapBeforeConnect = ESP.getFreeHeap();
-      const uint32_t largestBeforeConnect = heap_caps_get_largest_free_block(MALLOC_CAP_8BIT);
       if (!client->connect(u.host.c_str(), u.port)) {
         String detail = String("OTA_CONNECT_FAIL ") + u.host + ":" + String(u.port);
+
         if (u.https && secure) {
           char errbuf[128] = {0};
           secure->lastError(errbuf, sizeof(errbuf));
           if (errbuf[0]) {
-            detail += "|";
+            detail += " | ";
             detail += errbuf;
           }
         }
-        detail += String("|heap=") + String(heapBeforeConnect);
-        detail += String("|largest=") + String(largestBeforeConnect);
+
         _lastError = detail;
         return false;
       }

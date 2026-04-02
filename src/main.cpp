@@ -173,12 +173,12 @@ static void onOtaEvent(OtaEvent ev, int progress) {
   static int s_lastDbProgress = -100;
   if (ev == OtaEvent::START) {
     s_lastDbProgress = 0;
+    gPauseByOta = true;
     notification.setOta(true, 0);
     notification.notify(SND_OTA_START);
     (void)network.publishOtaDebug("START", "OTA started", 0);
   } else if (ev == OtaEvent::PROGRESS) {
     const int pct = constrain(progress, 0, 100);
-    if (!gPauseByOta) gPauseByOta = true;
     notification.setOta(true, (uint8_t)pct);
     if (pct >= 100 || pct == 0 || (pct - s_lastDbProgress) >= 5) {
       s_lastDbProgress = pct;
@@ -348,6 +348,16 @@ void loop() {
   wifiMgr.update();
   updater.loop();
 
+  static String s_lastOtaErr = String("__BOOT__");
+  const String otaErr = updater.lastError();
+  if (otaErr != s_lastOtaErr) {
+    s_lastOtaErr = otaErr;
+    if (otaErr.length()) {
+      (void)network.publishOtaDebug("FAIL", otaErr, -1);
+    } else {
+      (void)network.publishOtaDebug("IDLE", "", -1);
+    }
+  }
 
   const bool portalActive = wifiMgr.inConfigPortal();
   const bool paused = gPauseByOta;
