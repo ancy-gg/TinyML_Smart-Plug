@@ -11,6 +11,8 @@
 #include <esp_attr.h>
 #include <esp_app_format.h>
 #include <esp_http_client.h>
+#include <memory>
+#include <stdlib.h>
 
 RTC_DATA_ATTR static uint32_t s_magic = 0;
 RTC_DATA_ATTR static uint32_t s_lastAppAddr = 0;
@@ -251,12 +253,182 @@ bool UpdateManager::fetchOtaTargets(String& desiredVersion, String& firmwareUrl)
   return true;
 }
 
-bool UpdateManager::performUpdateFromUrl(const String& rawUrl) {
-  String baseUrl = normalizeFirmwareUrl_(rawUrl);
-  const bool isHttps = baseUrl.startsWith("https://");
-  const bool isHttp  = baseUrl.startsWith("http://");
 
-  if (!isHttps && !isHttp) {
+bool UpdateManager::performUpdateFromUrl(const String& rawUrl) {
+  struct ParsedUrl {
+    bool https = true;
+    String host;
+    uint16_t port = 443;
+    String path = "/";
+  };
+
+  auto parseUrl = [&](const String& in, ParsedUrl& out) -> bool {
+    String url = in;
+    url.trim();
+    const bool https = url.startsWith("https://");
+    const bool http  = url.startsWith("http://");
+    if (!https && !http) return false;
+
+    const int schemeLen = https ? 8 : 7;
+    String rest = url.substring(schemeLen);
+    int slash = rest.indexOf('/');
+    String hostPort = (slash >= 0) ? rest.substring(0, slash) : rest;
+    String path = (slash >= 0) ? rest.substring(slash) : String("/");
+    hostPort.trim();
+    path.trim();
+    if (!hostPort.length()) return false;
+    if (!path.length()) path = "/";
+
+    int colon = hostPort.lastIndexOf(':');
+    String host = hostPort;
+    uint16_t port = https ? 443 : 80;
+    if (colon > 0 && colon < (int)hostPort.length() - 1) {
+      const String portStr = hostPort.substring(colon + 1);
+      const int parsed = portStr.toInt();
+      if (parsed <= 0 || parsed > 65535) return false;
+      port = (uint16_t)parsed;
+      host = hostPort.substring(0, colon);
+    }
+
+    host.trim();
+    if (!host.length()) return false;
+    out.https = https;
+    out.host = host;
+    out.port = port;
+    out.path = path;
+    return true;
+  };
+
+  auto followRedirect = [&](const String& currentUrl, const String& location, String& nextUrl) -> bool {
+    String loc = location;
+    loc.trim();
+    if (!loc.length()) return false;
+    if (loc.startsWith("http://") || loc.startsWith("https://")) {
+      nextUrl = loc;
+      return true;
+    }
+
+    ParsedUrl cur = {};
+    if (!parseUrl(currentUrl, cur)) return false;
+
+    if (loc.startsWith("//")) {
+      nextUrl = String(cur.https ? "https:" : "http:") + loc;
+      return true;
+    }
+
+    if (loc.startsWith("/")) {
+      nextUrl = String(cur.https ? "https://" : "http://") + cur.host;
+      if ((cur.https && cur.port != 443) || (!cur.https && cur.port != 80)) {
+        nextUrl += ":" + String(cur.port);
+      }
+      nextUrl += loc;
+      return true;
+    }
+
+    String basePath = cur.path;
+    int q = basePath.indexOf('?');
+    if (q >= 0) basePath = basePath.substring(0, q);
+    int lastSlash = basePath.lastIndexOf('/');
+    if (lastSlash < 0) basePath = "/";
+    else basePath = basePath.substring(0, lastSlash + 1);
+
+    nextUrl = String(cur.https ? "https://" : "http://") + cur.host;
+    if ((cur.https && cur.port != 443) || (!cur.https && cur.port != 80)) {
+      nextUrl += ":" + String(cur.port);
+    }
+    nextUrl += basePath + loc;
+    return true;
+  };
+
+  auto readLine = [](Client& c, String& line, uint32_t timeoutMs) -> bool {
+    line = "";
+    const uint32_t t0 = millis();
+    while ((millis() - t0) < timeoutMs) {
+      while (c.available()) {
+        char ch = (char)c.read();
+        if (ch == '\r') continue;
+        if (ch == '\n') return true;
+        line += ch;
+      }
+      delay(1);
+    }
+    return false;
+  };
+
+  auto decodeChunkedWrite = [&](Client& stream, size_t& written, int total, uint32_t& lastDataMs, int& lastPct) -> bool {
+    uint8_t buf[2048];
+    while (true) {
+      String sizeLine;
+      if (!readLine(stream, sizeLine, OTA_STREAM_IDLE_MS)) {
+        _lastError = otaErr_("OTA_CHUNK_SIZE_TIMEOUT");
+        return false;
+      }
+      const int semi = sizeLine.indexOf(';');
+      if (semi >= 0) sizeLine = sizeLine.substring(0, semi);
+      sizeLine.trim();
+      if (!sizeLine.length()) continue;
+      const size_t chunkSize = (size_t)strtoul(sizeLine.c_str(), nullptr, 16);
+      if (chunkSize == 0) {
+        String trailer;
+        do {
+          if (!readLine(stream, trailer, 5000UL)) break;
+        } while (trailer.length() > 0);
+        return true;
+      }
+
+      size_t remain = chunkSize;
+      while (remain > 0) {
+        if (!stream.connected() && stream.available() == 0) {
+          _lastError = otaErr_("OTA_CHUNK_EOF");
+          return false;
+        }
+        const size_t avail = stream.available();
+        if (avail == 0) {
+          if ((millis() - lastDataMs) > OTA_STREAM_IDLE_MS) {
+            _lastError = otaErr_("OTA_STREAM_IDLE_TIMEOUT");
+            return false;
+          }
+          delay(1);
+          continue;
+        }
+        const size_t want = (avail < sizeof(buf)) ? avail : sizeof(buf);
+        const size_t take = (want < remain) ? want : remain;
+        const int r = stream.readBytes(buf, take);
+        if (r <= 0) {
+          if ((millis() - lastDataMs) > OTA_STREAM_IDLE_MS) {
+            _lastError = otaErr_("OTA_STREAM_IDLE_TIMEOUT");
+            return false;
+          }
+          delay(1);
+          continue;
+        }
+        lastDataMs = millis();
+        const size_t w = Update.write(buf, (size_t)r);
+        if (w != (size_t)r) {
+          _lastError = otaErr_("OTA_WRITE_FAILED", Update.getError());
+          return false;
+        }
+        written += w;
+        remain -= (size_t)r;
+        if (total > 0 && _cb) {
+          const int pct = (int)((100.0f * (float)written) / (float)total);
+          if (pct != lastPct) {
+            lastPct = pct;
+            _cb(OtaEvent::PROGRESS, pct);
+          }
+        }
+      }
+      String crlf;
+      if (!readLine(stream, crlf, 5000UL)) {
+        _lastError = otaErr_("OTA_CHUNK_TERM_TIMEOUT");
+        return false;
+      }
+    }
+  };
+
+  String baseUrl = normalizeFirmwareUrl_(rawUrl);
+  ParsedUrl parsed = {};
+  if (!parseUrl(baseUrl, parsed)) {
     _lastError = otaErr_("OTA_BAD_URL");
     return false;
   }
@@ -268,111 +440,215 @@ bool UpdateManager::performUpdateFromUrl(const String& rawUrl) {
   }
 
   auto doAttempt = [&](const String& url) -> bool {
-    HTTPClient http;
-    http.setTimeout(OTA_HTTP_TIMEOUT_MS);
-    http.setFollowRedirects(HTTPC_STRICT_FOLLOW_REDIRECTS);
-    http.useHTTP10(true);
-    http.setReuse(false);
-    http.addHeader("Cache-Control", "no-cache");
-
-    bool begun = false;
-    WiFiClient plainClient;
-    WiFiClientSecure secureClient;
-
-    if (url.startsWith("https://")) {
-      secureClient.setTimeout(OTA_HTTP_TIMEOUT_MS);
-      if (_insecureTLS) secureClient.setInsecure();
-      begun = http.begin(secureClient, url);
-    } else {
-      plainClient.setTimeout(OTA_HTTP_TIMEOUT_MS);
-      begun = http.begin(plainClient, url);
-    }
-
-    if (!begun) {
-      _lastError = otaErr_("OTA_HTTP_BEGIN_FAILED");
-      return false;
-    }
-
-    const int code = http.GET();
-    if (code != HTTP_CODE_OK) {
-      _lastError = otaErr_("OTA_HTTP_GET_FAILED", code);
-      http.end();
-      return false;
-    }
-
-    const int total = http.getSize();
-    if (total > 0 && (size_t)total > target->size) {
-      _lastError = otaErr_("OTA_IMAGE_TOO_LARGE", total);
-      http.end();
-      return false;
-    }
-
-    if (!Update.begin(total > 0 ? (size_t)total : UPDATE_SIZE_UNKNOWN, U_FLASH)) {
-      _lastError = otaErr_("OTA_BEGIN_FAILED", Update.getError());
-      http.end();
-      return false;
-    }
-
-    WiFiClient* stream = http.getStreamPtr();
-    size_t written = 0;
-    uint8_t buf[2048];
-    uint32_t lastDataMs = millis();
-    int lastPct = -1;
-
-    while (http.connected() && (total < 0 || (int)written < total)) {
-      const size_t avail = stream->available();
-      if (!avail) {
-        if ((millis() - lastDataMs) > OTA_STREAM_IDLE_MS) {
-          _lastError = otaErr_("OTA_STREAM_IDLE_TIMEOUT");
-          Update.abort();
-          http.end();
-          return false;
-        }
-        delay(1);
-        continue;
-      }
-
-      const int r = stream->readBytes(buf, (avail > sizeof(buf)) ? sizeof(buf) : avail);
-      if (r <= 0) {
-        if ((millis() - lastDataMs) > OTA_STREAM_IDLE_MS) {
-          _lastError = otaErr_("OTA_STREAM_READ_TIMEOUT");
-          Update.abort();
-          http.end();
-          return false;
-        }
-        delay(1);
-        continue;
-      }
-
-      lastDataMs = millis();
-
-      const size_t w = Update.write(buf, (size_t)r);
-      if (w != (size_t)r) {
-        _lastError = otaErr_("OTA_WRITE_FAILED", Update.getError());
-        Update.abort();
-        http.end();
+    String currentUrl = url;
+    for (int redirectCount = 0; redirectCount < 4; ++redirectCount) {
+      ParsedUrl u = {};
+      if (!parseUrl(currentUrl, u)) {
+        _lastError = otaErr_("OTA_BAD_URL");
         return false;
       }
-      written += w;
 
-      if (total > 0 && _cb) {
-        const int pct = (int)((100.0f * (float)written) / (float)total);
-        if (pct != lastPct) {
-          lastPct = pct;
-          _cb(OtaEvent::PROGRESS, pct);
+      std::unique_ptr<WiFiClient> plain;
+      std::unique_ptr<WiFiClientSecure> secure;
+      Client* client = nullptr;
+      if (u.https) {
+        secure.reset(new WiFiClientSecure());
+        if (!secure) { _lastError = otaErr_("OTA_CLIENT_ALLOC_FAIL"); return false; }
+        secure->setTimeout(OTA_HTTP_TIMEOUT_MS / 1000);
+        if (_insecureTLS) secure->setInsecure();
+        client = secure.get();
+      } else {
+        plain.reset(new WiFiClient());
+        if (!plain) { _lastError = otaErr_("OTA_CLIENT_ALLOC_FAIL"); return false; }
+        plain->setTimeout(OTA_HTTP_TIMEOUT_MS / 1000);
+        client = plain.get();
+      }
+
+      if (!client->connect(u.host.c_str(), u.port)) {
+        _lastError = String("OTA_CONNECT_FAIL ") + u.host + ":" + String(u.port);
+        return false;
+      }
+
+      String req;
+      req.reserve(256 + u.path.length() + u.host.length());
+      req += "GET "; req += u.path; req += " HTTP/1.1\r\n";
+      req += "Host: "; req += u.host; req += "\r\n";
+      req += "User-Agent: TinyML-SmartPlug-OTA/2.0\r\n";
+      req += "Accept: */*\r\n";
+      req += "Accept-Encoding: identity\r\n";
+      req += "Connection: close\r\n";
+      req += "Cache-Control: no-cache\r\n\r\n";
+      client->print(req);
+
+      String statusLine;
+      if (!readLine(*client, statusLine, 15000UL)) {
+        client->stop();
+        _lastError = otaErr_("OTA_NO_STATUS_LINE");
+        return false;
+      }
+      statusLine.trim();
+      if (!statusLine.startsWith("HTTP/1.")) {
+        client->stop();
+        _lastError = String("OTA_BAD_STATUS ") + statusLine;
+        return false;
+      }
+
+      int sp1 = statusLine.indexOf(' ');
+      int sp2 = (sp1 >= 0) ? statusLine.indexOf(' ', sp1 + 1) : -1;
+      const String codeStr = (sp1 >= 0) ? statusLine.substring(sp1 + 1, (sp2 > sp1 ? sp2 : statusLine.length())) : String("");
+      const int code = codeStr.toInt();
+
+      int total = -1;
+      bool chunked = false;
+      String location = "";
+      while (true) {
+        String line;
+        if (!readLine(*client, line, 15000UL)) {
+          client->stop();
+          _lastError = otaErr_("OTA_HEADER_TIMEOUT");
+          return false;
+        }
+        if (line.length() == 0) break;
+
+        const int colon = line.indexOf(':');
+        if (colon <= 0) continue;
+        String key = line.substring(0, colon);
+        String val = line.substring(colon + 1);
+        key.trim(); val.trim();
+        key.toLowerCase();
+        val.trim();
+
+        if (key == "content-length") total = val.toInt();
+        else if (key == "transfer-encoding") {
+          String lv = val; lv.toLowerCase();
+          if (lv.indexOf("chunked") >= 0) chunked = true;
+        } else if (key == "location") {
+          location = val;
         }
       }
+
+      if (code >= 300 && code < 400) {
+        client->stop();
+        String nextUrl;
+        if (!followRedirect(currentUrl, location, nextUrl)) {
+          _lastError = String("OTA_REDIRECT_FAIL ") + String(code);
+          return false;
+        }
+        currentUrl = nextUrl;
+        continue;
+      }
+
+      if (code != 200) {
+        client->stop();
+        _lastError = otaErr_("OTA_HTTP_STATUS", code);
+        return false;
+      }
+
+      if (total > 0 && (size_t)total > target->size) {
+        client->stop();
+        _lastError = otaErr_("OTA_IMAGE_TOO_LARGE", total);
+        return false;
+      }
+      if (total > 0 && (size_t)total < OTA_MIN_BIN_BYTES) {
+        client->stop();
+        _lastError = otaErr_("OTA_FILE_TOO_SMALL", total);
+        return false;
+      }
+
+      const uint32_t firstWaitMs = millis();
+      while (client->available() == 0 && client->connected() && (millis() - firstWaitMs) < 5000UL) {
+        delay(1);
+      }
+      if (client->available() == 0) {
+        client->stop();
+        _lastError = otaErr_("OTA_NO_BODY");
+        return false;
+      }
+
+      const int firstByte = client->peek();
+      if (firstByte != ESP_IMAGE_HEADER_MAGIC) {
+        client->stop();
+        _lastError = otaErr_("OTA_BAD_IMAGE_HEADER", firstByte);
+        return false;
+      }
+
+      Update.abort();
+      if (!Update.begin(total > 0 ? (size_t)total : UPDATE_SIZE_UNKNOWN, U_FLASH)) {
+        client->stop();
+        _lastError = otaErr_("OTA_BEGIN_FAILED", Update.getError());
+        return false;
+      }
+
+      size_t written = 0;
+      uint32_t lastDataMs = millis();
+      int lastPct = -1;
+      bool ok = true;
+
+      if (chunked) {
+        ok = decodeChunkedWrite(*client, written, total, lastDataMs, lastPct);
+      } else {
+        uint8_t buf[2048];
+        while (true) {
+          const size_t avail = client->available();
+          if (avail > 0) {
+            const size_t want = (avail > sizeof(buf)) ? sizeof(buf) : avail;
+            const int r = client->readBytes(buf, want);
+            if (r > 0) {
+              lastDataMs = millis();
+              const size_t w = Update.write(buf, (size_t)r);
+              if (w != (size_t)r) {
+                _lastError = otaErr_("OTA_WRITE_FAILED", Update.getError());
+                ok = false;
+                break;
+              }
+              written += w;
+              if (total > 0 && _cb) {
+                const int pct = (int)((100.0f * (float)written) / (float)total);
+                if (pct != lastPct) {
+                  lastPct = pct;
+                  _cb(OtaEvent::PROGRESS, pct);
+                }
+              }
+              continue;
+            }
+          }
+
+          const bool doneByLength = (total > 0) && (written >= (size_t)total);
+          const bool doneByEof = (total <= 0) && !client->connected() && (client->available() == 0);
+          if (doneByLength || doneByEof) break;
+          if ((millis() - lastDataMs) > OTA_STREAM_IDLE_MS) {
+            _lastError = otaErr_("OTA_STREAM_IDLE_TIMEOUT");
+            ok = false;
+            break;
+          }
+          delay(1);
+        }
+      }
+
+      client->stop();
+
+      if (!ok) {
+        Update.abort();
+        return false;
+      }
+
+      if (total > 0 && written != (size_t)total) {
+        Update.abort();
+        _lastError = otaErr_("OTA_INCOMPLETE_IMAGE", (int)written);
+        return false;
+      }
+
+      if (!Update.end(true) || !Update.isFinished()) {
+        _lastError = otaErr_("OTA_END_FAILED", Update.getError());
+        return false;
+      }
+
+      _lastError = "";
+      return true;
     }
 
-    if (!Update.end(true) || !Update.isFinished()) {
-      _lastError = otaErr_("OTA_END_FAILED", Update.getError());
-      http.end();
-      return false;
-    }
-
-    http.end();
-    _lastError = "";
-    return true;
+    _lastError = otaErr_("OTA_TOO_MANY_REDIRECTS");
+    return false;
   };
 
   String lastErr = "";

@@ -195,7 +195,7 @@ static void onOtaEvent(OtaEvent ev, int progress) {
     gPauseByOta = false;
     notification.setOta(false, 0);
     notification.notify(SND_OTA_FAIL);
-    (void)network.publishOtaDebug("FAIL", updater.lastError(), -1);
+    // FAIL debug/log is already handled inside UpdateManager::loop()
   }
 }
 
@@ -348,17 +348,6 @@ void loop() {
   wifiMgr.update();
   updater.loop();
 
-  static String s_lastOtaErr = "";
-  const String otaErr = updater.lastError();
-  if (otaErr != s_lastOtaErr) {
-    s_lastOtaErr = otaErr;
-    if (otaErr.length()) {
-      (void)network.publishOtaDebug("FAIL", otaErr, -1);
-      network.logStatusEvent(otaErr, 0.0f, 0.0f, 0.0f, 0.0f);
-    } else {
-      (void)network.publishOtaDebug("IDLE", "", -1);
-    }
-  }
 
   const bool portalActive = wifiMgr.inConfigPortal();
   const bool paused = gPauseByOta;
