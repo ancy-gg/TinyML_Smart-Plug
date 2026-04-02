@@ -348,6 +348,16 @@ void loop() {
   wifiMgr.update();
   updater.loop();
 
+  static String s_lastOtaErr = String("__BOOT__");
+  const String otaErr = updater.lastError();
+  if (otaErr != s_lastOtaErr) {
+    s_lastOtaErr = otaErr;
+    if (otaErr.length()) {
+      (void)network.publishOtaDebug("FAIL", otaErr, -1);
+    } else {
+      (void)network.publishOtaDebug("IDLE", "", -1);
+    }
+  }
 
   const bool portalActive = wifiMgr.inConfigPortal();
   const bool paused = gPauseByOta;

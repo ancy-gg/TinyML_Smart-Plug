@@ -209,6 +209,10 @@ void UpdateManager::loop() {
   const uint32_t now = millis();
   if (!_checkNow && (uint32_t)(now - _lastCheckMs) < _intervalMs) return;
 
+  auto publishDebug = [&](const String& phase, const String& detail, int progress = -1) {
+    if (_cloud && _cloud->isReady()) (void)_cloud->publishOtaDebug(phase, detail, progress);
+  };
+
   _checkNow = false;
   _lastCheckMs = now;
   _lastError = "";
@@ -216,6 +220,7 @@ void UpdateManager::loop() {
   String desiredVer, fwUrl;
   if (!fetchOtaTargets(desiredVer, fwUrl)) {
     _lastError = otaErr_("OTA_TARGET_FETCH_FAILED");
+    publishDebug("FAIL", _lastError, -1);
     return;
   }
 
@@ -224,24 +229,30 @@ void UpdateManager::loop() {
 
   if (!desiredVer.length()) {
     _lastError = otaErr_("OTA_EMPTY_VERSION");
+    publishDebug("FAIL", _lastError, -1);
     return;
   }
   if (!fwUrl.length()) {
     _lastError = otaErr_("OTA_EMPTY_URL");
+    publishDebug("FAIL", _lastError, -1);
     return;
   }
   if (desiredVer.equals(_currentVersion)) {
     _lastError = otaErr_("OTA_SKIP_SAME_VERSION");
+    publishDebug("IDLE", _lastError, -1);
     return;
   }
 
   if (_cb) _cb(OtaEvent::START, 0);
 
   if (performUpdateFromUrl(fwUrl)) {
+    _lastError = "";
     if (_cb) _cb(OtaEvent::SUCCESS, 100);
     delay(OTA_RESTART_DELAY_MS);
     ESP.restart();
   } else {
+    if (!_lastError.length()) _lastError = otaErr_("OTA_FAILED");
+    publishDebug("FAIL", _lastError, -1);
     if (_cb) _cb(OtaEvent::FAIL, 0);
   }
 }
