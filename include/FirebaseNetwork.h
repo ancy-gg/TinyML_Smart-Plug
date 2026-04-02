@@ -50,6 +50,7 @@ public:
   bool logStatusEvent(const String& status, float v, float c, float apparentPower, float t);
   bool logFeatureEvent(const String& status, const FeatureFrame& f, float apparentPower, bool relayTrip);
   bool publishOtaDebug(const String& phase, const String& detail, int progress = -1);
+  void stopAllClients();
 
   void setLogEnabled(bool en);
   bool logEnabled() const { return _manualEnabled || _autoEnabled; }

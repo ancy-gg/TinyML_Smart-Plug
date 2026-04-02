@@ -459,6 +459,17 @@ bool UpdateManager::performUpdateFromUrl(const String& rawUrl) {
         return false;
       }
 
+      if (_cloud) {
+        _cloud->stopAllClients();
+        delay(150);
+      }
+
+      IPAddress resolvedIp;
+      if (!WiFi.hostByName(u.host.c_str(), resolvedIp)) {
+        _lastError = String("OTA_DNS_FAIL ") + u.host;
+        return false;
+      }
+
       std::unique_ptr<WiFiClient> plain;
       std::unique_ptr<WiFiClientSecure> secure;
       Client* client = nullptr;
@@ -466,6 +477,7 @@ bool UpdateManager::performUpdateFromUrl(const String& rawUrl) {
         secure.reset(new WiFiClientSecure());
         if (!secure) { _lastError = otaErr_("OTA_CLIENT_ALLOC_FAIL"); return false; }
         secure->setTimeout(OTA_HTTP_TIMEOUT_MS / 1000);
+        secure->setHandshakeTimeout(20);
         if (_insecureTLS) secure->setInsecure();
         client = secure.get();
       } else {
@@ -476,7 +488,18 @@ bool UpdateManager::performUpdateFromUrl(const String& rawUrl) {
       }
 
       if (!client->connect(u.host.c_str(), u.port)) {
-        _lastError = String("OTA_CONNECT_FAIL ") + u.host + ":" + String(u.port);
+        String detail = String("OTA_CONNECT_FAIL ") + u.host + ":" + String(u.port);
+
+        if (u.https && secure) {
+          char errbuf[128] = {0};
+          secure->lastError(errbuf, sizeof(errbuf));
+          if (errbuf[0]) {
+            detail += " | ";
+            detail += errbuf;
+          }
+        }
+
+        _lastError = detail;
         return false;
       }
 
