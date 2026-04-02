@@ -67,6 +67,7 @@ float VoltageSensor::update() {
     const int med  = _median5(s0, s1, s2, s3, s4);
     const int mean = (s0 + s1 + s2 + s3 + s4 + 2) / 5;
     const int val  = (4 * med + mean + 2) / 5;
+
     if (val < _sampleMin) _sampleMin = val;
     if (val > _sampleMax) _sampleMax = val;
     _count++;
@@ -102,7 +103,10 @@ float VoltageSensor::update() {
   } else {
     _noSignalWindows = 0;
     if (_vActive) {
-      if (vrmsMain < _vOff) { _vActive = false; vrmsMain = 0.0f; }
+      if (vrmsMain < _vOff) {
+        _vActive = false;
+        vrmsMain = 0.0f;
+      }
     } else if (vrmsMain > _vOn) {
       _vActive = true;
     } else {
@@ -110,8 +114,56 @@ float VoltageSensor::update() {
     }
   }
 
-  _winVrms[_winPos] = vrmsMain;
-  _winValid[_winPos] = (uint8_t)(!noRealMains && vrmsMain > 0.0f);
+  const float instantVrms = vrmsMain;
+  const bool instantZeroLike  = noRealMains || (instantVrms <= VOLTAGE_SNAP_ZERO_V);
+  const bool instantMainsLike = (!noRealMains) && (instantVrms >= VOLTAGE_SNAP_RESTORE_V);
+
+  const bool wasZeroLike =
+      (_rawVrms <= _vOff) &&
+      (!_protInit || (_protVrms <= _vOff)) &&
+      (!_dispInit || (_dispVrms <= _vOff));
+
+  const bool wasLiveLike =
+      (_rawVrms >= VOLT_NORMAL_MIN_V) ||
+      (_protInit && (_protVrms >= VOLT_NORMAL_MIN_V)) ||
+      (_dispInit && (_dispVrms >= VOLT_NORMAL_MIN_V));
+
+  if (instantZeroLike && wasLiveLike) {
+    _rawVrms = 0.0f;
+    _lowWindows = 1;
+    _faultVoteCount = 0;
+    _healthyVoteCount = 0;
+    _winPos = 0;
+    _winCount = 0;
+    for (uint8_t i = 0; i < WINDOW_RING; ++i) {
+      _winVrms[i] = 0.0f;
+      _winValid[i] = 0;
+    }
+    _protInit = true;
+    _protVrms = 0.0f;
+    _dispInit = true;
+    _dispVrms = 0.0f;
+    return _dispVrms;
+  }
+
+  if (instantMainsLike && wasZeroLike) {
+    _rawVrms = instantVrms;
+    _winVrms[0] = instantVrms;
+    _winValid[0] = 1;
+    _winPos = 1 % WINDOW_RING;
+    _winCount = 1;
+    _lowWindows = 0;
+    _faultVoteCount = 0;
+    _healthyVoteCount = 1;
+    _protInit = true;
+    _protVrms = _rawVrms;
+    _dispInit = true;
+    _dispVrms = _protVrms;
+    return _dispVrms;
+  }
+
+  _winVrms[_winPos] = instantVrms;
+  _winValid[_winPos] = (uint8_t)(!noRealMains && instantVrms > 0.0f);
   _winPos = (uint8_t)((_winPos + 1U) % WINDOW_RING);
   if (_winCount < WINDOW_RING) _winCount++;
 
@@ -130,7 +182,9 @@ float VoltageSensor::update() {
     float nearVals[WINDOW_RING];
     int nearN = 0;
     for (int i = 0; i < validN; ++i) {
-      if (fabsf(validVals[i] - med) <= fmaxf(12.0f, 0.08f * med)) nearVals[nearN++] = validVals[i];
+      if (fabsf(validVals[i] - med) <= fmaxf(12.0f, 0.08f * med)) {
+        nearVals[nearN++] = validVals[i];
+      }
     }
     if (nearN >= 2) filteredRaw = trimmedMean_(nearVals, nearN);
     else filteredRaw = med;

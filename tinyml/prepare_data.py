@@ -5,7 +5,7 @@ import pandas as pd
 import numpy as np
 
 FEATURES = [
-    "cycle_nmse", "zcv", "zc_dwell_ratio", "pulse_count_per_cycle", "peak_fluct_cv",
+    "cycle_nmse", "zcv", "zc_dwell_ratio", "cycle_rms_drop_ratio", "peak_fluct_cv",
     "midband_residual_rms", "hf_band_energy_ratio", "wpe_entropy", "spec_entropy", "thd_i",
 ]
 TARGET = "label_arc"
@@ -44,7 +44,7 @@ def load_and_tag_csvs(csv_files):
     frames = []
     for i, path in enumerate(csv_files):
         print("[%d/%d] Loading: %s" % (i + 1, len(csv_files), path))
-        df = pd.read_csv(path).copy()
+        df = normalize_feature_names(pd.read_csv(path).copy())
         base = os.path.splitext(os.path.basename(path))[0]
         group_col = pick_group_column(df)
         if group_col is None:
@@ -55,6 +55,17 @@ def load_and_tag_csvs(csv_files):
         frames.append(df)
     return pd.concat(frames, ignore_index=True)
 
+
+
+def normalize_feature_names(df):
+    df = df.copy()
+    cols = {c.strip(): c for c in df.columns}
+    if "cycle_rms_drop_ratio" not in cols and "pulse_count_per_cycle" in cols:
+        df["cycle_rms_drop_ratio"] = pd.to_numeric(df[cols["pulse_count_per_cycle"]], errors="coerce")
+        df["legacy_pulse_feature"] = 1
+    elif "cycle_rms_drop_ratio" in cols:
+        df["legacy_pulse_feature"] = 0
+    return df
 
 def coerce_numeric_if_present(df, cols):
     for c in cols:
@@ -100,7 +111,7 @@ def clean_dataset(df):
     df["cycle_nmse"] = df["cycle_nmse"].clip(0.0, 2.0)
     df["zcv"] = df["zcv"].clip(0.0, 10.0)
     df["zc_dwell_ratio"] = df["zc_dwell_ratio"].clip(0.0, 1.0)
-    df["pulse_count_per_cycle"] = df["pulse_count_per_cycle"].clip(0.0, 100.0)
+    df["cycle_rms_drop_ratio"] = df["cycle_rms_drop_ratio"].clip(0.0, 100.0)
     df["peak_fluct_cv"] = df["peak_fluct_cv"].clip(0.0, 3.0)
     df["midband_residual_rms"] = df["midband_residual_rms"].clip(0.0, 10.0)
     df["hf_band_energy_ratio"] = df["hf_band_energy_ratio"].clip(0.0, 1.0)

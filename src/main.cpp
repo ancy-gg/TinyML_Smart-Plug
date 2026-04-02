@@ -36,18 +36,49 @@ static TaskHandle_t gCore0SenseTask = nullptr;
 static bool gSafeMode = false;
 static volatile bool gPauseByOta = false;
 
-static bool arcInputStable(bool currentValid, bool featValid, float irms) {
+static bool arcInputStable(bool currentValid, float irms) {
   static uint32_t stableSince = 0;
   static float refIrms = 0.0f;
   const uint32_t now = millis();
-  if (!currentValid || !featValid || irms < ARC_MIN_IRMS_A) {
+  if (!currentValid || irms < 0.03f) {
     stableSince = 0; refIrms = irms; return false;
   }
   if (stableSince == 0) { stableSince = now; refIrms = irms; return false; }
-  const float tol = fmaxf(0.08f, 0.25f * fmaxf(refIrms, 0.10f));
+  const float tol = fmaxf(0.12f, 0.40f * fmaxf(refIrms, 0.10f));
   if (fabsf(irms - refIrms) > tol) { stableSince = now; refIrms = irms; return false; }
-  refIrms += 0.08f * (irms - refIrms);
-  return (now - stableSince) >= 1200UL;
+  refIrms += 0.12f * (irms - refIrms);
+  return (now - stableSince) >= 180UL;
+}
+
+static bool arcTurnOnBlanking(bool relayOn, bool currentValid, float vProtect, float irms) {
+  static uint32_t lowSinceMs = 0;
+  static uint32_t blankUntilMs = 0;
+
+  const uint32_t now = millis();
+  const bool mainsOn = (vProtect >= MAINS_PRESENT_ON_V);
+  const bool lowNow = (!currentValid) || (irms <= ARC_TURNON_LOW_A);
+  const bool activeNow = currentValid && relayOn && mainsOn && (irms >= ARC_TURNON_ACTIVE_A);
+
+  if (!relayOn || !mainsOn) {
+    lowSinceMs = 0;
+    blankUntilMs = 0;
+    return false;
+  }
+
+  if (lowNow) {
+    if (lowSinceMs == 0) lowSinceMs = now;
+    return ((int32_t)(blankUntilMs - now) > 0);
+  }
+
+  const bool hadLowState = (lowSinceMs != 0) && ((now - lowSinceMs) >= ARC_TURNON_LOW_MS);
+  if (hadLowState && activeNow) {
+    blankUntilMs = now + ARC_TURNON_BLANK_MS;
+    lowSinceMs = 0;
+  } else if (!activeNow) {
+    lowSinceMs = 0;
+  }
+
+  return ((int32_t)(blankUntilMs - now) > 0);
 }
 
 static bool debouncedMainsPresentForState(float vProtect) {
@@ -70,18 +101,79 @@ static bool debouncedMainsPresentForState(float vProtect) {
 }
 
 static bool classifyUnpluggedSocket(float vRaw, float vProtect, float irmsA, bool currentValid, FaultState st, uint32_t* sinceMs) {
+  (void)irmsA;
+  (void)currentValid;
+  (void)st;
   if (!sinceMs) return false;
-  const bool rawGone  = (vRaw <= MAINS_PRESENT_OFF_V);
-  const bool protGone = (vProtect <= MAINS_PRESENT_OFF_V);
-  const bool zeroLike = rawGone || protGone;
-  const bool noLoad = (!currentValid) || (irmsA <= LOAD_OFF_DETECT_A);
-  const bool faultKeep = (st == STATE_ARCING) || (st == STATE_HEATING);
-  if (zeroLike && noLoad && !faultKeep) {
-    if (*sinceMs == 0) *sinceMs = millis();
-  } else if (vRaw >= MAINS_PRESENT_ON_V || vProtect >= MAINS_PRESENT_ON_V || !noLoad || faultKeep) {
+  const uint32_t now = millis();
+  const bool mainsPresent = (vRaw >= VOLTAGE_SNAP_RESTORE_V) || (vProtect >= VOLTAGE_SNAP_RESTORE_V);
+  const bool mainsGone = (vRaw <= VOLTAGE_SNAP_ZERO_V) && (vProtect <= VOLTAGE_SNAP_ZERO_V);
+  if (mainsPresent) {
+    *sinceMs = 0;
+    return false;
+  }
+  if (mainsGone) {
+    if (*sinceMs == 0) *sinceMs = now;
+  } else {
     *sinceMs = 0;
   }
-  return (*sinceMs != 0) && ((millis() - *sinceMs) >= UNPLUGGED_STATE_DELAY_MS);
+  return (*sinceMs != 0) && ((now - *sinceMs) >= UNPLUGGED_STATE_DELAY_MS);
+}
+
+
+static bool stabilizeFeatureValidity(FeatureFrame& f, float vProtect, float irmsLogic, bool clearState) {
+  static FeatureFrame lastValidFeat = {};
+  static bool haveLastValidFeat = false;
+  static uint32_t lastValidFeatMs = 0;
+  static uint32_t zeroIrmsSinceMs = 0;
+
+  const uint32_t now = millis();
+  if (clearState || vProtect <= MAINS_PRESENT_OFF_V) {
+    haveLastValidFeat = false;
+    lastValidFeatMs = 0;
+    zeroIrmsSinceMs = 0;
+    return false;
+  }
+
+  const bool mainsOn = (vProtect >= MAINS_PRESENT_ON_V);
+  const bool nearZeroIrms = (fabsf(irmsLogic) <= CURRENT_ANALYSIS_IDLE_A);
+  if (mainsOn && nearZeroIrms) {
+    if (zeroIrmsSinceMs == 0) zeroIrmsSinceMs = now;
+  } else {
+    zeroIrmsSinceMs = 0;
+  }
+
+  const bool zeroTooLong = (zeroIrmsSinceMs != 0) && ((now - zeroIrmsSinceMs) >= 5000UL);
+
+  if ((f.current_valid != 0) && (f.feat_valid != 0)) {
+    lastValidFeat = f;
+    haveLastValidFeat = true;
+    lastValidFeatMs = now;
+    return false;
+  }
+
+  const bool bridgeAllowed =
+      mainsOn &&
+      !zeroTooLong &&
+      haveLastValidFeat &&
+      ((now - lastValidFeatMs) <= 600UL) &&
+      ((f.current_valid != 0) || (irmsLogic > 0.03f));
+
+  if (!bridgeAllowed) return false;
+
+  f.cycle_nmse = lastValidFeat.cycle_nmse;
+  f.zcv = lastValidFeat.zcv;
+  f.zc_dwell_ratio = lastValidFeat.zc_dwell_ratio;
+  f.cycle_rms_drop_ratio = lastValidFeat.cycle_rms_drop_ratio;
+  f.peak_fluct_cv = lastValidFeat.peak_fluct_cv;
+  f.midband_residual_rms = lastValidFeat.midband_residual_rms;
+  f.hf_band_energy_ratio = lastValidFeat.hf_band_energy_ratio;
+  f.wpe_entropy = lastValidFeat.wpe_entropy;
+  f.spec_entropy = lastValidFeat.spec_entropy;
+  f.thd_i = lastValidFeat.thd_i;
+  f.adc_fs_hz = lastValidFeat.adc_fs_hz;
+  f.feat_valid = 1;
+  return true;
 }
 
 static float cleanDisplayCurrent(float irmsRaw, bool currentValid, bool featValid, float vRaw, float vProtect) {
@@ -237,7 +329,7 @@ static void Core0Task(void* pv) {
       f.adc_fs_hz = out.fs_hz; f.irms = out.irms_a; f.current_valid = 1; f.feat_valid = out.feat_valid ? 1 : 0;
       if (out.feat_valid) {
         f.cycle_nmse = out.cycle_nmse; f.zcv = out.zcv; f.zc_dwell_ratio = out.zc_dwell_ratio;
-        f.pulse_count_per_cycle = out.pulse_count_per_cycle; f.peak_fluct_cv = out.peak_fluct_cv;
+        f.cycle_rms_drop_ratio = out.cycle_rms_drop_ratio; f.peak_fluct_cv = out.peak_fluct_cv;
         f.midband_residual_rms = out.midband_residual_rms; f.hf_band_energy_ratio = out.hf_band_energy_ratio;
         f.wpe_entropy = out.wpe_entropy; f.spec_entropy = out.spec_entropy; f.thd_i = out.thd_i;
       }
@@ -394,7 +486,7 @@ void loop() {
     f = lastF;
     if ((millis() - lastFeatRxMs) > FEAT_STALE_MS) {
       f.irms = 0.0f; f.current_valid = 0; f.feat_valid = 0; f.model_pred = 0; f.adc_fs_hz = 0.0f;
-      f.cycle_nmse = f.zcv = f.zc_dwell_ratio = f.pulse_count_per_cycle = f.peak_fluct_cv = 0.0f;
+      f.cycle_nmse = f.zcv = f.zc_dwell_ratio = f.cycle_rms_drop_ratio = f.peak_fluct_cv = 0.0f;
       f.midband_residual_rms = f.hf_band_energy_ratio = f.wpe_entropy = f.spec_entropy = f.thd_i = 0.0f;
       lastF = f;
     }
@@ -418,6 +510,8 @@ void loop() {
   f.vrms = vRms; f.temp_c = tC;
   const float irmsRawMeasured = f.irms;
   float irmsRawForLogic = cleanLogicCurrent(irmsRawMeasured, f.current_valid != 0, vRaw, vFast);
+  const bool featureBridgeUsed = stabilizeFeatureValidity(f, vFast, irmsRawForLogic, !protection.relayLatchedOn());
+  (void)featureBridgeUsed;
 
   static uint32_t lowIrmsSinceMs = 0;
   const bool mainsOnForIdle = (vFast >= MAINS_PRESENT_ON_V);
@@ -437,6 +531,8 @@ void loop() {
 
   const float apparentPowerVa = (vRms > 0.10f && f.irms > 0.001f) ? (vRms * f.irms) : 0.0f;
   const bool voltageNormal = (vFast >= VOLT_NORMAL_MIN_V && vFast <= VOLT_NORMAL_MAX_V);
+  const bool arcTurnOnBlankActive =
+      arcTurnOnBlanking(protection.relayLatchedOn(), f.current_valid != 0, vFast, irmsRawForLogic);
 
   static float loadRefA = 0.0f;
   static float prevIrmsLogic = 0.0f;
@@ -444,10 +540,11 @@ void loop() {
   static uint32_t invalidBurstSinceMs = 0;
   static uint32_t collapseSinceMs = 0;
   static uint32_t voltDipSinceMs = 0;
+  static uint32_t faultClearSuppressUntilMs = 0;
 
-  if (vFast >= MAINS_PRESENT_ON_V && irmsRawForLogic >= 0.50f) {
+  if (protection.relayLatchedOn() && vFast >= MAINS_PRESENT_ON_V && irmsRawForLogic >= 0.50f) {
     loadRefA += 0.10f * (irmsRawForLogic - loadRefA);
-  } else if (vFast <= MAINS_PRESENT_OFF_V) {
+  } else if (!protection.relayLatchedOn() || vFast <= MAINS_PRESENT_OFF_V) {
     loadRefA = 0.0f;
   }
 
@@ -489,12 +586,14 @@ void loop() {
   }
 
   const bool fallbackArcEvent =
-      (invalidBurstSinceMs && (millis() - invalidBurstSinceMs) >= 80UL) ||
-      (collapseSinceMs && (millis() - collapseSinceMs) >= 40UL) ||
-      (voltDipSinceMs && (millis() - voltDipSinceMs) >= 40UL);
+      protection.relayLatchedOn() &&
+      ((collapseSinceMs && (millis() - collapseSinceMs) >= 40UL) ||
+       (voltDipSinceMs && (millis() - voltDipSinceMs) >= 40UL));
 
-  const bool mlArcEligible = (!gSafeMode && !paused && !bootSettling && !protectionInhibit && voltageNormal &&
-                              arcInputStable(f.current_valid, f.feat_valid, irmsRawForLogic));
+  const bool haveUsableFeatures = (f.feat_valid != 0);
+  const bool mlArcEligible = (!gSafeMode && !paused && !bootSettling && !protectionInhibit &&
+                              !arcTurnOnBlankActive && voltageNormal &&
+                              haveUsableFeatures && arcInputStable(f.current_valid != 0, irmsRawForLogic));
 
   network.pollControls(!paused && !portalActive && wifiConnected, portalActive);
 
@@ -506,7 +605,19 @@ void loop() {
     updater.requestCheckNow();
   }
   updater.loop();
-  if (faultClearRequested) { protection.resetLatch(); notification.notify(SND_RESET_ACK); notification.clearFaultAlert(); }
+  if (faultClearRequested) {
+    protection.resetLatch();
+    faultClearSuppressUntilMs = millis() + 2500UL;
+    loadRefA = 0.0f;
+    invalidBurstSinceMs = 0;
+    collapseSinceMs = 0;
+    voltDipSinceMs = 0;
+    prevIrmsLogic = irmsRawForLogic;
+    prevVFast = vFast;
+    (void)stabilizeFeatureValidity(f, vFast, irmsRawForLogic, true);
+    notification.notify(SND_RESET_ACK);
+    notification.clearFaultAlert();
+  }
   if (revertFirmwareRequested) {
     network.logStatusEvent("FIRMWARE REVERT REQUESTED", 0.0f, 0.0f, 0.0f, 0.0f);
     if (!updater.rollbackToPrevious()) {
@@ -514,18 +625,21 @@ void loop() {
     }
   }
 
+  const bool faultClearSuppressActive = ((int32_t)(faultClearSuppressUntilMs - millis()) > 0);
+
   int pred = 0;
-  if (mlArcEligible) {
-    pred = arcDetect.predict(f.cycle_nmse, f.zcv, f.zc_dwell_ratio, f.pulse_count_per_cycle, f.peak_fluct_cv,
+  if (!faultClearSuppressActive && mlArcEligible) {
+    pred = arcDetect.predict(f.cycle_nmse, f.zcv, f.zc_dwell_ratio, f.cycle_rms_drop_ratio, f.peak_fluct_cv,
                              f.midband_residual_rms, f.hf_band_energy_ratio, f.wpe_entropy, f.spec_entropy, f.thd_i,
                              f.vrms, irmsRawForLogic, f.temp_c);
   }
-  if (fallbackArcEvent) pred = 1;
+  if (!faultClearSuppressActive && !arcTurnOnBlankActive && fallbackArcEvent) pred = 1;
   f.model_pred = (uint8_t)pred;
 
   FaultState st = STATE_NORMAL;
-  if (!bootSettling) {
-    st = protection.update(vFast, vRaw, tC, irmsRawForLogic, f.model_pred, (mlArcEligible || fallbackArcEvent));
+  if (!bootSettling && !faultClearSuppressActive) {
+    st = protection.update(vFast, vRaw, tC, irmsRawForLogic, f.model_pred,
+                         (!arcTurnOnBlankActive && (mlArcEligible || fallbackArcEvent)));
   }
   if (gSafeMode) st = STATE_NORMAL;
 
@@ -570,7 +684,7 @@ void loop() {
   const bool mainsPresentStable = debouncedMainsPresentForState(vFast);
   handleCueEvents(vRaw, vFast, irmsRawForLogic, mainsPresentStable, paused || gSafeMode || protectionInhibit, st);
 
-  maybeStartAutoArcCapture(network, notification, paused || protectionInhibit, gSafeMode, ((mlArcEligible || fallbackArcEvent) && f.model_pred == 1));
+  maybeStartAutoArcCapture(network, notification, paused || protectionInhibit, gSafeMode, (!faultClearSuppressActive && (mlArcEligible || fallbackArcEvent) && f.model_pred == 1));
   if (!paused && !gSafeMode) pollMlControl(network, notification); else network.setLogEnabled(false);
   if (!paused && !gSafeMode) {
     static uint32_t lastMl = 0;
@@ -584,7 +698,7 @@ void loop() {
   static FaultState displayFaultState = STATE_NORMAL;
   static uint32_t displayFaultUntil = 0;
   if (faultClearRequested) { displayFaultState = STATE_NORMAL; displayFaultUntil = 0; }
-  if (st != STATE_NORMAL) { displayFaultState = st; displayFaultUntil = millis() + FAULT_ALERT_MIN_MS; }
+  if (!faultClearSuppressActive && st != STATE_NORMAL) { displayFaultState = st; displayFaultUntil = millis() + FAULT_ALERT_MIN_MS; }
   else if (displayFaultState != STATE_NORMAL && (int32_t)(millis() - displayFaultUntil) >= 0) { displayFaultState = STATE_NORMAL; displayFaultUntil = 0; }
   const bool displayFaultActive = (displayFaultState != STATE_NORMAL) && ((int32_t)(displayFaultUntil - millis()) > 0);
 
@@ -629,7 +743,7 @@ void loop() {
     else stateStr = String(stateToCstr(st));
     network.requestLiveUpdate(vRms, f.irms, apparentPowerVa, tC,
                               f.cycle_nmse, f.zcv, f.zc_dwell_ratio,
-                              f.pulse_count_per_cycle, f.peak_fluct_cv,
+                              f.cycle_rms_drop_ratio, f.peak_fluct_cv,
                               f.midband_residual_rms, f.hf_band_energy_ratio,
                               f.wpe_entropy, f.spec_entropy, f.thd_i,
                               f.model_pred, stateStr);

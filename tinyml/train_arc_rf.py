@@ -13,8 +13,9 @@ CSV_PATH = r"tinyml/data/cleaned_data.csv"
 OUT_HEADER = r"tinyml/TinyML_RF.h"
 OUT_JOBLIB = r"tinyml/TinyML_RF.joblib"
 
+# New preferred 10-feature set
 FEATURES = [
-    "cycle_nmse", "zcv", "zc_dwell_ratio", "pulse_count_per_cycle", "peak_fluct_cv",
+    "cycle_nmse", "zcv", "zc_dwell_ratio", "cycle_rms_drop_ratio", "peak_fluct_cv",
     "midband_residual_rms", "hf_band_energy_ratio", "wpe_entropy", "spec_entropy", "thd_i",
 ]
 TARGET = "label_arc"
@@ -34,24 +35,96 @@ def pick_group_column(df):
     return None
 
 
-def clean_df(df):
+def normalize_feature_names(df):
+    df = df.copy()
+    # strip ugly whitespace from headers first
+    df.columns = [str(c).strip() for c in df.columns]
+
+    aliases = {
+        "i_rms": "i_rms",
+        "v_rms": "v_rms",
+        "temp_c": "temp_c",
+        "label_arc": "label_arc",
+        "session_id": "session_id",
+        "epoch_ms": "epoch_ms",
+        "adc_fs_hz": "adc_fs_hz",
+        "feat_valid": "feat_valid",
+        "current_valid": "current_valid",
+        "rf_train_row": "rf_train_row",
+        "cycle_nmse": "cycle_nmse",
+        "zcv": "zcv",
+        "zc_dwell_ratio": "zc_dwell_ratio",
+        "cycle_rms_drop_ratio": "cycle_rms_drop_ratio",
+        "peak_fluct_cv": "peak_fluct_cv",
+        "midband_residual_rms": "midband_residual_rms",
+        "hf_band_energy_ratio": "hf_band_energy_ratio",
+        "wpe_entropy": "wpe_entropy",
+        "spec_entropy": "spec_entropy",
+        "thd_i": "thd_i",
+        # legacy compatibility
+        "pulse_count_per_cycle": "pulse_count_per_cycle",
+    }
+
+    rename_map = {}
+    for c in df.columns:
+        key = str(c).strip()
+        if key in aliases:
+            rename_map[c] = aliases[key]
+    if rename_map:
+        df = df.rename(columns=rename_map)
+
+    # backward compatibility: if the new feature is absent but legacy pulse_count exists,
+    # use it as a temporary stand-in so training can still proceed.
+    if "cycle_rms_drop_ratio" not in df.columns and "pulse_count_per_cycle" in df.columns:
+        df["cycle_rms_drop_ratio"] = pd.to_numeric(df["pulse_count_per_cycle"], errors="coerce")
+
+    return df
+
+
+def clean_df(df, include_invalid=False):
+    df = normalize_feature_names(df.copy())
+
     missing = [c for c in FEATURES + [TARGET] if c not in df.columns]
     if missing:
         raise ValueError("Missing required columns: %s" % missing)
-    df = df.copy()
+
     df[TARGET] = pd.to_numeric(df[TARGET], errors="coerce")
     df = df[df[TARGET].isin([0, 1])].copy()
-    x = df[FEATURES].replace([np.inf, -np.inf], np.nan)
-    df = df.loc[x.notna().all(axis=1)].copy()
-    for c, hi in [("cycle_nmse",2.0),("zcv",10.0),("zc_dwell_ratio",1.0),("pulse_count_per_cycle",50.0),
-                  ("peak_fluct_cv",2.0),("midband_residual_rms",5.0),("hf_band_energy_ratio",1.0),
-                  ("wpe_entropy",1.0),("spec_entropy",1.0),("thd_i",400.0)]:
+
+    for c in FEATURES:
+        df[c] = pd.to_numeric(df[c], errors="coerce")
+
+    if include_invalid:
+        x = df[FEATURES].replace([np.inf, -np.inf], np.nan)
+        df = df.loc[x.notna().all(axis=1)].copy()
+    else:
+        if "rf_train_row" in df.columns:
+            df = df[df["rf_train_row"] == 1].copy()
+        elif "feat_valid" in df.columns:
+            curv = pd.to_numeric(df.get("current_valid", 1), errors="coerce").fillna(1)
+            df = df[(pd.to_numeric(df["feat_valid"], errors="coerce") == 1) & (curv == 1)].copy()
+        x = df[FEATURES].replace([np.inf, -np.inf], np.nan)
+        df = df.loc[x.notna().all(axis=1)].copy()
+
+    clip_hi = {
+        "cycle_nmse": 2.0,
+        "zcv": 10.0,
+        "zc_dwell_ratio": 1.0,
+        "cycle_rms_drop_ratio": 1.0,
+        "peak_fluct_cv": 2.5,
+        "midband_residual_rms": 5.0,
+        "hf_band_energy_ratio": 1.0,
+        "wpe_entropy": 1.0,
+        "spec_entropy": 1.0,
+        "thd_i": 400.0,
+    }
+    for c, hi in clip_hi.items():
         df[c] = df[c].clip(0.0, hi)
     df[TARGET] = df[TARGET].astype(int)
     return df
 
 
-def select_threshold_cost(y_true, y_proba, fn_weight=1000.0, fp_weight=1.0):
+def select_threshold_cost(y_true, y_proba, fn_weight=250.0, fp_weight=1.0):
     thresholds = np.arange(0.05, 0.96, 0.01)
     best = {"thr": 0.5, "cost": float("inf")}
     for thr in thresholds:
@@ -87,15 +160,25 @@ def main():
     ap.add_argument("--csv", default=CSV_PATH)
     ap.add_argument("--out_header", default=OUT_HEADER)
     ap.add_argument("--out_joblib", default=OUT_JOBLIB)
+    ap.add_argument("--include_invalid", action="store_true",
+                    help="Experimental: train on all finite rows instead of only rf_train_row/feat_valid rows.")
+    ap.add_argument("--fn_weight", type=float, default=250.0)
+    ap.add_argument("--fp_weight", type=float, default=1.0)
     args = ap.parse_args()
 
     if not os.path.isfile(args.csv):
         raise ValueError("Merged dataset not found: %s" % args.csv)
 
-    df = pd.read_csv(args.csv)
-    df = clean_df(df)
+    raw_df = pd.read_csv(args.csv)
+    raw_df = normalize_feature_names(raw_df)
+
+    for c in ["rf_train_row", "event_like_invalid", "collapse_like", "fast_vdip_like"]:
+        if c in raw_df.columns:
+            print(f"{c} rows:", int(pd.to_numeric(raw_df[c], errors='coerce').fillna(0).sum()))
+
+    df = clean_df(raw_df, include_invalid=args.include_invalid)
     if df.empty or df[TARGET].nunique() < 2:
-        raise ValueError("Training requires both classes in merged_data.csv.")
+        raise ValueError("Training requires both classes in cleaned_data.csv.")
 
     group_col = pick_group_column(df)
     if group_col is None:
@@ -124,7 +207,7 @@ def main():
     }
     n_splits = min(5, groups_train.nunique())
     if n_splits < 2:
-        raise ValueError("Need at least 2 distinct sessions in merged_data.csv.")
+        raise ValueError("Need at least 2 distinct sessions in cleaned_data.csv.")
     cv = GroupKFold(n_splits=n_splits)
     search = RandomizedSearchCV(base, param_dist, n_iter=30, scoring="average_precision", cv=cv, n_jobs=-1, verbose=1, random_state=42)
     search.fit(X_train, y_train, groups=groups_train)
@@ -133,7 +216,7 @@ def main():
     print("Estimated RF node count:", model_size_estimate(best))
 
     y_score = best.predict_proba(X_test)[:, 1]
-    best_thr = select_threshold_cost(y_test.to_numpy(), y_score)
+    best_thr = select_threshold_cost(y_test.to_numpy(), y_score, fn_weight=args.fn_weight, fp_weight=args.fp_weight)
     y_pred = (y_score >= best_thr["thr"]).astype(int)
     print("Threshold:", best_thr)
     print("Accuracy:", accuracy_score(y_test, y_pred))
@@ -155,6 +238,7 @@ def main():
         f.write(c_code)
     print("Saved:", args.out_joblib)
     print("Saved:", args.out_header)
+
 
 if __name__ == "__main__":
     main()

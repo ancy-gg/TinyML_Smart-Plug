@@ -306,7 +306,7 @@
         </div>
         <div class="card accent-blue">
           <h3>Unplugged or no mains</h3>
-          <p>Very low measured voltage is treated separately from normal voltage faults so the UI can distinguish absent mains from unhealthy mains. A 0 V style collapse is not shown as undervoltage.</p>
+          <p>Very low measured voltage is treated separately from normal voltage faults so the UI can distinguish absent mains from unhealthy mains. Sub-50 V style collapses are snapped toward 0 V quickly, while recovery above about 200 V is allowed to rise quickly without waiting for the slower display averaging.</p>
         </div>
       </div>
     </section>
@@ -322,7 +322,7 @@
         <div class="metric-item"><span class="metric-badge badge-time">TIME</span><div><h3>Cycle NMSE</h3><p>Shows how different one cycle is from the next. Higher inconsistency can suggest unstable conduction.</p></div></div>
         <div class="metric-item"><span class="metric-badge badge-time">TIME</span><div><h3>ZC Variance</h3><p>Measures how irregular the zero-cross timing is. Arcs can disturb normal behavior near crossing points.</p></div></div>
         <div class="metric-item"><span class="metric-badge badge-time">TIME</span><div><h3>ZC Dwell Ratio</h3><p>Shows how long the signal stays near the zero region. Abnormal dwell can be useful during arc review.</p></div></div>
-        <div class="metric-item"><span class="metric-badge badge-time">TIME</span><div><h3>Pulse Count / Cycle</h3><p>Counts pulse-like activity inside each cycle. Unstable loads can create more pulse-like behavior.</p></div></div>
+        <div class="metric-item"><span class="metric-badge badge-time">TIME</span><div><h3>Cycle RMS Drop</h3><p>Shows how strongly the weakest cycle in the window collapses compared with the typical cycle in that same window. This is more useful for heater-style conduction-drop arcs than the old micro-pulse counter.</p></div></div>
         <div class="metric-item"><span class="metric-badge badge-time">TIME</span><div><h3>Peak Fluctuation CV</h3><p>Describes how much cycle peaks vary. Large variation usually means the waveform is less repeatable.</p></div></div>
         <div class="metric-item"><span class="metric-badge badge-freq">FREQ</span><div><h3>HF Energy Ratio</h3><p>Compares high-frequency energy to the rest of the signal. Arcing often increases high-frequency content.</p></div></div>
         <div class="metric-item"><span class="metric-badge badge-freq">FREQ</span><div><h3>Wavelet Entropy</h3><p>Shows how spread or disordered the signal becomes across wavelet bands.</p></div></div>

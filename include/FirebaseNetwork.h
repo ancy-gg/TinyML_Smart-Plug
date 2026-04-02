@@ -41,7 +41,7 @@ public:
 
   void requestLiveUpdate(float v, float c, float apparentPower, float t,
                          float cycle_nmse, float zcv, float zc_dwell_ratio,
-                         float pulse_count_per_cycle, float peak_fluct_cv,
+                         float cycle_rms_drop_ratio, float peak_fluct_cv,
                          float midband_residual_rms, float hf_band_energy_ratio,
                          float wpe_entropy, float spec_entropy, float thd_i,
                          uint8_t model_pred,
@@ -66,7 +66,7 @@ private:
   struct LiveSnapshot {
     float v = 0.0f, c = 0.0f, apparentPower = 0.0f, t = 0.0f;
     float cycle_nmse = 0.0f, zcv = 0.0f, zc_dwell_ratio = 0.0f;
-    float pulse_count_per_cycle = 0.0f, peak_fluct_cv = 0.0f;
+    float cycle_rms_drop_ratio = 0.0f, peak_fluct_cv = 0.0f;
     float midband_residual_rms = 0.0f, hf_band_energy_ratio = 0.0f;
     float wpe_entropy = 0.0f, spec_entropy = 0.0f, thd_i = 0.0f;
     uint8_t model_pred = 0;
@@ -90,7 +90,7 @@ private:
 
   struct Rec {
     uint64_t epoch_ms;
-    float cycle_nmse, zcv, zc_dwell_ratio, pulse_count_per_cycle, peak_fluct_cv;
+    float cycle_nmse, zcv, zc_dwell_ratio, cycle_rms_drop_ratio, peak_fluct_cv;
     float midband_residual_rms, hf_band_energy_ratio, wpe_entropy, spec_entropy, thd_i;
     float v_rms, i_rms, temp_c;
     int8_t  label_arc;

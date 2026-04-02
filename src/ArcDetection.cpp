@@ -322,23 +322,14 @@ bool ArcDetection::compute(const uint16_t* raw, size_t n, float fs_hz,
   }
 
   float cyclePeaks[24];
+  float cycleRmsVals[24];
   int peakN = 0;
-  float pulsePerCycleAcc = 0.0f;
-  int pulseCycles = 0;
   float nmseAcc = 0.0f;
   int nmsePairs = 0;
 
   static constexpr int RSZ = 96;
   float prevCycle[RSZ];
   bool havePrevCycle = false;
-
-  const bool pulseEligible = (irms >= PULSE_ANALYSIS_MIN_IRMS_A) &&
-                             (residRms >= PULSE_ANALYSIS_MIN_RESID_A);
-  float pulseThr = fmaxf(PULSE_THRESH_MIN_A, PULSE_THRESH_RMS_MUL * residRms);
-  pulseThr = fmaxf(pulseThr, 0.10f * irms);
-
-  const int pulseMinW = clampi((int)lroundf((PULSE_MIN_WIDTH_US * 1e-6f) * fs_hz), 1, 32);
-  const int pulseMaxW = clampi((int)lroundf((PULSE_MAX_WIDTH_US * 1e-6f) * fs_hz), pulseMinW, 512);
 
   for (int c = 0; c < cycleCount && c < 24; ++c) {
     const int a = clampi((int)floorf(crossPos[c]), 0, (int)n - 2);
@@ -347,33 +338,17 @@ bool ArcDetection::compute(const uint16_t* raw, size_t n, float fs_hz,
     if (len < 16) continue;
 
     float peak = 0.0f;
-    int pulseCount = 0;
-    bool inPulse = false;
-    int pulseStart = a;
+    double cycSq = 0.0;
 
     for (int i = a; i < b; ++i) {
       const float av = fabsf(sigClean[i]);
       if (av > peak) peak = av;
-
-      const bool over = pulseEligible && (fabsf(resid[i]) >= pulseThr);
-      if (over && !inPulse) {
-        inPulse = true;
-        pulseStart = i;
-      } else if (!over && inPulse) {
-        const int w = i - pulseStart;
-        if (w >= pulseMinW && w <= pulseMaxW) pulseCount++;
-        inPulse = false;
-      }
+      cycSq += (double)sigClean[i] * (double)sigClean[i];
     }
 
-    if (inPulse) {
-      const int w = b - pulseStart;
-      if (w >= pulseMinW && w <= pulseMaxW) pulseCount++;
-    }
-
-    pulsePerCycleAcc += pulseCount;
-    pulseCycles++;
-    cyclePeaks[peakN++] = peak;
+    cyclePeaks[peakN] = peak;
+    cycleRmsVals[peakN] = (len > 0) ? sqrtf((float)(cycSq / (double)len)) : 0.0f;
+    peakN++;
 
     float curCycle[RSZ];
     for (int j = 0; j < RSZ; ++j) {
@@ -400,8 +375,6 @@ bool ArcDetection::compute(const uint16_t* raw, size_t n, float fs_hz,
     havePrevCycle = true;
   }
 
-  if (pulseCycles > 0) out.pulse_count_per_cycle = pulsePerCycleAcc / (float)pulseCycles;
-
   if (peakN >= 2) {
     double mu = 0.0;
     for (int i = 0; i < peakN; ++i) mu += cyclePeaks[i];
@@ -414,6 +387,23 @@ bool ArcDetection::compute(const uint16_t* raw, size_t n, float fs_hz,
     }
     vv /= (double)peakN;
     out.peak_fluct_cv = (float)(sqrt(vv) / (mu + 1e-9));
+  }
+
+  if (peakN >= 2) {
+    float tmp[24];
+    for (int i = 0; i < peakN; ++i) tmp[i] = cycleRmsVals[i];
+    for (int i = 0; i < peakN - 1; ++i) {
+      for (int j = i + 1; j < peakN; ++j) {
+        if (tmp[j] < tmp[i]) { const float t = tmp[i]; tmp[i] = tmp[j]; tmp[j] = t; }
+      }
+    }
+    const float baseline = (peakN & 1) ? tmp[peakN / 2]
+                                       : 0.5f * (tmp[(peakN / 2) - 1] + tmp[peakN / 2]);
+    float minCycle = cycleRmsVals[0];
+    for (int i = 1; i < peakN; ++i) {
+      if (cycleRmsVals[i] < minCycle) minCycle = cycleRmsVals[i];
+    }
+    out.cycle_rms_drop_ratio = clampf((baseline - minCycle) / fmaxf(baseline, 0.05f), 0.0f, 1.5f);
   }
 
   if (nmsePairs > 0) out.cycle_nmse = nmseAcc / (float)nmsePairs;
@@ -569,14 +559,14 @@ bool ArcDetection::compute(const uint16_t* raw, size_t n, float fs_hz,
 }
 
 int ArcDetection::predict(float cycle_nmse, float zcv, float zc_dwell_ratio,
-                          float pulse_count_per_cycle, float peak_fluct_cv,
+                          float cycle_rms_drop_ratio, float peak_fluct_cv,
                           float midband_residual_rms, float hf_band_energy_ratio,
                           float wpe_entropy, float spec_entropy, float thd_i,
                           float v_rms, float i_rms, float temp_c) const {
   (void)v_rms; (void)i_rms; (void)temp_c;
   double input_features[10] = {
     (double)cycle_nmse, (double)zcv, (double)zc_dwell_ratio,
-    (double)pulse_count_per_cycle, (double)peak_fluct_cv,
+    (double)cycle_rms_drop_ratio, (double)peak_fluct_cv,
     (double)midband_residual_rms, (double)hf_band_energy_ratio,
     (double)wpe_entropy, (double)spec_entropy, (double)thd_i
   };
@@ -595,7 +585,7 @@ int ArcDetection::computeAndPredict(const uint16_t* raw, size_t n, float fs_hz,
     return 0;
   }
   out.model_pred = (uint8_t)predict(out.cycle_nmse, out.zcv, out.zc_dwell_ratio,
-                                    out.pulse_count_per_cycle, out.peak_fluct_cv,
+                                    out.cycle_rms_drop_ratio, out.peak_fluct_cv,
                                     out.midband_residual_rms, out.hf_band_energy_ratio,
                                     out.wpe_entropy, out.spec_entropy, out.thd_i,
                                     v_rms, out.irms_a, temp_c);

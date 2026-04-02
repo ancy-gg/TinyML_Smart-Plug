@@ -54,7 +54,7 @@ const tHint  = el("tHint");
 const cycleNmseVal = el("cycleNmseVal");
 const zcvVal       = el("zcvVal");
 const zcDwellVal   = el("zcDwellVal");
-const pulseCountVal= el("pulseCountVal");
+const cycleDropVal = el("cycleDropVal");
 const peakFluctVal = el("peakFluctVal");
 const midbandResidVal = el("midbandResidVal");
 const hfEnergyVal  = el("hfEnergyVal");
@@ -100,7 +100,7 @@ const UI_UNDERVOLTAGE_V = 207;
 const UI_OVERVOLTAGE_V = 253;
 const UI_OVERVOLTAGE_DELAY_V = 250;
 const UI_OVERVOLTAGE_FAST_V = 265;
-const UI_MAINS_ABSENT_V = 20;
+const UI_MAINS_ABSENT_V = 50;
 const UI_TEMP_COLD_ABNORMAL_C = 10;
 const UI_TEMP_WARM_C = 60;
 const UI_TEMP_HOT_C = 70;
@@ -602,7 +602,7 @@ function setLiveZeroes() {
   const zeroMap = [
     [vVal, "0.0"], [iVal, "0.000"], [pVal, "0.0"], [tVal, "0.0"],
     [cycleNmseVal, "0.000"], [zcvVal, "0.000"], [zcDwellVal, "0.000"],
-    [pulseCountVal, "0.000"], [peakFluctVal, "0.000"], [midbandResidVal, "0.000"],
+    [cycleDropVal, "0.000"], [peakFluctVal, "0.000"], [midbandResidVal, "0.000"],
     [hfEnergyVal, "0.000"], [wpeEntropyVal, "0.000"], [specEntropyVal, "0.000"], [thdVal, "0.000"]
   ];
   zeroMap.forEach(([node, text]) => { if (node) node.textContent = text; });
@@ -624,7 +624,7 @@ function derivePowerConditionFromLive(data) {
   const v = Number(data?.voltage ?? 0);
   const raw = classifyStatus(data?.power_condition || data?.status || "NORMAL");
   if (raw === "OVERVOLTAGE") return "OVERVOLTAGE";
-  if (raw === "UNPLUGGED" || v < UI_MAINS_ABSENT_V) return "UNPLUGGED";
+  if (raw === "UNPLUGGED") return "UNPLUGGED";
   if (raw === "UNDERVOLTAGE") return "UNDERVOLTAGE";
 
   // Fallback classification when the device-side power_condition is absent:
@@ -657,7 +657,7 @@ function deriveLiveStatus(data) {
 function setLiveUnavailable() {
   const unavailableMap = [
     vVal, iVal, pVal, tVal,
-    cycleNmseVal, zcvVal, zcDwellVal, pulseCountVal, peakFluctVal, midbandResidVal,
+    cycleNmseVal, zcvVal, zcDwellVal, cycleDropVal, peakFluctVal, midbandResidVal,
     hfEnergyVal, wpeEntropyVal, specEntropyVal, thdVal
   ];
   unavailableMap.forEach((node) => { if (node) node.textContent = "—"; });
@@ -748,6 +748,7 @@ function applyMetricHints(data) {
     if (powerKind === "UNPLUGGED") vHint.textContent = "No mains.";
     else if (powerKind === "UNDERVOLTAGE") vHint.textContent = `${UI_UNDERVOLTAGE_MIN_V}-${UI_NORMAL_V_MIN - 1} V staged`;
     else if (powerKind === "OVERVOLTAGE") vHint.textContent = `>${UI_NORMAL_V_MAX} V staged`;
+    else if (vNow < UI_MAINS_ABSENT_V) vHint.textContent = "0 V pending unplugged";
     else if (vNow >= UI_MAINS_ABSENT_V && vNow < UI_UNDERVOLTAGE_MIN_V) vHint.textContent = "Collapse / mains loss";
     else vHint.textContent = `${UI_NORMAL_V_MIN}-${UI_NORMAL_V_MAX} V`;
   }
@@ -1083,7 +1084,7 @@ function updateLiveDom(data) {
   const cn  = toFixedOrDash(data.cycle_nmse, 3);
   const z   = toFixedOrDash(data.zcv, 3);
   const zd  = toFixedOrDash(data.zc_dwell_ratio, 3);
-  const pc  = toFixedOrDash(data.pulse_count_per_cycle, 3);
+  const cd  = toFixedOrDash(data.cycle_rms_drop_ratio, 3);
   const pf  = toFixedOrDash(data.peak_fluct_cv, 3);
   const mr  = toFixedOrDash(data.midband_residual_rms, 3);
   const hf  = toFixedOrDash(data.hf_band_energy_ratio, 3);
@@ -1098,7 +1099,7 @@ function updateLiveDom(data) {
   if (cycleNmseVal && cycleNmseVal.textContent !== cn) { cycleNmseVal.textContent = cn; animateNumber(cycleNmseVal); }
   if (zcvVal && zcvVal.textContent !== z) { zcvVal.textContent = z; animateNumber(zcvVal); }
   if (zcDwellVal && zcDwellVal.textContent !== zd) { zcDwellVal.textContent = zd; animateNumber(zcDwellVal); }
-  if (pulseCountVal && pulseCountVal.textContent !== pc) { pulseCountVal.textContent = pc; animateNumber(pulseCountVal); }
+  if (cycleDropVal && cycleDropVal.textContent !== cd) { cycleDropVal.textContent = cd; animateNumber(cycleDropVal); }
   if (peakFluctVal && peakFluctVal.textContent !== pf) { peakFluctVal.textContent = pf; animateNumber(peakFluctVal); }
   if (midbandResidVal && midbandResidVal.textContent !== mr) { midbandResidVal.textContent = mr; animateNumber(midbandResidVal); }
   if (hfEnergyVal && hfEnergyVal.textContent !== hf) { hfEnergyVal.textContent = hf; animateNumber(hfEnergyVal); }

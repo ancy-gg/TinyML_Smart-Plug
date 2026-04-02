@@ -9,7 +9,7 @@ struct ArcDetectionResult {
   float cycle_nmse            = 0.0f;
   float zcv                   = 0.0f;
   float zc_dwell_ratio        = 0.0f;
-  float pulse_count_per_cycle = 0.0f;
+  float cycle_rms_drop_ratio  = 0.0f;
   float peak_fluct_cv         = 0.0f;
   float midband_residual_rms  = 0.0f;
   float hf_band_energy_ratio  = 0.0f;
@@ -29,7 +29,7 @@ public:
                ArcDetectionResult& out);
 
   int predict(float cycle_nmse, float zcv, float zc_dwell_ratio,
-              float pulse_count_per_cycle, float peak_fluct_cv,
+              float cycle_rms_drop_ratio, float peak_fluct_cv,
               float midband_residual_rms, float hf_band_energy_ratio,
               float wpe_entropy, float spec_entropy, float thd_i,
               float v_rms, float i_rms, float temp_c) const;

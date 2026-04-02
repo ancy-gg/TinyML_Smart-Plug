@@ -195,11 +195,11 @@
   const showPref = new Map();
   const axisPref = new Map();
 
-  const DEFAULT_ON = new Set(["i_rms", "v_rms", "thd_i", "cycle_nmse", "zcv", "hf_band_energy_ratio"]);
+  const DEFAULT_ON = new Set(["i_rms", "v_rms", "thd_i", "cycle_nmse", "zcv", "cycle_rms_drop_ratio", "hf_band_energy_ratio"]);
   const DEFAULT_Y2 = new Set(["thd_i", "v_rms", "temp_c"]);
 
   function preferredDefaultKeys(keys) {
-    const preferred = ["cycle_nmse", "zcv", "zc_dwell_ratio", "pulse_count_per_cycle", "peak_fluct_cv", "midband_residual_rms", "hf_band_energy_ratio", "wpe_entropy", "spec_entropy", "thd_i", "current", "voltage", "temp", "i_rms", "v_rms"];
+    const preferred = ["cycle_nmse", "zcv", "zc_dwell_ratio", "cycle_rms_drop_ratio", "peak_fluct_cv", "midband_residual_rms", "hf_band_energy_ratio", "wpe_entropy", "spec_entropy", "thd_i", "current", "voltage", "temp", "i_rms", "v_rms"];
     const picked = preferred.filter((k) => keys.includes(k) && k !== "label_arc");
     if (picked.length) return picked.slice(0, 8);
     return keys.filter((k) => k !== "label_arc").slice(0, Math.min(8, keys.length));
