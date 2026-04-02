@@ -285,17 +285,17 @@
           <div class="ota-label">Current Published OTA</div>
           <div class="ota-line"><span class="muted">Version:</span> <span class="mono" id="otaCurVer">—</span></div>
           <div class="ota-line"><span class="muted">URL:</span> <span class="mono ota-url" id="otaCurUrl">—</span></div>
+          <div class="ota-row ota-download-row">
+            <a id="btnOtaDownload" class="ota-download-btn" href="#" target="_blank" rel="noopener noreferrer" aria-disabled="true" aria-label="Download OTA firmware" title="Download OTA firmware">
+              <img src="/icons/ota-download-green.png" alt="Download OTA firmware" class="ota-download-icon" />
+            </a>
+          </div>
         </div>
 
         <div class="ota-box">
           <label class="ota-field">
             <span class="muted">Version Name</span>
             <input id="otaDesiredVer" class="ota-input" placeholder="TSP-v0.0.0" />
-          </label>
-
-          <label class="ota-field">
-            <span class="muted">Binary File</span>
-            <input id="otaBinName" class="ota-input" value="firmware.bin" />
           </label>
 
           <div class="ota-row">
@@ -307,7 +307,7 @@
             <input
               id="otaFirmwareUrl"
               class="ota-input mono"
-              placeholder="https://raw.githubusercontent.com/ancy-gg/TinyML_Smart-Plug/main/firmware/firmware.bin"
+              placeholder="https://github.com/ancy-gg/TinyML_Smart-Plug/releases/download/updates/TSP-v4.3.1-p-mcp.bin"
             />
           </label>
         </div>

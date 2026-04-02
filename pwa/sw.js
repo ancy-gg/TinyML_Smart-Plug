@@ -1,4 +1,4 @@
-const BUILD_VERSION = "Web-v1.2.1";
+const BUILD_VERSION = "Web-v4.3.4";
 const CACHE_NAME = BUILD_VERSION;
 const APP_SHELL = [
   "./",
@@ -11,7 +11,8 @@ const APP_SHELL = [
   "./manifest.json",
   "./icons/icon-192.png",
   "./icons/icon-512.png",
-  "./404.html"
+  "./404.html",
+  "./icons/ota-download-green.png"
 ];
 
 self.addEventListener("message", (event) => {

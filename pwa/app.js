@@ -87,8 +87,9 @@ const STALE_MS = 30000;
 const HISTORY_LIMIT = 5000;
 const MAX_RENDER_ROWS = 180;
 
-const OTA_REPO_RAW_BASE = "https://raw.githubusercontent.com/ancy-gg/TinyML_Smart-Plug/main/firmware/";
-const OTA_DEFAULT_BIN   = "firmware.bin";
+const OTA_RELEASE_BASE = "https://github.com/ancy-gg/TinyML_Smart-Plug/releases/download/";
+const OTA_RELEASE_TAG  = "updates";
+const OTA_DEFAULT_BIN  = "";
 
 const UI_OVERLOAD_WARN_A = 10;
 const UI_SHORT_CIRCUIT_A = 20;
@@ -152,9 +153,17 @@ function applyViewPrefs() {
   modeLabelRight?.classList.toggle("is-active", mode === "admin");
 }
 
-function buildRepoFirmwareUrl(binName) {
-  const name = (binName || OTA_DEFAULT_BIN).trim();
-  return OTA_REPO_RAW_BASE + encodeURIComponent(name);
+function normalizeOtaAssetName(desiredVersion, binName) {
+  let name = (binName || "").trim();
+  if (!name && isLikelyVersion(desiredVersion)) name = `${desiredVersion}.bin`;
+  if (!name) name = "firmware.bin";
+  if (!/\.bin$/i.test(name)) name += ".bin";
+  return name;
+}
+
+function buildRepoFirmwareUrl(desiredVersion, binName) {
+  const assetName = normalizeOtaAssetName(desiredVersion, binName);
+  return `${OTA_RELEASE_BASE}${encodeURIComponent(OTA_RELEASE_TAG)}/${encodeURIComponent(assetName)}`;
 }
 function isLikelyVersion(v) {
   return typeof v === "string" && v.trim().length >= 3;
@@ -1175,8 +1184,8 @@ document.addEventListener("visibilitychange", () => {
 (function initOta() {
   const otaCurVer = el("otaCurVer");
   const otaCurUrl = el("otaCurUrl");
+  const btnOtaDownload = el("btnOtaDownload");
   const otaDesiredVer = el("otaDesiredVer");
-  const otaBinName = el("otaBinName");
   const otaFirmwareUrl = el("otaFirmwareUrl");
   const btnFillRepoUrl = el("btnFillRepoUrl");
   const btnPublishOta = el("btnPublishOta");
@@ -1185,19 +1194,41 @@ document.addEventListener("visibilitychange", () => {
   db.ref("ota").on("value", (snap) => {
     const v = snap.val() || {};
     if (otaCurVer) otaCurVer.textContent = (v.desired_version || "—").toString();
-    if (otaCurUrl) otaCurUrl.textContent = (v.firmware_url || "—").toString();
+    const url = (v.firmware_url || "").toString().trim();
+    if (otaCurUrl) otaCurUrl.textContent = url || "—";
+    if (btnOtaDownload) {
+      if (isHttpsUrl(url)) {
+        btnOtaDownload.setAttribute("href", url);
+        btnOtaDownload.removeAttribute("aria-disabled");
+        btnOtaDownload.classList.remove("is-disabled");
+      } else {
+        btnOtaDownload.setAttribute("href", "#");
+        btnOtaDownload.setAttribute("aria-disabled", "true");
+        btnOtaDownload.classList.add("is-disabled");
+      }
+    }
+  });
+
+  btnOtaDownload?.addEventListener("click", (ev) => {
+    if (btnOtaDownload.getAttribute("aria-disabled") === "true") ev.preventDefault();
   });
 
   btnFillRepoUrl?.addEventListener("click", () => {
-    const url = buildRepoFirmwareUrl(otaBinName?.value || OTA_DEFAULT_BIN);
+    const desired = (otaDesiredVer?.value || "").trim();
+    const assetName = normalizeOtaAssetName(desired, OTA_DEFAULT_BIN);
+    const url = buildRepoFirmwareUrl(desired, assetName);
     if (otaFirmwareUrl) otaFirmwareUrl.value = url;
-    toast("Repo firmware URL filled.", "ok");
+    toast("Release firmware URL filled.", "ok");
   });
 
   btnPublishOta.addEventListener("click", async () => {
     const desired = (otaDesiredVer.value || "").trim();
     let url = (otaFirmwareUrl?.value || "").trim();
-    if (!url) url = buildRepoFirmwareUrl(otaBinName?.value || OTA_DEFAULT_BIN);
+    if (!url) {
+      const assetName = normalizeOtaAssetName(desired, OTA_DEFAULT_BIN);
+      url = buildRepoFirmwareUrl(desired, assetName);
+      if (otaFirmwareUrl) otaFirmwareUrl.value = url;
+    }
     if (!isLikelyVersion(desired)) {
       toast("Enter a valid desired version (e.g., TSP-v0.1.1).", "err");
       return;
