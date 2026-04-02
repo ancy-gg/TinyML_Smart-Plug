@@ -48,6 +48,9 @@ private:
   uint32_t _loadOnSince = 0;
   uint32_t _loadOffSince = 0;
   bool _prevSustainedTrip = false;
+  bool _prevArcActive = false;
+  bool _prevHeatTrip = false;
+  bool _prevOverloadTrip = false;
 
   void writeLatchOn_(bool asserted);
   void writeLatchOff_(bool asserted);

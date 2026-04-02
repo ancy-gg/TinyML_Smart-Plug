@@ -212,10 +212,13 @@ bool ArcDetection::compute(const uint16_t* raw, size_t n, float fs_hz,
   const float irmsWide = sqrtf((float)(accIrmsWide / (double)n));
   const float residRms = sqrtf((float)(accResidSq / (double)n));
   const uint16_t codeSpan = (uint16_t)(mxCode - mnCode);
+  const bool strongActivity = (changes >= CURRENT_MIN_ACTIVITY_CHANGES) || (codeSpan >= CURRENT_MIN_CODE_SPAN);
+  const bool deepIdle = (changes < CURRENT_MIN_ACTIVITY_CHANGES) && (codeSpan < LOW_CURRENT_CODE_SPAN) &&
+                        (irmsWide < CURRENT_IDLE_SUPPRESS_A);
 
   float irms = irmsWide;
-  if (irms < CURRENT_IDLE_SUPPRESS_A && codeSpan < LOW_CURRENT_CODE_SPAN) irms = 0.0f;
-  else if (irms < IRMS_GATE_OFF_A) irms = 0.0f;
+  if (deepIdle) irms = 0.0f;
+  else if (irms < IRMS_GATE_OFF_A && !strongActivity) irms = 0.0f;
 
   if (irms > 0.0f) {
     irms = eval_cubic_horner(irms, cal.cubic3, cal.cubic2, cal.cubic1, cal.cubic0);
@@ -223,10 +226,10 @@ bool ArcDetection::compute(const uint16_t* raw, size_t n, float fs_hz,
   }
 
   out.irms_a = irms;
-  out.current_valid = (changes >= CURRENT_MIN_ACTIVITY_CHANGES) &&
-                      ((codeSpan >= CURRENT_MIN_CODE_SPAN) || (irms > 0.0f));
+  out.current_valid = strongActivity || (irms > 0.0f);
 
-  if (irms < FEATURE_MIN_IRMS_A) {
+  const bool weakArcWindow = strongActivity && (residRms >= (PULSE_ANALYSIS_MIN_RESID_A * ARC_WEAK_EVENT_RESID_MUL));
+  if (irms < FEATURE_MIN_IRMS_A && !weakArcWindow) {
     out.feat_valid = false;
     return true;
   }

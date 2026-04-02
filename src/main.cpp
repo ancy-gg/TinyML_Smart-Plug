@@ -6,6 +6,7 @@
 #include <freertos/queue.h>
 #include <esp_log.h>
 #include <math.h>
+#include <esp_heap_caps.h>
 
 #include "MainConfiguration.h"
 #include "WifiHandler.h"
@@ -29,7 +30,7 @@ CurrentSensor      curSensor;
 ArcDetection       arcDetect;
 CurrentCalib       curCalib;
 
-static uint16_t s_raw[N_SAMP];
+static uint16_t* s_raw = nullptr;
 static QueueHandle_t qFeat = nullptr;
 static TaskHandle_t gCore0SenseTask = nullptr;
 static bool gSafeMode = false;
@@ -180,15 +181,7 @@ static void onOtaEvent(OtaEvent ev, int progress) {
   } else if (ev == OtaEvent::PROGRESS) {
     const int pct = constrain(progress, 0, 100);
     notification.setOta(true, (uint8_t)pct);
-    if (pct >= 100 || pct == 0 || (pct - s_lastDbProgress) >= 25) {
-      s_lastDbProgress = pct;
-      String detail;
-      detail.reserve(40);
-      detail = "Downloading firmware ";
-      detail += pct;
-      detail += "%";
-      (void)network.publishOtaDebug("DOWNLOADING", detail, pct);
-    }
+    s_lastDbProgress = pct;
   } else if (ev == OtaEvent::SUCCESS) {
     s_lastDbProgress = 100;
     notification.setOta(true, 100);
@@ -320,6 +313,11 @@ void setup() {
   curSensor.setCalib(curCalib);
   tempSensor.begin(); tempSensor.setLongAverage(8.0f, 1.0f);
 
+  if (!s_raw) {
+    s_raw = static_cast<uint16_t*>(heap_caps_malloc(sizeof(uint16_t) * N_SAMP, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT));
+    if (!s_raw) s_raw = static_cast<uint16_t*>(heap_caps_malloc(sizeof(uint16_t) * N_SAMP, MALLOC_CAP_8BIT));
+  }
+
   network.begin(FIREBASE_API_KEY, FIREBASE_DB_URL);
   network.setFirmwareVersion(FW_VERSION);
   network.setNormalIntervalMs(CLOUD_LIVE_NORMAL_INTERVAL_MS);
@@ -332,12 +330,12 @@ void setup() {
   gSafeMode = updater.safeMode();
 
   if (!gSafeMode) {
-    if (curSensor.begin()) {
+    if (s_raw && curSensor.begin()) {
       qFeat = xQueueCreate(1, sizeof(FeatureFrame));
       xTaskCreatePinnedToCore(Core0Task, "Core0Sense", 16384, nullptr, 3, &gCore0SenseTask, 0);
       notification.showStatus("Sensors", "MCP3204 ready");
     } else {
-      notification.showStatus("WARN", "No MCP3204"); delay(700);
+      notification.showStatus("WARN", s_raw ? "No MCP3204" : "No sample RAM"); delay(700);
     }
   } else {
     notification.showStatus("SAFE MODE", "OTA only");
@@ -420,21 +418,83 @@ void loop() {
   f.vrms = vRms; f.temp_c = tC;
   const float irmsRawMeasured = f.irms;
   float irmsRawForLogic = cleanLogicCurrent(irmsRawMeasured, f.current_valid != 0, vRaw, vFast);
-  if (notification.shouldSuppressCurrentArtifacts() && irmsRawForLogic < BUZZER_ARTIFACT_MAX_A) {
-    irmsRawForLogic = 0.0f;
-    f.current_valid = 0;
-    f.feat_valid = 0;
+
+  static uint32_t lowIrmsSinceMs = 0;
+  const bool mainsOnForIdle = (vFast >= MAINS_PRESENT_ON_V);
+  const bool lowIrmsNow = (fabsf(irmsRawForLogic) <= CURRENT_ANALYSIS_IDLE_A);
+  if (mainsOnForIdle && lowIrmsNow) {
+    if (lowIrmsSinceMs == 0) lowIrmsSinceMs = millis();
+  } else {
+    lowIrmsSinceMs = 0;
   }
-  f.irms = cleanDisplayCurrent(irmsRawForLogic, f.current_valid != 0, f.feat_valid != 0, vRaw, vFast);
-  if (irmsRawForLogic < FEATURE_MIN_IRMS_A) {
-    f.feat_valid = 0; f.cycle_nmse = f.zcv = f.zc_dwell_ratio = f.pulse_count_per_cycle = f.peak_fluct_cv = 0.0f;
-    f.midband_residual_rms = f.hf_band_energy_ratio = f.wpe_entropy = f.spec_entropy = f.thd_i = 0.0f;
+  const bool longIdleLowCurrent = (lowIrmsSinceMs != 0) && ((millis() - lowIrmsSinceMs) >= CURRENT_IDLE_SUPPRESS_HOLD_MS);
+
+  float irmsDisplayIn = irmsRawForLogic;
+  if (notification.shouldSuppressCurrentArtifacts() && longIdleLowCurrent && irmsDisplayIn < BUZZER_ARTIFACT_MAX_A) {
+    irmsDisplayIn = 0.0f;
   }
+  f.irms = cleanDisplayCurrent(irmsDisplayIn, f.current_valid != 0, f.feat_valid != 0, vRaw, vFast);
 
   const float apparentPowerVa = (vRms > 0.10f && f.irms > 0.001f) ? (vRms * f.irms) : 0.0f;
   const bool voltageNormal = (vFast >= VOLT_NORMAL_MIN_V && vFast <= VOLT_NORMAL_MAX_V);
-  const bool arcEligible = (!gSafeMode && !paused && !bootSettling && !protectionInhibit && voltageNormal &&
-                            arcInputStable(f.current_valid, f.feat_valid, irmsRawForLogic));
+
+  static float loadRefA = 0.0f;
+  static float prevIrmsLogic = 0.0f;
+  static float prevVFast = 0.0f;
+  static uint32_t invalidBurstSinceMs = 0;
+  static uint32_t collapseSinceMs = 0;
+  static uint32_t voltDipSinceMs = 0;
+
+  if (vFast >= MAINS_PRESENT_ON_V && irmsRawForLogic >= 0.50f) {
+    loadRefA += 0.10f * (irmsRawForLogic - loadRefA);
+  } else if (vFast <= MAINS_PRESENT_OFF_V) {
+    loadRefA = 0.0f;
+  }
+
+  const bool hadSteadyLoad = (loadRefA >= 0.80f);
+  const bool energizedArcWindow = (vFast >= 170.0f);
+
+  const bool invalidWhileLoaded =
+      energizedArcWindow &&
+      hadSteadyLoad &&
+      (f.feat_valid == 0);
+
+  const bool irmsCollapse =
+      energizedArcWindow &&
+      hadSteadyLoad &&
+      (prevIrmsLogic >= 0.80f) &&
+      (irmsRawForLogic <= 0.05f);
+
+  const bool fastVoltDip =
+      hadSteadyLoad &&
+      (prevVFast >= VOLT_NORMAL_MIN_V) &&
+      ((prevVFast - vFast) >= 20.0f);
+
+  if (invalidWhileLoaded) {
+    if (invalidBurstSinceMs == 0) invalidBurstSinceMs = millis();
+  } else {
+    invalidBurstSinceMs = 0;
+  }
+
+  if (irmsCollapse) {
+    if (collapseSinceMs == 0) collapseSinceMs = millis();
+  } else {
+    collapseSinceMs = 0;
+  }
+
+  if (fastVoltDip) {
+    if (voltDipSinceMs == 0) voltDipSinceMs = millis();
+  } else {
+    voltDipSinceMs = 0;
+  }
+
+  const bool fallbackArcEvent =
+      (invalidBurstSinceMs && (millis() - invalidBurstSinceMs) >= 80UL) ||
+      (collapseSinceMs && (millis() - collapseSinceMs) >= 40UL) ||
+      (voltDipSinceMs && (millis() - voltDipSinceMs) >= 40UL);
+
+  const bool mlArcEligible = (!gSafeMode && !paused && !bootSettling && !protectionInhibit && voltageNormal &&
+                              arcInputStable(f.current_valid, f.feat_valid, irmsRawForLogic));
 
   network.pollControls(!paused && !portalActive && wifiConnected, portalActive);
 
@@ -455,16 +515,22 @@ void loop() {
   }
 
   int pred = 0;
-  if (arcEligible) {
+  if (mlArcEligible) {
     pred = arcDetect.predict(f.cycle_nmse, f.zcv, f.zc_dwell_ratio, f.pulse_count_per_cycle, f.peak_fluct_cv,
                              f.midband_residual_rms, f.hf_band_energy_ratio, f.wpe_entropy, f.spec_entropy, f.thd_i,
                              f.vrms, irmsRawForLogic, f.temp_c);
   }
+  if (fallbackArcEvent) pred = 1;
   f.model_pred = (uint8_t)pred;
 
   FaultState st = STATE_NORMAL;
-  if (!bootSettling) st = protection.update(vFast, vRaw, tC, irmsRawForLogic, f.model_pred, arcEligible);
+  if (!bootSettling) {
+    st = protection.update(vFast, vRaw, tC, irmsRawForLogic, f.model_pred, (mlArcEligible || fallbackArcEvent));
+  }
   if (gSafeMode) st = STATE_NORMAL;
+
+  prevIrmsLogic = irmsRawForLogic;
+  prevVFast = vFast;
 
   static uint32_t noPowerSinceMsCtl = 0;
   static bool unpluggedOffIssued = false;
@@ -504,7 +570,7 @@ void loop() {
   const bool mainsPresentStable = debouncedMainsPresentForState(vFast);
   handleCueEvents(vRaw, vFast, irmsRawForLogic, mainsPresentStable, paused || gSafeMode || protectionInhibit, st);
 
-  maybeStartAutoArcCapture(network, notification, paused || protectionInhibit, gSafeMode, (arcEligible && f.model_pred == 1));
+  maybeStartAutoArcCapture(network, notification, paused || protectionInhibit, gSafeMode, ((mlArcEligible || fallbackArcEvent) && f.model_pred == 1));
   if (!paused && !gSafeMode) pollMlControl(network, notification); else network.setLogEnabled(false);
   if (!paused && !gSafeMode) {
     static uint32_t lastMl = 0;

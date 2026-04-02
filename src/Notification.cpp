@@ -512,11 +512,11 @@ void Notification::clearFaultAlert() {
 void Notification::updateBuzzer(FaultState st, float vProtect, float i, float t) {
   const uint32_t now = millis();
 #if COLLECTION_ONLY_MODE
-  const float heatCutoffC = TEMP_DATA_WARN_C;
+  const float heatWarnC = TEMP_DATA_WARN_C;
 #else
-  const float heatCutoffC = TEMP_TRIP_C;
+  const float heatWarnC = TEMP_WARN_C;
 #endif
-  const bool heatActive = (st == STATE_HEATING) || (t >= heatCutoffC);
+  const bool heatActive = (st == STATE_HEATING) || (t >= heatWarnC);
   const bool arcActive  = (st == STATE_ARCING);
   const bool underVoltActive = (st == STATE_UNDERVOLTAGE);
   const bool overVoltActive  = (st == STATE_OVERVOLTAGE);

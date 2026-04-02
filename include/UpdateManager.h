@@ -62,6 +62,7 @@ private:
   String _lastError = "";
   TaskHandle_t _otaTask = nullptr;
   volatile bool _otaInProgress = false;
+  volatile bool _otaWorkerActive = false;
   String _otaUrl = "";
 };
 

@@ -11,7 +11,7 @@ FEATURES = [
 TARGET = "label_arc"
 GROUP_COL_CANDIDATES = ["session_id", "session", "sid"]
 DEFAULT_INPUT_GLOB = r"tinyml/data/*.csv"
-DEFAULT_OUTPUT = r"tinyml/data/merged_data.csv"
+DEFAULT_OUTPUT = r"tinyml/data/cleaned_data.csv"
 
 
 def ensure_dir(path):
@@ -76,14 +76,26 @@ def clean_dataset(df):
     df = df[df[TARGET].isin([0, 1])].copy()
     x = df[FEATURES].replace([np.inf, -np.inf], np.nan)
     df = df.loc[x.notna().all(axis=1)].copy()
-    if "feat_valid" in df.columns:
-        df = df[df["feat_valid"] == 1].copy()
     if "current_valid" in df.columns:
         df = df[df["current_valid"] == 1].copy()
     if "adc_fs_hz" in df.columns:
         df = df[df["adc_fs_hz"] > 0].copy()
+
     if "fault_state" in df.columns:
-        df = df[(df[TARGET] == 1) | ((df[TARGET] == 0) & (df["fault_state"] == 0))].copy()
+        df["fault_state"] = pd.to_numeric(df["fault_state"], errors="coerce").fillna(0).astype(int)
+
+    # Manual label is the source of truth.
+    # Keep false-positive trips if they were labeled as normal by the user.
+    if {"feat_valid", "current_valid", "v_rms", "i_rms"}.issubset(df.columns):
+        df["event_like_invalid"] = (
+            (df["feat_valid"] == 0) &
+            (df["current_valid"] == 1) &
+            (df["v_rms"] >= 170.0)
+        ).astype(int)
+
+    # Current RF training still uses only rows with valid computed features.
+    if "feat_valid" in df.columns:
+        df = df[df["feat_valid"] == 1].copy()
 
     df["cycle_nmse"] = df["cycle_nmse"].clip(0.0, 2.0)
     df["zcv"] = df["zcv"].clip(0.0, 10.0)

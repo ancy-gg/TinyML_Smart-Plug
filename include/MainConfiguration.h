@@ -13,7 +13,7 @@ static constexpr bool ENABLE_AUTO_ARC_CAPTURE = true;
 // Cloud / OTA configuration
 static constexpr const char* FIREBASE_API_KEY = "AIzaSyAmJlZZszyWPJFgIkTAAl_TbIySys1nvEw";
 static constexpr const char* FIREBASE_DB_URL  = "tinyml-smart-plug-default-rtdb.asia-southeast1.firebasedatabase.app";
-static constexpr const char* FW_VERSION       = "TSP-v4.3.7-p-mcp";
+static constexpr const char* FW_VERSION       = "TSP-v4.4.1-p";
 static constexpr const char* OTA_DESIRED_VERSION_PATH = "/ota/desired_version";
 static constexpr const char* OTA_FIRMWARE_URL_PATH    = "/ota/firmware_url";
 
@@ -136,15 +136,16 @@ static constexpr float SUSTAINED_OVERLOAD_TRIP_A = 14.5f;
 static constexpr uint32_t OVERLOAD_TRIP_MS  = 250UL;
 static constexpr uint32_t SUSTAINED_OVERLOAD_TRIP_MS = 60UL * 1000UL;
 
+static constexpr float TEMP_WARN_C          = 60.0f;
 static constexpr float TEMP_TRIP_C          = 70.0f;
-static constexpr float TEMP_DATA_WARN_C     = 80.0f;
-static constexpr float TEMP_DATA_HARD_C     = 90.0f;
+static constexpr float TEMP_DATA_WARN_C     = 70.0f;
+static constexpr float TEMP_DATA_HARD_C     = 80.0f;
 
 static constexpr float MAINS_PRESENT_OFF_V  = 12.0f;
 static constexpr float MAINS_PRESENT_ON_V   = 28.0f;
 static constexpr uint32_t MAINS_EDGE_DEBOUNCE_MS = 1000UL;
 static constexpr uint32_t UNPLUGGED_BUZZ_DELAY_MS = 2000UL;
-static constexpr uint32_t UNPLUGGED_STATE_DELAY_MS = 3000UL;
+static constexpr uint32_t UNPLUGGED_STATE_DELAY_MS = 5000UL;
 
 // =========================
 // Leaky integrator / fault display hold
@@ -258,6 +259,9 @@ static constexpr float PULSE_ANALYSIS_MIN_IRMS_A    = 0.075f;
 static constexpr float PULSE_ANALYSIS_MIN_RESID_A   = 0.035f;
 static constexpr float CURRENT_DISPLAY_ON_A         = 0.040f;
 static constexpr float CURRENT_DISPLAY_OFF_A        = 0.020f;
+static constexpr float CURRENT_ANALYSIS_IDLE_A       = 0.020f;
+static constexpr uint32_t CURRENT_IDLE_SUPPRESS_HOLD_MS = 5000UL;
+static constexpr float ARC_WEAK_EVENT_RESID_MUL     = 0.75f;
 
 static constexpr float CURRENT_CAL_C3 = 0.00061628f;
 static constexpr float CURRENT_CAL_C2 = -0.000465664f;

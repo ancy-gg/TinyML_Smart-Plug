@@ -64,6 +64,7 @@ void ProtectionManager::resetLatch() {
   _voltageLockout = false; _voltageLockoutKind = STATE_NORMAL; _voltageRecoverySince = 0;
   _tripOffEdge = false; _autoOnEdge = false; _webLockout = false;
   _loadOn = false; _loadOnSince = 0; _loadOffSince = 0; _prevSustainedTrip = false;
+  _prevArcActive = false; _prevHeatTrip = false; _prevOverloadTrip = false;
 }
 bool ProtectionManager::consumeTripOffEdge() { const bool v = _tripOffEdge; _tripOffEdge = false; return v; }
 bool ProtectionManager::consumeAutoOnEdge()  { const bool v = _autoOnEdge; _autoOnEdge = false; return v; }
@@ -75,13 +76,18 @@ FaultState ProtectionManager::update(float vProtect, float vRaw, float tempC, fl
   if (arcModelOut == 1) _arcCnt += ARC_CNT_INC; else _arcCnt -= ARC_CNT_DEC;
   _arcCnt = clampi(_arcCnt, 0, ARC_CNT_MAX);
   const bool arcTrip = (_arcCnt >= ARC_CNT_TRIP);
-
-  if (tempC >= heatTripTempC()) _heatFrames++; else _heatFrames = clampi(_heatFrames - HEAT_FRAMES_DEC, 0, HEAT_FRAMES_TRIP);
-  const bool heatTrip = (_heatFrames >= HEAT_FRAMES_TRIP);
   if (arcTrip) _arcHoldUntil = now + ARC_HOLD_MS;
-  if (heatTrip) _heatHoldUntil = now + HEAT_HOLD_MS;
   const bool arcActive = arcTrip || (now < _arcHoldUntil);
-  const bool heatActive = heatTrip || (now < _heatHoldUntil);
+  if (arcActive && !_prevArcActive) _tripOffEdge = true;
+  _prevArcActive = arcActive;
+
+  const bool heatWarnRaw = (tempC >= TEMP_WARN_C);
+  const bool heatTripRaw = (tempC >= heatTripTempC());
+  if (heatTripRaw) _heatHoldUntil = now + HEAT_HOLD_MS;
+  const bool heatTripActive = heatTripRaw || (now < _heatHoldUntil);
+  const bool heatActive = heatWarnRaw || heatTripActive;
+  if (heatTripActive && !_prevHeatTrip) _tripOffEdge = true;
+  _prevHeatTrip = heatTripActive;
 
   const bool mainsGoneLike = (vRaw <= MAINS_PRESENT_OFF_V) || ((vProtect <= MAINS_PRESENT_OFF_V) && (irmsA <= LOAD_OFF_DETECT_A));
   const bool rawHealthyWindow = (vRaw >= VOLT_RECOVER_MIN_V) && (vRaw <= VOLT_RECOVER_MAX_V);
@@ -114,15 +120,30 @@ FaultState ProtectionManager::update(float vProtect, float vRaw, float tempC, fl
     if (_overVoltSince == 0) _overVoltSince = now;
     const uint32_t need = (vVote >= VOLT_OV_INSTANT_V) ? VOLT_OV_INSTANT_MS : VOLT_OV_DELAY_MS;
     overVoltValid = (need == 0UL) || ((now - _overVoltSince) >= need);
+  } else {
+    _overVoltSince = 0;
   }
 
-  const bool overloadRaw = (irmsA >= OVERLOAD_WARN_A);
-  if (overloadRaw) { if (_overloadSince == 0) _overloadSince = now; } else _overloadSince = 0;
-  const bool overloadActive = overloadRaw && ((now - _overloadSince) >= OVERLOAD_TRIP_MS);
+  const bool overloadWarnActive = (irmsA >= OVERLOAD_WARN_A);
+  if (overloadWarnActive) {
+    if (_overloadSince == 0) _overloadSince = now;
+  } else {
+    _overloadSince = 0;
+  }
 
   const bool sustainedOverloadRaw = (irmsA >= SUSTAINED_OVERLOAD_TRIP_A);
-  if (sustainedOverloadRaw) { if (_sustainedOverloadSince == 0) _sustainedOverloadSince = now; } else _sustainedOverloadSince = 0;
+  if (sustainedOverloadRaw) {
+    if (_sustainedOverloadSince == 0) _sustainedOverloadSince = now;
+  } else {
+    _sustainedOverloadSince = 0;
+  }
+
   const bool sustainedOverloadActive = sustainedOverloadRaw && ((now - _sustainedOverloadSince) >= SUSTAINED_OVERLOAD_TRIP_MS);
+  const bool overloadTripActive = overloadWarnActive && !sustainedOverloadRaw && ((now - _overloadSince) >= OVERLOAD_TRIP_MS);
+  const bool overloadTripAny = sustainedOverloadActive || overloadTripActive;
+  if (overloadTripAny && !_prevOverloadTrip) _tripOffEdge = true;
+  _prevOverloadTrip = overloadTripAny;
+  _prevSustainedTrip = sustainedOverloadActive;
 
   if (mainsGoneLike) {
     _voltageRecoverySince = 0; _voltageLockout = false; _voltageLockoutKind = STATE_NORMAL;
@@ -141,9 +162,6 @@ FaultState ProtectionManager::update(float vProtect, float vRaw, float tempC, fl
     }
   }
 
-  if (sustainedOverloadActive && !_prevSustainedTrip) _tripOffEdge = true;
-  _prevSustainedTrip = sustainedOverloadActive;
-
   if (!_loadOn) {
     if (irmsA >= LOAD_ON_DETECT_A) {
       if (_loadOnSince == 0) _loadOnSince = now;
@@ -161,10 +179,10 @@ FaultState ProtectionManager::update(float vProtect, float vRaw, float tempC, fl
   else if (arcActive) st = STATE_ARCING;
   else if (overVoltValid) st = STATE_OVERVOLTAGE;
   else if (underVoltValid && !arcActive) st = STATE_UNDERVOLTAGE;
-  else if (sustainedOverloadActive) st = STATE_SUSTAINED_OVERLOAD;
-  else if (overloadActive) st = STATE_OVERLOAD;
+  else if (overloadTripAny) st = STATE_SUSTAINED_OVERLOAD;
+  else if (overloadWarnActive) st = STATE_OVERLOAD;
 
-  _webLockout = (st == STATE_ARCING) || (st == STATE_HEATING) || (st == STATE_OVERLOAD) || (st == STATE_SUSTAINED_OVERLOAD) || _voltageLockout;
+  _webLockout = arcActive || heatTripActive || overloadTripAny || _voltageLockout;
   return st;
 }
 
@@ -175,10 +193,11 @@ void ProtectionManager::apply(FaultState st, float vDisplay, float vProtect, flo
   updateRelayPulse_();
 
   const bool arcActive  = (st == STATE_ARCING);
-  const bool heatActive = (st == STATE_HEATING);
+  const bool heatWarnActive = (st == STATE_HEATING) || (t >= TEMP_WARN_C);
+  const bool heatTripActive = (t >= heatTripTempC());
   const bool underVoltActive = (st == STATE_UNDERVOLTAGE);
   const bool overVoltActive  = (st == STATE_OVERVOLTAGE);
-  const bool overloadActive  = (st == STATE_OVERLOAD) || (st == STATE_SUSTAINED_OVERLOAD) || (i >= OVERLOAD_WARN_A);
+  const bool overloadTripActive = (st == STATE_SUSTAINED_OVERLOAD);
 
   static bool mainsStable = false;
   static bool mainsInit = false;
@@ -201,7 +220,7 @@ void ProtectionManager::apply(FaultState st, float vDisplay, float vProtect, flo
   }
 
   const bool unplugged = rawOff && (mainsOffSince != 0) && ((now - mainsOffSince) >= UNPLUGGED_STATE_DELAY_MS);
-  const bool criticalBlock = arcActive || heatActive || underVoltActive || overVoltActive || overloadActive;
+  const bool criticalBlock = arcActive || heatTripActive || underVoltActive || overVoltActive || overloadTripActive;
   if (unplugged && _relayLatchedOn) pulseRelayOff(LATCH_OFF_PULSE_MS);
 
   if (!criticalBlock && mainsStable && !_relayLatchedOn) {

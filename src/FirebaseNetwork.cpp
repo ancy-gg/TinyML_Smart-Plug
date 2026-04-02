@@ -1,6 +1,8 @@
 #include "FirebaseNetwork.h"
 #include <time.h>
 #include <sys/time.h>
+#include <esp_heap_caps.h>
+#include <string.h>
 
 static inline bool cloudNetReady_() {
   return WiFi.status() == WL_CONNECTED;
@@ -62,12 +64,42 @@ void FirebaseNetwork::updateControlToken_(const String& tokenIn, bool& primed, S
   cache = token;
 }
 
+void FirebaseNetwork::ensureBuffersAllocated_() {
+  if (_buf) return;
+
+  void* mem = nullptr;
+#if defined(ARDUINO_ARCH_ESP32)
+  mem = heap_caps_malloc(sizeof(Rec) * MAX_REC_LIMIT, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+#endif
+  if (mem) {
+    _buf = static_cast<Rec*>(mem);
+    _maxRec = MAX_REC_LIMIT;
+    memset(_buf, 0, sizeof(Rec) * _maxRec);
+    return;
+  }
+
+  static const uint16_t fallbackCaps[] = {384, 256, 128, 64};
+  for (uint16_t cap : fallbackCaps) {
+    mem = heap_caps_malloc(sizeof(Rec) * cap, MALLOC_CAP_8BIT);
+    if (mem) {
+      _buf = static_cast<Rec*>(mem);
+      _maxRec = cap;
+      memset(_buf, 0, sizeof(Rec) * _maxRec);
+      return;
+    }
+  }
+
+  _buf = nullptr;
+  _maxRec = 0;
+}
+
 void FirebaseNetwork::begin(const char* apiKey, const char* dbUrl, const char* tz, const char* ntp1, const char* ntp2) {
   (void)apiKey;
   config.database_url = dbUrl;
   config.signer.test_mode = true;
   Firebase.begin(&config, &auth);
   Firebase.reconnectWiFi(true);
+  ensureBuffersAllocated_();
 
   if (!_started) {
     _started = true;
@@ -343,7 +375,7 @@ void FirebaseNetwork::requestLiveUpdate(float v, float c, float apparentPower, f
                                         float wpe_entropy, float spec_entropy, float thd_i,
                                         uint8_t model_pred,
                                         const String& state) {
-  const bool isNormal = (state == "NORMAL");
+  const bool isNormal = (state == "NORMAL") || (state == "UNPLUGGED");
   const bool stateChanged = (state != _lastSentLiveState);
   const unsigned long now = millis();
   const uint32_t interval = isNormal ? _normalIntervalMs : _faultIntervalMs;
@@ -618,7 +650,7 @@ void FirebaseNetwork::stopAutoCapture() {
 void FirebaseNetwork::ingestLog(const FeatureFrame& f, FaultState st, int arcCounter) {
   if (!logEnabled() || _mlUploadActive) return;
   const SessionSpec& spec = activeSpec();
-  if (spec.sessionId.length() < 3 || _count >= MAX_REC) return;
+  if (spec.sessionId.length() < 3 || !_buf || _maxRec == 0 || _count >= _maxRec) return;
 
   const bool usefulCurrent = (f.current_valid != 0) || (f.feat_valid != 0) || (f.irms >= CURRENT_DISPLAY_OFF_A);
   const bool mainsPresent = (f.vrms >= MAINS_PRESENT_ON_V);
@@ -712,7 +744,7 @@ void FirebaseNetwork::serviceMlState_() {
   const bool manualTimeUp = (_manualEnabled && !_autoEnabled) && ((now - _sessionStartMs) >= ((uint32_t)spec.durationS * 1000UL));
   const bool autoTimeUp   = activeIsAuto() && ((now - _sessionStartMs) >= ((uint32_t)spec.durationS * 1000UL));
   const bool chunkTimeUp  = (_count > 0) && (_chunkStartMs != 0) && ((now - _chunkStartMs) >= ((uint32_t)ML_LOG_CHUNK_DURATION_S * 1000UL));
-  const bool full         = (_count >= MAX_REC);
+  const bool full         = (_maxRec > 0) && (_count >= _maxRec);
 
   if (_mlUploadActive) return;
 
@@ -826,7 +858,7 @@ void FirebaseNetwork::loop() {
   if ((int32_t)(now - _txBackoffUntilMs) < 0) return;
   if ((now - _lastTxMs) < CLOUD_TX_MIN_GAP_MS) return;
 
-  if (serviceHistory_()) return;
   if (serviceLive_()) return;
+  if (serviceHistory_()) return;
   if (serviceMlUpload_()) return;
 }

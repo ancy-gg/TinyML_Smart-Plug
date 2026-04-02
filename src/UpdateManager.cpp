@@ -26,7 +26,7 @@ static const uint32_t OTA_HTTP_TIMEOUT_MS   = 60000;
 static const uint32_t OTA_STREAM_IDLE_MS    = 60000;
 static const uint32_t OTA_RESTART_DELAY_MS  = 1200;
 static const size_t   OTA_MIN_BIN_BYTES     = 128 * 1024;
-static const uint32_t OTA_TASK_STACK_WORDS  = 6144;
+static const uint32_t OTA_TASK_STACK_BYTES  = 10240;
 
 static bool isCrashReset(esp_reset_reason_t r) {
   switch (r) {
@@ -199,12 +199,13 @@ void UpdateManager::bootGuardLoop_() {
 
 
 bool UpdateManager::startOtaTask_(const String& url) {
-  if (_otaInProgress || _otaTask != nullptr) return false;
+  if (_otaInProgress || _otaTask != nullptr || _otaWorkerActive) return false;
   _otaUrl = url;
   _otaInProgress = true;
+  _otaWorkerActive = true;
   BaseType_t ok = xTaskCreatePinnedToCore(UpdateManager::otaTaskThunk_,
                                           "OtaWorker",
-                                          OTA_TASK_STACK_WORDS,
+                                          OTA_TASK_STACK_BYTES,
                                           this,
                                           2,
                                           &_otaTask,
@@ -212,6 +213,7 @@ bool UpdateManager::startOtaTask_(const String& url) {
   if (ok != pdPASS) {
     _otaTask = nullptr;
     _otaInProgress = false;
+    _otaWorkerActive = false;
     _lastError = otaErr_("OTA_TASK_CREATE_FAILED");
     _lastError += " | ";
     _lastError += otaHeapInfo_();
@@ -235,6 +237,10 @@ void UpdateManager::otaTask_() {
   bool ok = performUpdateFromUrl(url);
   if (ok) {
     _lastError = "";
+    _otaUrl = "";
+    _otaInProgress = false;
+    _otaWorkerActive = false;
+    _otaTask = nullptr;
     if (_cb) _cb(OtaEvent::SUCCESS, 100);
     delay(OTA_RESTART_DELAY_MS);
     ESP.restart();
@@ -244,6 +250,7 @@ void UpdateManager::otaTask_() {
     if (_cb) _cb(OtaEvent::FAIL, 0);
     _otaUrl = "";
     _otaInProgress = false;
+    _otaWorkerActive = false;
     _otaTask = nullptr;
   }
 }
@@ -321,12 +328,13 @@ void UpdateManager::loop() {
     return;
   }
 
-  if (_otaInProgress || _otaTask != nullptr) return;
+  if (_otaInProgress || _otaWorkerActive) return;
 
   if (_cb) _cb(OtaEvent::START, 0);
   if (!startOtaTask_(fwUrl)) {
-    publishDebug("FAIL", _lastError, -1);
+    if (!_lastError.length()) _lastError = otaErr_("OTA_TASK_CREATE_FAILED");
     if (_cb) _cb(OtaEvent::FAIL, 0);
+    publishDebug("FAIL", _lastError, -1);
   }
 }
 
@@ -347,7 +355,7 @@ bool UpdateManager::performUpdateFromUrl(const String& rawUrl) {
     String path = "/";
   };
 
-  static constexpr size_t OTA_IO_BUF_BYTES = 1024;
+  static constexpr size_t OTA_IO_BUF_BYTES = 512;
 
   auto parseUrl = [&](const String& in, ParsedUrl& out) -> bool {
     String url = in;
@@ -575,21 +583,33 @@ bool UpdateManager::performUpdateFromUrl(const String& rawUrl) {
     return true;
   };
 
+  String currentStage = "INIT";
+  String lastPhaseSent = "";
   String baseUrl = normalizeFirmwareUrl_(rawUrl);
   ParsedUrl parsed = {};
   if (!parseUrl(baseUrl, parsed)) {
-    _lastError = otaErr_("OTA_BAD_URL");
+    _lastError = currentStage + " | " + otaErr_("OTA_BAD_URL");
     return false;
   }
 
   const esp_partition_t* target = esp_ota_get_next_update_partition(nullptr);
   if (!target) {
-    _lastError = otaErr_("OTA_NO_TARGET_PARTITION");
+    _lastError = currentStage + " | " + otaErr_("OTA_NO_TARGET_PARTITION");
     return false;
   }
 
+  String lastDetailSent = "";
+  int lastProgressSent = -999;
   auto publishStep = [&](const String& phase, const String& detail, int progress = -1) {
-    if (_cloud && _cloud->isReady()) (void)_cloud->publishOtaDebug(phase, detail, progress);
+    currentStage = phase;
+    if (_cloud && _cloud->isReady()) {
+      if (phase != lastPhaseSent || detail != lastDetailSent || progress != lastProgressSent) {
+        (void)_cloud->publishOtaDebug(phase, detail, progress);
+        lastPhaseSent = phase;
+        lastDetailSent = detail;
+        lastProgressSent = progress;
+      }
+    }
   };
 
   auto doAttempt = [&](const String& url) -> bool {
@@ -624,20 +644,20 @@ bool UpdateManager::performUpdateFromUrl(const String& rawUrl) {
       if (u.https) {
         secure.reset(new (std::nothrow) WiFiClientSecure());
         if (!secure) {
-          _lastError = otaErr_("OTA_CLIENT_ALLOC_FAIL");
+          _lastError = currentStage + " | " + otaErr_("OTA_CLIENT_ALLOC_FAIL");
           _lastError += " | ";
           _lastError += otaHeapInfo_();
           return false;
         }
         secure->setTimeout(OTA_HTTP_TIMEOUT_MS / 1000);
         secure->setHandshakeTimeout(20);
-        setTlsBuffersIfSupported_(*secure, 1024, 128);
+        setTlsBuffersIfSupported_(*secure, 512, 512);
         if (_insecureTLS) secure->setInsecure();
         client = secure.get();
       } else {
         plain.reset(new (std::nothrow) WiFiClient());
         if (!plain) {
-          _lastError = otaErr_("OTA_CLIENT_ALLOC_FAIL");
+          _lastError = currentStage + " | " + otaErr_("OTA_CLIENT_ALLOC_FAIL");
           _lastError += " | ";
           _lastError += otaHeapInfo_();
           return false;
@@ -671,7 +691,7 @@ bool UpdateManager::performUpdateFromUrl(const String& rawUrl) {
         }
         detail += " | ";
         detail += otaHeapInfo_();
-        _lastError = detail;
+        _lastError = currentStage + " | " + detail;
         return false;
       }
 
@@ -773,7 +793,7 @@ bool UpdateManager::performUpdateFromUrl(const String& rawUrl) {
       while (client->available() == 0 && client->connected() && (millis() - firstWaitMs) < 5000UL) delay(1);
       if (client->available() == 0) {
         client->stop();
-        _lastError = otaErr_("OTA_NO_BODY");
+        _lastError = currentStage + " | " + otaErr_("OTA_NO_BODY");
         return false;
       }
 
@@ -802,7 +822,7 @@ bool UpdateManager::performUpdateFromUrl(const String& rawUrl) {
       if (!ioBuf) {
         client->stop();
         Update.abort();
-        _lastError = otaErr_("OTA_BUF_ALLOC_FAIL");
+        _lastError = currentStage + " | " + otaErr_("OTA_BUF_ALLOC_FAIL");
         _lastError += " | ";
         _lastError += otaHeapInfo_();
         return false;
@@ -831,7 +851,7 @@ bool UpdateManager::performUpdateFromUrl(const String& rawUrl) {
       flashEndDetail += String((unsigned)written);
       publishStep("FLASH_END", flashEndDetail, 100);
       if (!Update.end(true) || !Update.isFinished()) {
-        _lastError = otaErr_("OTA_END_FAILED", Update.getError());
+        _lastError = currentStage + " | " + otaErr_("OTA_END_FAILED", Update.getError());
         return false;
       }
 

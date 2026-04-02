@@ -181,8 +181,9 @@ private:
   uint32_t _sessionStartMs = 0;
   uint32_t _chunkStartMs = 0;
   uint16_t _count = 0;
-  static constexpr uint16_t MAX_REC = 600;
-  Rec _buf[MAX_REC];
+  static constexpr uint16_t MAX_REC_LIMIT = 600;
+  uint16_t _maxRec = 0;
+  Rec* _buf = nullptr;
   bool _mlUploadActive = false;
   SessionSpec _uploadSpec;
   uint16_t _uploadTotalCount = 0;
@@ -211,6 +212,7 @@ private:
   void serviceMlState_();
   bool closeManualSession_(const String& finishedSessionId);
   void resetLoggerRuntime_();
+  void ensureBuffersAllocated_();
 };
 
 #endif

@@ -9,7 +9,7 @@ from sklearn.model_selection import GroupShuffleSplit, GroupKFold, RandomizedSea
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.metrics import confusion_matrix, classification_report, accuracy_score, average_precision_score
 
-CSV_PATH = r"tinyml/data/merged_data.csv"
+CSV_PATH = r"tinyml/data/cleaned_data.csv"
 OUT_HEADER = r"tinyml/TinyML_RF.h"
 OUT_JOBLIB = r"tinyml/TinyML_RF.joblib"
 
