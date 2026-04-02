@@ -143,13 +143,6 @@ bool FirebaseNetwork::getInt(const char* path, int& out) {
   return true;
 }
 
-void FirebaseNetwork::stopAllClients() {
-  fbLive.stopWiFiClient();
-  fbRead.stopWiFiClient();
-  fbHistory.stopWiFiClient();
-  fbLog.stopWiFiClient();
-}
-
 bool FirebaseNetwork::publishOtaDebug(const String& phase, const String& detail, int progress) {
   if (!isReady()) return false;
 
@@ -178,6 +171,13 @@ bool FirebaseNetwork::publishOtaDebug(const String& phase, const String& detail,
 
   bool okLive = Firebase.RTDB.updateNode(&fbLive, "/live_data", &live);
   return okDbg && okLive;
+}
+
+void FirebaseNetwork::stopAllClients() {
+  fbLive.stopWiFiClient();
+  fbRead.stopWiFiClient();
+  fbHistory.stopWiFiClient();
+  fbLog.stopWiFiClient();
 }
 
 bool FirebaseNetwork::enqueueHistory_(const HistoryJob& job) {
