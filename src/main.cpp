@@ -180,9 +180,8 @@ static void onOtaEvent(OtaEvent ev, int progress) {
   } else if (ev == OtaEvent::PROGRESS) {
     const int pct = constrain(progress, 0, 100);
     notification.setOta(true, (uint8_t)pct);
-    if (pct >= 100 || pct == 0 || (pct - s_lastDbProgress) >= 5) {
+    if (pct >= 100 || pct == 0 || (pct - s_lastDbProgress) >= 25) {
       s_lastDbProgress = pct;
-      (void)network.publishOtaDebug("DOWNLOADING", "Downloading firmware", pct);
     }
   } else if (ev == OtaEvent::SUCCESS) {
     s_lastDbProgress = 100;
@@ -436,8 +435,6 @@ void loop() {
   const bool otaCheckRequested = network.consumeOtaCheckRequest();
   if (otaCheckRequested && !portalActive && wifiConnected) {
     (void)network.publishOtaDebug("CHECKING", "Manual OTA check requested", -1);
-    network.stopAllClients();
-    delay(180);
     updater.requestCheckNow();
   }
   updater.loop();
