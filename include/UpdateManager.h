@@ -3,6 +3,8 @@
 
 #include <Arduino.h>
 #include <esp_partition.h>
+#include <freertos/FreeRTOS.h>
+#include <freertos/task.h>
 
 class FirebaseNetwork;
 
@@ -21,9 +23,11 @@ public:
   void setEventCallback(OtaEventCb cb) { _cb = cb; }
 
   bool safeMode() const { return _safeMode; }
+  bool otaBusy() const { return _otaInProgress; }
+  uint8_t crashBoots() const { return _crashBoots; }
+  int resetReason() const { return _resetReason; }
   const String& lastError() const { return _lastError; }
   bool pendingVerify() const { return _pendingVerify; }
-  bool running() const { return _taskRunning; }
   bool confirmNow();
   bool rollbackToPrevious();
 
@@ -34,7 +38,7 @@ private:
   static String normalizeFirmwareUrl_(String url);
   void bootGuardBegin_(uint32_t stableWindowMs, uint8_t maxCrashBoots);
   void bootGuardLoop_();
-  bool startOtaTask_(const String& desiredVersion, const String& firmwareUrl);
+  bool startOtaTask_(const String& url);
   void otaTask_();
   static void otaTaskThunk_(void* arg);
 
@@ -54,10 +58,11 @@ private:
   bool _pendingVerify = false;
   bool _safeMode = false;
   uint8_t _crashBoots = 0;
-  bool _taskRunning = false;
-  String _pendingVersion = "";
-  String _pendingUrl = "";
+  int _resetReason = 0;
   String _lastError = "";
+  TaskHandle_t _otaTask = nullptr;
+  volatile bool _otaInProgress = false;
+  String _otaUrl = "";
 };
 
 #endif

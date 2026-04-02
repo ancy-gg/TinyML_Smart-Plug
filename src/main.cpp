@@ -34,8 +34,6 @@ static QueueHandle_t qFeat = nullptr;
 static TaskHandle_t gCore0SenseTask = nullptr;
 static bool gSafeMode = false;
 static volatile bool gPauseByOta = false;
-static volatile bool gOtaActive = false;
-static volatile uint8_t gOtaProgress = 0;
 
 static bool arcInputStable(bool currentValid, bool featValid, float irms) {
   static uint32_t stableSince = 0;
@@ -172,29 +170,34 @@ static void handleCueEvents(float vRaw, float vProtect, float irms, bool mainsPr
 }
 
 static void onOtaEvent(OtaEvent ev, int progress) {
+  static int s_lastDbProgress = -100;
   if (ev == OtaEvent::START) {
+    s_lastDbProgress = 0;
     gPauseByOta = true;
-    gOtaActive = true;
-    gOtaProgress = 0;
     notification.setOta(true, 0);
     notification.notify(SND_OTA_START);
     (void)network.publishOtaDebug("START", "OTA started", 0);
   } else if (ev == OtaEvent::PROGRESS) {
     const int pct = constrain(progress, 0, 100);
-    gOtaActive = true;
-    gOtaProgress = (uint8_t)pct;
     notification.setOta(true, (uint8_t)pct);
+    if (pct >= 100 || pct == 0 || (pct - s_lastDbProgress) >= 25) {
+      s_lastDbProgress = pct;
+      String detail;
+      detail.reserve(40);
+      detail = "Downloading firmware ";
+      detail += pct;
+      detail += "%";
+      (void)network.publishOtaDebug("DOWNLOADING", detail, pct);
+    }
   } else if (ev == OtaEvent::SUCCESS) {
-    gOtaActive = true;
-    gOtaProgress = 100;
+    s_lastDbProgress = 100;
     notification.setOta(true, 100);
     notification.notify(SND_OTA_OK);
     (void)network.publishOtaDebug("SUCCESS", "OTA finished, rebooting", 100);
     network.logStatusEvent("FIRMWARE UPDATED", 0.0f, 0.0f, 0.0f, 0.0f);
   } else if (ev == OtaEvent::FAIL) {
+    s_lastDbProgress = -100;
     gPauseByOta = false;
-    gOtaActive = false;
-    gOtaProgress = 0;
     notification.setOta(false, 0);
     notification.notify(SND_OTA_FAIL);
     // FAIL debug/log is already handled inside UpdateManager::loop()
@@ -349,19 +352,21 @@ void loop() {
   network.updateClock();
   wifiMgr.update();
 
+  const bool portalActive = wifiMgr.inConfigPortal();
+  const bool paused = gPauseByOta;
+
   static String s_lastOtaErr = String("__BOOT__");
   const String otaErr = updater.lastError();
-  if (otaErr != s_lastOtaErr) {
+  if (!paused && otaErr != s_lastOtaErr) {
     s_lastOtaErr = otaErr;
     if (otaErr.length()) {
       (void)network.publishOtaDebug("FAIL", otaErr, -1);
     } else {
       (void)network.publishOtaDebug("IDLE", "", -1);
     }
+  } else if (paused) {
+    s_lastOtaErr = otaErr;
   }
-
-  const bool portalActive = wifiMgr.inConfigPortal();
-  const bool paused = gPauseByOta;
   const bool bootSettling = (millis() < SENSOR_BOOT_SETTLE_MS);
   const bool protectionInhibit = (millis() < (SENSOR_BOOT_SETTLE_MS + PROTECTION_INHIBIT_MS));
 
@@ -534,7 +539,7 @@ void loop() {
   const bool showWifiWait = (!wifiConnected && (wifiPhase == WifiHandler::PHASE_CONNECTING || wifiPhase == WifiHandler::PHASE_AP_WAIT_CLIENT || wifiPhase == WifiHandler::PHASE_PORTAL_ACTIVE)) &&
                             ((wifiBannerUntilMs == 0) || ((int32_t)(wifiBannerUntilMs - millis()) > 0) || portalActive || wifiPhase == WifiHandler::PHASE_AP_WAIT_CLIENT);
   notification.setWiFi(wifiConnected, wifiMgr.rssi(), wifiMgr.isBlockingPhase(), portalActive, wifiTimedOutUi, wifiPhase == WifiHandler::PHASE_AP_WAIT_CLIENT);
-  if (gOtaActive) notification.setOta(true, gOtaProgress); else if (!showWifiWait) notification.setOta(false, 0);
+  if (!gPauseByOta && !showWifiWait) notification.setOta(false, 0);
   notification.render();
 
   static FaultState lastImmediateFaultState = STATE_NORMAL;
@@ -546,24 +551,7 @@ void loop() {
   }
 
   static uint32_t lastLive = 0;
-  static int lastOtaDebugProgress = -100;
-  if (gOtaActive) {
-    const int pct = (int)gOtaProgress;
-    if (pct == 0 && lastOtaDebugProgress < 0) {
-      lastOtaDebugProgress = 0;
-      (void)network.publishOtaDebug("START", "OTA started", 0);
-    } else if (pct >= 100 && lastOtaDebugProgress != 100) {
-      lastOtaDebugProgress = 100;
-      (void)network.publishOtaDebug("SUCCESS", "OTA finished, rebooting", 100);
-    } else if (pct > 0 && pct < 100 && (pct - lastOtaDebugProgress) >= 10) {
-      lastOtaDebugProgress = pct;
-      (void)network.publishOtaDebug("PROGRESS", "Downloading firmware", pct);
-    }
-  } else {
-    lastOtaDebugProgress = -100;
-  }
-
-  if (!gPauseByOta && millis() - lastLive > 1000) {
+  if (!paused && (millis() - lastLive > 1000)) {
     lastLive = millis();
     static uint32_t noPowerSinceMs = 0;
     const bool unpluggedLive = classifyUnpluggedSocket(vRaw, vFast, irmsRawForLogic, f.current_valid != 0, st, &noPowerSinceMs);
@@ -581,6 +569,6 @@ void loop() {
                               f.model_pred, stateStr);
   }
 
-  if (!gPauseByOta) network.loop();
+  if (!paused) network.loop();
   delay(2);
 }

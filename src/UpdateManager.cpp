@@ -15,8 +15,6 @@
 #include <memory>
 #include <new>
 #include <stdlib.h>
-#include <freertos/FreeRTOS.h>
-#include <freertos/task.h>
 
 RTC_DATA_ATTR static uint32_t s_magic = 0;
 RTC_DATA_ATTR static uint32_t s_lastAppAddr = 0;
@@ -28,6 +26,7 @@ static const uint32_t OTA_HTTP_TIMEOUT_MS   = 60000;
 static const uint32_t OTA_STREAM_IDLE_MS    = 60000;
 static const uint32_t OTA_RESTART_DELAY_MS  = 1200;
 static const size_t   OTA_MIN_BIN_BYTES     = 128 * 1024;
+static const uint32_t OTA_TASK_STACK_WORDS  = 6144;
 
 static bool isCrashReset(esp_reset_reason_t r) {
   switch (r) {
@@ -72,11 +71,15 @@ String UpdateManager::normalizeFirmwareUrl_(String url) {
 
 static String otaHeapInfo_() {
   String s;
-  s.reserve(48);
+  s.reserve(96);
   s += "free=";
   s += String(ESP.getFreeHeap());
   s += " max=";
   s += String(heap_caps_get_largest_free_block(MALLOC_CAP_8BIT));
+  s += " int_free=";
+  s += String(heap_caps_get_free_size(MALLOC_CAP_INTERNAL));
+  s += " int_max=";
+  s += String(heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL));
   return s;
 }
 
@@ -163,7 +166,8 @@ void UpdateManager::bootGuardBegin_(uint32_t stableWindowMs, uint8_t maxCrashBoo
   }
   if (runAddr != 0) s_lastAppAddr = runAddr;
 
-  const bool crash = isCrashReset(esp_reset_reason());
+  _resetReason = (int)esp_reset_reason();
+  const bool crash = isCrashReset((esp_reset_reason_t)_resetReason);
   if (crash) {
     if (s_crashBoots < 255) s_crashBoots++;
   } else {
@@ -191,6 +195,57 @@ void UpdateManager::bootGuardLoop_() {
   _crashBoots = 0;
 
   if (_pendingVerify) (void)confirmNow();
+}
+
+
+bool UpdateManager::startOtaTask_(const String& url) {
+  if (_otaInProgress || _otaTask != nullptr) return false;
+  _otaUrl = url;
+  _otaInProgress = true;
+  BaseType_t ok = xTaskCreatePinnedToCore(UpdateManager::otaTaskThunk_,
+                                          "OtaWorker",
+                                          OTA_TASK_STACK_WORDS,
+                                          this,
+                                          2,
+                                          &_otaTask,
+                                          1);
+  if (ok != pdPASS) {
+    _otaTask = nullptr;
+    _otaInProgress = false;
+    _lastError = otaErr_("OTA_TASK_CREATE_FAILED");
+    _lastError += " | ";
+    _lastError += otaHeapInfo_();
+    return false;
+  }
+  return true;
+}
+
+void UpdateManager::otaTaskThunk_(void* arg) {
+  UpdateManager* self = static_cast<UpdateManager*>(arg);
+  if (self) self->otaTask_();
+  vTaskDelete(nullptr);
+}
+
+void UpdateManager::otaTask_() {
+  auto publishDebug = [&](const String& phase, const String& detail, int progress = -1) {
+    if (_cloud && _cloud->isReady()) (void)_cloud->publishOtaDebug(phase, detail, progress);
+  };
+
+  String url = _otaUrl;
+  bool ok = performUpdateFromUrl(url);
+  if (ok) {
+    _lastError = "";
+    if (_cb) _cb(OtaEvent::SUCCESS, 100);
+    delay(OTA_RESTART_DELAY_MS);
+    ESP.restart();
+  } else {
+    if (!_lastError.length()) _lastError = otaErr_("OTA_FAILED");
+    publishDebug("FAIL", _lastError, -1);
+    if (_cb) _cb(OtaEvent::FAIL, 0);
+    _otaUrl = "";
+    _otaInProgress = false;
+    _otaTask = nullptr;
+  }
 }
 
 void UpdateManager::begin(const char* currentVersion, FirebaseNetwork* cloud, uint32_t stableWindowMs, uint8_t maxCrashBoots) {
@@ -226,7 +281,6 @@ void UpdateManager::loop() {
   // Confirm as early as possible after a successful boot.
   if (!confirmNow()) return;
 
-  if (_taskRunning) return;
   if (WiFi.status() != WL_CONNECTED || !_cloud || !_cloud->isReady()) return;
 
   const uint32_t now = millis();
@@ -267,8 +321,10 @@ void UpdateManager::loop() {
     return;
   }
 
-  if (!startOtaTask_(desiredVer, fwUrl)) {
-    if (!_lastError.length()) _lastError = otaErr_("OTA_TASK_START_FAILED");
+  if (_otaInProgress || _otaTask != nullptr) return;
+
+  if (_cb) _cb(OtaEvent::START, 0);
+  if (!startOtaTask_(fwUrl)) {
     publishDebug("FAIL", _lastError, -1);
     if (_cb) _cb(OtaEvent::FAIL, 0);
   }
@@ -532,6 +588,10 @@ bool UpdateManager::performUpdateFromUrl(const String& rawUrl) {
     return false;
   }
 
+  auto publishStep = [&](const String& phase, const String& detail, int progress = -1) {
+    if (_cloud && _cloud->isReady()) (void)_cloud->publishOtaDebug(phase, detail, progress);
+  };
+
   auto doAttempt = [&](const String& url) -> bool {
     String currentUrl = url;
     for (int redirectCount = 0; redirectCount < 4; ++redirectCount) {
@@ -545,6 +605,11 @@ bool UpdateManager::performUpdateFromUrl(const String& rawUrl) {
         _cloud->stopAllClients();
         delay(150);
       }
+      String resolveDetail;
+      resolveDetail.reserve(16 + u.host.length());
+      resolveDetail = "Resolving ";
+      resolveDetail += u.host;
+      publishStep("RESOLVE", resolveDetail, -1);
 
       IPAddress resolvedIp;
       if (!WiFi.hostByName(u.host.c_str(), resolvedIp)) {
@@ -566,7 +631,7 @@ bool UpdateManager::performUpdateFromUrl(const String& rawUrl) {
         }
         secure->setTimeout(OTA_HTTP_TIMEOUT_MS / 1000);
         secure->setHandshakeTimeout(20);
-        setTlsBuffersIfSupported_(*secure, 2048, 512);
+        setTlsBuffersIfSupported_(*secure, 1024, 128);
         if (_insecureTLS) secure->setInsecure();
         client = secure.get();
       } else {
@@ -581,6 +646,16 @@ bool UpdateManager::performUpdateFromUrl(const String& rawUrl) {
         client = plain.get();
       }
 
+      String connectDetail;
+      connectDetail.reserve(u.host.length() + 64);
+      connectDetail = u.host;
+      connectDetail += ":";
+      connectDetail += String(u.port);
+      connectDetail += " heap=";
+      connectDetail += String(ESP.getFreeHeap());
+      connectDetail += " max=";
+      connectDetail += String(heap_caps_get_largest_free_block(MALLOC_CAP_8BIT));
+      publishStep("CONNECTING", connectDetail, -1);
       if (!client->connect(resolvedIp, u.port)) {
         String detail = "OTA_CONNECT_FAIL ";
         detail += u.host;
@@ -660,6 +735,11 @@ bool UpdateManager::performUpdateFromUrl(const String& rawUrl) {
         }
       }
 
+      String headerDetail;
+      headerDetail.reserve(16);
+      headerDetail = "HTTP ";
+      headerDetail += String(code);
+      publishStep("HEADERS", headerDetail, -1);
       if (code >= 300 && code < 400) {
         client->stop();
         String nextUrl;
@@ -706,6 +786,13 @@ bool UpdateManager::performUpdateFromUrl(const String& rawUrl) {
         }
       }
 
+      String flashBeginDetail;
+      flashBeginDetail.reserve(32);
+      flashBeginDetail = "size=";
+      flashBeginDetail += String(total);
+      flashBeginDetail += " chunked=";
+      flashBeginDetail += String(chunked ? 1 : 0);
+      publishStep("FLASH_BEGIN", flashBeginDetail, 0);
       if (!beginUpdateTarget(total, target)) {
         client->stop();
         return false;
@@ -738,6 +825,11 @@ bool UpdateManager::performUpdateFromUrl(const String& rawUrl) {
         return false;
       }
 
+      String flashEndDetail;
+      flashEndDetail.reserve(24);
+      flashEndDetail = "written=";
+      flashEndDetail += String((unsigned)written);
+      publishStep("FLASH_END", flashEndDetail, 100);
       if (!Update.end(true) || !Update.isFinished()) {
         _lastError = otaErr_("OTA_END_FAILED", Update.getError());
         return false;
@@ -770,48 +862,3 @@ bool UpdateManager::performUpdateFromUrl(const String& rawUrl) {
   return false;
 }
 
-
-
-bool UpdateManager::startOtaTask_(const String& desiredVersion, const String& firmwareUrl) {
-  if (_taskRunning) return false;
-  _pendingVersion = desiredVersion;
-  _pendingUrl = firmwareUrl;
-  _taskRunning = true;
-  if (_cb) _cb(OtaEvent::START, 0);
-  BaseType_t ok = xTaskCreate(UpdateManager::otaTaskThunk_, "OtaWorker", 16384, this, 2, nullptr);
-  if (ok != pdPASS) {
-    _taskRunning = false;
-    _pendingVersion = "";
-    _pendingUrl = "";
-    _lastError = otaErr_("OTA_TASK_CREATE_FAILED");
-    return false;
-  }
-  return true;
-}
-
-void UpdateManager::otaTaskThunk_(void* arg) {
-  UpdateManager* self = static_cast<UpdateManager*>(arg);
-  if (self) self->otaTask_();
-  vTaskDelete(nullptr);
-}
-
-void UpdateManager::otaTask_() {
-  const String fwUrl = _pendingUrl;
-  _pendingUrl = "";
-
-  const bool ok = performUpdateFromUrl(fwUrl);
-  if (ok) {
-    _lastError = "";
-    if (_cb) _cb(OtaEvent::SUCCESS, 100);
-    delay(OTA_RESTART_DELAY_MS);
-    _taskRunning = false;
-    ESP.restart();
-    return;
-  }
-
-  if (!_lastError.length()) _lastError = otaErr_("OTA_FAILED");
-  if (_cloud && _cloud->isReady()) (void)_cloud->publishOtaDebug("FAIL", _lastError, -1);
-  if (_cb) _cb(OtaEvent::FAIL, 0);
-  _pendingVersion = "";
-  _taskRunning = false;
-}
