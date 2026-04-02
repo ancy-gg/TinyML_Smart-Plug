@@ -15,6 +15,8 @@
 #include <memory>
 #include <new>
 #include <stdlib.h>
+#include <freertos/FreeRTOS.h>
+#include <freertos/task.h>
 
 RTC_DATA_ATTR static uint32_t s_magic = 0;
 RTC_DATA_ATTR static uint32_t s_lastAppAddr = 0;
@@ -224,6 +226,7 @@ void UpdateManager::loop() {
   // Confirm as early as possible after a successful boot.
   if (!confirmNow()) return;
 
+  if (_taskRunning) return;
   if (WiFi.status() != WL_CONNECTED || !_cloud || !_cloud->isReady()) return;
 
   const uint32_t now = millis();
@@ -264,15 +267,8 @@ void UpdateManager::loop() {
     return;
   }
 
-  if (_cb) _cb(OtaEvent::START, 0);
-
-  if (performUpdateFromUrl(fwUrl)) {
-    _lastError = "";
-    if (_cb) _cb(OtaEvent::SUCCESS, 100);
-    delay(OTA_RESTART_DELAY_MS);
-    ESP.restart();
-  } else {
-    if (!_lastError.length()) _lastError = otaErr_("OTA_FAILED");
+  if (!startOtaTask_(desiredVer, fwUrl)) {
+    if (!_lastError.length()) _lastError = otaErr_("OTA_TASK_START_FAILED");
     publishDebug("FAIL", _lastError, -1);
     if (_cb) _cb(OtaEvent::FAIL, 0);
   }
@@ -774,3 +770,48 @@ bool UpdateManager::performUpdateFromUrl(const String& rawUrl) {
   return false;
 }
 
+
+
+bool UpdateManager::startOtaTask_(const String& desiredVersion, const String& firmwareUrl) {
+  if (_taskRunning) return false;
+  _pendingVersion = desiredVersion;
+  _pendingUrl = firmwareUrl;
+  _taskRunning = true;
+  if (_cb) _cb(OtaEvent::START, 0);
+  BaseType_t ok = xTaskCreate(UpdateManager::otaTaskThunk_, "OtaWorker", 16384, this, 2, nullptr);
+  if (ok != pdPASS) {
+    _taskRunning = false;
+    _pendingVersion = "";
+    _pendingUrl = "";
+    _lastError = otaErr_("OTA_TASK_CREATE_FAILED");
+    return false;
+  }
+  return true;
+}
+
+void UpdateManager::otaTaskThunk_(void* arg) {
+  UpdateManager* self = static_cast<UpdateManager*>(arg);
+  if (self) self->otaTask_();
+  vTaskDelete(nullptr);
+}
+
+void UpdateManager::otaTask_() {
+  const String fwUrl = _pendingUrl;
+  _pendingUrl = "";
+
+  const bool ok = performUpdateFromUrl(fwUrl);
+  if (ok) {
+    _lastError = "";
+    if (_cb) _cb(OtaEvent::SUCCESS, 100);
+    delay(OTA_RESTART_DELAY_MS);
+    _taskRunning = false;
+    ESP.restart();
+    return;
+  }
+
+  if (!_lastError.length()) _lastError = otaErr_("OTA_FAILED");
+  if (_cloud && _cloud->isReady()) (void)_cloud->publishOtaDebug("FAIL", _lastError, -1);
+  if (_cb) _cb(OtaEvent::FAIL, 0);
+  _pendingVersion = "";
+  _taskRunning = false;
+}

@@ -23,6 +23,7 @@ public:
   bool safeMode() const { return _safeMode; }
   const String& lastError() const { return _lastError; }
   bool pendingVerify() const { return _pendingVerify; }
+  bool running() const { return _taskRunning; }
   bool confirmNow();
   bool rollbackToPrevious();
 
@@ -33,6 +34,9 @@ private:
   static String normalizeFirmwareUrl_(String url);
   void bootGuardBegin_(uint32_t stableWindowMs, uint8_t maxCrashBoots);
   void bootGuardLoop_();
+  bool startOtaTask_(const String& desiredVersion, const String& firmwareUrl);
+  void otaTask_();
+  static void otaTaskThunk_(void* arg);
 
   const char* _currentVersion = "TSP-v0.0.0";
   FirebaseNetwork* _cloud = nullptr;
@@ -50,6 +54,9 @@ private:
   bool _pendingVerify = false;
   bool _safeMode = false;
   uint8_t _crashBoots = 0;
+  bool _taskRunning = false;
+  String _pendingVersion = "";
+  String _pendingUrl = "";
   String _lastError = "";
 };
 
