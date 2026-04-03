@@ -60,7 +60,7 @@ const midbandResidVal = el("midbandResidVal");
 const hfEnergyVal  = el("hfEnergyVal");
 const wpeEntropyVal= el("wpeEntropyVal");
 const specEntropyVal = el("specEntropyVal");
-const thdVal       = el("thdVal");
+const dipReboundVal= el("dipReboundVal");
 
 const alertEnable = el("alertEnable");
 const soundEnable = el("soundEnable");
@@ -603,7 +603,7 @@ function setLiveZeroes() {
     [vVal, "0.0"], [iVal, "0.000"], [pVal, "0.0"], [tVal, "0.0"],
     [cycleNmseVal, "0.000"], [zcvVal, "0.000"], [zcDwellVal, "0.000"],
     [cycleDropVal, "0.000"], [peakFluctVal, "0.000"], [midbandResidVal, "0.000"],
-    [hfEnergyVal, "0.000"], [wpeEntropyVal, "0.000"], [specEntropyVal, "0.000"], [thdVal, "0.000"]
+    [hfEnergyVal, "0.000"], [wpeEntropyVal, "0.000"], [specEntropyVal, "0.000"], [dipReboundVal, "0.000"]
   ];
   zeroMap.forEach(([node, text]) => { if (node) node.textContent = text; });
 }
@@ -658,7 +658,7 @@ function setLiveUnavailable() {
   const unavailableMap = [
     vVal, iVal, pVal, tVal,
     cycleNmseVal, zcvVal, zcDwellVal, cycleDropVal, peakFluctVal, midbandResidVal,
-    hfEnergyVal, wpeEntropyVal, specEntropyVal, thdVal
+    hfEnergyVal, wpeEntropyVal, specEntropyVal, dipReboundVal
   ];
   unavailableMap.forEach((node) => { if (node) node.textContent = "—"; });
 }
@@ -1090,7 +1090,7 @@ function updateLiveDom(data) {
   const hf  = toFixedOrDash(data.hf_band_energy_ratio, 3);
   const wpe = toFixedOrDash(data.wpe_entropy, 3);
   const se  = toFixedOrDash(data.spec_entropy, 3);
-  const th  = toFixedOrDash(data.thd_i, 3);
+  const dr  = toFixedOrDash(data.dip_rebound_ratio, 3);
 
   if (vVal && vVal.textContent !== v) { vVal.textContent = v; animateNumber(vVal); }
   if (iVal && iVal.textContent !== i) { iVal.textContent = i; animateNumber(iVal); }
@@ -1105,7 +1105,7 @@ function updateLiveDom(data) {
   if (hfEnergyVal && hfEnergyVal.textContent !== hf) { hfEnergyVal.textContent = hf; animateNumber(hfEnergyVal); }
   if (wpeEntropyVal && wpeEntropyVal.textContent !== wpe) { wpeEntropyVal.textContent = wpe; animateNumber(wpeEntropyVal); }
   if (specEntropyVal && specEntropyVal.textContent !== se) { specEntropyVal.textContent = se; animateNumber(specEntropyVal); }
-  if (thdVal && thdVal.textContent !== th) { thdVal.textContent = th; animateNumber(thdVal); }
+  if (dipReboundVal && dipReboundVal.textContent !== dr) { dipReboundVal.textContent = dr; animateNumber(dipReboundVal); }
 
   applyMetricHints(data);
 }

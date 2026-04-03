@@ -121,7 +121,7 @@
     const keys = Object.keys(rows[0]);
     return keys.filter((k) => {
       if (k === "timestamp" || k === "session_id" || k === "load_type") return false;
-      if (k === "epoch_ms") return false;
+      if (k === "epoch_ms" || k === "thd_i") return false;
       const val = rows.find((r) => r[k] !== undefined && r[k] !== null)?.[k];
       if (val === undefined) return false;
       const num = typeof val === "number" ? val : Number(String(val).trim());
@@ -195,11 +195,11 @@
   const showPref = new Map();
   const axisPref = new Map();
 
-  const DEFAULT_ON = new Set(["i_rms", "v_rms", "thd_i", "cycle_nmse", "zcv", "cycle_rms_drop_ratio", "hf_band_energy_ratio"]);
-  const DEFAULT_Y2 = new Set(["thd_i", "v_rms", "temp_c"]);
+  const DEFAULT_ON = new Set(["i_rms", "v_rms", "cycle_nmse", "zcv", "cycle_rms_drop_ratio", "hf_band_energy_ratio", "dip_rebound_ratio"]);
+  const DEFAULT_Y2 = new Set(["v_rms", "temp_c"]);
 
   function preferredDefaultKeys(keys) {
-    const preferred = ["cycle_nmse", "zcv", "zc_dwell_ratio", "cycle_rms_drop_ratio", "peak_fluct_cv", "midband_residual_rms", "hf_band_energy_ratio", "wpe_entropy", "spec_entropy", "thd_i", "current", "voltage", "temp", "i_rms", "v_rms"];
+    const preferred = ["cycle_nmse", "zcv", "zc_dwell_ratio", "cycle_rms_drop_ratio", "peak_fluct_cv", "midband_residual_rms", "hf_band_energy_ratio", "wpe_entropy", "spec_entropy", "dip_rebound_ratio", "current", "voltage", "temp", "i_rms", "v_rms"];
     const picked = preferred.filter((k) => keys.includes(k) && k !== "label_arc");
     if (picked.length) return picked.slice(0, 8);
     return keys.filter((k) => k !== "label_arc").slice(0, Math.min(8, keys.length));

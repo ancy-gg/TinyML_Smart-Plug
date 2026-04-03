@@ -389,23 +389,50 @@ bool ArcDetection::compute(const uint16_t* raw, size_t n, float fs_hz,
     out.peak_fluct_cv = (float)(sqrt(vv) / (mu + 1e-9));
   }
 
-  if (peakN >= 2) {
-    float tmp[24];
-    for (int i = 0; i < peakN; ++i) tmp[i] = cycleRmsVals[i];
-    for (int i = 0; i < peakN - 1; ++i) {
-      for (int j = i + 1; j < peakN; ++j) {
-        if (tmp[j] < tmp[i]) { const float t = tmp[i]; tmp[i] = tmp[j]; tmp[j] = t; }
-      }
+float cycleBaseline = 0.0f;
+if (peakN >= 2) {
+  float tmp[24];
+  for (int i = 0; i < peakN; ++i) tmp[i] = cycleRmsVals[i];
+  for (int i = 0; i < peakN - 1; ++i) {
+    for (int j = i + 1; j < peakN; ++j) {
+      if (tmp[j] < tmp[i]) { const float t = tmp[i]; tmp[i] = tmp[j]; tmp[j] = t; }
     }
-    const float baseline = (peakN & 1) ? tmp[peakN / 2]
-                                       : 0.5f * (tmp[(peakN / 2) - 1] + tmp[peakN / 2]);
-    float minCycle = cycleRmsVals[0];
-    for (int i = 1; i < peakN; ++i) {
-      if (cycleRmsVals[i] < minCycle) minCycle = cycleRmsVals[i];
+  }
+  cycleBaseline = (peakN & 1) ? tmp[peakN / 2]
+                              : 0.5f * (tmp[(peakN / 2) - 1] + tmp[peakN / 2]);
+  float minCycle = cycleRmsVals[0];
+  for (int i = 1; i < peakN; ++i) {
+    if (cycleRmsVals[i] < minCycle) minCycle = cycleRmsVals[i];
+  }
+  out.cycle_rms_drop_ratio = clampf((cycleBaseline - minCycle) / fmaxf(cycleBaseline, 0.05f), 0.0f, 1.5f);
+}
+
+if (peakN >= 3) {
+  const float strongFloor = fmaxf(0.20f * cycleBaseline, 0.03f);
+  float strongestDip = 0.0f;
+  int dipCount = 0;
+  const int dipWindows = peakN - 2;
+
+  for (int i = 1; i < peakN - 1; ++i) {
+    const float prevC = cycleRmsVals[i - 1];
+    const float curC  = cycleRmsVals[i];
+    const float nextC = cycleRmsVals[i + 1];
+    if (prevC < strongFloor || nextC < strongFloor) continue;
+
+    const float ref = fmaxf(fminf(prevC, nextC), 0.05f);
+    const float drop = (ref - curC) / ref;
+    const float rebound = (nextC - curC) / ref;
+    const bool dipLike = (drop >= 0.08f) && (rebound >= 0.05f) && (nextC >= 0.80f * prevC);
+
+    if (dipLike) {
+      if (drop > strongestDip) strongestDip = drop;
+      dipCount++;
     }
-    out.cycle_rms_drop_ratio = clampf((baseline - minCycle) / fmaxf(baseline, 0.05f), 0.0f, 1.5f);
   }
 
+  const float density = (dipWindows > 0) ? ((float)dipCount / (float)dipWindows) : 0.0f;
+  out.dip_rebound_ratio = clampf((0.65f * strongestDip) + (0.35f * density), 0.0f, 1.0f);
+}
   if (nmsePairs > 0) out.cycle_nmse = nmseAcc / (float)nmsePairs;
 
   for (size_t i = 0; i < n; ++i) {
@@ -561,17 +588,23 @@ bool ArcDetection::compute(const uint16_t* raw, size_t n, float fs_hz,
 int ArcDetection::predict(float cycle_nmse, float zcv, float zc_dwell_ratio,
                           float cycle_rms_drop_ratio, float peak_fluct_cv,
                           float midband_residual_rms, float hf_band_energy_ratio,
-                          float wpe_entropy, float spec_entropy, float thd_i,
+                          float wpe_entropy, float spec_entropy, float dip_rebound_ratio,
                           float v_rms, float i_rms, float temp_c) const {
   (void)v_rms; (void)i_rms; (void)temp_c;
   double input_features[10] = {
     (double)cycle_nmse, (double)zcv, (double)zc_dwell_ratio,
     (double)cycle_rms_drop_ratio, (double)peak_fluct_cv,
     (double)midband_residual_rms, (double)hf_band_energy_ratio,
-    (double)wpe_entropy, (double)spec_entropy, (double)thd_i
+    (double)wpe_entropy, (double)spec_entropy, (double)dip_rebound_ratio
   };
   double output_probs[2] = {0.0, 0.0};
   arc_rf_predict(input_features, output_probs);
+  const bool clearlyNormalTurnOnLike =
+      (dip_rebound_ratio < ARC_TRANSIENT_SUPPRESS_DIP_REBOUND_MAX) &&
+      (cycle_rms_drop_ratio < ARC_TRANSIENT_SUPPRESS_DROP_MAX) &&
+      (peak_fluct_cv < ARC_TRANSIENT_SUPPRESS_PEAK_MAX) &&
+      (cycle_nmse < ARC_TRANSIENT_SUPPRESS_NMSE_MAX);
+  if (clearlyNormalTurnOnLike) return 0;
   return (output_probs[1] >= ARC_THRESHOLD) ? 1 : 0;
 }
 
@@ -587,7 +620,7 @@ int ArcDetection::computeAndPredict(const uint16_t* raw, size_t n, float fs_hz,
   out.model_pred = (uint8_t)predict(out.cycle_nmse, out.zcv, out.zc_dwell_ratio,
                                     out.cycle_rms_drop_ratio, out.peak_fluct_cv,
                                     out.midband_residual_rms, out.hf_band_energy_ratio,
-                                    out.wpe_entropy, out.spec_entropy, out.thd_i,
+                                    out.wpe_entropy, out.spec_entropy, out.dip_rebound_ratio,
                                     v_rms, out.irms_a, temp_c);
   return out.model_pred;
 }

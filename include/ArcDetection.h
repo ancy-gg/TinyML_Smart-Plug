@@ -15,6 +15,7 @@ struct ArcDetectionResult {
   float hf_band_energy_ratio  = 0.0f;
   float wpe_entropy           = 0.0f;
   float spec_entropy          = 0.0f;
+  float dip_rebound_ratio     = 0.0f;
   float thd_i                 = 0.0f;
 
   bool feat_valid    = false;
@@ -31,7 +32,7 @@ public:
   int predict(float cycle_nmse, float zcv, float zc_dwell_ratio,
               float cycle_rms_drop_ratio, float peak_fluct_cv,
               float midband_residual_rms, float hf_band_energy_ratio,
-              float wpe_entropy, float spec_entropy, float thd_i,
+              float wpe_entropy, float spec_entropy, float dip_rebound_ratio,
               float v_rms, float i_rms, float temp_c) const;
 
   int computeAndPredict(const uint16_t* raw, size_t n, float fs_hz,

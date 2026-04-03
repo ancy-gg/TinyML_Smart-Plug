@@ -6,7 +6,7 @@ import numpy as np
 
 FEATURES = [
     "cycle_nmse", "zcv", "zc_dwell_ratio", "cycle_rms_drop_ratio", "peak_fluct_cv",
-    "midband_residual_rms", "hf_band_energy_ratio", "wpe_entropy", "spec_entropy", "thd_i",
+    "midband_residual_rms", "hf_band_energy_ratio", "wpe_entropy", "spec_entropy", "dip_rebound_ratio",
 ]
 TARGET = "label_arc"
 GROUP_COL_CANDIDATES = ["session_id", "session", "sid"]
@@ -65,6 +65,10 @@ def normalize_feature_names(df):
         df["legacy_pulse_feature"] = 1
     elif "cycle_rms_drop_ratio" in cols:
         df["legacy_pulse_feature"] = 0
+    if "dip_rebound_ratio" not in df.columns:
+        df["dip_rebound_ratio"] = 0.0
+    if "thd_i" not in df.columns:
+        df["thd_i"] = 0.0
     return df
 
 def coerce_numeric_if_present(df, cols):
@@ -81,7 +85,7 @@ def clean_dataset(df):
     if missing:
         raise ValueError("Missing required columns: %s" % missing)
 
-    maybe_numeric = FEATURES + [TARGET, "feat_valid", "current_valid", "adc_fs_hz", "fault_state"]
+    maybe_numeric = FEATURES + [TARGET, "feat_valid", "current_valid", "adc_fs_hz", "fault_state", "thd_i"]
     df = coerce_numeric_if_present(df, maybe_numeric)
     before = len(df)
     df = df[df[TARGET].isin([0, 1])].copy()
@@ -117,7 +121,7 @@ def clean_dataset(df):
     df["hf_band_energy_ratio"] = df["hf_band_energy_ratio"].clip(0.0, 1.0)
     df["wpe_entropy"] = df["wpe_entropy"].clip(0.0, 1.0)
     df["spec_entropy"] = df["spec_entropy"].clip(0.0, 1.0)
-    df["thd_i"] = df["thd_i"].clip(0.0, 500.0)
+    df["dip_rebound_ratio"] = df["dip_rebound_ratio"].clip(0.0, 1.0)
 
     dedupe_cols = [c for c in FEATURES + [TARGET] if c in df.columns]
     if "session_id" in df.columns:

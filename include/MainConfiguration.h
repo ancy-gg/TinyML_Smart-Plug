@@ -13,7 +13,7 @@ static constexpr bool ENABLE_AUTO_ARC_CAPTURE = true;
 // Cloud / OTA configuration
 static constexpr const char* FIREBASE_API_KEY = "AIzaSyAmJlZZszyWPJFgIkTAAl_TbIySys1nvEw";
 static constexpr const char* FIREBASE_DB_URL  = "tinyml-smart-plug-default-rtdb.asia-southeast1.firebasedatabase.app";
-static constexpr const char* FW_VERSION       = "TSP-v4.4.5-p";
+static constexpr const char* FW_VERSION       = "TSP-v4.5.0-p";
 static constexpr const char* OTA_DESIRED_VERSION_PATH = "/ota/desired_version";
 static constexpr const char* OTA_FIRMWARE_URL_PATH    = "/ota/firmware_url";
 
@@ -59,6 +59,7 @@ struct FeatureFrame {
   float hf_band_energy_ratio  = 0.0f;
   float wpe_entropy           = 0.0f;
   float spec_entropy          = 0.0f;
+  float dip_rebound_ratio     = 0.0f;
   float thd_i                 = 0.0f;
 
   float adc_fs_hz = 0.0f;
@@ -231,10 +232,6 @@ static constexpr float CURRENT_IDLE_SUPPRESS_A      = 0.040f;
 static constexpr float FEATURE_MIN_VRMS             = 70.0f;
 static constexpr float FEATURE_MIN_IRMS_A           = 0.050f;
 static constexpr float ARC_MIN_IRMS_A               = 0.060f;
-static constexpr float ARC_TURNON_LOW_A            = 0.20f;
-static constexpr float ARC_TURNON_ACTIVE_A         = 1.00f;
-static constexpr uint32_t ARC_TURNON_LOW_MS        = 180UL;
-static constexpr uint32_t ARC_TURNON_BLANK_MS      = 900UL;
 static constexpr float FEATURE_REQUIRE_FUND_BELOW_A = 0.180f;
 static constexpr float CURRENT_LPF_HZ               = 1800.0f;
 static constexpr float CURRENT_BASE_LPF_HZ          = 260.0f;
@@ -268,6 +265,17 @@ static constexpr float CURRENT_DISPLAY_OFF_A        = 0.020f;
 static constexpr float CURRENT_ANALYSIS_IDLE_A       = 0.020f;
 static constexpr uint32_t CURRENT_IDLE_SUPPRESS_HOLD_MS = 5000UL;
 static constexpr float ARC_WEAK_EVENT_RESID_MUL     = 0.75f;
+
+static constexpr float ARC_TURNON_LOW_A                 = 0.20f;
+static constexpr float ARC_TURNON_ACTIVE_A              = 1.00f;
+static constexpr uint32_t ARC_TURNON_LOW_MS             = 180UL;
+static constexpr uint32_t ARC_TURNON_BLANK_MS           = 900UL;
+
+static constexpr float ARC_TRANSIENT_SUPPRESS_DROP_MAX        = 0.08f;
+static constexpr float ARC_TRANSIENT_SUPPRESS_PEAK_MAX        = 0.015f;
+static constexpr float ARC_TRANSIENT_SUPPRESS_NMSE_MAX        = 0.12f;
+static constexpr float ARC_TRANSIENT_SUPPRESS_DIP_REBOUND_MAX = 0.03f;
+static constexpr float ARC_DIP_REBOUND_FALLBACK_MIN           = 0.06f;
 
 static constexpr float CURRENT_CAL_C3 = 0.00061628f;
 static constexpr float CURRENT_CAL_C2 = -0.000465664f;

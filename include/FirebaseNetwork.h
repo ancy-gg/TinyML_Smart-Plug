@@ -43,7 +43,7 @@ public:
                          float cycle_nmse, float zcv, float zc_dwell_ratio,
                          float cycle_rms_drop_ratio, float peak_fluct_cv,
                          float midband_residual_rms, float hf_band_energy_ratio,
-                         float wpe_entropy, float spec_entropy, float thd_i,
+                         float wpe_entropy, float spec_entropy, float dip_rebound_ratio, float thd_i,
                          uint8_t model_pred,
                          const String& state);
 
@@ -68,7 +68,7 @@ private:
     float cycle_nmse = 0.0f, zcv = 0.0f, zc_dwell_ratio = 0.0f;
     float cycle_rms_drop_ratio = 0.0f, peak_fluct_cv = 0.0f;
     float midband_residual_rms = 0.0f, hf_band_energy_ratio = 0.0f;
-    float wpe_entropy = 0.0f, spec_entropy = 0.0f, thd_i = 0.0f;
+    float wpe_entropy = 0.0f, spec_entropy = 0.0f, dip_rebound_ratio = 0.0f, thd_i = 0.0f;
     uint8_t model_pred = 0;
     String state;
   };
@@ -91,7 +91,7 @@ private:
   struct Rec {
     uint64_t epoch_ms;
     float cycle_nmse, zcv, zc_dwell_ratio, cycle_rms_drop_ratio, peak_fluct_cv;
-    float midband_residual_rms, hf_band_energy_ratio, wpe_entropy, spec_entropy, thd_i;
+    float midband_residual_rms, hf_band_energy_ratio, wpe_entropy, spec_entropy, dip_rebound_ratio, thd_i;
     float v_rms, i_rms, temp_c;
     int8_t  label_arc;
     uint8_t model_pred, feat_valid, current_valid, fault_state;
