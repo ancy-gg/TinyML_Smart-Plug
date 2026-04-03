@@ -854,7 +854,11 @@ bool FirebaseNetwork::serviceMlUpload_() {
   json.set("meta/auto_capture", _uploadAuto);
   json.set("meta/feature_order", "cycle_nmse,zcv,zc_dwell_ratio,cycle_rms_drop_ratio,peak_fluct_cv,midband_residual_rms,hf_band_energy_ratio,spec_entropy,neg_dip_event_ratio,irms_drop_vs_baseline");
 
-  if (!Firebase.RTDB.pushJSON(&fbLog, path.c_str(), &json)) return false;
+  if (!Firebase.RTDB.pushJSON(&fbLog, path.c_str(), &json)) {
+    stopAllClients();
+    _txBackoffUntilMs = millis() + CLOUD_TX_RETRY_MS;
+    return false;
+  }
 
   _uploadNextIndex = i1;
   _uploadChunkIndex++;
