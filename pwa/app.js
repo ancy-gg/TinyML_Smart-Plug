@@ -58,9 +58,9 @@ const cycleDropVal = el("cycleDropVal");
 const peakFluctVal = el("peakFluctVal");
 const midbandResidVal = el("midbandResidVal");
 const hfEnergyVal  = el("hfEnergyVal");
-const wpeEntropyVal= el("wpeEntropyVal");
 const specEntropyVal = el("specEntropyVal");
-const dipReboundVal= el("dipReboundVal");
+const negDipEventVal = el("negDipEventVal");
+const preDipSpikeVal = el("preDipSpikeVal");
 
 const alertEnable = el("alertEnable");
 const soundEnable = el("soundEnable");
@@ -603,7 +603,7 @@ function setLiveZeroes() {
     [vVal, "0.0"], [iVal, "0.000"], [pVal, "0.0"], [tVal, "0.0"],
     [cycleNmseVal, "0.000"], [zcvVal, "0.000"], [zcDwellVal, "0.000"],
     [cycleDropVal, "0.000"], [peakFluctVal, "0.000"], [midbandResidVal, "0.000"],
-    [hfEnergyVal, "0.000"], [wpeEntropyVal, "0.000"], [specEntropyVal, "0.000"], [dipReboundVal, "0.000"]
+    [hfEnergyVal, "0.000"], [specEntropyVal, "0.000"], [negDipEventVal, "0.000"], [preDipSpikeVal, "0.000"]
   ];
   zeroMap.forEach(([node, text]) => { if (node) node.textContent = text; });
 }
@@ -658,7 +658,7 @@ function setLiveUnavailable() {
   const unavailableMap = [
     vVal, iVal, pVal, tVal,
     cycleNmseVal, zcvVal, zcDwellVal, cycleDropVal, peakFluctVal, midbandResidVal,
-    hfEnergyVal, wpeEntropyVal, specEntropyVal, dipReboundVal
+    hfEnergyVal, specEntropyVal, negDipEventVal, preDipSpikeVal
   ];
   unavailableMap.forEach((node) => { if (node) node.textContent = "—"; });
 }
@@ -1088,9 +1088,9 @@ function updateLiveDom(data) {
   const pf  = toFixedOrDash(data.peak_fluct_cv, 3);
   const mr  = toFixedOrDash(data.midband_residual_rms, 3);
   const hf  = toFixedOrDash(data.hf_band_energy_ratio, 3);
-  const wpe = toFixedOrDash(data.wpe_entropy, 3);
   const se  = toFixedOrDash(data.spec_entropy, 3);
-  const dr  = toFixedOrDash(data.dip_rebound_ratio, 3);
+  const nd  = toFixedOrDash(data.neg_dip_event_ratio, 3);
+  const pd  = toFixedOrDash(data.pre_dip_spike_ratio, 3);
 
   if (vVal && vVal.textContent !== v) { vVal.textContent = v; animateNumber(vVal); }
   if (iVal && iVal.textContent !== i) { iVal.textContent = i; animateNumber(iVal); }
@@ -1103,9 +1103,9 @@ function updateLiveDom(data) {
   if (peakFluctVal && peakFluctVal.textContent !== pf) { peakFluctVal.textContent = pf; animateNumber(peakFluctVal); }
   if (midbandResidVal && midbandResidVal.textContent !== mr) { midbandResidVal.textContent = mr; animateNumber(midbandResidVal); }
   if (hfEnergyVal && hfEnergyVal.textContent !== hf) { hfEnergyVal.textContent = hf; animateNumber(hfEnergyVal); }
-  if (wpeEntropyVal && wpeEntropyVal.textContent !== wpe) { wpeEntropyVal.textContent = wpe; animateNumber(wpeEntropyVal); }
   if (specEntropyVal && specEntropyVal.textContent !== se) { specEntropyVal.textContent = se; animateNumber(specEntropyVal); }
-  if (dipReboundVal && dipReboundVal.textContent !== dr) { dipReboundVal.textContent = dr; animateNumber(dipReboundVal); }
+  if (negDipEventVal && negDipEventVal.textContent !== nd) { negDipEventVal.textContent = nd; animateNumber(negDipEventVal); }
+  if (preDipSpikeVal && preDipSpikeVal.textContent !== pd) { preDipSpikeVal.textContent = pd; animateNumber(preDipSpikeVal); }
 
   applyMetricHints(data);
 }

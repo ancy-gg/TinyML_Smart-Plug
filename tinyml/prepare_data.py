@@ -6,11 +6,11 @@ import numpy as np
 
 FEATURES = [
     "cycle_nmse", "zcv", "zc_dwell_ratio", "cycle_rms_drop_ratio", "peak_fluct_cv",
-    "midband_residual_rms", "hf_band_energy_ratio", "wpe_entropy", "spec_entropy", "dip_rebound_ratio",
+    "midband_residual_rms", "hf_band_energy_ratio", "spec_entropy", "neg_dip_event_ratio", "pre_dip_spike_ratio",
 ]
 TARGET = "label_arc"
 GROUP_COL_CANDIDATES = ["session_id", "session", "sid"]
-DEFAULT_INPUT_GLOB = r"tinyml/data/*.csv"
+DEFAULT_INPUT_GLOB = r"tinyml/data/raw/*.csv"
 DEFAULT_OUTPUT = r"tinyml/data/cleaned_data.csv"
 
 
@@ -40,6 +40,21 @@ def resolve_csv_files(csv_glob, output_path):
     return files
 
 
+def normalize_feature_names(df):
+    df = df.copy()
+    df.columns = [str(c).strip() for c in df.columns]
+    if "cycle_rms_drop_ratio" not in df.columns and "pulse_count_per_cycle" in df.columns:
+        df["cycle_rms_drop_ratio"] = pd.to_numeric(df["pulse_count_per_cycle"], errors="coerce")
+        df["legacy_pulse_feature"] = 1
+    elif "cycle_rms_drop_ratio" in df.columns:
+        df["legacy_pulse_feature"] = 0
+
+    for missing in ["neg_dip_event_ratio", "pre_dip_spike_ratio", "thd_i"]:
+        if missing not in df.columns:
+            df[missing] = 0.0
+    return df
+
+
 def load_and_tag_csvs(csv_files):
     frames = []
     for i, path in enumerate(csv_files):
@@ -55,21 +70,6 @@ def load_and_tag_csvs(csv_files):
         frames.append(df)
     return pd.concat(frames, ignore_index=True)
 
-
-
-def normalize_feature_names(df):
-    df = df.copy()
-    cols = {c.strip(): c for c in df.columns}
-    if "cycle_rms_drop_ratio" not in cols and "pulse_count_per_cycle" in cols:
-        df["cycle_rms_drop_ratio"] = pd.to_numeric(df[cols["pulse_count_per_cycle"]], errors="coerce")
-        df["legacy_pulse_feature"] = 1
-    elif "cycle_rms_drop_ratio" in cols:
-        df["legacy_pulse_feature"] = 0
-    if "dip_rebound_ratio" not in df.columns:
-        df["dip_rebound_ratio"] = 0.0
-    if "thd_i" not in df.columns:
-        df["thd_i"] = 0.0
-    return df
 
 def coerce_numeric_if_present(df, cols):
     for c in cols:
@@ -99,8 +99,6 @@ def clean_dataset(df):
     if "fault_state" in df.columns:
         df["fault_state"] = pd.to_numeric(df["fault_state"], errors="coerce").fillna(0).astype(int)
 
-    # Manual label is the source of truth.
-    # Keep false-positive trips if they were labeled as normal by the user.
     if {"feat_valid", "current_valid", "v_rms", "i_rms"}.issubset(df.columns):
         df["event_like_invalid"] = (
             (df["feat_valid"] == 0) &
@@ -108,20 +106,25 @@ def clean_dataset(df):
             (df["v_rms"] >= 170.0)
         ).astype(int)
 
-    # Current RF training still uses only rows with valid computed features.
     if "feat_valid" in df.columns:
         df = df[df["feat_valid"] == 1].copy()
 
-    df["cycle_nmse"] = df["cycle_nmse"].clip(0.0, 2.0)
-    df["zcv"] = df["zcv"].clip(0.0, 10.0)
-    df["zc_dwell_ratio"] = df["zc_dwell_ratio"].clip(0.0, 1.0)
-    df["cycle_rms_drop_ratio"] = df["cycle_rms_drop_ratio"].clip(0.0, 100.0)
-    df["peak_fluct_cv"] = df["peak_fluct_cv"].clip(0.0, 3.0)
-    df["midband_residual_rms"] = df["midband_residual_rms"].clip(0.0, 10.0)
-    df["hf_band_energy_ratio"] = df["hf_band_energy_ratio"].clip(0.0, 1.0)
-    df["wpe_entropy"] = df["wpe_entropy"].clip(0.0, 1.0)
-    df["spec_entropy"] = df["spec_entropy"].clip(0.0, 1.0)
-    df["dip_rebound_ratio"] = df["dip_rebound_ratio"].clip(0.0, 1.0)
+    clip_hi = {
+        "cycle_nmse": 2.0,
+        "zcv": 10.0,
+        "zc_dwell_ratio": 1.0,
+        "cycle_rms_drop_ratio": 100.0,
+        "peak_fluct_cv": 3.0,
+        "midband_residual_rms": 10.0,
+        "hf_band_energy_ratio": 1.0,
+        "spec_entropy": 1.0,
+        "neg_dip_event_ratio": 1.0,
+        "pre_dip_spike_ratio": 2.0,
+        "thd_i": 500.0,
+    }
+    for c, hi in clip_hi.items():
+        if c in df.columns:
+            df[c] = df[c].clip(0.0, hi)
 
     dedupe_cols = [c for c in FEATURES + [TARGET] if c in df.columns]
     if "session_id" in df.columns:

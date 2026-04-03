@@ -221,10 +221,10 @@
 
           <div class="feature-grid feature-grid-2col feature-grid-tight">
             <div class="card feature-card"><div class="card-label">HF Energy Ratio</div><div class="card-value"><span id="hfEnergyVal">—</span></div></div>
-            <div class="card feature-card"><div class="card-label">Wavelet Entropy</div><div class="card-value"><span id="wpeEntropyVal">—</span></div></div>
-            <div class="card feature-card"><div class="card-label">Spectral Entropy</div><div class="card-value"><span id="specEntropyVal">—</span></div></div>
+                        <div class="card feature-card"><div class="card-label">Spectral Entropy</div><div class="card-value"><span id="specEntropyVal">—</span></div></div>
             <div class="card feature-card"><div class="card-label">Midband RMS</div><div class="card-value"><span id="midbandResidVal">—</span></div></div>
-            <div class="card feature-card"><div class="card-label">Dip-Rebound Ratio</div><div class="card-value"><span id="dipReboundVal">—</span></div></div>
+            <div class="card feature-card"><div class="card-label">Negative Dip Event</div><div class="card-value"><span id="negDipEventVal">—</span></div></div>
+            <div class="card feature-card"><div class="card-label">Pre-Dip Spike</div><div class="card-value"><span id="preDipSpikeVal">—</span></div></div>
           </div>
         </section>
     </div>
@@ -393,7 +393,7 @@
             Axis: <span class="mono">Y-Left</span>=left, <span class="mono">Y-Right</span>=right
           </div>
 
-          <input id="seriesSearch" class="seriesSearch mono" placeholder="Filter series (e.g., rms, entropy, rebound…)" />
+          <input id="seriesSearch" class="seriesSearch mono" placeholder="Filter series (e.g., rms, dip, entropy…)" />
 
           <div class="seriesActions">
             <button class="btn btn-small" id="btnSelDefault" type="button">Default</button>
