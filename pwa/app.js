@@ -1304,18 +1304,39 @@ function downloadTextFileGeneric(filename, text, mime="text/csv;charset=utf-8") 
   URL.revokeObjectURL(url);
 }
 
+const UPLOADED_CSV_SAMPLE_RATE_HZ = 30;
+
 function makeSessionId() { return "sess_" + Date.now(); }
 function labelText(v) {
   if (String(v) === "1") return "ARC";
   if (String(v) === "0") return "NORMAL";
   return "AUTO";
 }
+function formatDurationSeconds(seconds) {
+  const sec = Number(seconds);
+  if (!Number.isFinite(sec) || sec < 0) return "—";
+  const rounded = Math.round(sec);
+  if (Math.abs(sec - rounded) < 0.05) return `${rounded}s`;
+  return `${sec.toFixed(1)}s`;
+}
+function uploadedCsvDurationSeconds(meta) {
+  const rows = Number(meta?.row_count || 0);
+  if (rows <= 0) return null;
+  return rows / UPLOADED_CSV_SAMPLE_RATE_HZ;
+}
+function isUploadedCsvSession(meta) {
+  return !!(meta?.uploaded_csv || String(meta?.load_type || "").trim().toLowerCase() === "uploaded_csv");
+}
 function durationText(meta) {
+  if (isUploadedCsvSession(meta)) {
+    const uploadedDur = uploadedCsvDurationSeconds(meta);
+    if (uploadedDur !== null) return formatDurationSeconds(uploadedDur);
+  }
   const st = Number(meta?.start_ms || 0);
   const en = Number(meta?.end_ms || 0);
   if (!st) return "—";
   const durMs = (en > st ? en : Date.now()) - st;
-  return `${Math.max(0, Math.round(durMs / 1000))}s`;
+  return formatDurationSeconds(Math.max(0, durMs / 1000));
 }
 
 async function fetchSessionCsv(sessionId) {
@@ -1431,9 +1452,9 @@ if (mlSessionBody) {
           <td class="mono">${String(load)}</td>
           <td class="mono">${lab}</td>
           <td class="session-actions">
-            <button class="btn btn-small" data-view-sid="${sid}">View</button>
-            <button class="btn btn-small" data-sid="${sid}">Download</button>
-            <button class="btn btn-small btn-danger" data-del-sid="${sid}">Delete</button>
+            <button type="button" class="btn btn-small" data-view-sid="${sid}">View</button>
+            <button type="button" class="btn btn-small" data-sid="${sid}">Download</button>
+            <button type="button" class="btn btn-small btn-danger" data-del-sid="${sid}">Delete</button>
           </td>
         </tr>
       `;
@@ -1452,11 +1473,17 @@ if (mlSessionBody) {
     });
 
     mlSessionBody.querySelectorAll("button[data-view-sid]").forEach(btn => {
-      btn.addEventListener("click", () => {
+      btn.addEventListener("click", async (ev) => {
+        ev.preventDefault();
+        ev.stopPropagation();
         const sid = btn.getAttribute("data-view-sid");
         const meta = obj[sid] || {};
-        if (typeof window.openSessionViewer === "function") window.openSessionViewer(sid, meta);
-        else window.location.href = `session.html?sid=${encodeURIComponent(sid)}`;
+        if (typeof window.openSessionViewer !== "function") await waitForSessionViewerFns();
+        if (typeof window.openSessionViewer === "function") {
+          window.openSessionViewer(sid, meta);
+          return;
+        }
+        toast("Plot viewer failed to initialize. Please refresh once.", "warn");
       });
     });
 
@@ -1541,6 +1568,19 @@ function safeSessionToken(name) {
     .slice(0, 42) || "uploaded_csv";
 }
 
+function waitForSessionViewerFns(timeoutMs = 1200) {
+  return new Promise((resolve) => {
+    const start = Date.now();
+    const tick = () => {
+      const ready = (typeof window.openSessionViewer === "function") || (typeof window.openSessionViewerFromCsv === "function");
+      if (ready) return resolve(true);
+      if ((Date.now() - start) >= timeoutMs) return resolve(false);
+      setTimeout(tick, 50);
+    };
+    tick();
+  });
+}
+
 async function storeUploadedCsvSession(fileName, csvText) {
   const clean = String(csvText || "").replace(/^\uFEFF/, "").trim();
   const lines = clean.split(/\r?\n/).filter((line) => line.trim().length);
@@ -1549,23 +1589,23 @@ async function storeUploadedCsvSession(fileName, csvText) {
   const sid = `upload_${Date.now()}_${safeSessionToken(fileName)}`;
   const header = lines[0].trimEnd();
   const rows = lines.slice(1);
+  const nowMs = Date.now();
+  const derivedDurationS = rows.length / UPLOADED_CSV_SAMPLE_RATE_HZ;
+  const derivedDurationMs = Math.max(0, Math.round(derivedDurationS * 1000));
 
   const meta = {
-    start_ms: Date.now(),
-    end_ms: Date.now(),
+    start_ms: nowMs,
+    end_ms: nowMs + derivedDurationMs,
     load_type: "uploaded_csv",
-    duration_s: 0,
+    duration_s: derivedDurationS,
     label_override: -1,
     uploaded_csv: true,
     source_file: fileName || "uploaded_csv.csv",
-    row_count: rows.length
+    row_count: rows.length,
+    source_sample_rate_hz: UPLOADED_CSV_SAMPLE_RATE_HZ
   };
 
-  await db.ref(`ml_sessions/${sid}`).set({
-    ...meta,
-    start_ms: firebase.database.ServerValue.TIMESTAMP,
-    end_ms: firebase.database.ServerValue.TIMESTAMP
-  });
+  await db.ref(`ml_sessions/${sid}`).set(meta);
 
   const CHUNK_ROWS = 250;
   const updates = {};
@@ -1585,7 +1625,6 @@ async function storeUploadedCsvSession(fileName, csvText) {
   return { sid, meta };
 }
 
-
 btnUploadCsv?.addEventListener("click", () => mlCsvUpload?.click());
 mlCsvUpload?.addEventListener("change", async (ev) => {
   const file = ev.target?.files?.[0];
@@ -1599,6 +1638,7 @@ mlCsvUpload?.addEventListener("change", async (ev) => {
       const stored = await storeUploadedCsvSession(file.name, text);
       currentSessionId = stored.sid;
       if (mlLogStatus) mlLogStatus.textContent = `Uploaded CSV stored as session: ${stored.sid}`;
+      if (typeof window.openSessionViewer !== "function") await waitForSessionViewerFns();
       if (typeof window.openSessionViewer === "function") {
         window.openSessionViewer(stored.sid, stored.meta);
         opened = true;
@@ -1606,7 +1646,21 @@ mlCsvUpload?.addEventListener("change", async (ev) => {
       toast("CSV uploaded to cloud logger and saved as a session.", "ok");
     } catch (cloudErr) {
       console.error(cloudErr);
-      const meta = { load_type: "uploaded_csv", duration_s: "—", start_ms: Date.now(), end_ms: Date.now(), source_file: file.name };
+      const clean = String(text || "").replace(/^\uFEFF/, "").trim();
+      const rowCount = clean ? Math.max(0, clean.split(/\r?\n/).filter((line) => line.trim().length).length - 1) : 0;
+      const durationS = rowCount / UPLOADED_CSV_SAMPLE_RATE_HZ;
+      const startMs = Date.now();
+      const meta = {
+        load_type: "uploaded_csv",
+        uploaded_csv: true,
+        row_count: rowCount,
+        duration_s: durationS,
+        start_ms: startMs,
+        end_ms: startMs + Math.max(0, Math.round(durationS * 1000)),
+        source_file: file.name,
+        source_sample_rate_hz: UPLOADED_CSV_SAMPLE_RATE_HZ
+      };
+      if (typeof window.openSessionViewerFromCsv !== "function") await waitForSessionViewerFns();
       if (typeof window.openSessionViewerFromCsv === "function") {
         window.openSessionViewerFromCsv(file.name, text, meta);
         opened = true;
@@ -1616,7 +1670,7 @@ mlCsvUpload?.addEventListener("change", async (ev) => {
       toast(`CSV opened locally. Cloud save failed: ${reason}`, "warn");
     }
 
-    if (!opened) toast("CSV viewer is not ready yet.", "err");
+    if (!opened) toast("CSV viewer failed to initialize. Please refresh once.", "err");
   } catch (e) {
     console.error(e);
     toast("Failed to load CSV.", "err");

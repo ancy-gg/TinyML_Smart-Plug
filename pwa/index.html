@@ -370,7 +370,7 @@
       </div>
     </section>
 
-    <section id="plotDrawer" class="history plot-drawer collapsed admin-only">
+    <section id="plotDrawer" class="history plot-drawer collapsed admin-only" hidden>
       <div class="history-head drawer-head">
         <div>
           <h2 class="history-title" id="title">Plot Viewer</h2>
@@ -455,6 +455,10 @@
 
               <div class="chip">
                 <label><input type="checkbox" id="chkEvents"> Arc markers</label>
+              </div>
+
+              <div class="chip chip-arc-index">
+                <input id="arcIndexInput" class="viewer-index-input mono" type="text" placeholder="idx or 10-14,25" />
               </div>
 
               <div class="chip">

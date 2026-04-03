@@ -579,6 +579,9 @@ body.ios .ota-input{ font-size:16px; }
   filter:grayscale(0.1);
 }
 
+.plot-drawer[hidden]{ display:none !important; }
+.panel.toggles[hidden]{ display:none !important; }
+
 .plot-drawer{ scroll-margin-top:16px; }
 .plot-drawer.collapsed .viewer-grid,
 .plot-drawer.collapsed #statusLine,
@@ -4156,5 +4159,31 @@ html, body{
   .dashboard-overview #relayRocker .rocker-btn{
     min-height:34px !important;
     font-size:11px !important;
+  }
+}
+
+
+/* ===== v8.3 uploaded CSV duration + arc index editor ===== */
+.chip-arc-index{
+  min-width:180px;
+  justify-content:flex-start;
+}
+.viewer-index-input{
+  width:160px;
+  min-width:0;
+  padding:6px 8px;
+  border-radius:8px;
+  border:1px solid rgba(255,255,255,0.12);
+  background:rgba(0,0,0,0.18);
+  color:rgba(255,255,255,0.92);
+  outline:none;
+}
+.viewer-index-input::placeholder{
+  color:rgba(255,255,255,0.42);
+}
+@media (max-width: 860px){
+  .chip-arc-index,
+  .viewer-index-input{
+    width:100%;
   }
 }

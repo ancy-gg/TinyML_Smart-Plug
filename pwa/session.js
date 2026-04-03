@@ -59,11 +59,205 @@
   const btnPrevArc = $("btnPrevArc");
   const btnNextArc = $("btnNextArc");
   const arcReadout = $("arcReadout");
+  const arcIndexInput = $("arcIndexInput");
+  let btnAddArc = $("btnAddArc");
+  let btnClearArc = $("btnClearArc");
 
   if (!plotDrawer) return;
 
+  function setViewerOpen(open) {
+    if (!plotDrawer) return;
+    const nextHidden = !open;
+    plotDrawer.hidden = nextHidden;
+    if (nextHidden) plotDrawer.setAttribute("hidden", "");
+    else plotDrawer.removeAttribute("hidden");
+    plotDrawer.classList.toggle("collapsed", nextHidden);
+    plotDrawer.setAttribute("aria-hidden", nextHidden ? "true" : "false");
+  }
+
   let sid = "";
   let currentCsv = "";
+  let csvHeaders = [];
+  let currentDownloadName = "TSP_ML_session.csv";
+
+  let plot = null;
+  let playing = false;
+  let playIdxF = 0;
+  let playIdx = 0;
+  let lastRAF = 0;
+  let speed = 1.0;
+
+  let ROWS = [];
+  let X = [];
+  let KEYS = [];
+
+  let DATA_RAW = null;
+  let DATA_SMOOTH = null;
+  let DATA_NORM = null;
+  let DATA_SMOOTH_NORM = null;
+
+  let FULL_X_MIN = 0;
+  let FULL_X_MAX = 0;
+  let INTERNAL_SCRUB_UPDATE = false;
+
+  let ARC_SERIES_INDEX = -1;
+  let ARC_IDXS = [];
+
+  const showPref = new Map();
+  const axisPref = new Map();
+
+  const DEFAULT_ON = new Set(["i_rms", "label_arc", "model_pred", "irms_drop_vs_baseline"]);
+  const DEFAULT_Y2 = new Set(["i_rms", "current", "v_rms", "voltage", "temp_c", "temp"]);
+
+  setViewerOpen(false);
+  ensureArcEditorControls();
+  refreshDownloadBinding();
+
+  function normalizeBinaryLabel(v) {
+    if (typeof v === "boolean") return v ? 1 : 0;
+    const n = Number(String(v ?? "").trim());
+    return Number.isFinite(n) && n >= 0.5 ? 1 : 0;
+  }
+
+  function safeCsvFilename(name) {
+    let out = String(name || `TSP_ML_${sid || "session"}.csv`).trim();
+    if (!out.toLowerCase().endsWith(".csv")) out += ".csv";
+    return out.replace(/[\/:*?"<>|]+/g, "_");
+  }
+
+  function viewerDurationSeconds(meta) {
+    const explicit = Number(meta?.duration_s);
+    if (Number.isFinite(explicit) && explicit > 0) return explicit;
+    const rows = Number(meta?.row_count || 0);
+    if (rows > 0) return rows / 30;
+    return null;
+  }
+
+  function viewerMetaText(meta) {
+    const load = meta?.load_type ?? "—";
+    const dur = viewerDurationSeconds(meta);
+    const durText = (dur === null) ? "—" : (Math.abs(dur - Math.round(dur)) < 0.05 ? String(Math.round(dur)) : dur.toFixed(1));
+    return `load=${load}  duration=${durText}s`;
+  }
+
+  function ensureCsvHeadersAndLabelArc(rows, parsedFields = []) {
+    const normalizedFields = Array.isArray(parsedFields)
+      ? parsedFields.map(normalizeHeaderName).filter(Boolean)
+      : [];
+    const headers = normalizedFields.length ? normalizedFields.slice() : Object.keys(rows[0] || {});
+    if (!headers.includes("label_arc")) headers.push("label_arc");
+
+    rows.forEach((row) => {
+      if (!row || typeof row !== "object") return;
+      row.label_arc = normalizeBinaryLabel(row.label_arc);
+      headers.forEach((key) => {
+        if (!(key in row)) row[key] = (key === "label_arc") ? 0 : "";
+      });
+    });
+
+    return headers;
+  }
+
+  function buildCsvFromRows() {
+    if (!ROWS.length) return currentCsv || "";
+    csvHeaders = ensureCsvHeadersAndLabelArc(ROWS, csvHeaders);
+    return Papa.unparse({
+      fields: csvHeaders,
+      data: ROWS.map((row) => csvHeaders.map((key) => row?.[key] ?? ((key === "label_arc") ? 0 : "")))
+    });
+  }
+
+  function refreshDownloadBinding() {
+    if (!btnDownload) return;
+    btnDownload.onclick = () => {
+      const csv = buildCsvFromRows();
+      if (!csv) return;
+      currentCsv = csv;
+      downloadTextFile(currentDownloadName || safeCsvFilename(`TSP_ML_${sid || "session"}.csv`), csv);
+    };
+  }
+
+  function patchArcMarkerLabelText() {
+    const labelEl = chkEvents?.closest("label");
+    if (!labelEl || labelEl.dataset.arcViewPatched === "1") return;
+    labelEl.dataset.arcViewPatched = "1";
+    labelEl.innerHTML = "";
+    labelEl.appendChild(chkEvents);
+    labelEl.append(document.createTextNode(" View arc markers"));
+  }
+
+  function currentLabelArcAtPlayhead() {
+    if (!ROWS.length || playIdx < 0 || playIdx >= ROWS.length) return 0;
+    return normalizeBinaryLabel(ROWS[playIdx]?.label_arc);
+  }
+
+  function updateArcEditButtons() {
+    const hasRows = ROWS.length > 0 && playIdx >= 0 && playIdx < ROWS.length;
+    const isArc = hasRows ? currentLabelArcAtPlayhead() === 1 : false;
+
+    if (btnAddArc) {
+      btnAddArc.disabled = !hasRows || isArc;
+      btnAddArc.textContent = isArc ? "Arc Marker Added" : "Add Arc Marker";
+    }
+
+    if (btnClearArc) {
+      btnClearArc.disabled = !hasRows || !isArc;
+    }
+  }
+
+  function ensureArcEditorControls() {
+    patchArcMarkerLabelText();
+
+    if (!btnAddArc || !btnClearArc) {
+      const host = chkEvents?.closest(".chip")?.parentElement
+        || document.querySelector("#plotDrawer .controlsbar .right")
+        || document.querySelector("#plotDrawer .controlsbar .left")
+        || document.querySelector("#plotDrawer .controlsbar");
+
+      if (host) {
+        if (!btnAddArc) {
+          btnAddArc = document.createElement("button");
+          btnAddArc.type = "button";
+          btnAddArc.id = "btnAddArc";
+          btnAddArc.className = "btn btn-small btn-info";
+          btnAddArc.textContent = "Add Arc Marker";
+          host.appendChild(btnAddArc);
+        }
+        if (!btnClearArc) {
+          btnClearArc = document.createElement("button");
+          btnClearArc.type = "button";
+          btnClearArc.id = "btnClearArc";
+          btnClearArc.className = "btn btn-small btn-danger";
+          btnClearArc.textContent = "Clear Arc Marker";
+          host.appendChild(btnClearArc);
+        }
+      }
+    }
+
+    if (btnAddArc && btnAddArc.dataset.bound !== "1") {
+      btnAddArc.dataset.bound = "1";
+      btnAddArc.addEventListener("click", () => {
+        try {
+          setArcMarkers(getArcEditTargetIndices(), true);
+        } catch (err) {
+          setStatus(err?.message || "Invalid arc index selection.");
+        }
+      });
+    }
+
+    if (btnClearArc && btnClearArc.dataset.bound !== "1") {
+      btnClearArc.dataset.bound = "1";
+      btnClearArc.addEventListener("click", () => {
+        try {
+          setArcMarkers(getArcEditTargetIndices(), false);
+        } catch (err) {
+          setStatus(err?.message || "Invalid arc index selection.");
+        }
+      });
+    }
+
+    updateArcEditButtons();
+  }
 
   function setStatus(text) {
     if (statusLine) statusLine.textContent = text;
@@ -211,6 +405,216 @@
     });
   }
 
+  function renderToggleList() {
+    if (!toggleList) return;
+    toggleList.innerHTML = "";
+
+    KEYS.forEach((k, i) => {
+      const wrap = document.createElement("div");
+      wrap.className = "row";
+      wrap.dataset.key = k;
+
+      const cb = document.createElement("input");
+      cb.type = "checkbox";
+      cb.checked = !!showPref.get(k);
+      cb.onchange = () => {
+        const on = !!cb.checked;
+        showPref.set(k, on);
+        if (plot) {
+          plot.setSeries(i + 1, { show: on });
+          plot.setData(plot.data, false);
+        }
+        updateValueReadout();
+        updateStats();
+      };
+
+      const nameEl = document.createElement("div");
+      nameEl.textContent = k;
+
+      const sel = document.createElement("select");
+      sel.className = "axisSel";
+      sel.innerHTML = `<option value="y">Y1</option><option value="y2">Y2</option>`;
+      sel.value = axisPref.get(k) || "y";
+      sel.onchange = () => {
+        axisPref.set(k, sel.value);
+        rebuildForDataMode();
+      };
+
+      wrap.appendChild(cb);
+      wrap.appendChild(nameEl);
+      wrap.appendChild(sel);
+      toggleList.appendChild(wrap);
+    });
+
+    applySeriesFilter();
+  }
+
+  function refreshDerivedData(resetPrefs = false) {
+    if (!ROWS.length) return false;
+
+    csvHeaders = ensureCsvHeadersAndLabelArc(ROWS, csvHeaders);
+    X = pickTimeAxis(ROWS);
+    KEYS = buildSeriesKeys(ROWS);
+
+    if (!KEYS.length) return false;
+
+    DATA_RAW = makeData(ROWS, X, KEYS);
+
+    const win0 = Number(rngSmooth?.value) || 15;
+    if (smoothReadout) smoothReadout.textContent = `win=${win0}`;
+    DATA_SMOOTH = makeSmoothedData(DATA_RAW, win0);
+    DATA_NORM = normalizeData(DATA_RAW);
+    DATA_SMOOTH_NORM = normalizeData(DATA_SMOOTH);
+
+    buildArcIndexes();
+
+    const defaults = new Set(preferredDefaultKeys(KEYS));
+    KEYS.forEach((k) => {
+      if (resetPrefs || !showPref.has(k)) showPref.set(k, defaults.has(k));
+      if (resetPrefs || !axisPref.has(k)) axisPref.set(k, DEFAULT_Y2.has(k) ? "y2" : "y");
+    });
+
+    Array.from(showPref.keys()).forEach((k) => { if (!KEYS.includes(k)) showPref.delete(k); });
+    Array.from(axisPref.keys()).forEach((k) => { if (!KEYS.includes(k)) axisPref.delete(k); });
+
+    renderToggleList();
+    scrub.max = String(Math.max(0, X.length - 1));
+    speed = Number(selSpeed?.value) || 1.0;
+    currentCsv = buildCsvFromRows();
+    refreshDownloadBinding();
+    updateArcEditButtons();
+    return true;
+  }
+
+  function ingestParsedCsv(parsed, options = {}) {
+    ROWS = (parsed?.data || []).filter((r) => r && Object.keys(r).length);
+
+    if (!ROWS.length) {
+      setStatus(options.emptyStatus || "Parsed 0 rows.");
+      clearValueReadout();
+      updateArcEditButtons();
+      return false;
+    }
+
+    csvHeaders = ensureCsvHeadersAndLabelArc(ROWS, parsed?.meta?.fields || []);
+    currentDownloadName = safeCsvFilename(options.downloadName || `TSP_ML_${sid || "session"}.csv`);
+
+    if (!refreshDerivedData(true)) {
+      setStatus(options.noNumericStatus || "No numeric series found in this CSV.");
+      clearValueReadout();
+      updateArcEditButtons();
+      return false;
+    }
+
+    setStatus(options.readyStatus ? options.readyStatus.replace(/__ROWS__/g, String(ROWS.length)).replace(/__ARCS__/g, String(ARC_IDXS.length)) : `Rows: ${ROWS.length} | Arc markers=${ARC_IDXS.length}`);
+    clearValueReadout();
+
+    requestAnimationFrame(() => {
+      buildPlot();
+      if (X.length) {
+        setPlayIdx(0, true);
+        applyZoomPercent(100, X[0]);
+      }
+      updateStats();
+      updateArcEditButtons();
+    });
+
+    return true;
+  }
+
+  function parseArcIndexSelection(raw) {
+    const text = String(raw || "").trim();
+    if (!text) return [];
+
+    const out = new Set();
+    const tokens = text.split(/[\s,]+/).map((part) => part.trim()).filter(Boolean);
+    const maxIdx = Math.max(0, ROWS.length - 1);
+
+    for (const token of tokens) {
+      const rangeMatch = token.match(/^(\d+)\s*[-:]\s*(\d+)$/);
+      if (rangeMatch) {
+        let a = Number(rangeMatch[1]);
+        let b = Number(rangeMatch[2]);
+        if (!Number.isFinite(a) || !Number.isFinite(b)) throw new Error(`Invalid range: ${token}`);
+        if (a > b) [a, b] = [b, a];
+        for (let idx = a; idx <= b; idx++) {
+          if (idx >= 0 && idx <= maxIdx) out.add(idx);
+        }
+        continue;
+      }
+
+      const single = Number(token);
+      if (!Number.isInteger(single)) throw new Error(`Invalid index: ${token}`);
+      if (single >= 0 && single <= maxIdx) out.add(single);
+    }
+
+    return Array.from(out).sort((a, b) => a - b);
+  }
+
+  function getArcEditTargetIndices() {
+    const typed = String(arcIndexInput?.value || "").trim();
+    if (!typed) {
+      if (!ROWS.length || playIdx < 0 || playIdx >= ROWS.length) return [];
+      return [playIdx];
+    }
+    return parseArcIndexSelection(typed);
+  }
+
+  function setArcMarkers(indices, on) {
+    if (!ROWS.length || !Array.isArray(indices) || !indices.length) {
+      setStatus("No valid row indices selected for arc editing.");
+      updateArcEditButtons();
+      return;
+    }
+
+    pause();
+    const next = on ? 1 : 0;
+    let changed = 0;
+
+    indices.forEach((idx) => {
+      if (idx < 0 || idx >= ROWS.length) return;
+      const prev = normalizeBinaryLabel(ROWS[idx]?.label_arc);
+      if (prev === next) return;
+      ROWS[idx].label_arc = next;
+      changed += 1;
+    });
+
+    if (!changed) {
+      const label = indices.length === 1 ? `Row ${indices[0]}` : `${indices.length} selected rows`;
+      setStatus(`${label}: label_arc already ${next}.`);
+      updateArcEditButtons();
+      return;
+    }
+
+    currentCsv = buildCsvFromRows();
+
+    const keepIdx = Math.max(0, Math.min(X.length - 1, indices[0]));
+    const keepScale = plot ? { min: plot.scales.x.min, max: plot.scales.x.max } : null;
+
+    if (!refreshDerivedData(false)) return;
+
+    buildPlot();
+    if (X.length) {
+      setPlayIdx(keepIdx, true);
+      if (plot && keepScale && Number.isFinite(keepScale.min) && Number.isFinite(keepScale.max)) {
+        const [min, max] = clampXWindow(keepScale.min, keepScale.max);
+        plot.setScale("x", { min, max });
+        syncZoomSlider();
+      }
+    }
+
+    updateStats();
+    updateArcEditButtons();
+    const targetLabel = indices.length === 1
+      ? `Row ${indices[0]}`
+      : `${changed}/${indices.length} rows`;
+    setStatus(`${targetLabel}: label_arc=${next}. Download will include the edited CSV.`);
+  }
+
+  function setArcMarkerAt(idx, on) {
+    setArcMarkers([idx], on);
+  }
+
   function fmt(x, d = 4) {
     if (x == null || Number.isNaN(Number(x))) return "—";
     const n = Number(x);
@@ -251,35 +655,6 @@
     "#00bcd4", "#ff4081", "#cddc39", "#ff9800",
   ];
 
-  let plot = null;
-  let playing = false;
-  let playIdxF = 0;
-  let playIdx = 0;
-  let lastRAF = 0;
-  let speed = 1.0;
-
-  let ROWS = [];
-  let X = [];
-  let KEYS = [];
-
-  let DATA_RAW = null;
-  let DATA_SMOOTH = null;
-  let DATA_NORM = null;
-  let DATA_SMOOTH_NORM = null;
-
-  let FULL_X_MIN = 0;
-  let FULL_X_MAX = 0;
-  let INTERNAL_SCRUB_UPDATE = false;
-
-  let ARC_SERIES_INDEX = -1;
-  let ARC_IDXS = [];
-
-  const showPref = new Map();
-  const axisPref = new Map();
-
-  const DEFAULT_ON = new Set(["i_rms", "label_arc", "model_pred", "irms_drop_vs_baseline"]);
-  const DEFAULT_Y2 = new Set(["i_rms", "current", "v_rms", "voltage", "temp_c", "temp"]);
-
   function preferredDefaultKeys(keys) {
     const preferred = ["i_rms", "label_arc", "model_pred", "irms_drop_vs_baseline", "cycle_rms_drop_ratio", "cycle_nmse", "zcv", "neg_dip_event_ratio", "v_rms", "temp_c", "current", "voltage", "temp"];
     const picked = preferred.filter((k) => keys.includes(k));
@@ -310,6 +685,8 @@
     showPref.clear();
     axisPref.clear();
     currentCsv = "";
+    csvHeaders = [];
+    currentDownloadName = "TSP_ML_session.csv";
     if (toggleList) toggleList.innerHTML = "";
     if (valueLine) valueLine.innerHTML = "";
     if (statsBody) statsBody.innerHTML = "";
@@ -319,7 +696,9 @@
     updateArcReadout();
     setStatus("Loading…");
     if (scrub) { scrub.min = "0"; scrub.max = "0"; scrub.value = "0"; }
+    if (arcIndexInput) arcIndexInput.value = "";
     if (timeReadout) timeReadout.textContent = "t=—";
+    updateArcEditButtons();
   }
 
   function makeData(rows, x, keys) {
@@ -453,15 +832,12 @@
     if (!DATA_RAW) return;
 
     const labelIdx = KEYS.indexOf("label_arc");
-    const predIdx = KEYS.indexOf("model_pred");
     const labelArr = labelIdx >= 0 ? DATA_RAW[labelIdx + 1] : null;
-    const predArr = predIdx >= 0 ? DATA_RAW[predIdx + 1] : null;
 
-    const n = X.length || ((labelArr && labelArr.length) || (predArr && predArr.length) || 0);
+    const n = X.length || ((labelArr && labelArr.length) || 0);
     for (let i = 0; i < n; i++) {
       const isLabel = labelArr ? Number(labelArr[i]) === 1 : false;
-      const isPred = predArr ? Number(predArr[i]) === 1 : false;
-      if (isLabel || isPred) ARC_IDXS.push(i);
+      if (isLabel) ARC_IDXS.push(i);
     }
 
     if (btnPrevArc) btnPrevArc.disabled = ARC_IDXS.length === 0;
@@ -471,6 +847,7 @@
       if (ARC_IDXS.length > 0) chkEvents.checked = true;
     }
     updateArcReadout();
+    updateArcEditButtons();
   }
 
   function clampXWindow(min, max) {
@@ -774,6 +1151,7 @@
 
     updateValueReadout();
     updateArcReadout();
+    updateArcEditButtons();
     if (plot) plot.redraw();
 
     if (plot && (chkFollow?.checked || playing)) {
@@ -1067,6 +1445,15 @@
   btnSelAll?.addEventListener("click", () => setAllSeries(true));
   btnSelNone?.addEventListener("click", () => setAllSeries(false));
   btnSelDefault?.addEventListener("click", () => applyDefaultSelection());
+  arcIndexInput?.addEventListener("keydown", (ev) => {
+    if (ev.key !== "Enter") return;
+    ev.preventDefault();
+    try {
+      setArcMarkers(getArcEditTargetIndices(), true);
+    } catch (err) {
+      setStatus(err?.message || "Invalid arc index selection.");
+    }
+  });
 
   let resizeQueued = false;
   window.addEventListener("resize", () => {
@@ -1112,7 +1499,7 @@
         const metaSnap = await db.ref(`ml_sessions/${sid}`).get();
         meta = metaSnap.exists() ? metaSnap.val() : {};
       }
-      metaEl.textContent = `load=${meta?.load_type ?? "—"}  duration=${meta?.duration_s ?? "—"}s`;
+      metaEl.textContent = viewerMetaText(meta);
 
       setStatus("Fetching CSV chunks…");
       const csv = await fetchSessionCsv(sid);
@@ -1127,96 +1514,11 @@
 
       setStatus("Parsing CSV…");
       const parsed = Papa.parse(csv.trim(), { header: true, dynamicTyping: true, skipEmptyLines: true, transformHeader: normalizeHeaderName });
-      ROWS = (parsed.data || []).filter((r) => r && Object.keys(r).length);
-
-      if (!ROWS.length) {
-        setStatus("Parsed 0 rows. (CSV exists but has no data rows.)");
-        clearValueReadout();
-        return;
-      }
-
-      X = pickTimeAxis(ROWS);
-      KEYS = buildSeriesKeys(ROWS);
-
-      if (!KEYS.length) {
-        setStatus("No numeric series found in this session CSV.");
-        clearValueReadout();
-        return;
-      }
-
-      DATA_RAW = makeData(ROWS, X, KEYS);
-
-      const win0 = Number(rngSmooth?.value) || 15;
-      if (smoothReadout) smoothReadout.textContent = `win=${win0}`;
-      DATA_SMOOTH = makeSmoothedData(DATA_RAW, win0);
-
-      DATA_NORM = normalizeData(DATA_RAW);
-      DATA_SMOOTH_NORM = normalizeData(DATA_SMOOTH);
-
-      buildArcIndexes();
-
-      const initialDefaults = new Set(preferredDefaultKeys(KEYS));
-      KEYS.forEach((k) => {
-        showPref.set(k, initialDefaults.has(k));
-        axisPref.set(k, DEFAULT_Y2.has(k) ? "y2" : "y");
-      });
-
-      toggleList.innerHTML = "";
-      KEYS.forEach((k, i) => {
-        const wrap = document.createElement("div");
-        wrap.className = "row";
-        wrap.dataset.key = k;
-
-        const cb = document.createElement("input");
-        cb.type = "checkbox";
-        cb.checked = !!showPref.get(k);
-        cb.onchange = () => {
-          const on = !!cb.checked;
-          showPref.set(k, on);
-          if (plot) {
-            plot.setSeries(i + 1, { show: on });
-            plot.setData(plot.data, false);
-          }
-          updateValueReadout();
-          updateStats();
-        };
-
-        const name = document.createElement("div");
-        name.textContent = k;
-
-        const sel = document.createElement("select");
-        sel.className = "axisSel";
-        sel.innerHTML = `<option value="y">Y1</option><option value="y2">Y2</option>`;
-        sel.value = axisPref.get(k) || "y";
-        sel.onchange = () => {
-          axisPref.set(k, sel.value);
-          rebuildForDataMode();
-        };
-
-        wrap.appendChild(cb);
-        wrap.appendChild(name);
-        wrap.appendChild(sel);
-        toggleList.appendChild(wrap);
-      });
-
-      applySeriesFilter();
-
-      scrub.max = String(Math.max(0, X.length - 1));
-      speed = Number(selSpeed.value) || 1.0;
-
-      if (chkEvents) {
-        chkEvents.disabled = ARC_IDXS.length === 0;
-        chkEvents.checked = ARC_IDXS.length > 0;
-      }
-
-      setStatus(`Rows: ${ROWS.length} | Arc markers=${ARC_IDXS.length} | Click plot to move playhead | Use Zoom slider to zoom in or out on mobile and desktop`);
-      clearValueReadout();
-
-      requestAnimationFrame(() => {
-        buildPlot();
-        setPlayIdx(0, true);
-        applyZoomPercent(100, X[0]);
-        updateStats();
+      ingestParsedCsv(parsed, {
+        downloadName: `TSP_ML_${sid}.csv`,
+        emptyStatus: "Parsed 0 rows. (CSV exists but has no data rows.)",
+        noNumericStatus: "No numeric series found in this session CSV.",
+        readyStatus: `Rows: __ROWS__ | Arc markers=__ARCS__ | Click plot to choose row, then add or clear marker`
       });
     } catch (e) {
       console.error(e);
@@ -1227,24 +1529,24 @@
 
 
   function openSessionViewer(targetSid, metaOverride = null) {
-    plotDrawer.classList.remove("collapsed");
+    setViewerOpen(true);
     setTimeout(() => {
-      plotDrawer.scrollIntoView({ behavior: "smooth", block: "start" });
+      plotDrawer?.scrollIntoView?.({ behavior: "smooth", block: "start" });
     }, 10);
     loadSession(targetSid, metaOverride);
   }
 
   function openSessionViewerFromCsv(name, csvText, metaOverride = null) {
-    plotDrawer.classList.remove("collapsed");
+    setViewerOpen(true);
     setTimeout(() => {
-      plotDrawer.scrollIntoView({ behavior: "smooth", block: "start" });
+      plotDrawer?.scrollIntoView?.({ behavior: "smooth", block: "start" });
     }, 10);
 
     sid = (name || "uploaded_csv").replace(/[^a-zA-Z0-9_.-]/g, "_");
     resetState();
     titleEl.textContent = `CSV: ${sid}`;
     const meta = metaOverride || {};
-    metaEl.textContent = `load=${meta?.load_type ?? "uploaded_csv"}  duration=${meta?.duration_s ?? "—"}s`;
+    metaEl.textContent = viewerMetaText(meta);
     currentCsv = csvText || "";
 
     try {
@@ -1254,100 +1556,13 @@
         return;
       }
 
-      btnDownload.onclick = () => downloadTextFile(`TSP_ML_${sid}`, currentCsv);
-
       setStatus("Parsing uploaded CSV…");
       const parsed = Papa.parse(currentCsv.trim(), { header: true, dynamicTyping: true, skipEmptyLines: true, transformHeader: normalizeHeaderName });
-      ROWS = (parsed.data || []).filter((r) => r && Object.keys(r).length);
-
-      if (!ROWS.length) {
-        setStatus("Parsed 0 rows from uploaded CSV.");
-        clearValueReadout();
-        return;
-      }
-
-      X = pickTimeAxis(ROWS);
-      KEYS = buildSeriesKeys(ROWS);
-
-      if (!KEYS.length) {
-        setStatus("No numeric series found in uploaded CSV.");
-        clearValueReadout();
-        return;
-      }
-
-      DATA_RAW = makeData(ROWS, X, KEYS);
-
-      const win0 = Number(rngSmooth?.value) || 15;
-      if (smoothReadout) smoothReadout.textContent = `win=${win0}`;
-      DATA_SMOOTH = makeSmoothedData(DATA_RAW, win0);
-
-      DATA_NORM = normalizeData(DATA_RAW);
-      DATA_SMOOTH_NORM = normalizeData(DATA_SMOOTH);
-
-      buildArcIndexes();
-
-      const initialDefaults = new Set(preferredDefaultKeys(KEYS));
-      KEYS.forEach((k) => {
-        showPref.set(k, initialDefaults.has(k));
-        axisPref.set(k, DEFAULT_Y2.has(k) ? "y2" : "y");
-      });
-
-      toggleList.innerHTML = "";
-      KEYS.forEach((k, i) => {
-        const wrap = document.createElement("div");
-        wrap.className = "row";
-        wrap.dataset.key = k;
-
-        const cb = document.createElement("input");
-        cb.type = "checkbox";
-        cb.checked = !!showPref.get(k);
-        cb.onchange = () => {
-          const on = !!cb.checked;
-          showPref.set(k, on);
-          if (plot) {
-            plot.setSeries(i + 1, { show: on });
-            plot.setData(plot.data, false);
-          }
-          updateValueReadout();
-          updateStats();
-        };
-
-        const nameEl = document.createElement("div");
-        nameEl.textContent = k;
-
-        const sel = document.createElement("select");
-        sel.className = "axisSel";
-        sel.innerHTML = `<option value="y">Y1</option><option value="y2">Y2</option>`;
-        sel.value = axisPref.get(k) || "y";
-        sel.onchange = () => {
-          axisPref.set(k, sel.value);
-          rebuildForDataMode();
-        };
-
-        wrap.appendChild(cb);
-        wrap.appendChild(nameEl);
-        wrap.appendChild(sel);
-        toggleList.appendChild(wrap);
-      });
-
-      applySeriesFilter();
-
-      scrub.max = String(Math.max(0, X.length - 1));
-      speed = Number(selSpeed.value) || 1.0;
-
-      if (chkEvents) {
-        chkEvents.disabled = ARC_IDXS.length === 0;
-        chkEvents.checked = ARC_IDXS.length > 0;
-      }
-
-      setStatus(`Rows: ${ROWS.length} | Uploaded CSV ready | Arc markers=${ARC_IDXS.length} | Use Zoom slider to zoom in or out`);
-      clearValueReadout();
-
-      requestAnimationFrame(() => {
-        buildPlot();
-        setPlayIdx(0, true);
-        applyZoomPercent(100, X[0]);
-        updateStats();
+      ingestParsedCsv(parsed, {
+        downloadName: `TSP_ML_${sid}.csv`,
+        emptyStatus: "Parsed 0 rows from uploaded CSV.",
+        noNumericStatus: "No numeric series found in uploaded CSV.",
+        readyStatus: `Rows: __ROWS__ | Uploaded CSV ready | Arc markers=__ARCS__`
       });
     } catch (e) {
       console.error(e);
@@ -1359,16 +1574,22 @@
   function closeSessionViewer() {
     closeSeries();
     resetState();
-    plotDrawer.classList.add("collapsed");
+    refreshDownloadBinding();
+    setViewerOpen(false);
     titleEl.textContent = "Plot Viewer";
     metaEl.textContent = "Open a session from the ML table above.";
     setStatus("Pick a session above to load the plot viewer.");
   }
 
-  btnBack.onclick = () => closeSessionViewer();
-  btnDownload.onclick = () => {
-    if (sid && currentCsv) downloadTextFile(`TSP_ML_${sid}.csv`, currentCsv);
-  };
+  if (btnBack) {
+    btnBack.type = "button";
+    btnBack.addEventListener("click", (ev) => {
+      ev.preventDefault();
+      ev.stopPropagation();
+      closeSessionViewer();
+    });
+  }
+  refreshDownloadBinding();
 
   window.openSessionViewer = openSessionViewer;
   window.openSessionViewerFromCsv = openSessionViewerFromCsv;
