@@ -18,6 +18,7 @@
   const $ = (id) => document.getElementById(id);
 
   const plotDrawer = $("plotDrawer");
+  const seriesPanel = $("seriesPanel");
   const titleEl = $("title");
   const metaEl = $("meta");
   const toggleList = $("toggleList");
@@ -44,7 +45,7 @@
   const rngZoom = $("rngZoom");
   const chkEvents = $("chkEvents");
 
-  const chkStats = $("chkStats");
+  const btnStats = $("btnStats");
   const statsWrap = $("statsWrap");
   const statsHint = $("statsHint");
   const statsBody = $("statsBody");
@@ -69,8 +70,13 @@
     if (!plotDrawer) return;
     const nextHidden = !open;
     plotDrawer.hidden = nextHidden;
-    if (nextHidden) plotDrawer.setAttribute("hidden", "");
-    else plotDrawer.removeAttribute("hidden");
+    if (nextHidden) {
+      plotDrawer.setAttribute("hidden", "");
+      plotDrawer.style.display = "none";
+    } else {
+      plotDrawer.removeAttribute("hidden");
+      plotDrawer.style.removeProperty("display");
+    }
     plotDrawer.classList.toggle("collapsed", nextHidden);
     plotDrawer.setAttribute("aria-hidden", nextHidden ? "true" : "false");
   }
@@ -79,39 +85,6 @@
   let currentCsv = "";
   let csvHeaders = [];
   let currentDownloadName = "TSP_ML_session.csv";
-
-  let plot = null;
-  let playing = false;
-  let playIdxF = 0;
-  let playIdx = 0;
-  let lastRAF = 0;
-  let speed = 1.0;
-
-  let ROWS = [];
-  let X = [];
-  let KEYS = [];
-
-  let DATA_RAW = null;
-  let DATA_SMOOTH = null;
-  let DATA_NORM = null;
-  let DATA_SMOOTH_NORM = null;
-
-  let FULL_X_MIN = 0;
-  let FULL_X_MAX = 0;
-  let INTERNAL_SCRUB_UPDATE = false;
-
-  let ARC_SERIES_INDEX = -1;
-  let ARC_IDXS = [];
-
-  const showPref = new Map();
-  const axisPref = new Map();
-
-  const DEFAULT_ON = new Set(["i_rms", "label_arc", "model_pred", "irms_drop_vs_baseline"]);
-  const DEFAULT_Y2 = new Set(["i_rms", "current", "v_rms", "voltage", "temp_c", "temp"]);
-
-  setViewerOpen(false);
-  ensureArcEditorControls();
-  refreshDownloadBinding();
 
   function normalizeBinaryLabel(v) {
     if (typeof v === "boolean") return v ? 1 : 0;
@@ -136,7 +109,9 @@
   function viewerMetaText(meta) {
     const load = meta?.load_type ?? "—";
     const dur = viewerDurationSeconds(meta);
-    const durText = (dur === null) ? "—" : (Math.abs(dur - Math.round(dur)) < 0.05 ? String(Math.round(dur)) : dur.toFixed(1));
+    const durText = (dur === null)
+      ? "—"
+      : (Math.abs(dur - Math.round(dur)) < 0.05 ? String(Math.round(dur)) : dur.toFixed(1));
     return `load=${load}  duration=${durText}s`;
   }
 
@@ -259,8 +234,101 @@
     updateArcEditButtons();
   }
 
+  function parseArcIndexSelection(raw) {
+    const text = String(raw || "").trim();
+    if (!text) return [];
+
+    const out = new Set();
+    const tokens = text.split(/[\s,]+/).map((part) => part.trim()).filter(Boolean);
+    const maxIdx = Math.max(0, ROWS.length - 1);
+
+    for (const token of tokens) {
+      const rangeMatch = token.match(/^(\d+)\s*[-:]\s*(\d+)$/);
+      if (rangeMatch) {
+        let a = Number(rangeMatch[1]);
+        let b = Number(rangeMatch[2]);
+        if (!Number.isFinite(a) || !Number.isFinite(b)) throw new Error(`Invalid range: ${token}`);
+        if (a > b) [a, b] = [b, a];
+        for (let idx = a; idx <= b; idx++) {
+          if (idx >= 0 && idx <= maxIdx) out.add(idx);
+        }
+        continue;
+      }
+
+      const single = Number(token);
+      if (!Number.isInteger(single)) throw new Error(`Invalid index: ${token}`);
+      if (single >= 0 && single <= maxIdx) out.add(single);
+    }
+
+    return Array.from(out).sort((a, b) => a - b);
+  }
+
+  function getArcEditTargetIndices() {
+    const typed = String(arcIndexInput?.value || "").trim();
+    if (!typed) {
+      if (!ROWS.length || playIdx < 0 || playIdx >= ROWS.length) return [];
+      return [playIdx];
+    }
+    return parseArcIndexSelection(typed);
+  }
+
+  function setArcMarkers(indices, on) {
+    if (!ROWS.length || !Array.isArray(indices) || !indices.length) {
+      setStatus("No valid row indices selected for arc editing.");
+      updateArcEditButtons();
+      return;
+    }
+
+    pause();
+    const next = on ? 1 : 0;
+    let changed = 0;
+
+    indices.forEach((idx) => {
+      if (idx < 0 || idx >= ROWS.length) return;
+      const prev = normalizeBinaryLabel(ROWS[idx]?.label_arc);
+      if (prev === next) return;
+      ROWS[idx].label_arc = next;
+      changed += 1;
+    });
+
+    if (!changed) {
+      const label = indices.length === 1 ? `Row ${indices[0]}` : `${indices.length} selected rows`;
+      setStatus(`${label}: label_arc already ${next}.`);
+      updateArcEditButtons();
+      return;
+    }
+
+    currentCsv = buildCsvFromRows();
+
+    const keepIdx = Math.max(0, Math.min(X.length - 1, indices[0]));
+    const keepScale = plot ? { min: plot.scales.x.min, max: plot.scales.x.max } : null;
+
+    if (!refreshDerivedData(false)) return;
+
+    buildPlot();
+    if (X.length) {
+      setPlayIdx(keepIdx, true);
+      if (plot && keepScale && Number.isFinite(keepScale.min) && Number.isFinite(keepScale.max)) {
+        const [min, max] = clampXWindow(keepScale.min, keepScale.max);
+        plot.setScale("x", { min, max });
+        syncZoomSlider();
+      }
+    }
+
+    updateStats();
+    updateArcEditButtons();
+    const targetLabel = indices.length === 1 ? `Row ${indices[0]}` : `${changed}/${indices.length} rows`;
+    setStatus(`${targetLabel}: label_arc=${next}. Download will include the edited CSV.`);
+  }
+
+  function setArcMarkerAt(idx, on) {
+    setArcMarkers([idx], on);
+  }
+
   function setStatus(text) {
-    if (statusLine) statusLine.textContent = text;
+    if (!statusLine) return;
+    const msg = String(text || "").trim();
+    statusLine.textContent = msg;
   }
 
   function updateArcReadout() {
@@ -506,7 +574,10 @@
       return false;
     }
 
-    setStatus(options.readyStatus ? options.readyStatus.replace(/__ROWS__/g, String(ROWS.length)).replace(/__ARCS__/g, String(ARC_IDXS.length)) : `Rows: ${ROWS.length} | Arc markers=${ARC_IDXS.length}`);
+    const readyStatus = Object.prototype.hasOwnProperty.call(options, "readyStatus")
+      ? String(options.readyStatus || "")
+      : `Rows: ${ROWS.length} | Arc markers=${ARC_IDXS.length}`;
+    setStatus(readyStatus.replace(/__ROWS__/g, String(ROWS.length)).replace(/__ARCS__/g, String(ARC_IDXS.length)));
     clearValueReadout();
 
     requestAnimationFrame(() => {
@@ -520,99 +591,6 @@
     });
 
     return true;
-  }
-
-  function parseArcIndexSelection(raw) {
-    const text = String(raw || "").trim();
-    if (!text) return [];
-
-    const out = new Set();
-    const tokens = text.split(/[\s,]+/).map((part) => part.trim()).filter(Boolean);
-    const maxIdx = Math.max(0, ROWS.length - 1);
-
-    for (const token of tokens) {
-      const rangeMatch = token.match(/^(\d+)\s*[-:]\s*(\d+)$/);
-      if (rangeMatch) {
-        let a = Number(rangeMatch[1]);
-        let b = Number(rangeMatch[2]);
-        if (!Number.isFinite(a) || !Number.isFinite(b)) throw new Error(`Invalid range: ${token}`);
-        if (a > b) [a, b] = [b, a];
-        for (let idx = a; idx <= b; idx++) {
-          if (idx >= 0 && idx <= maxIdx) out.add(idx);
-        }
-        continue;
-      }
-
-      const single = Number(token);
-      if (!Number.isInteger(single)) throw new Error(`Invalid index: ${token}`);
-      if (single >= 0 && single <= maxIdx) out.add(single);
-    }
-
-    return Array.from(out).sort((a, b) => a - b);
-  }
-
-  function getArcEditTargetIndices() {
-    const typed = String(arcIndexInput?.value || "").trim();
-    if (!typed) {
-      if (!ROWS.length || playIdx < 0 || playIdx >= ROWS.length) return [];
-      return [playIdx];
-    }
-    return parseArcIndexSelection(typed);
-  }
-
-  function setArcMarkers(indices, on) {
-    if (!ROWS.length || !Array.isArray(indices) || !indices.length) {
-      setStatus("No valid row indices selected for arc editing.");
-      updateArcEditButtons();
-      return;
-    }
-
-    pause();
-    const next = on ? 1 : 0;
-    let changed = 0;
-
-    indices.forEach((idx) => {
-      if (idx < 0 || idx >= ROWS.length) return;
-      const prev = normalizeBinaryLabel(ROWS[idx]?.label_arc);
-      if (prev === next) return;
-      ROWS[idx].label_arc = next;
-      changed += 1;
-    });
-
-    if (!changed) {
-      const label = indices.length === 1 ? `Row ${indices[0]}` : `${indices.length} selected rows`;
-      setStatus(`${label}: label_arc already ${next}.`);
-      updateArcEditButtons();
-      return;
-    }
-
-    currentCsv = buildCsvFromRows();
-
-    const keepIdx = Math.max(0, Math.min(X.length - 1, indices[0]));
-    const keepScale = plot ? { min: plot.scales.x.min, max: plot.scales.x.max } : null;
-
-    if (!refreshDerivedData(false)) return;
-
-    buildPlot();
-    if (X.length) {
-      setPlayIdx(keepIdx, true);
-      if (plot && keepScale && Number.isFinite(keepScale.min) && Number.isFinite(keepScale.max)) {
-        const [min, max] = clampXWindow(keepScale.min, keepScale.max);
-        plot.setScale("x", { min, max });
-        syncZoomSlider();
-      }
-    }
-
-    updateStats();
-    updateArcEditButtons();
-    const targetLabel = indices.length === 1
-      ? `Row ${indices[0]}`
-      : `${changed}/${indices.length} rows`;
-    setStatus(`${targetLabel}: label_arc=${next}. Download will include the edited CSV.`);
-  }
-
-  function setArcMarkerAt(idx, on) {
-    setArcMarkers([idx], on);
   }
 
   function fmt(x, d = 4) {
@@ -655,6 +633,42 @@
     "#00bcd4", "#ff4081", "#cddc39", "#ff9800",
   ];
 
+  let plot = null;
+  let playing = false;
+  let playIdxF = 0;
+  let playIdx = 0;
+  let lastRAF = 0;
+  let speed = 1.0;
+
+  let ROWS = [];
+  let X = [];
+  let KEYS = [];
+
+  let DATA_RAW = null;
+  let DATA_SMOOTH = null;
+  let DATA_NORM = null;
+  let DATA_SMOOTH_NORM = null;
+
+  let FULL_X_MIN = 0;
+  let FULL_X_MAX = 0;
+  let INTERNAL_SCRUB_UPDATE = false;
+
+  let ARC_SERIES_INDEX = -1;
+  let ARC_IDXS = [];
+  let statsVisible = true;
+
+  const showPref = new Map();
+  const axisPref = new Map();
+
+  const DEFAULT_ON = new Set(["i_rms", "label_arc", "model_pred", "irms_drop_vs_baseline"]);
+  const DEFAULT_Y2 = new Set(["i_rms", "current", "v_rms", "voltage", "temp_c", "temp"]);
+
+  setViewerOpen(false);
+  ensureArcEditorControls();
+  refreshDownloadBinding();
+  applyStatsVisibility();
+
+
   function preferredDefaultKeys(keys) {
     const preferred = ["i_rms", "label_arc", "model_pred", "irms_drop_vs_baseline", "cycle_rms_drop_ratio", "cycle_nmse", "zcv", "neg_dip_event_ratio", "v_rms", "temp_c", "current", "voltage", "temp"];
     const picked = preferred.filter((k) => keys.includes(k));
@@ -690,13 +704,11 @@
     if (toggleList) toggleList.innerHTML = "";
     if (valueLine) valueLine.innerHTML = "";
     if (statsBody) statsBody.innerHTML = "";
-    if (statsHint) statsHint.textContent = "Stats enabled. Load a session or uploaded CSV to see window statistics.";
-    if (btnPrevArc) btnPrevArc.disabled = true;
-    if (btnNextArc) btnNextArc.disabled = true;
+    if (statsHint) statsHint.textContent = "Window statistics";
+    applyStatsVisibility();
     updateArcReadout();
     setStatus("Loading…");
     if (scrub) { scrub.min = "0"; scrub.max = "0"; scrub.value = "0"; }
-    if (arcIndexInput) arcIndexInput.value = "";
     if (timeReadout) timeReadout.textContent = "t=—";
     updateArcEditButtons();
   }
@@ -840,8 +852,6 @@
       if (isLabel) ARC_IDXS.push(i);
     }
 
-    if (btnPrevArc) btnPrevArc.disabled = ARC_IDXS.length === 0;
-    if (btnNextArc) btnNextArc.disabled = ARC_IDXS.length === 0;
     if (chkEvents) {
       chkEvents.disabled = ARC_IDXS.length === 0;
       if (ARC_IDXS.length > 0) chkEvents.checked = true;
@@ -1239,21 +1249,27 @@
     return [i0, i1];
   }
 
+  function applyStatsVisibility() {
+    if (!statsWrap) return;
+    statsWrap.style.display = statsVisible ? "block" : "none";
+    btnStats?.classList.toggle("is-active", !!statsVisible);
+    if (btnStats) btnStats.textContent = statsVisible ? "Hide Stats" : "Stats";
+  }
+
   function updateStats() {
     if (!statsWrap || !statsBody || !statsHint) return;
-    const enabled = !!chkStats?.checked;
-    statsWrap.style.display = enabled ? "" : "none";
-    if (!enabled) return;
+    applyStatsVisibility();
+    if (!statsVisible) return;
 
     if (!KEYS.length) {
-      statsHint.textContent = "Stats enabled. Load a session or uploaded CSV to see window statistics.";
+      statsHint.textContent = "Window statistics";
       statsBody.innerHTML = `<tr><td colspan="6" class="mono">No dataset loaded yet.</td></tr>`;
       return;
     }
 
     const source = currentData() || DATA_RAW;
     if (!source || !plot) {
-      statsHint.textContent = "Stats unavailable.";
+      statsHint.textContent = "Window statistics";
       statsBody.innerHTML = `<tr><td colspan="6" class="mono">Plot is not ready yet.</td></tr>`;
       return;
     }
@@ -1263,12 +1279,9 @@
     const t1 = X[i1];
     const visibleKeys = KEYS.filter((k) => showPref.get(k));
     const selectedKeys = visibleKeys.length ? visibleKeys : preferredDefaultKeys(KEYS);
-    const cap = 20;
-    const shownKeys = selectedKeys.slice(0, cap);
-    const extra = Math.max(0, selectedKeys.length - shownKeys.length);
-    const arcInView = ARC_IDXS.filter((idx) => idx >= i0 && idx <= i1).length;
+    const shownKeys = selectedKeys.slice(0, 20);
 
-    statsHint.textContent = `Stats | idx ${i0}-${i1} | t=${fmt(t0)}s..${fmt(t1)}s | arcs in view=${arcInView}` + (extra ? ` | +${extra} more hidden` : "");
+    statsHint.textContent = `Visible window • idx ${i0}-${i1} • t=${fmt(t0)}s..${fmt(t1)}s`;
 
     if (!shownKeys.length) {
       statsBody.innerHTML = `<tr><td colspan="6" class="mono">No visible numeric series selected.</td></tr>`;
@@ -1316,7 +1329,11 @@
     }
   });
 
-  chkStats?.addEventListener("change", updateStats);
+  btnStats?.addEventListener("click", () => {
+    statsVisible = !statsVisible;
+    applyStatsVisibility();
+    if (statsVisible) updateStats();
+  });
 
   function tick(ts) {
     if (!playing) return;
@@ -1387,8 +1404,6 @@
   chkCurves.onchange = rebuildForDataMode;
   chkEvents.onchange = () => { if (plot) { plot.redraw(); updateStats(); } };
   rngZoom?.addEventListener("input", () => { if (plot) applyZoomPercent(Number(rngZoom.value) || 100); });
-  btnPrevArc?.addEventListener("click", () => jumpToArc(-1));
-  btnNextArc?.addEventListener("click", () => jumpToArc(1));
 
   rngSmooth.oninput = () => {
     const win = Number(rngSmooth.value) || 1;
@@ -1470,13 +1485,30 @@
 
   function openSeries() { document.body.classList.add("showSeries"); }
   function closeSeries() { document.body.classList.remove("showSeries"); }
-  btnSeries?.addEventListener("click", openSeries);
-  btnCloseSeries?.addEventListener("click", closeSeries);
+  function toggleSeries(ev) {
+    ev?.preventDefault?.();
+    ev?.stopPropagation?.();
+    document.body.classList.toggle("showSeries");
+  }
+  btnSeries?.addEventListener("click", toggleSeries);
+  btnCloseSeries?.addEventListener("click", (ev) => {
+    ev?.preventDefault?.();
+    ev?.stopPropagation?.();
+    closeSeries();
+  });
+  document.addEventListener("click", (ev) => {
+    if (!document.body.classList.contains("showSeries")) return;
+    const target = ev.target;
+    if (seriesPanel?.contains?.(target) || btnSeries?.contains?.(target)) return;
+    closeSeries();
+  });
   window.addEventListener("keydown", (e) => {
-    if (e.key === "Escape") {
+    if (e.key !== "Escape") return;
+    if (document.body.classList.contains("showSeries")) {
       closeSeries();
-      if (!plotDrawer.classList.contains("collapsed")) closeSessionViewer();
+      return;
     }
+    if (!plotDrawer.classList.contains("collapsed")) closeSessionViewer();
   });
 
   async function loadSession(targetSid, metaOverride = null) {
@@ -1518,7 +1550,7 @@
         downloadName: `TSP_ML_${sid}.csv`,
         emptyStatus: "Parsed 0 rows. (CSV exists but has no data rows.)",
         noNumericStatus: "No numeric series found in this session CSV.",
-        readyStatus: `Rows: __ROWS__ | Arc markers=__ARCS__ | Click plot to choose row, then add or clear marker`
+        readyStatus: ""
       });
     } catch (e) {
       console.error(e);
@@ -1562,7 +1594,7 @@
         downloadName: `TSP_ML_${sid}.csv`,
         emptyStatus: "Parsed 0 rows from uploaded CSV.",
         noNumericStatus: "No numeric series found in uploaded CSV.",
-        readyStatus: `Rows: __ROWS__ | Uploaded CSV ready | Arc markers=__ARCS__`
+        readyStatus: ""
       });
     } catch (e) {
       console.error(e);
@@ -1578,7 +1610,10 @@
     setViewerOpen(false);
     titleEl.textContent = "Plot Viewer";
     metaEl.textContent = "Open a session from the ML table above.";
-    setStatus("Pick a session above to load the plot viewer.");
+    setStatus("");
+    if (location.hash === "#plotDrawer") {
+      history.replaceState(null, "", location.pathname + location.search);
+    }
   }
 
   if (btnBack) {

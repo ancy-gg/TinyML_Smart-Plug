@@ -381,36 +381,14 @@
           <button class="btn btn-success" id="btnDownload" type="button">Download</button>
         </div>
       </div>
-
       <div class="viewer-grid">
-        <div class="panel toggles" id="seriesPanel">
-          <div class="seriesTop">
-            <div style="font-weight:900;">Feature Data</div>
-            <button class="btn btn-small" id="btnCloseSeries" type="button">Close</button>
-          </div>
-
-          <div class="smallnote" style="margin-top:0; margin-bottom:6px;">
-            Axis: <span class="mono">Y-Left</span>=left, <span class="mono">Y-Right</span>=right
-          </div>
-
-          <input id="seriesSearch" class="seriesSearch mono" placeholder="Filter series (e.g., rms, dip, entropy…)" />
-
-          <div class="seriesActions">
-            <button class="btn btn-small" id="btnSelDefault" type="button">Default</button>
-            <button class="btn btn-small" id="btnSelAll" type="button">All</button>
-            <button class="btn btn-small" id="btnSelNone" type="button">None</button>
-          </div>
-
-          <div id="toggleList"></div>
-        </div>
-
         <div class="panel rightPanel">
-          <div class="controlsbar">
+          <div class="controlsbar controlsbar-top">
             <div class="left">
               <button class="btn" id="btnPlay">Play</button>
               <button class="btn" id="btnPause" disabled>Pause</button>
 
-              <div class="chip">
+              <div class="chip chip-speed">
                 <label>Speed</label>
                 <select id="selSpeed">
                   <option value="0.25">0.25×</option>
@@ -422,38 +400,75 @@
                 </select>
               </div>
 
-              <button class="btn btn-small" id="btnSeries" type="button">Series</button>
-              <button class="btn btn-small" id="btnPrevArc" type="button">Prev Arc</button>
-              <button class="btn btn-small" id="btnNextArc" type="button">Next Arc</button>
-
               <input class="scrub" id="scrub" type="range" min="0" max="0" value="0" step="1" />
 
-              <div class="chip">
+              <div class="chip chip-time">
                 <label class="mono" id="timeReadout">t=—</label>
-              </div>
-              <div class="chip">
-                <label class="mono" id="arcReadout">arcs=—</label>
               </div>
             </div>
 
             <div class="right">
-              <div class="chip">
+              <button class="btn btn-small" id="btnSeries" type="button">Series</button>
+            </div>
+          </div>
+
+          <div id="chart"></div>
+
+          <div class="panel toggles toggles-inline" id="seriesPanel">
+            <div class="seriesTop">
+              <div style="font-weight:900;">Feature Data</div>
+              <button class="btn btn-small" id="btnCloseSeries" type="button">Close</button>
+            </div>
+
+            <div class="smallnote viewer-axis-note" style="margin-top:0; margin-bottom:6px;">
+              Axis: <span class="mono">Y1</span>=left, <span class="mono">Y2</span>=right
+            </div>
+
+            <input id="seriesSearch" class="seriesSearch mono" placeholder="Filter series (e.g., rms, dip, entropy…)">
+
+            <div class="seriesActions">
+              <button class="btn btn-small" id="btnSelDefault" type="button">Default</button>
+              <button class="btn btn-small" id="btnSelAll" type="button">All</button>
+              <button class="btn btn-small" id="btnSelNone" type="button">None</button>
+            </div>
+
+            <div id="toggleList"></div>
+          </div>
+
+          <div class="controlsbar controlsbar-bottom">
+            <div class="control-cluster control-cluster-view">
+              <div class="chip chip-normalize">
                 <label><input type="checkbox" id="chkNormalize"> Normalize</label>
               </div>
 
-              <div class="chip">
+              <div class="chip chip-smooth-toggle">
                 <label><input type="checkbox" id="chkSmooth" checked> Smooth</label>
               </div>
 
-              <div class="chip">
+              <div class="chip chip-smooth-range">
+                <label class="mono" for="rngSmooth">Smooth</label>
                 <input id="rngSmooth" type="range" min="1" max="31" step="2" value="15" style="width:120px;" />
               </div>
 
-              <div class="chip">
+              <div class="chip chip-curves">
                 <label><input type="checkbox" id="chkCurves" checked> Curves</label>
               </div>
 
-              <div class="chip">
+              <div class="chip chip-follow">
+                <label><input type="checkbox" id="chkFollow" checked> Follow</label>
+              </div>
+
+              <div class="chip chip-zoom-range">
+                <label class="mono" for="rngZoom">Zoom</label>
+                <input id="rngZoom" type="range" min="5" max="100" step="1" value="100" style="width:120px;" />
+              </div>
+
+              <button class="btn control-action" id="btnResetZoom">Reset Zoom</button>
+              <button class="btn btn-small control-action" id="btnStats" type="button">Stats</button>
+            </div>
+
+            <div class="control-cluster control-cluster-markers">
+              <div class="chip chip-events">
                 <label><input type="checkbox" id="chkEvents"> Arc markers</label>
               </div>
 
@@ -461,30 +476,17 @@
                 <input id="arcIndexInput" class="viewer-index-input mono" type="text" placeholder="idx or 10-14,25" />
               </div>
 
-              <div class="chip">
-                <label><input type="checkbox" id="chkStats" checked> Stats</label>
-              </div>
-
-              <div class="chip">
-                <label><input type="checkbox" id="chkFollow" checked> Follow</label>
-              </div>
-
-              <div class="chip">
-                <label class="mono" for="rngZoom">Zoom</label>
-                <input id="rngZoom" type="range" min="5" max="100" step="1" value="100" style="width:120px;" />
-              </div>
-
-              <button class="btn" id="btnResetZoom">Reset Zoom</button>
+              <button class="btn btn-small btn-info control-action" id="btnAddArc" type="button">Add Arc Marker</button>
+              <button class="btn btn-small btn-danger control-action" id="btnClearArc" type="button">Clear Arc Marker</button>
             </div>
           </div>
 
-          <div id="chart"></div>
-          <div id="statusLine" class="smallnote mono">Pick a session above to load the plot viewer.</div>
+          <div id="statusLine" class="smallnote mono"></div>
           <div id="valueLine" class="valueLineWrap mono"></div>
 
           <div id="statsWrap" class="statsWrap">
             <div class="statsHead">
-              <div class="mono" id="statsHint">—</div>
+              <div class="mono" id="statsHint">Window statistics</div>
               <button class="btn btn-small btn-info" id="btnCopyStats" type="button">Copy</button>
             </div>
             <div class="statsTableWrap">

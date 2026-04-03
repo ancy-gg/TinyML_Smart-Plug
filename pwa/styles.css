@@ -890,6 +890,11 @@ body.density-comfortable .metric-note{ font-size:12px; }
 .admin-only{ display:none !important; }
 body.mode-admin .admin-only{ display:block !important; }
 body.mode-admin .plot-drawer.admin-only{ display:block !important; }
+.plot-drawer[hidden],
+body.mode-admin .plot-drawer.admin-only[hidden]{
+  display:none !important;
+}
+
 @media (max-width: 760px){
   .topbar{ grid-template-columns:1fr; gap:10px; }
   .topbar-spacer{ display:none; }
@@ -4162,28 +4167,211 @@ html, body{
   }
 }
 
-
-/* ===== v8.3 uploaded CSV duration + arc index editor ===== */
-.chip-arc-index{
+/* ===== v5.6 plot viewer cleanup ===== */
+.plot-drawer .viewer-grid{
+  position:relative;
+  display:grid;
+  grid-template-columns:1fr !important;
+  gap:12px;
+}
+.plot-drawer .panel.toggles{
+  position:absolute !important;
+  top:0;
+  right:0;
+  width:min(360px, calc(100% - 20px));
+  max-height:min(72vh, 560px);
+  overflow:auto;
+  z-index:60;
+  display:none;
+}
+body.showSeries .plot-drawer .panel.toggles{
+  display:flex !important;
+}
+.plot-drawer .rightPanel{
+  position:relative;
+  z-index:1;
+}
+.plot-drawer .controlsbar-top{
+  margin-bottom:12px;
+}
+.plot-drawer .controlsbar-top .left{
+  flex:1 1 auto;
+}
+.plot-drawer .controlsbar-top .right{
+  flex:0 0 auto;
+}
+.plot-drawer .controlsbar-top .scrub{
+  flex:1 1 260px;
   min-width:180px;
+}
+.plot-drawer .controlsbar-bottom{
+  margin-top:12px;
+  padding-top:12px;
+  border-top:1px solid rgba(255,255,255,0.08);
+}
+.plot-drawer .controlsbar-bottom .left{
+  width:100%;
+}
+.plot-drawer .viewer-index-input{
+  min-width:150px;
+  border:none;
+  outline:none;
+  background:transparent;
+  color:var(--text);
+}
+.plot-drawer #statusLine:empty{
+  display:none;
+}
+.plot-drawer .viewer-axis-note{
+  color:rgba(255,255,255,0.60);
+}
+.plot-drawer #chart{
+  height:520px;
+  min-height:520px;
+  max-height:520px;
+}
+.plot-drawer .statsWrap{
+  display:block;
+  margin-top:12px;
+}
+.plot-drawer .statsHead .mono{
+  color:rgba(255,255,255,0.72);
+}
+.plot-drawer .seriesSearch,
+.plot-drawer .seriesActions{
+  margin-bottom:10px;
+}
+@media (max-width: 980px){
+  .plot-drawer .panel.toggles{
+    top:52px;
+    left:0;
+    right:0;
+    width:auto;
+    max-height:min(62vh, 480px);
+  }
+  .plot-drawer #chart{
+    height:360px;
+    min-height:360px;
+    max-height:360px;
+  }
+}
+@media (max-width: 640px){
+  .plot-drawer .controlsbar-top,
+  .plot-drawer .controlsbar-bottom{
+    gap:8px;
+  }
+  .plot-drawer .controlsbar-top .left,
+  .plot-drawer .controlsbar-bottom .left,
+  .plot-drawer .controlsbar-top .right{
+    width:100%;
+  }
+  .plot-drawer .controlsbar-top .left > *,
+  .plot-drawer .controlsbar-bottom .left > *{
+    flex:1 1 auto;
+  }
+  .plot-drawer .controlsbar-top .scrub{
+    width:100%;
+    min-width:0;
+  }
+  .plot-drawer .viewer-index-input{
+    min-width:0;
+    width:100%;
+  }
+  .plot-drawer #chart{
+    height:320px;
+    min-height:320px;
+    max-height:320px;
+  }
+}
+@media (orientation: landscape) and (max-width: 920px){
+  .plot-drawer #chart{
+    height:420px !important;
+    min-height:420px !important;
+    max-height:420px !important;
+  }
+}
+
+.plot-drawer #btnSeries{
+  display:inline-flex !important;
+}
+.plot-drawer #btnCloseSeries{
+  display:inline-flex !important;
+}
+
+
+/* ===== v5.6.1 plot viewer layout fix ===== */
+.plot-drawer .viewer-grid{
+  display:block !important;
+}
+.plot-drawer .rightPanel{
+  display:flex;
+  flex-direction:column;
+  gap:12px;
+}
+.plot-drawer #seriesPanel{
+  position:relative !important;
+  top:auto !important;
+  right:auto !important;
+  left:auto !important;
+  width:100% !important;
+  max-height:360px;
+  overflow:auto;
+  z-index:1 !important;
+  display:none;
+  margin-top:0;
+}
+body.showSeries .plot-drawer #seriesPanel{
+  display:flex !important;
+}
+.plot-drawer .controlsbar-bottom{
+  display:grid;
+  grid-template-columns:1fr;
+  gap:10px;
+  align-items:start;
+}
+.plot-drawer .control-cluster{
+  display:flex;
+  flex-wrap:wrap;
+  gap:10px;
+  align-items:center;
+}
+.plot-drawer .control-cluster-view{
+  padding-bottom:10px;
+  border-bottom:1px solid rgba(255,255,255,0.08);
+}
+.plot-drawer .control-cluster-markers{
   justify-content:flex-start;
 }
-.viewer-index-input{
-  width:160px;
-  min-width:0;
-  padding:6px 8px;
-  border-radius:8px;
-  border:1px solid rgba(255,255,255,0.12);
-  background:rgba(0,0,0,0.18);
-  color:rgba(255,255,255,0.92);
-  outline:none;
+.plot-drawer .control-cluster-markers #btnAddArc,
+.plot-drawer .control-cluster-markers #btnClearArc{
+  min-width:160px;
 }
-.viewer-index-input::placeholder{
-  color:rgba(255,255,255,0.42);
+.plot-drawer .chip-arc-index{
+  min-width:180px;
 }
-@media (max-width: 860px){
-  .chip-arc-index,
-  .viewer-index-input{
+.plot-drawer #btnStats.is-active{
+  background:linear-gradient(180deg, rgba(90,166,255,0.28), rgba(42,102,214,0.14));
+  border-color:rgba(123,190,255,0.28);
+  color:#e2f1ff;
+}
+.plot-drawer .statsWrap{
+  display:block;
+}
+@media (max-width: 980px){
+  .plot-drawer #seriesPanel{
+    max-height:320px;
+  }
+}
+@media (max-width: 760px){
+  .plot-drawer .control-cluster{
     width:100%;
+  }
+  .plot-drawer .control-cluster > *{
+    flex:1 1 auto;
+  }
+  .plot-drawer .control-cluster-markers #btnAddArc,
+  .plot-drawer .control-cluster-markers #btnClearArc,
+  .plot-drawer .chip-arc-index{
+    min-width:0;
   }
 }
