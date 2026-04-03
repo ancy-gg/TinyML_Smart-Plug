@@ -56,6 +56,7 @@ static uint32_t s_t0 = 0;
 static uint8_t s_activePrio = 0;
 static uint8_t s_faultHoldSound = 255;
 static uint32_t s_faultHoldUntil = 0;
+static uint32_t s_faultRetriggerAllowedAt = 0;
 static uint32_t s_artifactSuppressUntil = 0;
 
 static inline bool isFaultPattern(uint8_t id) {
@@ -506,6 +507,7 @@ bool Notification::shouldSuppressCurrentArtifacts() const {
 void Notification::clearFaultAlert() {
   s_faultHoldSound = 255;
   s_faultHoldUntil = 0;
+  s_faultRetriggerAllowedAt = 0;
   if (isFaultPattern(s_activeId)) soundStop();
 }
 
@@ -530,21 +532,23 @@ void Notification::updateBuzzer(FaultState st, float vProtect, float i, float t)
   else if (overloadActive) wantedFaultSound = SND_FAULT_OVER;
 
   if (wantedFaultSound != 255) {
-    if (wantedFaultSound != s_faultHoldSound) {
+    const bool changedFault = (wantedFaultSound != s_faultHoldSound);
+    const bool retriggerAllowed = changedFault || (s_faultRetriggerAllowedAt == 0) || ((int32_t)(now - s_faultRetriggerAllowedAt) >= 0);
+    if (retriggerAllowed) {
       s_faultHoldSound = wantedFaultSound;
       s_faultHoldUntil = now + FAULT_ALERT_MIN_MS;
+      s_faultRetriggerAllowedAt = now + FAULT_ALERT_MIN_MS + 12000UL;
       soundStart(wantedFaultSound);
-    } else if (s_faultHoldSound != 255 && (int32_t)(s_faultHoldUntil - now) > 0) {
-      soundStart(s_faultHoldSound);
-    } else if (isFaultPattern(s_activeId)) {
+    } else if (isFaultPattern(s_activeId) && (int32_t)(now - s_faultHoldUntil) >= 0) {
       soundStop();
     }
   } else {
     if (s_faultHoldSound != 255 && (int32_t)(s_faultHoldUntil - now) > 0) {
-      soundStart(s_faultHoldSound);
+      // allow the current fault tone to finish its minimum hold window only
     } else {
       s_faultHoldSound = 255;
       s_faultHoldUntil = 0;
+      s_faultRetriggerAllowedAt = 0;
       if (isFaultPattern(s_activeId)) soundStop();
     }
   }
@@ -556,17 +560,18 @@ void Notification::updateBuzzer(FaultState st, float vProtect, float i, float t)
   const bool rawOn = (vProtect >= MAINS_PRESENT_ON_V);
   const bool rawOff = (vProtect <= MAINS_PRESENT_OFF_V);
   if (!mainsInit) { mainsStable = rawOn; mainsInit = true; }
+  const bool faultAudioActive = (wantedFaultSound != 255);
   if (rawOff) {
     if (mainsOffSince == 0) mainsOffSince = now;
     mainsOnSince = 0;
-    if (mainsStable && (now - mainsOffSince) >= UNPLUGGED_BUZZ_DELAY_MS) {
+    if (!faultAudioActive && mainsStable && (now - mainsOffSince) >= UNPLUGGED_BUZZ_DELAY_MS) {
       mainsStable = false;
       notify(SND_MAINS_LOST);
     }
   } else if (rawOn) {
     if (mainsOnSince == 0) mainsOnSince = now;
     mainsOffSince = 0;
-    if (!mainsStable && (now - mainsOnSince) >= MAINS_EDGE_DEBOUNCE_MS) {
+    if (!faultAudioActive && !mainsStable && (now - mainsOnSince) >= MAINS_EDGE_DEBOUNCE_MS) {
       mainsStable = true;
       notify(SND_MAINS_RESTORED);
     }
