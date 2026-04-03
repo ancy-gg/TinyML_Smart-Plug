@@ -62,7 +62,7 @@ void ProtectionManager::resetLatch() {
   _arcCnt = 0; _heatFrames = 0; _arcHoldUntil = 0; _heatHoldUntil = 0;
   _underVoltSince = 0; _overVoltSince = 0; _overloadSince = 0; _sustainedOverloadSince = 0;
   _voltageLockout = false; _voltageLockoutKind = STATE_NORMAL; _voltageRecoverySince = 0;
-  _tripOffEdge = false; _autoOnEdge = false; _webLockout = false;
+  _tripOffEdge = false; _autoOnEdge = false; _webLockout = false; _resetRequired = false;
   _loadOn = false; _loadOnSince = 0; _loadOffSince = 0; _prevSustainedTrip = false;
   _prevArcActive = false; _prevHeatTrip = false; _prevOverloadTrip = false;
 }
@@ -78,7 +78,10 @@ FaultState ProtectionManager::update(float vProtect, float vRaw, float tempC, fl
   const bool arcTrip = (_arcCnt >= ARC_CNT_TRIP);
   if (arcTrip) _arcHoldUntil = now + ARC_HOLD_MS;
   const bool arcActive = arcTrip || (now < _arcHoldUntil);
-  if (arcActive && !_prevArcActive) _tripOffEdge = true;
+  if (arcActive && !_prevArcActive) {
+    _tripOffEdge = true;
+    _resetRequired = true;
+  }
   _prevArcActive = arcActive;
 
   const bool heatWarnRaw = (tempC >= TEMP_WARN_C);
@@ -86,7 +89,10 @@ FaultState ProtectionManager::update(float vProtect, float vRaw, float tempC, fl
   if (heatTripRaw) _heatHoldUntil = now + HEAT_HOLD_MS;
   const bool heatTripActive = heatTripRaw || (now < _heatHoldUntil);
   const bool heatActive = heatWarnRaw || heatTripActive;
-  if (heatTripActive && !_prevHeatTrip) _tripOffEdge = true;
+  if (heatTripActive && !_prevHeatTrip) {
+    _tripOffEdge = true;
+    _resetRequired = true;
+  }
   _prevHeatTrip = heatTripActive;
 
   const bool mainsGoneLike = (vRaw <= MAINS_PRESENT_OFF_V) || ((vProtect <= MAINS_PRESENT_OFF_V) && (irmsA <= LOAD_OFF_DETECT_A));
@@ -141,7 +147,10 @@ FaultState ProtectionManager::update(float vProtect, float vRaw, float tempC, fl
   const bool sustainedOverloadActive = sustainedOverloadRaw && ((now - _sustainedOverloadSince) >= SUSTAINED_OVERLOAD_TRIP_MS);
   const bool overloadTripActive = overloadWarnActive && !sustainedOverloadRaw && ((now - _overloadSince) >= OVERLOAD_TRIP_MS);
   const bool overloadTripAny = sustainedOverloadActive || overloadTripActive;
-  if (overloadTripAny && !_prevOverloadTrip) _tripOffEdge = true;
+  if (overloadTripAny && !_prevOverloadTrip) {
+    _tripOffEdge = true;
+    _resetRequired = true;
+  }
   _prevOverloadTrip = overloadTripAny;
   _prevSustainedTrip = sustainedOverloadActive;
 
@@ -182,7 +191,7 @@ FaultState ProtectionManager::update(float vProtect, float vRaw, float tempC, fl
   else if (overloadTripAny) st = STATE_SUSTAINED_OVERLOAD;
   else if (overloadWarnActive) st = STATE_OVERLOAD;
 
-  _webLockout = arcActive || heatTripActive || overloadTripAny || _voltageLockout;
+  _webLockout = _resetRequired || arcActive || heatTripActive || overloadTripAny || _voltageLockout;
   return st;
 }
 
@@ -221,19 +230,15 @@ void ProtectionManager::apply(FaultState st, float vDisplay, float vProtect, flo
 
   const bool unplugged = rawOff && (mainsOffSince != 0) && ((now - mainsOffSince) >= UNPLUGGED_STATE_DELAY_MS);
   const bool criticalBlock = arcActive || heatTripActive || underVoltActive || overVoltActive || overloadTripActive;
-  if (unplugged && _relayLatchedOn) pulseRelayOff(LATCH_OFF_PULSE_MS);
 
-  if (!criticalBlock && mainsStable && !_relayLatchedOn) {
-    if (i >= LOAD_ON_DETECT_A) {
-      if (_loadDetectSince == 0) _loadDetectSince = now;
-      if ((now - _loadDetectSince) >= LOAD_ON_DETECT_MS) {
-        pulseRelayOn(LATCH_ON_PULSE_MS);
-        _loadDetectSince = 0;
-      }
-    } else {
-      _loadDetectSince = 0;
-    }
-  } else {
-    _loadDetectSince = 0;
+  if (unplugged && _relayLatchedOn) {
+    pulseRelayOff(LATCH_OFF_PULSE_MS);
   }
+
+  // Keep the relay latched OFF after protection trips.
+  // Re-close should only happen from explicit commands or the dedicated voltage-recovery path.
+  (void)criticalBlock;
+  (void)mainsStable;
+  (void)i;
+  _loadDetectSince = 0;
 }

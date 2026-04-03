@@ -44,6 +44,7 @@ private:
   bool _tripOffEdge = false;
   bool _autoOnEdge = false;
   bool _webLockout = false;
+  bool _resetRequired = false;
   bool _loadOn = false;
   uint32_t _loadOnSince = 0;
   uint32_t _loadOffSince = 0;

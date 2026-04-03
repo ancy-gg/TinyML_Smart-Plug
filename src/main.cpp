@@ -36,14 +36,9 @@ static TaskHandle_t gCore0SenseTask = nullptr;
 static bool gSafeMode = false;
 static volatile bool gPauseByOta = false;
 
-static bool arcInputStable(bool currentValid, float irms, bool clearState = false) {
+static bool arcInputStable(bool currentValid, float irms) {
   static uint32_t stableSince = 0;
   static float refIrms = 0.0f;
-  if (clearState) {
-    stableSince = 0;
-    refIrms = 0.0f;
-    return false;
-  }
   const uint32_t now = millis();
   if (!currentValid || irms < 0.03f) {
     stableSince = 0; refIrms = irms; return false;
@@ -56,15 +51,9 @@ static bool arcInputStable(bool currentValid, float irms, bool clearState = fals
 }
 
 
-static bool arcTurnOnBlanking(bool relayOn, bool currentValid, float vProtect, float irms, bool clearState = false) {
+static bool arcTurnOnBlanking(bool relayOn, bool currentValid, float vProtect, float irms) {
   static uint32_t lowSinceMs = 0;
   static uint32_t blankUntilMs = 0;
-
-  if (clearState) {
-    lowSinceMs = 0;
-    blankUntilMs = 0;
-    return false;
-  }
 
   const uint32_t now = millis();
   const bool mainsOn = (vProtect >= MAINS_PRESENT_ON_V);
@@ -96,16 +85,9 @@ static bool arcTurnOnBlanking(bool relayOn, bool currentValid, float vProtect, f
 static bool arcTransientBlanking(bool relayOn,
                                  bool currentValid,
                                  float vProtect,
-                                 float irms,
-                                 bool clearState = false) {
+                                 float irms) {
   static float prevIrms = 0.0f;
   static uint32_t blankUntilMs = 0;
-
-  if (clearState) {
-    prevIrms = 0.0f;
-    blankUntilMs = 0;
-    return false;
-  }
 
   const uint32_t now = millis();
   const bool mainsOn = (vProtect >= MAINS_PRESENT_ON_V);
@@ -204,9 +186,9 @@ static bool stabilizeFeatureValidity(FeatureFrame& f, float vProtect, float irms
     zeroIrmsSinceMs = 0;
   }
 
-  const bool zeroTooLong = (zeroIrmsSinceMs != 0) && ((now - zeroIrmsSinceMs) >= 1200UL);
+  const bool zeroTooLong = (zeroIrmsSinceMs != 0) && ((now - zeroIrmsSinceMs) >= 5000UL);
 
-  if ((f.current_valid != 0) && (f.feat_valid != 0) && (irmsLogic > (CURRENT_ANALYSIS_IDLE_A + 0.01f))) {
+  if ((f.current_valid != 0) && (f.feat_valid != 0)) {
     lastValidFeat = f;
     haveLastValidFeat = true;
     lastValidFeatMs = now;
@@ -217,8 +199,8 @@ static bool stabilizeFeatureValidity(FeatureFrame& f, float vProtect, float irms
       mainsOn &&
       !zeroTooLong &&
       haveLastValidFeat &&
-      ((now - lastValidFeatMs) <= 250UL) &&
-      ((f.current_valid != 0) && (irmsLogic > 0.03f));
+      ((now - lastValidFeatMs) <= 600UL) &&
+      ((f.current_valid != 0) || (irmsLogic > 0.03f));
 
   if (!bridgeAllowed) return false;
 
@@ -234,29 +216,8 @@ static bool stabilizeFeatureValidity(FeatureFrame& f, float vProtect, float irms
   f.irms_drop_vs_baseline = lastValidFeat.irms_drop_vs_baseline;
   f.thd_i = lastValidFeat.thd_i;
   f.adc_fs_hz = lastValidFeat.adc_fs_hz;
-  f.current_valid = 1;
   f.feat_valid = 1;
   return true;
-}
-
-static void invalidateArcFeatures(FeatureFrame& f, bool clearCurrent) {
-  if (clearCurrent) {
-    f.irms = 0.0f;
-    f.current_valid = 0;
-  }
-  f.feat_valid = 0;
-  f.model_pred = 0;
-  f.cycle_nmse = 0.0f;
-  f.zcv = 0.0f;
-  f.zc_dwell_ratio = 0.0f;
-  f.cycle_rms_drop_ratio = 0.0f;
-  f.peak_fluct_cv = 0.0f;
-  f.midband_residual_rms = 0.0f;
-  f.hf_band_energy_ratio = 0.0f;
-  f.spec_entropy = 0.0f;
-  f.neg_dip_event_ratio = 0.0f;
-  f.irms_drop_vs_baseline = 0.0f;
-  f.thd_i = 0.0f;
 }
 
 static float cleanDisplayCurrent(float irmsRaw, bool currentValid, bool featValid, float vRaw, float vProtect) {
@@ -599,12 +560,6 @@ void loop() {
   const bool featureBridgeUsed = stabilizeFeatureValidity(f, vFast, irmsRawForLogic, !protection.relayLatchedOn());
   (void)featureBridgeUsed;
 
-  const bool noLoadForDetector = (!protection.relayLatchedOn()) || (vFast < MAINS_PRESENT_ON_V) || (fabsf(irmsRawForLogic) <= CURRENT_ANALYSIS_IDLE_A);
-  if (noLoadForDetector) {
-    invalidateArcFeatures(f, true);
-    irmsRawForLogic = 0.0f;
-  }
-
   static uint32_t lowIrmsSinceMs = 0;
   const bool mainsOnForIdle = (vFast >= MAINS_PRESENT_ON_V);
   const bool lowIrmsNow = (fabsf(irmsRawForLogic) <= CURRENT_ANALYSIS_IDLE_A);
@@ -692,8 +647,9 @@ void loop() {
 
   const bool fallbackArcEvent =
       protection.relayLatchedOn() &&
-      ((collapseSinceMs && (millis() - collapseSinceMs) >= 40UL) ||
-       (voltDipSinceMs && (millis() - voltDipSinceMs) >= 40UL));
+      (((invalidBurstSinceMs && (millis() - invalidBurstSinceMs) >= 80UL)) ||
+       ((collapseSinceMs && (millis() - collapseSinceMs) >= 40UL)) ||
+       ((voltDipSinceMs && (millis() - voltDipSinceMs) >= 40UL)));
 
   const bool haveUsableFeatures = (f.feat_valid != 0);
   const bool mlArcEligible =
@@ -710,19 +666,6 @@ void loop() {
   static uint32_t relayNetQuietUntilMs = 0;
   static bool pendingProtectionTripOff = false;
   static bool pendingProtectionAutoOn = false;
-  auto resetArcPipelineState = [&]() {
-    loadRefA = 0.0f;
-    invalidBurstSinceMs = 0;
-    collapseSinceMs = 0;
-    voltDipSinceMs = 0;
-    prevIrmsLogic = 0.0f;
-    prevVFast = vFast;
-    (void)stabilizeFeatureValidity(f, vFast, 0.0f, true);
-    (void)arcInputStable(false, 0.0f, true);
-    (void)arcTurnOnBlanking(false, false, vFast, 0.0f, true);
-    (void)arcTransientBlanking(false, false, vFast, 0.0f, true);
-    invalidateArcFeatures(f, true);
-  };
   const bool relayNetQuietActive = ((int32_t)(relayNetQuietUntilMs - millis()) > 0);
 
   network.pollControls(!paused && !portalActive && wifiConnected && !relayNetQuietActive, portalActive);
@@ -738,7 +681,13 @@ void loop() {
   if (faultClearRequested) {
     protection.resetLatch();
     faultClearSuppressUntilMs = millis() + 2500UL;
-    resetArcPipelineState();
+    loadRefA = 0.0f;
+    invalidBurstSinceMs = 0;
+    collapseSinceMs = 0;
+    voltDipSinceMs = 0;
+    prevIrmsLogic = irmsRawForLogic;
+    prevVFast = vFast;
+    (void)stabilizeFeatureValidity(f, vFast, irmsRawForLogic, true);
     notification.notify(SND_RESET_ACK);
     notification.clearFaultAlert();
   }
@@ -810,16 +759,10 @@ void loop() {
     if (portalRequested && !controlsLocked) wifiMgr.requestPortal(true);
     if (!controlsLocked) {
       if (relayOffRequested) {
-        network.stopAllClients();
         protection.pulseRelayOff();
-        relayNetQuietUntilMs = millis() + 450UL;
-        resetArcPipelineState();
         notification.notify(SND_RESET_ACK);
       } else if (relayOnRequested) {
-        network.stopAllClients();
         protection.pulseRelayOn();
-        relayNetQuietUntilMs = millis() + 450UL;
-        resetArcPipelineState();
         notification.notify(SND_RESET_ACK);
       }
     }
@@ -839,29 +782,19 @@ void loop() {
     pendingProtectionAutoOn = false;
     relayActionAtMs = millis() + 35UL;
     relayNetQuietUntilMs = relayActionAtMs + 600UL;
-    if ((int32_t)(faultClearSuppressUntilMs - (relayActionAtMs + 900UL)) < 0) {
-      faultClearSuppressUntilMs = relayActionAtMs + 900UL;
-    }
   }
   if (protectionEnabled && autoOnEdge && !controlsLocked && !pendingProtectionTripOff) {
     pendingProtectionAutoOn = true;
     relayActionAtMs = millis() + 35UL;
     if ((int32_t)(relayNetQuietUntilMs - (relayActionAtMs + 400UL)) < 0) relayNetQuietUntilMs = relayActionAtMs + 400UL;
-    if ((int32_t)(faultClearSuppressUntilMs - (relayActionAtMs + 500UL)) < 0) {
-      faultClearSuppressUntilMs = relayActionAtMs + 500UL;
-    }
   }
 
   if (pendingProtectionTripOff && (int32_t)(millis() - relayActionAtMs) >= 0) {
-    network.stopAllClients();
     protection.pulseRelayOff();
-    resetArcPipelineState();
     pendingProtectionTripOff = false;
   }
   if (pendingProtectionAutoOn && (int32_t)(millis() - relayActionAtMs) >= 0) {
-    network.stopAllClients();
     protection.pulseRelayOn();
-    resetArcPipelineState();
     pendingProtectionAutoOn = false;
   }
 
