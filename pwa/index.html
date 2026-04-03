@@ -224,7 +224,7 @@
                         <div class="card feature-card"><div class="card-label">Spectral Entropy</div><div class="card-value"><span id="specEntropyVal">—</span></div></div>
             <div class="card feature-card"><div class="card-label">Midband RMS</div><div class="card-value"><span id="midbandResidVal">—</span></div></div>
             <div class="card feature-card"><div class="card-label">Negative Dip Event</div><div class="card-value"><span id="negDipEventVal">—</span></div></div>
-            <div class="card feature-card"><div class="card-label">Pre-Dip Spike</div><div class="card-value"><span id="preDipSpikeVal">—</span></div></div>
+            <div class="card feature-card"><div class="card-label">Current-Baseline Drop</div><div class="card-value"><span id="preDipSpikeVal">—</span></div></div>
           </div>
         </section>
     </div>
@@ -423,11 +423,16 @@
               </div>
 
               <button class="btn btn-small" id="btnSeries" type="button">Series</button>
+              <button class="btn btn-small" id="btnPrevArc" type="button">Prev Arc</button>
+              <button class="btn btn-small" id="btnNextArc" type="button">Next Arc</button>
 
               <input class="scrub" id="scrub" type="range" min="0" max="0" value="0" step="1" />
 
               <div class="chip">
                 <label class="mono" id="timeReadout">t=—</label>
+              </div>
+              <div class="chip">
+                <label class="mono" id="arcReadout">arcs=—</label>
               </div>
             </div>
 
@@ -458,6 +463,11 @@
 
               <div class="chip">
                 <label><input type="checkbox" id="chkFollow" checked> Follow</label>
+              </div>
+
+              <div class="chip">
+                <label class="mono" for="rngZoom">Zoom</label>
+                <input id="rngZoom" type="range" min="5" max="100" step="1" value="100" style="width:120px;" />
               </div>
 
               <button class="btn" id="btnResetZoom">Reset Zoom</button>

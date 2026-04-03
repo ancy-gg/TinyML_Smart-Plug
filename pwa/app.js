@@ -1090,7 +1090,7 @@ function updateLiveDom(data) {
   const hf  = toFixedOrDash(data.hf_band_energy_ratio, 3);
   const se  = toFixedOrDash(data.spec_entropy, 3);
   const nd  = toFixedOrDash(data.neg_dip_event_ratio, 3);
-  const pd  = toFixedOrDash(data.pre_dip_spike_ratio, 3);
+  const pd  = toFixedOrDash(data.irms_drop_vs_baseline, 3);
 
   if (vVal && vVal.textContent !== v) { vVal.textContent = v; animateNumber(vVal); }
   if (iVal && iVal.textContent !== i) { iVal.textContent = i; animateNumber(iVal); }
@@ -1532,6 +1532,60 @@ btnClearMlLogs?.addEventListener("click", async () => {
   }
 });
 
+
+function safeSessionToken(name) {
+  return String(name || "uploaded_csv")
+    .replace(/\.csv$/i, "")
+    .replace(/[^a-zA-Z0-9_-]+/g, "_")
+    .replace(/^_+|_+$/g, "")
+    .slice(0, 42) || "uploaded_csv";
+}
+
+async function storeUploadedCsvSession(fileName, csvText) {
+  const clean = String(csvText || "").replace(/^\uFEFF/, "").trim();
+  const lines = clean.split(/\r?\n/).filter((line) => line.trim().length);
+  if (lines.length < 2) throw new Error("CSV needs a header and at least one row.");
+
+  const sid = `upload_${Date.now()}_${safeSessionToken(fileName)}`;
+  const header = lines[0].trimEnd();
+  const rows = lines.slice(1);
+
+  const meta = {
+    start_ms: Date.now(),
+    end_ms: Date.now(),
+    load_type: "uploaded_csv",
+    duration_s: 0,
+    label_override: -1,
+    uploaded_csv: true,
+    source_file: fileName || "uploaded_csv.csv",
+    row_count: rows.length
+  };
+
+  await db.ref(`ml_sessions/${sid}`).set({
+    ...meta,
+    start_ms: firebase.database.ServerValue.TIMESTAMP,
+    end_ms: firebase.database.ServerValue.TIMESTAMP
+  });
+
+  const CHUNK_ROWS = 250;
+  const updates = {};
+  const createdBase = Date.now();
+  for (let i = 0; i < rows.length; i += CHUNK_ROWS) {
+    const chunkRows = rows.slice(i, i + CHUNK_ROWS);
+    const key = `chunk_${String((i / CHUNK_ROWS) + 1).padStart(4, "0")}`;
+    updates[`ml_logs/${sid}/${key}`] = {
+      csv: `${header}\n${chunkRows.join("\n")}\n`,
+      count: chunkRows.length,
+      created_at: createdBase + (i / CHUNK_ROWS),
+      uploaded_csv: true,
+      source_file: fileName || "uploaded_csv.csv"
+    };
+  }
+  await db.ref().update(updates);
+  return { sid, meta };
+}
+
+
 btnUploadCsv?.addEventListener("click", () => mlCsvUpload?.click());
 mlCsvUpload?.addEventListener("change", async (ev) => {
   const file = ev.target?.files?.[0];
@@ -1539,13 +1593,30 @@ mlCsvUpload?.addEventListener("change", async (ev) => {
   try {
     const text = await file.text();
     if (!text || text.indexOf(",") < 0) throw new Error("Invalid CSV");
-    const meta = { load_type: "uploaded_csv", duration_s: "—", start_ms: Date.now(), end_ms: Date.now() };
-    if (typeof window.openSessionViewerFromCsv === "function") {
-      window.openSessionViewerFromCsv(file.name, text, meta);
-      toast("CSV loaded into plot viewer.", "ok");
-    } else {
-      toast("CSV viewer is not ready yet.", "err");
+
+    let opened = false;
+    try {
+      const stored = await storeUploadedCsvSession(file.name, text);
+      currentSessionId = stored.sid;
+      if (mlLogStatus) mlLogStatus.textContent = `Uploaded CSV stored as session: ${stored.sid}`;
+      if (typeof window.openSessionViewer === "function") {
+        window.openSessionViewer(stored.sid, stored.meta);
+        opened = true;
+      }
+      toast("CSV uploaded to cloud logger and saved as a session.", "ok");
+    } catch (cloudErr) {
+      console.error(cloudErr);
+      const meta = { load_type: "uploaded_csv", duration_s: "—", start_ms: Date.now(), end_ms: Date.now(), source_file: file.name };
+      if (typeof window.openSessionViewerFromCsv === "function") {
+        window.openSessionViewerFromCsv(file.name, text, meta);
+        opened = true;
+      }
+      const reason = cloudErr?.message || cloudErr?.code || String(cloudErr || "Unknown cloud save error");
+      if (mlLogStatus) mlLogStatus.textContent = `Uploaded CSV opened locally. Cloud save failed: ${reason}`;
+      toast(`CSV opened locally. Cloud save failed: ${reason}`, "warn");
     }
+
+    if (!opened) toast("CSV viewer is not ready yet.", "err");
   } catch (e) {
     console.error(e);
     toast("Failed to load CSV.", "err");

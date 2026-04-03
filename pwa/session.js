@@ -41,6 +41,7 @@
   const chkCurves = $("chkCurves");
   const chkFollow = $("chkFollow");
   const btnResetZoom = $("btnResetZoom");
+  const rngZoom = $("rngZoom");
   const chkEvents = $("chkEvents");
 
   const chkStats = $("chkStats");
@@ -55,6 +56,9 @@
   const btnSelDefault = $("btnSelDefault");
   const btnSelAll = $("btnSelAll");
   const btnSelNone = $("btnSelNone");
+  const btnPrevArc = $("btnPrevArc");
+  const btnNextArc = $("btnNextArc");
+  const arcReadout = $("arcReadout");
 
   if (!plotDrawer) return;
 
@@ -63,6 +67,50 @@
 
   function setStatus(text) {
     if (statusLine) statusLine.textContent = text;
+  }
+
+  function updateArcReadout() {
+    if (!arcReadout) return;
+    if (!X.length) {
+      arcReadout.textContent = "arcs=—";
+      return;
+    }
+    const total = ARC_IDXS.length;
+    if (!total) {
+      arcReadout.textContent = "arcs=0";
+      return;
+    }
+    let current = 0;
+    for (let i = 0; i < ARC_IDXS.length; i++) {
+      if (ARC_IDXS[i] >= playIdx) { current = i + 1; break; }
+    }
+    if (!current) current = total;
+    arcReadout.textContent = `arcs=${total} • ${current}/${total}`;
+  }
+
+  function nearestArcIndex(direction) {
+    if (!ARC_IDXS.length) return -1;
+    if (direction < 0) {
+      for (let i = ARC_IDXS.length - 1; i >= 0; i--) {
+        if (ARC_IDXS[i] < playIdx) return ARC_IDXS[i];
+      }
+      return ARC_IDXS[ARC_IDXS.length - 1];
+    }
+    for (let i = 0; i < ARC_IDXS.length; i++) {
+      if (ARC_IDXS[i] > playIdx) return ARC_IDXS[i];
+    }
+    return ARC_IDXS[0];
+  }
+
+  function jumpToArc(direction) {
+    const idx = nearestArcIndex(direction);
+    if (idx < 0) {
+      setStatus("No arc markers available in this session.");
+      return;
+    }
+    pause();
+    setPlayIdx(idx, true);
+    updateStats();
   }
 
   function downloadTextFile(filename, text, mime = "text/csv;charset=utf-8") {
@@ -114,6 +162,40 @@
 
     const t0 = Number(rows[0].epoch_ms) || 0;
     return rows.map((r) => ((Number(r.epoch_ms) || t0) - t0) / 1000.0);
+  }
+
+  function normalizeHeaderName(name) {
+    const raw = String(name || "").trim();
+    const slug = raw.toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_+|_+$/g, "");
+    const aliases = {
+      i_rms: "i_rms",
+      current: "current",
+      v_rms: "v_rms",
+      voltage: "voltage",
+      temp_c: "temp_c",
+      temperature: "temp_c",
+      model_pred: "model_pred",
+      label_arc: "label_arc",
+      feat_valid: "feat_valid",
+      current_valid: "current_valid",
+      session_id: "session_id",
+      load_type: "load_type",
+      epoch_ms: "epoch_ms",
+      adc_fs_hz: "adc_fs_hz",
+      cycle_nmse: "cycle_nmse",
+      zcv: "zcv",
+      zc_dwell_ratio: "zc_dwell_ratio",
+      cycle_rms_drop_ratio: "cycle_rms_drop_ratio",
+      peak_fluct_cv: "peak_fluct_cv",
+      midband_residual_rms: "midband_residual_rms",
+      hf_band_energy_ratio: "hf_band_energy_ratio",
+      spec_entropy: "spec_entropy",
+      neg_dip_event_ratio: "neg_dip_event_ratio",
+      pre_dip_spike_ratio: "irms_drop_vs_baseline",
+      irms_drop_vs_baseline: "irms_drop_vs_baseline",
+      thd_i: "thd_i"
+    };
+    return aliases[slug] || slug || raw;
   }
 
   function buildSeriesKeys(rows) {
@@ -195,12 +277,12 @@
   const showPref = new Map();
   const axisPref = new Map();
 
-  const DEFAULT_ON = new Set(["i_rms", "v_rms", "cycle_nmse", "zcv", "cycle_rms_drop_ratio", "neg_dip_event_ratio", "pre_dip_spike_ratio"]);
-  const DEFAULT_Y2 = new Set(["v_rms", "temp_c"]);
+  const DEFAULT_ON = new Set(["i_rms", "label_arc", "model_pred", "irms_drop_vs_baseline"]);
+  const DEFAULT_Y2 = new Set(["i_rms", "current", "v_rms", "voltage", "temp_c", "temp"]);
 
   function preferredDefaultKeys(keys) {
-    const preferred = ["cycle_nmse", "zcv", "zc_dwell_ratio", "cycle_rms_drop_ratio", "peak_fluct_cv", "midband_residual_rms", "hf_band_energy_ratio", "spec_entropy", "neg_dip_event_ratio", "pre_dip_spike_ratio", "current", "voltage", "temp", "i_rms", "v_rms"];
-    const picked = preferred.filter((k) => keys.includes(k) && k !== "label_arc");
+    const preferred = ["i_rms", "label_arc", "model_pred", "irms_drop_vs_baseline", "cycle_rms_drop_ratio", "cycle_nmse", "zcv", "neg_dip_event_ratio", "v_rms", "temp_c", "current", "voltage", "temp"];
+    const picked = preferred.filter((k) => keys.includes(k));
     if (picked.length) return picked.slice(0, 8);
     return keys.filter((k) => k !== "label_arc").slice(0, Math.min(8, keys.length));
   }
@@ -231,7 +313,10 @@
     if (toggleList) toggleList.innerHTML = "";
     if (valueLine) valueLine.innerHTML = "";
     if (statsBody) statsBody.innerHTML = "";
-    if (statsHint) statsHint.textContent = "—";
+    if (statsHint) statsHint.textContent = "Stats enabled. Load a session or uploaded CSV to see window statistics.";
+    if (btnPrevArc) btnPrevArc.disabled = true;
+    if (btnNextArc) btnNextArc.disabled = true;
+    updateArcReadout();
     setStatus("Loading…");
     if (scrub) { scrub.min = "0"; scrub.max = "0"; scrub.value = "0"; }
     if (timeReadout) timeReadout.textContent = "t=—";
@@ -365,11 +450,27 @@
   function buildArcIndexes() {
     ARC_SERIES_INDEX = KEYS.indexOf("label_arc");
     ARC_IDXS = [];
-    if (ARC_SERIES_INDEX < 0 || !DATA_RAW) return;
-    const arr = DATA_RAW[ARC_SERIES_INDEX + 1];
-    for (let i = 0; i < arr.length; i++) {
-      if (Number(arr[i]) === 1) ARC_IDXS.push(i);
+    if (!DATA_RAW) return;
+
+    const labelIdx = KEYS.indexOf("label_arc");
+    const predIdx = KEYS.indexOf("model_pred");
+    const labelArr = labelIdx >= 0 ? DATA_RAW[labelIdx + 1] : null;
+    const predArr = predIdx >= 0 ? DATA_RAW[predIdx + 1] : null;
+
+    const n = X.length || ((labelArr && labelArr.length) || (predArr && predArr.length) || 0);
+    for (let i = 0; i < n; i++) {
+      const isLabel = labelArr ? Number(labelArr[i]) === 1 : false;
+      const isPred = predArr ? Number(predArr[i]) === 1 : false;
+      if (isLabel || isPred) ARC_IDXS.push(i);
     }
+
+    if (btnPrevArc) btnPrevArc.disabled = ARC_IDXS.length === 0;
+    if (btnNextArc) btnNextArc.disabled = ARC_IDXS.length === 0;
+    if (chkEvents) {
+      chkEvents.disabled = ARC_IDXS.length === 0;
+      if (ARC_IDXS.length > 0) chkEvents.checked = true;
+    }
+    updateArcReadout();
   }
 
   function clampXWindow(min, max) {
@@ -409,6 +510,25 @@
     return [Math.max(fullMin, lo), Math.min(fullMax, hi)];
   }
 
+  function syncZoomSlider() {
+    if (!rngZoom || !plot || !X.length) return;
+    const full = Math.max(1e-9, FULL_X_MAX - FULL_X_MIN);
+    const cur = Math.max(1e-9, plot.scales.x.max - plot.scales.x.min);
+    const pct = Math.round(Math.max(5, Math.min(100, (cur / full) * 100)));
+    rngZoom.value = String(pct);
+  }
+
+  function applyZoomPercent(pct, centerX = null) {
+    if (!plot || !X.length) return;
+    const full = Math.max(1e-9, FULL_X_MAX - FULL_X_MIN);
+    const ratio = Math.max(0.05, Math.min(1.0, Number(pct || 100) / 100.0));
+    const width = full * ratio;
+    const anchorX = Number.isFinite(centerX) ? centerX : X[playIdx];
+    const [min, max] = clampXWindow(anchorX - (width * 0.5), anchorX + (width * 0.5));
+    plot.setScale("x", { min, max });
+    syncZoomSlider();
+  }
+
   function resetZoom() {
     if (!plot || !X.length) return;
     const keepIdx = playIdx;
@@ -416,6 +536,7 @@
     pause();
     buildPlot();
     setPlayIdx(keepIdx, true);
+    applyZoomPercent(100, X[keepIdx]);
     if (resume) play();
   }
 
@@ -535,7 +656,7 @@
   function statsPlugin() {
     return {
       hooks: {
-        setScale: [() => updateStats()]
+        setScale: [() => { updateStats(); syncZoomSlider(); }]
       }
     };
   }
@@ -611,6 +732,12 @@
       legend: { show: false },
       cursor: { show: true, lock: true, points: { show: false }, drag: { x: true, y: false, setScale: true } },
       select: { show: true },
+      hooks: {
+        setScale: [() => {
+          syncZoomSlider();
+          updateStats();
+        }],
+      },
       plugins: [zoomPanPlugin(), eventsPlugin(), statsPlugin(), playheadPlugin()],
     };
 
@@ -623,7 +750,9 @@
     btnResetZoom.onclick = () => resetZoom();
 
     setPlayIdx(Math.min(playIdx, X.length - 1), true);
+    syncZoomSlider();
     updateValueReadout();
+    updateArcReadout();
     updateStats();
   }
 
@@ -644,6 +773,7 @@
     }
 
     updateValueReadout();
+    updateArcReadout();
     if (plot) plot.redraw();
 
     if (plot && (chkFollow?.checked || playing)) {
@@ -737,32 +867,39 @@
     statsWrap.style.display = enabled ? "" : "none";
     if (!enabled) return;
 
-    if (!DATA_RAW || !KEYS.length || !plot) {
+    if (!KEYS.length) {
+      statsHint.textContent = "Stats enabled. Load a session or uploaded CSV to see window statistics.";
+      statsBody.innerHTML = `<tr><td colspan="6" class="mono">No dataset loaded yet.</td></tr>`;
+      return;
+    }
+
+    const source = currentData() || DATA_RAW;
+    if (!source || !plot) {
       statsHint.textContent = "Stats unavailable.";
-      statsBody.innerHTML = "";
+      statsBody.innerHTML = `<tr><td colspan="6" class="mono">Plot is not ready yet.</td></tr>`;
       return;
     }
 
     const [i0, i1] = currentXRangeIdx();
     const t0 = X[i0];
     const t1 = X[i1];
-
-    let selectedKeys = KEYS.filter(k => showPref.get(k) && k !== "label_arc");
-    if (!selectedKeys.length) selectedKeys = preferredDefaultKeys(KEYS).filter((k) => k !== "label_arc");
-    const cap = 16;
+    const visibleKeys = KEYS.filter((k) => showPref.get(k));
+    const selectedKeys = visibleKeys.length ? visibleKeys : preferredDefaultKeys(KEYS);
+    const cap = 20;
     const shownKeys = selectedKeys.slice(0, cap);
     const extra = Math.max(0, selectedKeys.length - shownKeys.length);
+    const arcInView = ARC_IDXS.filter((idx) => idx >= i0 && idx <= i1).length;
 
-    statsHint.textContent = `Stats | idx ${i0}-${i1} | t=${fmt(t0)}s..${fmt(t1)}s` + (extra ? ` | +${extra} more hidden` : "");
+    statsHint.textContent = `Stats | idx ${i0}-${i1} | t=${fmt(t0)}s..${fmt(t1)}s | arcs in view=${arcInView}` + (extra ? ` | +${extra} more hidden` : "");
 
     if (!shownKeys.length) {
-      statsBody.innerHTML = `<tr><td colspan="6" class="mono">No numeric series selected.</td></tr>`;
+      statsBody.innerHTML = `<tr><td colspan="6" class="mono">No visible numeric series selected.</td></tr>`;
       return;
     }
 
     statsBody.innerHTML = shownKeys.map((k) => {
       const si = KEYS.indexOf(k) + 1;
-      const arr = DATA_RAW[si];
+      const arr = source[si];
       const st = computeStats(arr, i0, i1);
 
       return `
@@ -779,15 +916,16 @@
   }
 
   btnCopyStats?.addEventListener("click", async () => {
-    if (!DATA_RAW || !KEYS.length || !plot) return;
+    const source = currentData() || DATA_RAW;
+    if (!source || !KEYS.length || !plot) return;
     const [i0, i1] = currentXRangeIdx();
-    const selectedKeys = KEYS.filter(k => showPref.get(k) && k !== "label_arc");
-    const shownKeys = selectedKeys.slice(0, 64);
+    const selectedKeys = KEYS.filter(k => showPref.get(k));
+    const shownKeys = (selectedKeys.length ? selectedKeys : preferredDefaultKeys(KEYS)).slice(0, 64);
 
     let out = "series,mean,min,max,std,n\n";
     for (const k of shownKeys) {
       const si = KEYS.indexOf(k) + 1;
-      const st = computeStats(DATA_RAW[si], i0, i1);
+      const st = computeStats(source[si], i0, i1);
       out += `${k},${st.mean ?? ""},${st.min ?? ""},${st.max ?? ""},${st.std ?? ""},${st.n}\n`;
     }
 
@@ -869,7 +1007,10 @@
   chkNormalize.onchange = rebuildForDataMode;
   chkSmooth.onchange = rebuildForDataMode;
   chkCurves.onchange = rebuildForDataMode;
-  chkEvents.onchange = () => { if (plot) plot.redraw(); };
+  chkEvents.onchange = () => { if (plot) { plot.redraw(); updateStats(); } };
+  rngZoom?.addEventListener("input", () => { if (plot) applyZoomPercent(Number(rngZoom.value) || 100); });
+  btnPrevArc?.addEventListener("click", () => jumpToArc(-1));
+  btnNextArc?.addEventListener("click", () => jumpToArc(1));
 
   rngSmooth.oninput = () => {
     const win = Number(rngSmooth.value) || 1;
@@ -985,7 +1126,7 @@
       btnDownload.onclick = () => downloadTextFile(`TSP_ML_${sid}.csv`, currentCsv);
 
       setStatus("Parsing CSV…");
-      const parsed = Papa.parse(csv.trim(), { header: true, dynamicTyping: true, skipEmptyLines: true });
+      const parsed = Papa.parse(csv.trim(), { header: true, dynamicTyping: true, skipEmptyLines: true, transformHeader: normalizeHeaderName });
       ROWS = (parsed.data || []).filter((r) => r && Object.keys(r).length);
 
       if (!ROWS.length) {
@@ -1064,16 +1205,17 @@
       speed = Number(selSpeed.value) || 1.0;
 
       if (chkEvents) {
-        chkEvents.disabled = ARC_SERIES_INDEX < 0;
-        if (ARC_SERIES_INDEX < 0) chkEvents.checked = false;
+        chkEvents.disabled = ARC_IDXS.length === 0;
+        chkEvents.checked = ARC_IDXS.length > 0;
       }
 
-      setStatus(`Rows: ${ROWS.length} | Click plot to move playhead | Play to animate`);
+      setStatus(`Rows: ${ROWS.length} | Arc markers=${ARC_IDXS.length} | Click plot to move playhead | Use Zoom slider to zoom in or out on mobile and desktop`);
       clearValueReadout();
 
       requestAnimationFrame(() => {
         buildPlot();
         setPlayIdx(0, true);
+        applyZoomPercent(100, X[0]);
         updateStats();
       });
     } catch (e) {
@@ -1115,7 +1257,7 @@
       btnDownload.onclick = () => downloadTextFile(`TSP_ML_${sid}`, currentCsv);
 
       setStatus("Parsing uploaded CSV…");
-      const parsed = Papa.parse(currentCsv.trim(), { header: true, dynamicTyping: true, skipEmptyLines: true });
+      const parsed = Papa.parse(currentCsv.trim(), { header: true, dynamicTyping: true, skipEmptyLines: true, transformHeader: normalizeHeaderName });
       ROWS = (parsed.data || []).filter((r) => r && Object.keys(r).length);
 
       if (!ROWS.length) {
@@ -1194,16 +1336,17 @@
       speed = Number(selSpeed.value) || 1.0;
 
       if (chkEvents) {
-        chkEvents.disabled = ARC_SERIES_INDEX < 0;
-        if (ARC_SERIES_INDEX < 0) chkEvents.checked = false;
+        chkEvents.disabled = ARC_IDXS.length === 0;
+        chkEvents.checked = ARC_IDXS.length > 0;
       }
 
-      setStatus(`Rows: ${ROWS.length} | Uploaded CSV ready`);
+      setStatus(`Rows: ${ROWS.length} | Uploaded CSV ready | Arc markers=${ARC_IDXS.length} | Use Zoom slider to zoom in or out`);
       clearValueReadout();
 
       requestAnimationFrame(() => {
         buildPlot();
         setPlayIdx(0, true);
+        applyZoomPercent(100, X[0]);
         updateStats();
       });
     } catch (e) {

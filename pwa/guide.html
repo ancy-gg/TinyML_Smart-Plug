@@ -286,7 +286,7 @@
       <div class="grid-2" style="margin-top:10px;">
         <div class="card accent-red">
           <h3>Arc Fault</h3>
-          <p>Arc-related detection is based on waveform features and model logic rather than on one simple threshold alone. Treat this as a serious electrical condition.</p>
+          <p>Arc-related detection is based on waveform features and model logic rather than on one simple threshold alone. The current firmware now uses a lower arc counter trip threshold of 6 so short valid bursts can trip earlier.</p>
         </div>
         <div class="card accent-amber">
           <h3>Overload</h3>
@@ -325,10 +325,11 @@
         <div class="metric-item"><span class="metric-badge badge-time">TIME</span><div><h3>Cycle RMS Drop</h3><p>Shows how strongly the weakest cycle in the window collapses compared with the typical cycle in that same window. This is more useful for heater-style conduction-drop arcs than the old micro-pulse counter.</p></div></div>
         <div class="metric-item"><span class="metric-badge badge-time">TIME</span><div><h3>Peak Fluctuation CV</h3><p>Describes how much cycle peaks vary. Large variation usually means the waveform is less repeatable.</p></div></div>
         <div class="metric-item"><span class="metric-badge badge-freq">FREQ</span><div><h3>HF Energy Ratio</h3><p>Compares high-frequency energy to the rest of the signal. Arcing often increases high-frequency content.</p></div></div>
-        <div class="metric-item"><span class="metric-badge badge-freq">FREQ</span><div><h3>Wavelet Entropy</h3><p>Shows how spread or disordered the signal becomes across wavelet bands.</p></div></div>
+        <div class="metric-item"><span class="metric-badge badge-time">TIME</span><div><h3>Negative Dip Event Ratio</h3><p>Counts how often a loaded cycle is followed by a meaningful current-collapse cycle. This is useful for intermittent heater-style contact loss events.</p></div></div>
+        <div class="metric-item"><span class="metric-badge badge-time">TIME</span><div><h3>Current-Baseline Drop</h3><p>Measures how much the frame RMS current falls below a recent baseline current level. It replaces the older pre-dip spike feature because it better captures non-quick drop events.</p></div></div>
         <div class="metric-item"><span class="metric-badge badge-freq">FREQ</span><div><h3>Spectral Entropy</h3><p>Measures how random or disorderly the frequency spectrum looks.</p></div></div>
         <div class="metric-item"><span class="metric-badge badge-freq">FREQ</span><div><h3>Midband RMS</h3><p>Highlights residual mid-frequency content after smoother expected behavior is removed.</p></div></div>
-        <div class="metric-item"><span class="metric-badge badge-freq">FREQ</span><div><h3>THD Current</h3><p>Total harmonic distortion is a supporting distortion metric. It should not be treated as a complete arc decision by itself.</p></div></div>
+        <div class="metric-item"><span class="metric-badge badge-freq">FREQ</span><div><h3>THD Current</h3><p>Total harmonic distortion remains a logging-only distortion metric. It is intentionally excluded from the training feature set because it can bloat quickly on complex loads.</p></div></div>
       </div>
     </section>
 
@@ -375,13 +376,13 @@
             <span class="summary-copy">Admin mode only</span>
           </summary>
           <div class="details-body">
-            <p>The Data Logger is used for waveform collection and model-training workflows.</p>
+            <p>The Data Logger is used for waveform collection and model-training workflows. Uploaded labeled CSV files can also be stored there as persistent cloud sessions.</p>
             <ul>
               <li>Set collection duration in seconds.</li>
               <li>Set load type text for the session.</li>
               <li>Choose a label override or leave it in auto mode.</li>
               <li>Download the current session or compile all sessions.</li>
-              <li>Upload an external CSV into the Plot Viewer.</li>
+              <li>Upload an external CSV into the cloud logger so it stays in the session list and can be reopened later.</li>
               <li>Clear all ML logs and sessions when needed.</li>
             </ul>
           </div>
@@ -397,7 +398,7 @@
               <li>Play or pause time playback.</li>
               <li>Change speed and scrub through the session.</li>
               <li>Choose which series to show.</li>
-              <li>Enable smoothing, normalization, statistics, event markers, and zoom reset.</li>
+              <li>Enable smoothing, normalization, statistics, event markers, and zoom reset.</li><li>Use the Zoom slider to zoom out on mobile and desktop when gesture zoom is limited.</li><li>Default viewer selection now prioritizes I RMS, label arc, model prediction, and current-baseline drop.</li>
             </ul>
           </div>
         </details>
