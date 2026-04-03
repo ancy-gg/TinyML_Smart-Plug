@@ -2,7 +2,7 @@
 #include <math.h>
 #include <string.h>
 
-#include "TinyML_RF.h"
+#include "TinyMLTreeEnsemble.h"
 #include "esp_dsp.h"
 #include "dsps_fft2r.h"
 #include "dsps_wind_hann.h"
@@ -505,27 +505,21 @@ bool ArcDetection::compute(const uint16_t* raw, size_t n, float fs_hz,
 
   int negDipComparisons = 0;
   int negDipCount = 0;
-  float preDipSpikeAcc = 0.0f;
-  int preDipSpikeN = 0;
 
   if (peakN >= 5) {
     for (int i = 4; i < peakN; ++i) {
       float baseR[3] = { cycleRmsVals[i - 4], cycleRmsVals[i - 3], cycleRmsVals[i - 2] };
-      float baseP[3] = { cyclePeaks[i - 4], cyclePeaks[i - 3], cyclePeaks[i - 2] };
       for (int a = 0; a < 2; ++a) {
         for (int b = a + 1; b < 3; ++b) {
           if (baseR[b] < baseR[a]) { const float t = baseR[a]; baseR[a] = baseR[b]; baseR[b] = t; }
-          if (baseP[b] < baseP[a]) { const float t = baseP[a]; baseP[a] = baseP[b]; baseP[b] = t; }
         }
       }
 
       const float baselineR = baseR[1];
-      const float baselineP = baseP[1];
-      if (baselineR < 0.08f || baselineP < 0.05f) continue;
+      if (baselineR < 0.08f) continue;
 
       const float prevR = cycleRmsVals[i - 1];
       const float curR  = cycleRmsVals[i];
-      const float prevP = cyclePeaks[i - 1];
 
       negDipComparisons++;
 
@@ -533,9 +527,6 @@ bool ArcDetection::compute(const uint16_t* raw, size_t n, float fs_hz,
       const bool curDrop = curR <= (0.78f * baselineR);
       if (prevLoaded && curDrop) {
         negDipCount++;
-        const float spikeRatio = clampf((prevP - baselineP) / fmaxf(baselineP, 0.05f), 0.0f, 2.0f);
-        preDipSpikeAcc += spikeRatio;
-        preDipSpikeN++;
       }
     }
   }
@@ -543,9 +534,30 @@ bool ArcDetection::compute(const uint16_t* raw, size_t n, float fs_hz,
   out.neg_dip_event_ratio = (negDipComparisons > 0)
       ? clampf((float)negDipCount / (float)negDipComparisons, 0.0f, 1.0f)
       : 0.0f;
-  out.pre_dip_spike_ratio = (preDipSpikeN > 0)
-      ? clampf(preDipSpikeAcc / (float)preDipSpikeN, 0.0f, 2.0f)
-      : 0.0f;
+
+  if (peakN >= 3 && out.irms_a > 0.0f) {
+    float sortedR[24];
+    for (int i = 0; i < peakN; ++i) sortedR[i] = cycleRmsVals[i];
+    for (int i = 0; i < peakN - 1; ++i) {
+      for (int j = i + 1; j < peakN; ++j) {
+        if (sortedR[j] < sortedR[i]) { const float t = sortedR[i]; sortedR[i] = sortedR[j]; sortedR[j] = t; }
+      }
+    }
+
+    const int topCount = clampi(peakN / 3, 2, peakN);
+    float baselineIrms = 0.0f;
+    for (int i = peakN - topCount; i < peakN; ++i) baselineIrms += sortedR[i];
+    baselineIrms /= (float)topCount;
+
+    if (baselineIrms > 0.08f) {
+      out.irms_drop_vs_baseline =
+          clampf((baselineIrms - out.irms_a) / fmaxf(baselineIrms, 0.05f), 0.0f, 1.5f);
+    } else {
+      out.irms_drop_vs_baseline = 0.0f;
+    }
+  } else {
+    out.irms_drop_vs_baseline = 0.0f;
+  }
 
   out.feat_valid = true;
   return true;
@@ -554,7 +566,7 @@ bool ArcDetection::compute(const uint16_t* raw, size_t n, float fs_hz,
 int ArcDetection::predict(float cycle_nmse, float zcv, float zc_dwell_ratio,
                           float cycle_rms_drop_ratio, float peak_fluct_cv,
                           float midband_residual_rms, float hf_band_energy_ratio,
-                          float spec_entropy, float neg_dip_event_ratio, float pre_dip_spike_ratio,
+                          float spec_entropy, float neg_dip_event_ratio, float irms_drop_vs_baseline,
                           float v_rms, float i_rms, float temp_c) const {
   (void)v_rms; (void)i_rms; (void)temp_c;
 #if defined(ARC_MODEL_FEATURE_VERSION) && (ARC_MODEL_FEATURE_VERSION >= 2)
@@ -562,7 +574,7 @@ int ArcDetection::predict(float cycle_nmse, float zcv, float zc_dwell_ratio,
     (double)cycle_nmse, (double)zcv, (double)zc_dwell_ratio,
     (double)cycle_rms_drop_ratio, (double)peak_fluct_cv,
     (double)midband_residual_rms, (double)hf_band_energy_ratio,
-    (double)spec_entropy, (double)neg_dip_event_ratio, (double)pre_dip_spike_ratio
+    (double)spec_entropy, (double)neg_dip_event_ratio, (double)irms_drop_vs_baseline
   };
   double output_probs[2] = {0.0, 0.0};
   arc_rf_predict(input_features, output_probs);
@@ -578,7 +590,7 @@ int ArcDetection::predict(float cycle_nmse, float zcv, float zc_dwell_ratio,
   if (hf_band_energy_ratio >= 0.20f) score += 0.8f;
   if (spec_entropy >= 0.62f) score += 0.6f;
   if (neg_dip_event_ratio >= 0.18f) score += 1.6f;
-  if (pre_dip_spike_ratio >= 0.10f) score += 1.1f;
+  if (irms_drop_vs_baseline >= 0.08f) score += 1.1f;
   return (score >= 3.4f) ? 1 : 0;
 #endif
 }
@@ -595,7 +607,7 @@ int ArcDetection::computeAndPredict(const uint16_t* raw, size_t n, float fs_hz,
   out.model_pred = (uint8_t)predict(out.cycle_nmse, out.zcv, out.zc_dwell_ratio,
                                     out.cycle_rms_drop_ratio, out.peak_fluct_cv,
                                     out.midband_residual_rms, out.hf_band_energy_ratio,
-                                    out.spec_entropy, out.neg_dip_event_ratio, out.pre_dip_spike_ratio,
+                                    out.spec_entropy, out.neg_dip_event_ratio, out.irms_drop_vs_baseline,
                                     v_rms, out.irms_a, temp_c);
   return out.model_pred;
 }

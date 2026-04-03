@@ -372,7 +372,7 @@ void FirebaseNetwork::requestLiveUpdate(float v, float c, float apparentPower, f
                                         float cycle_nmse, float zcv, float zc_dwell_ratio,
                                         float cycle_rms_drop_ratio, float peak_fluct_cv,
                                         float midband_residual_rms, float hf_band_energy_ratio,
-                                        float spec_entropy, float neg_dip_event_ratio, float pre_dip_spike_ratio, float thd_i,
+                                        float spec_entropy, float neg_dip_event_ratio, float irms_drop_vs_baseline, float thd_i,
                                         uint8_t model_pred,
                                         const String& state) {
   const bool isNormal = (state == "NORMAL") || (state == "UNPLUGGED");
@@ -395,7 +395,7 @@ void FirebaseNetwork::requestLiveUpdate(float v, float c, float apparentPower, f
   _live.hf_band_energy_ratio = hf_band_energy_ratio;
   _live.spec_entropy = spec_entropy;
   _live.neg_dip_event_ratio = neg_dip_event_ratio;
-  _live.pre_dip_spike_ratio = pre_dip_spike_ratio;
+  _live.irms_drop_vs_baseline = irms_drop_vs_baseline;
   _live.thd_i = thd_i;
   _live.model_pred = model_pred;
   _live.state = state;
@@ -435,7 +435,7 @@ bool FirebaseNetwork::pushHistoryRecord_(const HistoryJob& job) {
     json.set("hf_band_energy_ratio", job.f.hf_band_energy_ratio);
     json.set("spec_entropy", job.f.spec_entropy);
     json.set("neg_dip_event_ratio", job.f.neg_dip_event_ratio);
-    json.set("pre_dip_spike_ratio", job.f.pre_dip_spike_ratio);
+    json.set("irms_drop_vs_baseline", job.f.irms_drop_vs_baseline);
     json.set("thd_i", job.f.thd_i);
     json.set("adc_fs_hz", job.f.adc_fs_hz);
     json.set("feat_valid", (int)job.f.feat_valid);
@@ -458,7 +458,7 @@ bool FirebaseNetwork::pushHistoryRecord_(const HistoryJob& job) {
     json.set("hf_band_energy_ratio", 0.0f);
     json.set("spec_entropy", 0.0f);
     json.set("neg_dip_event_ratio", 0.0f);
-    json.set("pre_dip_spike_ratio", 0.0f);
+    json.set("irms_drop_vs_baseline", 0.0f);
     json.set("thd_i", 0.0f);
     json.set("model_pred", 0);
     json.set("mains_present", job.f.vrms >= MAINS_PRESENT_ON_V);
@@ -532,7 +532,7 @@ bool FirebaseNetwork::serviceLive_() {
   json.set("hf_band_energy_ratio", _live.hf_band_energy_ratio);
   json.set("spec_entropy", _live.spec_entropy);
   json.set("neg_dip_event_ratio", _live.neg_dip_event_ratio);
-  json.set("pre_dip_spike_ratio", _live.pre_dip_spike_ratio);
+  json.set("irms_drop_vs_baseline", _live.irms_drop_vs_baseline);
   json.set("thd_i", _live.thd_i);
   json.set("model_pred", (int)_live.model_pred);
   json.set("status", _live.state);
@@ -675,7 +675,7 @@ void FirebaseNetwork::ingestLog(const FeatureFrame& f, FaultState st, int arcCou
   r.hf_band_energy_ratio = f.hf_band_energy_ratio;
   r.spec_entropy = f.spec_entropy;
   r.neg_dip_event_ratio = f.neg_dip_event_ratio;
-  r.pre_dip_spike_ratio = f.pre_dip_spike_ratio;
+  r.irms_drop_vs_baseline = f.irms_drop_vs_baseline;
   r.thd_i = f.thd_i;
   r.v_rms = f.vrms;
   r.i_rms = f.irms;
@@ -797,7 +797,7 @@ bool FirebaseNetwork::serviceMlUpload_() {
 
   const uint16_t i0 = _uploadNextIndex;
   const uint16_t i1 = ((uint16_t)(i0 + ROWS_PER_CHUNK) < _uploadTotalCount) ? (uint16_t)(i0 + ROWS_PER_CHUNK) : _uploadTotalCount;
-  const char* header = "cycle_nmse,zcv,zc_dwell_ratio,cycle_rms_drop_ratio,peak_fluct_cv,midband_residual_rms,hf_band_energy_ratio,spec_entropy,neg_dip_event_ratio,pre_dip_spike_ratio,thd_i,v_rms,i_rms,temp_c,label_arc,load_type,session_id,epoch_ms,model_pred,feat_valid,current_valid,fault_state,arc_counter,adc_fs_hz,auto_capture\n";
+  const char* header = "cycle_nmse,zcv,zc_dwell_ratio,cycle_rms_drop_ratio,peak_fluct_cv,midband_residual_rms,hf_band_energy_ratio,spec_entropy,neg_dip_event_ratio,irms_drop_vs_baseline,thd_i,v_rms,i_rms,temp_c,label_arc,load_type,session_id,epoch_ms,model_pred,feat_valid,current_valid,fault_state,arc_counter,adc_fs_hz,auto_capture\n";
 
   String csv;
   csv.reserve((i1 - i0) * 220 + 320);
@@ -813,7 +813,7 @@ bool FirebaseNetwork::serviceMlUpload_() {
     csv += String(r.hf_band_energy_ratio, 6);  csv += ",";
     csv += String(r.spec_entropy, 6);          csv += ",";
     csv += String(r.neg_dip_event_ratio, 6);   csv += ",";
-    csv += String(r.pre_dip_spike_ratio, 6);   csv += ",";
+    csv += String(r.irms_drop_vs_baseline, 6); csv += ",";
     csv += String(r.thd_i, 4);                 csv += ",";
     csv += String(r.v_rms, 3);                 csv += ",";
     csv += String(r.i_rms, 6);                 csv += ",";
@@ -846,7 +846,7 @@ bool FirebaseNetwork::serviceMlUpload_() {
   json.set("meta/label_override", (int)_uploadSpec.labelOverride);
   json.set("meta/duration_s", (int)_uploadSpec.durationS);
   json.set("meta/auto_capture", _uploadAuto);
-  json.set("meta/feature_order", "cycle_nmse,zcv,zc_dwell_ratio,cycle_rms_drop_ratio,peak_fluct_cv,midband_residual_rms,hf_band_energy_ratio,spec_entropy,neg_dip_event_ratio,pre_dip_spike_ratio");
+  json.set("meta/feature_order", "cycle_nmse,zcv,zc_dwell_ratio,cycle_rms_drop_ratio,peak_fluct_cv,midband_residual_rms,hf_band_energy_ratio,spec_entropy,neg_dip_event_ratio,irms_drop_vs_baseline");
 
   if (!Firebase.RTDB.pushJSON(&fbLog, path.c_str(), &json)) return false;
 

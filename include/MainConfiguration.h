@@ -13,7 +13,7 @@ static constexpr bool ENABLE_AUTO_ARC_CAPTURE = true;
 // Cloud / OTA configuration
 static constexpr const char* FIREBASE_API_KEY = "AIzaSyAmJlZZszyWPJFgIkTAAl_TbIySys1nvEw";
 static constexpr const char* FIREBASE_DB_URL  = "tinyml-smart-plug-default-rtdb.asia-southeast1.firebasedatabase.app";
-static constexpr const char* FW_VERSION       = "TSP-v4.6.0-p";
+static constexpr const char* FW_VERSION       = "v5.0-p-gen1";
 static constexpr const char* OTA_DESIRED_VERSION_PATH = "/ota/desired_version";
 static constexpr const char* OTA_FIRMWARE_URL_PATH    = "/ota/firmware_url";
 
@@ -59,7 +59,7 @@ struct FeatureFrame {
   float hf_band_energy_ratio  = 0.0f;
   float spec_entropy          = 0.0f;
   float neg_dip_event_ratio   = 0.0f;
-  float pre_dip_spike_ratio   = 0.0f;
+  float irms_drop_vs_baseline   = 0.0f;
   float thd_i                 = 0.0f;
 
   float adc_fs_hz = 0.0f;
@@ -155,7 +155,7 @@ static constexpr float VOLTAGE_SNAP_RESTORE_V = 200.0f;
 // =========================
 static constexpr int ARC_CNT_INC  = 1;
 static constexpr int ARC_CNT_DEC  = 2;
-static constexpr int ARC_CNT_TRIP = 10;
+static constexpr int ARC_CNT_TRIP = 6;
 static constexpr int ARC_CNT_MAX  = 20;
 static constexpr uint32_t ARC_HOLD_MS  = 800;
 static constexpr uint32_t HEAT_HOLD_MS = 1200;
@@ -197,8 +197,12 @@ static constexpr uint32_t LOAD_OFF_DETECT_MS = 1200UL;
 // =========================
 static constexpr float    ARC_TURNON_LOW_A               = 0.20f;
 static constexpr float    ARC_TURNON_ACTIVE_A            = 1.00f;
-static constexpr uint32_t ARC_TURNON_LOW_MS              = 180UL;
-static constexpr uint32_t ARC_TURNON_BLANK_MS            = 900UL;
+static constexpr uint32_t ARC_TURNON_LOW_MS              = 220UL;
+static constexpr uint32_t ARC_TURNON_BLANK_MS            = 1600UL;
+
+static constexpr uint32_t ARC_TRANSIENT_BLANK_MS         = 900UL;
+static constexpr float    ARC_TRANSIENT_STEP_A           = 0.60f;
+static constexpr float    ARC_TRANSIENT_STEP_FRAC        = 0.22f;
 
 static constexpr uint32_t FEAT_STALE_MS                 = 350UL;
 static constexpr uint32_t SENSOR_BOOT_SETTLE_MS         = 450UL;

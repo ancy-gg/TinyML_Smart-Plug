@@ -47,7 +47,7 @@ static bool arcInputStable(bool currentValid, float irms) {
   const float tol = fmaxf(0.12f, 0.40f * fmaxf(refIrms, 0.10f));
   if (fabsf(irms - refIrms) > tol) { stableSince = now; refIrms = irms; return false; }
   refIrms += 0.12f * (irms - refIrms);
-  return (now - stableSince) >= 180UL;
+  return (now - stableSince) >= 420UL;
 }
 
 
@@ -80,6 +80,48 @@ static bool arcTurnOnBlanking(bool relayOn, bool currentValid, float vProtect, f
   }
 
   return ((int32_t)(blankUntilMs - now) > 0);
+}
+
+static bool arcTransientBlanking(bool relayOn,
+                                 bool currentValid,
+                                 float vProtect,
+                                 float irms) {
+  static float prevIrms = 0.0f;
+  static uint32_t blankUntilMs = 0;
+
+  const uint32_t now = millis();
+  const bool mainsOn = (vProtect >= MAINS_PRESENT_ON_V);
+
+  if (!relayOn || !mainsOn || !currentValid) {
+    prevIrms = irms;
+    blankUntilMs = 0;
+    return false;
+  }
+
+  const float stepAbs = fabsf(irms - prevIrms);
+  const float stepNeed = fmaxf(ARC_TRANSIENT_STEP_A,
+                               ARC_TRANSIENT_STEP_FRAC * fmaxf(prevIrms, irms));
+  prevIrms = irms;
+
+  if (stepAbs >= stepNeed) {
+    blankUntilMs = now + ARC_TRANSIENT_BLANK_MS;
+  }
+
+  return ((int32_t)(blankUntilMs - now) > 0);
+}
+
+static bool arcEventSignature(const FeatureFrame& f, float irmsLogic) {
+  if ((f.feat_valid == 0) || (irmsLogic < 0.08f)) return false;
+
+  int hits = 0;
+  if (f.neg_dip_event_ratio  >= 0.040f) hits += 3;
+  if (f.irms_drop_vs_baseline >= 0.060f) hits += 2;
+  if (f.cycle_rms_drop_ratio >= 0.025f) hits += 2;
+  if (f.peak_fluct_cv        >= 0.012f) hits += 1;
+  if (f.midband_residual_rms >= 0.055f) hits += 1;
+  if (f.cycle_nmse           >= 0.090f) hits += 1;
+
+  return hits >= 2;
 }
 
 static bool debouncedMainsPresentForState(float vProtect) {
@@ -171,7 +213,7 @@ static bool stabilizeFeatureValidity(FeatureFrame& f, float vProtect, float irms
   f.hf_band_energy_ratio = lastValidFeat.hf_band_energy_ratio;
   f.spec_entropy = lastValidFeat.spec_entropy;
   f.neg_dip_event_ratio = lastValidFeat.neg_dip_event_ratio;
-  f.pre_dip_spike_ratio = lastValidFeat.pre_dip_spike_ratio;
+  f.irms_drop_vs_baseline = lastValidFeat.irms_drop_vs_baseline;
   f.thd_i = lastValidFeat.thd_i;
   f.adc_fs_hz = lastValidFeat.adc_fs_hz;
   f.feat_valid = 1;
@@ -334,7 +376,7 @@ static void Core0Task(void* pv) {
         f.cycle_rms_drop_ratio = out.cycle_rms_drop_ratio; f.peak_fluct_cv = out.peak_fluct_cv;
         f.midband_residual_rms = out.midband_residual_rms; f.hf_band_energy_ratio = out.hf_band_energy_ratio;
         f.spec_entropy = out.spec_entropy; f.neg_dip_event_ratio = out.neg_dip_event_ratio;
-        f.pre_dip_spike_ratio = out.pre_dip_spike_ratio; f.thd_i = out.thd_i;
+        f.irms_drop_vs_baseline = out.irms_drop_vs_baseline; f.thd_i = out.thd_i;
       }
       lastGood = f; hasGood = true; if (qFeat) xQueueOverwrite(qFeat, &f);
     } else {
@@ -491,7 +533,7 @@ void loop() {
       f.irms = 0.0f; f.current_valid = 0; f.feat_valid = 0; f.model_pred = 0; f.adc_fs_hz = 0.0f;
       f.cycle_nmse = f.zcv = f.zc_dwell_ratio = f.cycle_rms_drop_ratio = f.peak_fluct_cv = 0.0f;
       f.midband_residual_rms = f.hf_band_energy_ratio = f.spec_entropy = 0.0f;
-      f.neg_dip_event_ratio = f.pre_dip_spike_ratio = 0.0f;
+      f.neg_dip_event_ratio = f.irms_drop_vs_baseline = 0.0f;
       f.thd_i = 0.0f;
       lastF = f;
     }
@@ -537,7 +579,20 @@ void loop() {
   const float apparentPowerVa = (vRms > 0.10f && f.irms > 0.001f) ? (vRms * f.irms) : 0.0f;
   const bool voltageNormal = (vFast >= VOLT_NORMAL_MIN_V && vFast <= VOLT_NORMAL_MAX_V);
   const bool arcTurnOnBlankActive =
-      arcTurnOnBlanking(protection.relayLatchedOn(), f.current_valid != 0, vFast, irmsRawForLogic);
+      arcTurnOnBlanking(protection.relayLatchedOn(),
+                        f.current_valid != 0,
+                        vFast,
+                        irmsRawForLogic);
+
+  const bool arcTransientBlankActive =
+      arcTransientBlanking(protection.relayLatchedOn(),
+                           f.current_valid != 0,
+                           vFast,
+                           irmsRawForLogic);
+
+  const bool arcBlankActive =
+      arcTurnOnBlankActive || arcTransientBlankActive;
+  const bool mlEventLike = arcEventSignature(f, irmsRawForLogic);
 
   static float loadRefA = 0.0f;
   static float prevIrmsLogic = 0.0f;
@@ -596,9 +651,15 @@ void loop() {
        (voltDipSinceMs && (millis() - voltDipSinceMs) >= 40UL));
 
   const bool haveUsableFeatures = (f.feat_valid != 0);
-  const bool mlArcEligible = (!gSafeMode && !paused && !bootSettling && !protectionInhibit &&
-                              !arcTurnOnBlankActive && voltageNormal &&
-                              haveUsableFeatures && arcInputStable(f.current_valid != 0, irmsRawForLogic));
+  const bool mlArcEligible =
+      (!gSafeMode &&
+       !paused &&
+       !bootSettling &&
+       !protectionInhibit &&
+       !arcBlankActive &&
+       voltageNormal &&
+       haveUsableFeatures &&
+       arcInputStable(f.current_valid != 0, irmsRawForLogic));
 
   network.pollControls(!paused && !portalActive && wifiConnected, portalActive);
 
@@ -634,18 +695,38 @@ void loop() {
 
   int pred = 0;
   if (!faultClearSuppressActive && mlArcEligible) {
-    pred = arcDetect.predict(f.cycle_nmse, f.zcv, f.zc_dwell_ratio, f.cycle_rms_drop_ratio, f.peak_fluct_cv,
-                             f.midband_residual_rms, f.hf_band_energy_ratio, f.spec_entropy,
-                             f.neg_dip_event_ratio, f.pre_dip_spike_ratio,
-                             f.vrms, irmsRawForLogic, f.temp_c);
+    pred = arcDetect.predict(f.cycle_nmse,
+                             f.zcv,
+                             f.zc_dwell_ratio,
+                             f.cycle_rms_drop_ratio,
+                             f.peak_fluct_cv,
+                             f.midband_residual_rms,
+                             f.hf_band_energy_ratio,
+                             f.spec_entropy,
+                             f.neg_dip_event_ratio,
+                             f.irms_drop_vs_baseline,
+                             f.vrms,
+                             irmsRawForLogic,
+                             f.temp_c);
+
+    if (pred == 1 && !mlEventLike) {
+      pred = 0;
+    }
   }
-  if (!faultClearSuppressActive && !arcTurnOnBlankActive && fallbackArcEvent) pred = 1;
+  if (!faultClearSuppressActive && !arcBlankActive && fallbackArcEvent) {
+    pred = 1;
+  }
   f.model_pred = (uint8_t)pred;
 
   FaultState st = STATE_NORMAL;
   if (!bootSettling && !faultClearSuppressActive) {
-    st = protection.update(vFast, vRaw, tC, irmsRawForLogic, f.model_pred,
-                           (!arcTurnOnBlankActive && (mlArcEligible || fallbackArcEvent)));
+    st = protection.update(vFast,
+                           vRaw,
+                           tC,
+                           irmsRawForLogic,
+                           f.model_pred,
+                           (!arcBlankActive &&
+                            (mlArcEligible || fallbackArcEvent)));
   }
   if (gSafeMode) st = STATE_NORMAL;
 
@@ -751,7 +832,7 @@ void loop() {
                               f.cycle_nmse, f.zcv, f.zc_dwell_ratio,
                               f.cycle_rms_drop_ratio, f.peak_fluct_cv,
                               f.midband_residual_rms, f.hf_band_energy_ratio,
-                              f.spec_entropy, f.neg_dip_event_ratio, f.pre_dip_spike_ratio, f.thd_i,
+                              f.spec_entropy, f.neg_dip_event_ratio, f.irms_drop_vs_baseline, f.thd_i,
                               f.model_pred, stateStr);
   }
 
