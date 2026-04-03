@@ -1,0 +1,363 @@
+{
+  "model_key": "rf",
+  "model_name": "RandomForest",
+  "best_params": {
+    "n_estimators": 120,
+    "min_samples_split": 2,
+    "min_samples_leaf": 4,
+    "max_features": 0.6,
+    "max_depth": 14,
+    "ccp_alpha": 0.0005,
+    "bootstrap": true
+  },
+  "cv_best_average_precision": 0.8962541784120923,
+  "estimated_node_count": 2798,
+  "threshold": 0.13,
+  "validation_threshold_result": {
+    "thr": 0.13,
+    "cost": 4.0,
+    "tn": 199,
+    "fp": 1,
+    "fn": 0,
+    "tp": 200,
+    "recall": 1.0
+  },
+  "validation_metrics": {
+    "threshold": 0.13,
+    "accuracy": 0.9975,
+    "balanced_accuracy": 0.9975,
+    "average_precision": 0.9999751243781094,
+    "roc_auc": 0.9999750000000001,
+    "precision": 0.9950248756218906,
+    "recall": 1.0,
+    "f1": 0.9975062344139651,
+    "specificity": 0.995,
+    "npv": 1.0,
+    "fpr": 0.005,
+    "fnr": 0.0,
+    "mcc": 0.9950124377332079,
+    "confusion_matrix": {
+      "tn": 199,
+      "fp": 1,
+      "fn": 0,
+      "tp": 200
+    },
+    "classification_report": {
+      "0": {
+        "precision": 1.0,
+        "recall": 0.995,
+        "f1-score": 0.9974937343358395,
+        "support": 200.0
+      },
+      "1": {
+        "precision": 0.9950248756218906,
+        "recall": 1.0,
+        "f1-score": 0.9975062344139651,
+        "support": 200.0
+      },
+      "accuracy": 0.9975,
+      "macro avg": {
+        "precision": 0.9975124378109452,
+        "recall": 0.9975,
+        "f1-score": 0.9974999843749024,
+        "support": 400.0
+      },
+      "weighted avg": {
+        "precision": 0.9975124378109453,
+        "recall": 0.9975,
+        "f1-score": 0.9974999843749024,
+        "support": 400.0
+      }
+    },
+    "positive_count": 200,
+    "negative_count": 200,
+    "score_summary": {
+      "min": 0.0009448402170446074,
+      "max": 0.9997296280801247,
+      "mean": 0.5019265655435151,
+      "median": 0.28009021845419085,
+      "std": 0.492478468673121
+    },
+    "label_score_summary": {
+      "mean_score": 0.5019265655435151,
+      "median_score": 0.28009021845419085,
+      "min_score": 0.0009448402170446074,
+      "max_score": 0.9997296280801247,
+      "std_score": 0.492478468673121,
+      "mean_score_pos": 0.9920474177943585,
+      "mean_score_neg": 0.011805713292671495
+    }
+  },
+  "validation_accuracy": 0.9975,
+  "validation_average_precision": 0.9999751243781094,
+  "validation_roc_auc": 0.9999750000000001,
+  "validation_precision": 0.9950248756218906,
+  "validation_recall": 1.0,
+  "validation_f1": 0.9975062344139651,
+  "validation_balanced_accuracy": 0.9975,
+  "validation_specificity": 0.995,
+  "validation_npv": 1.0,
+  "validation_fpr": 0.005,
+  "validation_fnr": 0.0,
+  "validation_mcc": 0.9950124377332079,
+  "validation_confusion_matrix": {
+    "tn": 199,
+    "fp": 1,
+    "fn": 0,
+    "tp": 200
+  },
+  "validation_classification_report": {
+    "0": {
+      "precision": 1.0,
+      "recall": 0.995,
+      "f1-score": 0.9974937343358395,
+      "support": 200.0
+    },
+    "1": {
+      "precision": 0.9950248756218906,
+      "recall": 1.0,
+      "f1-score": 0.9975062344139651,
+      "support": 200.0
+    },
+    "accuracy": 0.9975,
+    "macro avg": {
+      "precision": 0.9975124378109452,
+      "recall": 0.9975,
+      "f1-score": 0.9974999843749024,
+      "support": 400.0
+    },
+    "weighted avg": {
+      "precision": 0.9975124378109453,
+      "recall": 0.9975,
+      "f1-score": 0.9974999843749024,
+      "support": 400.0
+    }
+  },
+  "test_metrics": {
+    "threshold": 0.13,
+    "accuracy": 0.994,
+    "balanced_accuracy": 0.9941666666666666,
+    "average_precision": 0.9999254950495049,
+    "roc_auc": 0.99995,
+    "precision": 0.9900497512437811,
+    "recall": 0.995,
+    "f1": 0.9925187032418953,
+    "specificity": 0.9933333333333333,
+    "npv": 0.9966555183946488,
+    "fpr": 0.006666666666666667,
+    "fnr": 0.005,
+    "mcc": 0.9875189659744844,
+    "confusion_matrix": {
+      "tn": 298,
+      "fp": 2,
+      "fn": 1,
+      "tp": 199
+    },
+    "classification_report": {
+      "0": {
+        "precision": 0.9966555183946488,
+        "recall": 0.9933333333333333,
+        "f1-score": 0.994991652754591,
+        "support": 300.0
+      },
+      "1": {
+        "precision": 0.9900497512437811,
+        "recall": 0.995,
+        "f1-score": 0.9925187032418953,
+        "support": 200.0
+      },
+      "accuracy": 0.994,
+      "macro avg": {
+        "precision": 0.993352634819215,
+        "recall": 0.9941666666666666,
+        "f1-score": 0.9937551779982432,
+        "support": 500.0
+      },
+      "weighted avg": {
+        "precision": 0.9940132115343018,
+        "recall": 0.994,
+        "f1-score": 0.9940024729495127,
+        "support": 500.0
+      }
+    },
+    "positive_count": 200,
+    "negative_count": 300,
+    "score_summary": {
+      "min": 0.0009655364515730786,
+      "max": 0.9997296280801247,
+      "mean": 0.40321272688474713,
+      "median": 0.014068065269821992,
+      "std": 0.4820749848413026
+    },
+    "label_score_summary": {
+      "mean_score": 0.40321272688474713,
+      "median_score": 0.014068065269821992,
+      "min_score": 0.0009655364515730786,
+      "max_score": 0.9997296280801247,
+      "std_score": 0.4820749848413026,
+      "mean_score_pos": 0.9895666946804158,
+      "mean_score_neg": 0.012310081687634635
+    }
+  },
+  "test_accuracy": 0.994,
+  "test_average_precision": 0.9999254950495049,
+  "test_roc_auc": 0.99995,
+  "test_precision": 0.9900497512437811,
+  "test_recall": 0.995,
+  "test_f1": 0.9925187032418953,
+  "test_balanced_accuracy": 0.9941666666666666,
+  "test_specificity": 0.9933333333333333,
+  "test_npv": 0.9966555183946488,
+  "test_fpr": 0.006666666666666667,
+  "test_fnr": 0.005,
+  "test_mcc": 0.9875189659744844,
+  "test_confusion_matrix": {
+    "tn": 298,
+    "fp": 2,
+    "fn": 1,
+    "tp": 199
+  },
+  "test_classification_report": {
+    "0": {
+      "precision": 0.9966555183946488,
+      "recall": 0.9933333333333333,
+      "f1-score": 0.994991652754591,
+      "support": 300.0
+    },
+    "1": {
+      "precision": 0.9900497512437811,
+      "recall": 0.995,
+      "f1-score": 0.9925187032418953,
+      "support": 200.0
+    },
+    "accuracy": 0.994,
+    "macro avg": {
+      "precision": 0.993352634819215,
+      "recall": 0.9941666666666666,
+      "f1-score": 0.9937551779982432,
+      "support": 500.0
+    },
+    "weighted avg": {
+      "precision": 0.9940132115343018,
+      "recall": 0.994,
+      "f1-score": 0.9940024729495127,
+      "support": 500.0
+    }
+  },
+  "split_sizes": {
+    "train_rows": 1535,
+    "validation_rows": 400,
+    "val_rows": 400,
+    "test_rows": 500,
+    "train_groups": 12,
+    "train_positive": 634,
+    "validation_positive": 200,
+    "test_positive": 200
+  },
+  "feature_importances": {
+    "irms_drop_vs_baseline": 0.6607282201941652,
+    "neg_dip_event_ratio": 0.21600401804496092,
+    "cycle_rms_drop_ratio": 0.0695820194110121,
+    "cycle_nmse": 0.026396957781411635,
+    "peak_fluct_cv": 0.009769831614745974,
+    "zcv": 0.005733385553410621,
+    "hf_band_energy_ratio": 0.004030025755715061,
+    "midband_residual_rms": 0.0036601115762955804,
+    "zc_dwell_ratio": 0.0021840534426286235,
+    "spec_entropy": 0.0019113766256543673
+  },
+  "validation_score_summary": {
+    "mean_score": 0.5019265655435151,
+    "median_score": 0.28009021845419085,
+    "min_score": 0.0009448402170446074,
+    "max_score": 0.9997296280801247,
+    "std_score": 0.492478468673121,
+    "mean_score_pos": 0.9920474177943585,
+    "mean_score_neg": 0.011805713292671495
+  },
+  "test_score_summary": {
+    "mean_score": 0.40321272688474713,
+    "median_score": 0.014068065269821992,
+    "min_score": 0.0009655364515730786,
+    "max_score": 0.9997296280801247,
+    "std_score": 0.4820749848413026,
+    "mean_score_pos": 0.9895666946804158,
+    "mean_score_neg": 0.012310081687634635
+  },
+  "score_summary": {
+    "validation": {
+      "min": 0.0009448402170446074,
+      "max": 0.9997296280801247,
+      "mean": 0.5019265655435151,
+      "median": 0.28009021845419085,
+      "std": 0.492478468673121
+    },
+    "test": {
+      "min": 0.0009655364515730786,
+      "max": 0.9997296280801247,
+      "mean": 0.40321272688474713,
+      "median": 0.014068065269821992,
+      "std": 0.4820749848413026
+    }
+  },
+  "winner_score": 0.9377222265878582,
+  "winner_score_components": {
+    "cv_best_average_precision": 0.1613257521141766,
+    "validation_average_precision": 0.1999950248756219,
+    "validation_recall": 0.2,
+    "validation_balanced_accuracy": 0.149625,
+    "validation_f1": 0.09975062344139651,
+    "validation_specificity": 0.059699999999999996,
+    "validation_roc_auc": 0.039999,
+    "validation_mcc_norm": 0.029925186565998116,
+    "validation_cost_penalty": -0.0011993604093349071,
+    "node_penalty": -0.001399
+  },
+  "winner_reason": "Composite winner score selected this model using CV AP and validation metrics together. Test metrics were not used for model selection to avoid test leakage.",
+  "winner_mode": "safety_composite",
+  "winner_rank": 2,
+  "settings": {
+    "csv": "C:\\Disk\\Ancy\\Platform IO\\TinyML_Smart-Plug\\tinyml\\data\\cleaned_data.csv",
+    "fn_weight": 80.0,
+    "fp_weight": 4.0,
+    "min_recall": 0.97,
+    "n_iter": 20,
+    "models": [
+      "rf",
+      "et"
+    ],
+    "winner_mode": "safety_composite"
+  },
+  "winner_policy": {
+    "mode": "safety_composite",
+    "description": "Composite winner score using cross-validation AP plus validation-set average precision, recall, balanced accuracy, F1, specificity, ROC AUC, MCC, validation threshold cost penalty, and model size penalty. Test metrics are intentionally excluded from winner selection.",
+    "uses_test_metrics_for_selection": false,
+    "weights": {
+      "cv_best_average_precision": 0.18,
+      "validation_average_precision": 0.2,
+      "validation_recall": 0.2,
+      "validation_balanced_accuracy": 0.15,
+      "validation_f1": 0.1,
+      "validation_specificity": 0.06,
+      "validation_roc_auc": 0.04,
+      "validation_mcc_norm": 0.03,
+      "validation_cost_penalty": -0.03,
+      "node_penalty": -0.01
+    },
+    "cost_context": {
+      "fn_weight": 80.0,
+      "fp_weight": 4.0,
+      "cost_unit": 100.0
+    },
+    "tie_break_order": [
+      "winner_score",
+      "validation_recall",
+      "validation_balanced_accuracy",
+      "validation_average_precision",
+      "cv_best_average_precision",
+      "validation_specificity",
+      "estimated_node_count"
+    ]
+  },
+  "generated_by": "train_duel"
+}
