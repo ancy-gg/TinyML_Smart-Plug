@@ -2,10 +2,10 @@
 
 static inline int clampi(int x, int lo, int hi) { return (x < lo) ? lo : (x > hi) ? hi : x; }
 static inline float heatTripTempC() {
-#if COLLECTION_ONLY_MODE
-  return TEMP_DATA_WARN_C;
-#else
+#if PROTECTION
   return TEMP_TRIP_C;
+#else
+  return TEMP_DATA_WARN_C;
 #endif
 }
 

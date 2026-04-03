@@ -179,7 +179,7 @@ void WifiHandler::update() {
       }
       return;
     }
-    if ((now - _phaseStartMs) >= WIFI_BACKGROUND_RETRY_MS) {
+    if ((now - _phaseStartMs) >= WIFI_STA_RETRY_MS) {
       startStaConnect_();
     }
   }

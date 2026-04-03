@@ -114,12 +114,12 @@ static bool arcEventSignature(const FeatureFrame& f, float irmsLogic) {
   if ((f.feat_valid == 0) || (irmsLogic < 0.08f)) return false;
 
   int hits = 0;
-  if (f.neg_dip_event_ratio    >= 0.040f) hits += 3;
-  if (f.irms_drop_vs_baseline  >= 0.100f) hits += 2;
-  if (f.cycle_rms_drop_ratio   >= 0.025f) hits += 2;
-  if (f.peak_fluct_cv          >= 0.012f) hits += 1;
-  if (f.midband_residual_rms   >= 0.055f) hits += 1;
-  if (f.cycle_nmse             >= 0.090f) hits += 1;
+  if (f.neg_dip_event_ratio  >= 0.040f) hits += 3;
+  if (f.irms_drop_vs_baseline >= 0.060f) hits += 2;
+  if (f.cycle_rms_drop_ratio >= 0.025f) hits += 2;
+  if (f.peak_fluct_cv        >= 0.012f) hits += 1;
+  if (f.midband_residual_rms >= 0.055f) hits += 1;
+  if (f.cycle_nmse           >= 0.090f) hits += 1;
 
   return hits >= 2;
 }
@@ -519,9 +519,6 @@ void loop() {
     lastWiFiPhase = wifiPhase;
   }
   if (wifiConnected && !lastWiFiConnected) notification.notify(SND_WIFI_OK);
-  if (!wifiConnected && lastWiFiConnected) {
-    network.stopAllClients();
-  }
   lastWiFiConnected = wifiConnected;
 
   static FeatureFrame lastF = {};
@@ -664,7 +661,13 @@ void loop() {
        haveUsableFeatures &&
        arcInputStable(f.current_valid != 0, irmsRawForLogic));
 
-  network.pollControls(!paused && !portalActive && wifiConnected, portalActive);
+  static uint32_t relayActionAtMs = 0;
+  static uint32_t relayNetQuietUntilMs = 0;
+  static bool pendingProtectionTripOff = false;
+  static bool pendingProtectionAutoOn = false;
+  const bool relayNetQuietActive = ((int32_t)(relayNetQuietUntilMs - millis()) > 0);
+
+  network.pollControls(!paused && !portalActive && wifiConnected && !relayNetQuietActive, portalActive);
 
   const bool faultClearRequested = (!gSafeMode) ? network.consumeFaultClearRequest() : false;
   const bool revertFirmwareRequested = network.consumeRevertFirmwareRequest();
@@ -696,22 +699,8 @@ void loop() {
 
   const bool faultClearSuppressActive = ((int32_t)(faultClearSuppressUntilMs - millis()) > 0);
 
-  const bool detectionAllowed =
-      (!faultClearSuppressActive &&
-       !gSafeMode &&
-       !paused &&
-       !bootSettling &&
-       !protectionInhibit);
-
-  const bool modelUnavailable =
-      detectionAllowed &&
-      (!mlArcEligible || (f.feat_valid == 0) || (f.current_valid == 0));
-
   int pred = 0;
-  bool modelPositive = false;
-  bool heuristicFallbackPositive = false;
-
-  if (detectionAllowed && mlArcEligible) {
+  if (!faultClearSuppressActive && mlArcEligible) {
     pred = arcDetect.predict(f.cycle_nmse,
                              f.zcv,
                              f.zc_dwell_ratio,
@@ -725,18 +714,15 @@ void loop() {
                              f.vrms,
                              irmsRawForLogic,
                              f.temp_c);
-    modelPositive = (pred == 1);
-  }
 
-  if (modelUnavailable && !arcBlankActive && (fallbackArcEvent || mlEventLike)) {
+    if (pred == 1 && !mlEventLike) {
+      pred = 0;
+    }
+  }
+  if (!faultClearSuppressActive && !arcBlankActive && fallbackArcEvent) {
     pred = 1;
-    heuristicFallbackPositive = true;
   }
-
   f.model_pred = (uint8_t)pred;
-
-  const bool arcEligibleForProtection =
-      (!arcBlankActive && (mlArcEligible || heuristicFallbackPositive));
 
   FaultState st = STATE_NORMAL;
   if (!bootSettling && !faultClearSuppressActive) {
@@ -745,7 +731,8 @@ void loop() {
                            tC,
                            irmsRawForLogic,
                            f.model_pred,
-                           arcEligibleForProtection);
+                           (!arcBlankActive &&
+                            (mlArcEligible || fallbackArcEvent)));
   }
   if (gSafeMode) st = STATE_NORMAL;
 
@@ -782,18 +769,34 @@ void loop() {
 
   const bool tripOffEdge = protection.consumeTripOffEdge();
   const bool autoOnEdge  = protection.consumeAutoOnEdge();
-  if (tripOffEdge) protection.pulseRelayOff();
-  if (autoOnEdge && !controlsLocked) protection.pulseRelayOn();
 
-  const bool criticalFaultActive =
-      (st == STATE_ARCING) ||
-      (st == STATE_HEATING) ||
-      (st == STATE_UNDERVOLTAGE) ||
-      (st == STATE_OVERVOLTAGE) ||
-      (st == STATE_SUSTAINED_OVERLOAD);
+#if PROTECTION
+  const bool protectionEnabled = true;
+#else
+  const bool protectionEnabled = false;
+#endif
 
-  if (criticalFaultActive && network.autoCaptureActive()) {
-    network.stopAutoCapture();
+  if (protectionEnabled && tripOffEdge) {
+    pendingProtectionTripOff = true;
+    pendingProtectionAutoOn = false;
+    relayActionAtMs = millis() + 35UL;
+    relayNetQuietUntilMs = relayActionAtMs + 600UL;
+  }
+  if (protectionEnabled && autoOnEdge && !controlsLocked && !pendingProtectionTripOff) {
+    pendingProtectionAutoOn = true;
+    relayActionAtMs = millis() + 35UL;
+    if ((int32_t)(relayNetQuietUntilMs - (relayActionAtMs + 400UL)) < 0) relayNetQuietUntilMs = relayActionAtMs + 400UL;
+  }
+
+  if (pendingProtectionTripOff && (int32_t)(millis() - relayActionAtMs) >= 0) {
+    network.stopAllClients();
+    protection.pulseRelayOff();
+    pendingProtectionTripOff = false;
+  }
+  if (pendingProtectionAutoOn && (int32_t)(millis() - relayActionAtMs) >= 0) {
+    network.stopAllClients();
+    protection.pulseRelayOn();
+    pendingProtectionAutoOn = false;
   }
 
   protection.apply(st, vRms, vFast, irmsRawForLogic, tC);
@@ -801,13 +804,12 @@ void loop() {
   const bool mainsPresentStable = debouncedMainsPresentForState(vFast);
   handleCueEvents(vRaw, vFast, irmsRawForLogic, mainsPresentStable, paused || gSafeMode || protectionInhibit, st);
 
-  maybeStartAutoArcCapture(network, notification, paused || protectionInhibit || criticalFaultActive, gSafeMode, (!faultClearSuppressActive && (modelPositive || heuristicFallbackPositive) && f.model_pred == 1));
-  if (!paused && !gSafeMode && !criticalFaultActive) pollMlControl(network, notification); else if (criticalFaultActive && network.autoCaptureActive()) network.stopAutoCapture(); else if (gSafeMode || paused) network.setLogEnabled(false);
+  maybeStartAutoArcCapture(network, notification, paused || protectionInhibit, gSafeMode, (!faultClearSuppressActive && (mlArcEligible || fallbackArcEvent) && f.model_pred == 1));
+  if (!paused && !gSafeMode) pollMlControl(network, notification); else network.setLogEnabled(false);
   if (!paused && !gSafeMode) {
     static uint32_t lastMl = 0;
-    const uint32_t period = criticalFaultActive ? 250UL : (1000UL / ML_LOG_RATE_HZ);
-    const bool allowFaultLogFrames = criticalFaultActive && network.manualEnabled();
-    if ((allowFaultLogFrames || !criticalFaultActive) && (millis() - lastMl >= period)) {
+    const uint32_t period = 1000UL / ML_LOG_RATE_HZ;
+    if (millis() - lastMl >= period) {
       lastMl = millis(); f.epoch_ms = network.isSynced() ? network.nowEpochMs() : 0;
       FeatureFrame fLog = f; fLog.irms = irmsRawForLogic; network.ingestLog(fLog, st, protection.arcCounter());
     }
@@ -843,7 +845,7 @@ void loop() {
   static FaultState lastImmediateFaultState = STATE_NORMAL;
   if (!gSafeMode && !paused && !bootSettling) {
     if (st != STATE_NORMAL && (st != lastImmediateFaultState || tripOffEdge)) {
-      FeatureFrame fHist = f; fHist.irms = irmsRawForLogic; (void)network.logFeatureEvent(String(stateToCstr(st)), fHist, apparentPowerVa, tripOffEdge);
+      FeatureFrame fHist = f; fHist.irms = irmsRawForLogic; (void)network.logFeatureEvent(String(stateToCstr(st)), fHist, apparentPowerVa, (tripOffEdge && protectionEnabled));
     }
     lastImmediateFaultState = st;
   }
@@ -867,6 +869,6 @@ void loop() {
                               f.model_pred, stateStr);
   }
 
-  if (!paused) network.loop();
+  if (!paused && ((int32_t)(relayNetQuietUntilMs - millis()) <= 0)) network.loop();
   delay(2);
 }

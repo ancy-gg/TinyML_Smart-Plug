@@ -2,8 +2,8 @@
 #include <Arduino.h>
 #include <math.h>
 
-#ifndef COLLECTION_ONLY_MODE
-#define COLLECTION_ONLY_MODE 0
+#ifndef PROTECTION
+#define PROTECTION 1
 #endif
 
 static constexpr bool ENABLE_MODEL_INFERENCE = true;
@@ -13,7 +13,7 @@ static constexpr bool ENABLE_AUTO_ARC_CAPTURE = true;
 // Cloud / OTA configuration
 static constexpr const char* FIREBASE_API_KEY = "AIzaSyAmJlZZszyWPJFgIkTAAl_TbIySys1nvEw";
 static constexpr const char* FIREBASE_DB_URL  = "tinyml-smart-plug-default-rtdb.asia-southeast1.firebasedatabase.app";
-static constexpr const char* FW_VERSION       = "v5.1-p-gen1";
+static constexpr const char* FW_VERSION       = "v5.2-p-gen1";
 static constexpr const char* OTA_DESIRED_VERSION_PATH = "/ota/desired_version";
 static constexpr const char* OTA_FIRMWARE_URL_PATH    = "/ota/firmware_url";
 
@@ -103,6 +103,7 @@ static constexpr uint32_t WIFI_BOOT_CONNECT_MS      = 10000UL;
 static constexpr uint32_t WIFI_CONNECT_TIMEOUT_MS   = 10000UL;
 static constexpr uint32_t WIFI_PORTAL_TIMEOUT_MS    = 30000UL;
 static constexpr uint32_t WIFI_BACKGROUND_RETRY_MS  = 60000UL;
+static constexpr uint32_t WIFI_STA_RETRY_MS         = 2500UL;
 static constexpr uint32_t WIFI_BOOT_NO_CRED_AP_WINDOW_MS = 10000UL;
 static constexpr uint32_t WIFI_MANUAL_AP_WINDOW_MS  = 30000UL;
 static constexpr uint32_t WIFI_MANUAL_PORTAL_TIMEOUT_MS = 180000UL;

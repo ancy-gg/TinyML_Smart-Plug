@@ -489,11 +489,13 @@ bool FirebaseNetwork::logFeatureEvent(const String& status, const FeatureFrame& 
 }
 
 bool FirebaseNetwork::serviceHistory_() {
-  if (_historyCount == 0) return false;
+  if (_historyCount == 0 || !isReady()) return false;
   HistoryJob job;
   if (!dequeueHistory_(job)) return false;
   if (!pushHistoryRecord_(job)) {
     enqueueHistory_(job);
+    stopAllClients();
+    _txBackoffUntilMs = millis() + CLOUD_TX_RETRY_MS;
     return false;
   }
   _lastTxMs = millis();
@@ -548,7 +550,11 @@ bool FirebaseNetwork::serviceLive_() {
   json.set("uptime_ms", (int)millis());
   json.set("server_ts/.sv", "timestamp");
 
-  if (!Firebase.RTDB.updateNode(&fbLive, "/live_data", &json)) return false;
+  if (!Firebase.RTDB.updateNode(&fbLive, "/live_data", &json)) {
+    stopAllClients();
+    _txBackoffUntilMs = millis() + CLOUD_TX_RETRY_MS;
+    return false;
+  }
 
   _lastLiveSend = millis();
   _lastSentLiveState = _live.state;
