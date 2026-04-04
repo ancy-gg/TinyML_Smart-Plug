@@ -169,13 +169,11 @@ FaultState ProtectionManager::update(float vProtect, float vRaw, float tempC, fl
   }
 
   const bool sustainedOverloadActive = sustainedOverloadRaw && ((now - _sustainedOverloadSince) >= SUSTAINED_OVERLOAD_TRIP_MS);
-  const bool overloadTripActive = overloadWarnActive && !sustainedOverloadRaw && ((now - _overloadSince) >= OVERLOAD_TRIP_MS);
-  const bool overloadTripAny = sustainedOverloadActive || overloadTripActive;
-  if (overloadTripAny && !_prevOverloadTrip) {
+  if (sustainedOverloadActive && !_prevOverloadTrip) {
     _tripOffEdge = true;
     _resetRequired = true;
   }
-  _prevOverloadTrip = overloadTripAny;
+  _prevOverloadTrip = sustainedOverloadActive;
   _prevSustainedTrip = sustainedOverloadActive;
 
   if (mainsGoneLike) {
@@ -212,10 +210,10 @@ FaultState ProtectionManager::update(float vProtect, float vRaw, float tempC, fl
   else if (arcActive) st = STATE_ARCING;
   else if (overVoltValid) st = STATE_OVERVOLTAGE;
   else if (underVoltValid && !arcActive) st = STATE_UNDERVOLTAGE;
-  else if (overloadTripAny) st = STATE_SUSTAINED_OVERLOAD;
+  else if (sustainedOverloadActive) st = STATE_SUSTAINED_OVERLOAD;
   else if (overloadWarnActive) st = STATE_OVERLOAD;
 
-  _webLockout = _resetRequired || arcActive || heatTripActive || overloadTripAny || _voltageLockout;
+  _webLockout = _resetRequired || arcActive || heatTripActive || sustainedOverloadActive || _voltageLockout;
   return st;
 }
 

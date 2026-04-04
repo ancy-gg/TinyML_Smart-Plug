@@ -179,6 +179,12 @@ body.ios .ota-input{ font-size:16px; }
   justify-content:space-between;
   flex-wrap:wrap;
 }
+.install-help-actions{
+  display:flex;
+  gap:10px;
+  align-items:center;
+  flex-wrap:wrap;
+}
 .install-title{ font-size:15px; font-weight:950; }
 .install-copy{ margin-top:4px; font-size:13px; color:var(--muted); }
 

@@ -212,6 +212,18 @@ bool FirebaseNetwork::publishOtaDebug(const String& phase, const String& detail,
   return okDbg && okLive;
 }
 
+bool FirebaseNetwork::publishControlAck(const String& kind, const String& token) {
+  if (!isReady()) return false;
+
+  FirebaseJson json;
+  json.set("last_control_ack_kind", kind);
+  json.set("last_control_ack_token", token);
+  json.set("last_control_ack_server_ts/.sv", "timestamp");
+  json.set("last_control_ack_uptime_ms", (int)millis());
+  return Firebase.RTDB.updateNode(&fbLive, "/live_data", &json);
+}
+
+
 bool FirebaseNetwork::enqueueHistory_(const HistoryJob& job) {
   if (_historyCount >= HISTORY_QUEUE_MAX) return false;
   _historyQueue[_historyTail] = job;
@@ -244,21 +256,31 @@ bool FirebaseNetwork::consumePortalRequest() {
   return v;
 }
 
-bool FirebaseNetwork::consumeRelayOnRequest() {
+bool FirebaseNetwork::consumeRelayOnRequest(String* tokenOut) {
   const bool v = _relayOnPending;
   if (v) {
-    _relayOnTokenHandled = _relayOnToken;
+    const String token = _relayOnToken;
+    if (tokenOut) *tokenOut = token;
+    _relayOnTokenHandled = token;
     clearControlToken_("/controls/relay_on_token", _relayOnToken, _relayOnPending);
-  } else _relayOnPending = false;
+  } else {
+    _relayOnPending = false;
+    if (tokenOut) tokenOut->clear();
+  }
   return v;
 }
 
-bool FirebaseNetwork::consumeRelayOffRequest() {
+bool FirebaseNetwork::consumeRelayOffRequest(String* tokenOut) {
   const bool v = _relayOffPending;
   if (v) {
-    _relayOffTokenHandled = _relayOffToken;
+    const String token = _relayOffToken;
+    if (tokenOut) *tokenOut = token;
+    _relayOffTokenHandled = token;
     clearControlToken_("/controls/relay_off_token", _relayOffToken, _relayOffPending);
-  } else _relayOffPending = false;
+  } else {
+    _relayOffPending = false;
+    if (tokenOut) tokenOut->clear();
+  }
   return v;
 }
 
@@ -374,7 +396,8 @@ void FirebaseNetwork::requestLiveUpdate(float v, float c, float apparentPower, f
                                         float midband_residual_rms, float hf_band_energy_ratio,
                                         float spec_entropy, float neg_dip_event_ratio, float irms_drop_vs_baseline, float thd_i,
                                         uint8_t model_pred,
-                                        const String& state) {
+                                        const String& state,
+                                        bool faultLatched, bool webControlsLocked, bool relayLatchedOn) {
   const bool isNormal = (state == "NORMAL") || (state == "UNPLUGGED");
   const bool stateChanged = (state != _lastSentLiveState);
   const unsigned long now = millis();
@@ -399,6 +422,9 @@ void FirebaseNetwork::requestLiveUpdate(float v, float c, float apparentPower, f
   _live.thd_i = thd_i;
   _live.model_pred = model_pred;
   _live.state = state;
+  _live.faultLatched = faultLatched;
+  _live.webControlsLocked = webControlsLocked;
+  _live.relayLatchedOn = relayLatchedOn;
   _pendingLive = true;
 }
 
@@ -543,6 +569,9 @@ bool FirebaseNetwork::serviceLive_() {
   json.set("power_condition", powerCondition);
   json.set("device_phase", devicePhase);
   json.set("load_state", loadState);
+  json.set("fault_latched", _live.faultLatched);
+  json.set("web_controls_locked", _live.webControlsLocked);
+  json.set("relay_latched_on", _live.relayLatchedOn);
   json.set("last_transition", _lastTransitionEvent);
   json.set("last_transition_epoch_ms", (double)_lastTransitionEpochMs);
   json.set("ts_epoch_ms", (double)epochMs);

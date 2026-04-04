@@ -1,4 +1,4 @@
-const BUILD_VERSION = "Web-v6.7";
+const BUILD_VERSION = "Web-v7.0";
 const CACHE_NAME = BUILD_VERSION;
 const APP_SHELL = [
   "./",
@@ -19,9 +19,22 @@ self.addEventListener("message", (event) => {
   if (event.data && event.data.type === "SKIP_WAITING") self.skipWaiting();
 });
 
+async function precacheShell() {
+  const cache = await caches.open(CACHE_NAME);
+  await Promise.all(APP_SHELL.map(async (asset) => {
+    try {
+      const req = new Request(asset, { cache: "reload" });
+      const res = await fetch(req);
+      if (res && res.ok) await cache.put(asset, res.clone());
+    } catch (_) {
+      // Skip missing optional shell files so one bad asset does not block install.
+    }
+  }));
+}
+
 self.addEventListener("install", (event) => {
   self.skipWaiting();
-  event.waitUntil(caches.open(CACHE_NAME).then((cache) => cache.addAll(APP_SHELL)));
+  event.waitUntil(precacheShell());
 });
 
 self.addEventListener("activate", (event) => {
@@ -32,15 +45,22 @@ self.addEventListener("activate", (event) => {
   })());
 });
 
-async function networkFirst(request, fallbackUrl = "./index.html") {
+async function networkFirst(request, fallbackUrl = null) {
   try {
     const fresh = await fetch(request, { cache: "no-store" });
-    const cache = await caches.open(CACHE_NAME);
-    cache.put(request, fresh.clone());
+    if (fresh && fresh.ok) {
+      const cache = await caches.open(CACHE_NAME);
+      cache.put(request, fresh.clone());
+    }
     return fresh;
   } catch {
     const cached = await caches.match(request, { ignoreSearch: true });
-    return cached || caches.match(fallbackUrl, { ignoreSearch: true }) || caches.match("./404.html");
+    if (cached) return cached;
+    if (fallbackUrl) {
+      const fallback = await caches.match(fallbackUrl, { ignoreSearch: true });
+      if (fallback) return fallback;
+    }
+    return Response.error();
   }
 }
 
@@ -48,9 +68,9 @@ async function staleWhileRevalidate(request) {
   const cache = await caches.open(CACHE_NAME);
   const cached = await cache.match(request, { ignoreSearch: true });
   const fetchPromise = fetch(request).then((fresh) => {
-    cache.put(request, fresh.clone());
+    if (fresh && fresh.ok) cache.put(request, fresh.clone());
     return fresh;
-  }).catch(() => cached);
+  }).catch(() => cached || Response.error());
   return cached || fetchPromise;
 }
 
@@ -67,7 +87,7 @@ self.addEventListener("fetch", (event) => {
   }
 
   if (sameOrigin && ["style", "script", "manifest"].includes(req.destination)) {
-    event.respondWith(networkFirst(req, "./index.html"));
+    event.respondWith(networkFirst(req));
     return;
   }
 

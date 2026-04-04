@@ -1,4 +1,6 @@
 import argparse
+import json
+import os
 from pathlib import Path
 
 from tinyml_common import (
@@ -6,6 +8,7 @@ from tinyml_common import (
     make_group_splits,
     save_model_bundle,
     train_one_model,
+    estimate_search_plan,
 )
 
 
@@ -19,6 +22,13 @@ OUT_JOBLIB = str(PROJECT_ROOT / "tinyml" / "trainer" / "TinyMLTreeEnsemble_RF.jo
 OUT_REPORT = str(PROJECT_ROOT / "tinyml" / "benchmark" / "TinyMLTreeEnsemble_RF_report.json")
 
 
+def emit_progress(current: int, total: int, payload: dict) -> None:
+    payload = dict(payload or {})
+    payload["current"] = int(current)
+    payload["total"] = int(total)
+    print("[[PROGRESS]] " + json.dumps(payload, sort_keys=True), flush=True)
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--csv", default=CSV_PATH)
@@ -29,14 +39,22 @@ def main():
     ap.add_argument("--fn_weight", type=float, default=80.0)
     ap.add_argument("--fp_weight", type=float, default=4.0)
     ap.add_argument("--min_recall", type=float, default=0.97)
-    ap.add_argument("--n_iter", type=int, default=24)
+    ap.add_argument("--min_precision", type=float, default=0.90)
+    ap.add_argument("--max_fpr", type=float, default=0.03)
+    ap.add_argument("--min_threshold", type=float, default=0.08)
+    ap.add_argument("--n_iter", type=int, default=72)
+    ap.add_argument("--n_jobs", type=int, default=-1)
     args = ap.parse_args()
+
+    if args.n_jobs:
+        os.environ["TINYML_N_JOBS"] = str(args.n_jobs)
 
     _, X, y, groups, w = load_clean_dataset(
         args.csv,
         include_invalid=args.include_invalid,
     )
     splits = make_group_splits(X, y, groups)
+    print("CV split summary:", splits.get("cv_group_summary", {}))
 
     train_idx = splits["train_idx"]
     val_idx = splits["val_idx"]
@@ -56,11 +74,18 @@ def main():
         fp_weight=args.fp_weight,
         min_recall=args.min_recall,
         n_iter=args.n_iter,
+        min_precision=args.min_precision,
+        max_fpr=args.max_fpr,
+        min_threshold=args.min_threshold,
+        progress_callback=emit_progress,
     )
 
+    search_plan = estimate_search_plan(args.n_iter)
+    print("Search plan:", search_plan)
     print("Model:", result["model_name"])
     print("Best params:", result["best_params"])
     print("CV average precision:", result["cv_best_average_precision"])
+    print("CV best recall:", result.get("cv_best_recall"))
     print("Estimated node count:", result["estimated_node_count"])
     print("Threshold from validation cost:", result["validation_threshold_result"])
     print("Test accuracy:", result["test_accuracy"])
@@ -77,7 +102,11 @@ def main():
         "fn_weight": args.fn_weight,
         "fp_weight": args.fp_weight,
         "min_recall": args.min_recall,
+        "min_precision": args.min_precision,
+        "max_fpr": args.max_fpr,
+        "min_threshold": args.min_threshold,
         "n_iter": args.n_iter,
+        "n_jobs": args.n_jobs,
         "model": "rf",
     }
     save_model_bundle(

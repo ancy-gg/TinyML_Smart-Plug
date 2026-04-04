@@ -43,6 +43,7 @@ const ovLastEventSub = el("ovLastEventSub");
 
 const installHelp = el("installHelp");
 const installCopy = el("installCopy");
+const btnInstallApp = el("btnInstallApp");
 const btnDismissInstall = el("btnDismissInstall");
 const btnRefreshNow = el("btnRefreshNow");
 const liveStateHints = Array.from(document.querySelectorAll("[data-live-state-hint]"));
@@ -136,6 +137,8 @@ const LS_INSTALL_DISMISS = "tsp_install_help_dismissed";
 const LS_DENSITY = "tsp_density";
 const LS_MODE = "tsp_mode";
 const NOTIFIABLE_STATUS_SET = new Set(["DEVICE_DISCONNECTED", "UNPLUGGED", "OVERLOAD", "SUSTAINED_OVERLOAD", "HEATING", "ARCING", "OVERVOLTAGE", "UNDERVOLTAGE"]);
+
+let deferredInstallPrompt = null;
 
 const isIOS = /iphone|ipad|ipod/i.test(navigator.userAgent || "");
 const isStandalone = window.matchMedia?.("(display-mode: standalone)")?.matches || window.navigator.standalone === true;
@@ -1220,22 +1223,50 @@ btnClearHistory?.addEventListener("click", async () => {
 
 function updateInstallHelp() {
   if (!installHelp) return;
-  if (loadBool(LS_INSTALL_DISMISS, false)) {
+
+  const dismissed = loadBool(LS_INSTALL_DISMISS, false);
+  const installed = isStandalone || window.matchMedia?.("(display-mode: standalone)")?.matches;
+  const showIOSHelp = isIOS && !installed;
+  const showGenericHelp = !isIOS && !installed;
+  const canPromptInstall = !!deferredInstallPrompt && !isIOS && !installed;
+
+  if (dismissed || installed || !(showIOSHelp || showGenericHelp)) {
     installHelp.classList.add("hidden");
+    btnInstallApp?.classList.add("hidden");
     return;
   }
-  const showIOSHelp = isIOS && !isStandalone;
-  const showGeneric = !isIOS && !isStandalone;
-  if (!(showIOSHelp || showGeneric)) {
-    installHelp.classList.add("hidden");
-    return;
-  }
+
   if (installCopy) {
     if (showIOSHelp) installCopy.textContent = "On iPhone or iPad, tap Share then Add to Home Screen.";
-    else installCopy.textContent = "Install for a faster full-screen dashboard.";
+    else if (canPromptInstall) installCopy.textContent = "Install this dashboard for a faster full-screen app experience.";
+    else installCopy.textContent = "Use your browser menu and choose Install App to add this dashboard to your device.";
   }
+
+  btnInstallApp?.classList.toggle("hidden", !canPromptInstall);
   installHelp.classList.remove("hidden");
 }
+
+btnInstallApp?.addEventListener("click", async () => {
+  if (!deferredInstallPrompt) {
+    toast("Use your browser menu and choose Install App.", "warn");
+    return;
+  }
+
+  try {
+    deferredInstallPrompt.prompt();
+    const choice = await deferredInstallPrompt.userChoice;
+    if (choice?.outcome === "accepted") {
+      toast("Install prompt opened.", "ok");
+    }
+  } catch (e) {
+    console.error(e);
+    toast("Install prompt failed to open.", "err");
+  } finally {
+    deferredInstallPrompt = null;
+    updateInstallHelp();
+  }
+});
+
 btnDismissInstall?.addEventListener("click", () => {
   saveBool(LS_INSTALL_DISMISS, true);
   installHelp?.classList.add("hidden");
@@ -1886,8 +1917,22 @@ mlCsvUpload?.addEventListener("change", async (ev) => {
   }
 });
 
+window.addEventListener("beforeinstallprompt", (event) => {
+  event.preventDefault();
+  deferredInstallPrompt = event;
+  updateInstallHelp();
+});
+
+window.addEventListener("appinstalled", () => {
+  deferredInstallPrompt = null;
+  saveBool(LS_INSTALL_DISMISS, true);
+  btnInstallApp?.classList.add("hidden");
+  installHelp?.classList.add("hidden");
+  toast("App installed.", "ok");
+});
+
 if ("serviceWorker" in navigator) {
-  navigator.serviceWorker.register("sw.js").then((reg) => {
+  navigator.serviceWorker.register("./sw.js", { scope: "./" }).then((reg) => {
     reg.update();
     let refreshing = false;
     navigator.serviceWorker.addEventListener("controllerchange", () => {

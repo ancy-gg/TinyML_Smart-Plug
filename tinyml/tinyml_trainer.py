@@ -25,6 +25,8 @@ LOG_BG = "#22252a"
 
 DISPLAY_METRICS = [
     ("Model", "model_name"),
+    ("Configured n_iter", ("settings", "n_iter")),
+    ("Winner mode", ("settings", "winner_mode")),
     ("CV average precision", "cv_best_average_precision"),
     ("Test average precision", "test_average_precision"),
     ("Test ROC AUC", "test_roc_auc"),
@@ -39,9 +41,14 @@ DISPLAY_METRICS = [
     ("Test FNR", "test_fnr"),
     ("Test MCC", "test_mcc"),
     ("Threshold", "threshold"),
+    ("Threshold source", "threshold_source"),
+    ("Threshold constraints met", "threshold_constraints_met"),
     ("Estimated node count", "estimated_node_count"),
     ("Validation cost", ("validation_threshold_result", "cost")),
+    ("Validation precision", "validation_precision"),
     ("Validation recall", ("validation_threshold_result", "recall")),
+    ("Holdout validation precision", "holdout_validation_precision"),
+    ("Holdout validation recall", "holdout_validation_recall"),
     ("Validation TN", ("validation_threshold_result", "tn")),
     ("Validation FP", ("validation_threshold_result", "fp")),
     ("Validation FN", ("validation_threshold_result", "fn")),
@@ -69,8 +76,9 @@ class TinyMLTrainerGUI(tk.Tk):
     def __init__(self):
         super().__init__()
         self.title("TinyML Trainer")
-        self.geometry("1600x980")
-        self.minsize(1260, 800)
+        self.geometry("1480x920")
+        self.minsize(980, 680)
+        self.resizable(True, True)
         self.configure(bg=APP_BG)
 
         self.proc = None
@@ -88,11 +96,32 @@ class TinyMLTrainerGUI(tk.Tk):
         self.rf_report = tk.StringVar(value="tinyml/benchmark/TinyMLTreeEnsemble_RF_report.json")
         self.et_report = tk.StringVar(value="tinyml/benchmark/TinyMLTreeEnsemble_ET_report.json")
         self.duel_report = tk.StringVar(value="tinyml/benchmark/benchmark_report.json")
+        self.search_iters = tk.StringVar(value="120")
+        self.max_search_iters = tk.StringVar(value="240")
+        self.iter_growth = tk.StringVar(value="2.0")
+        self.min_recall_goal = tk.StringVar(value="0.98")
+        self.min_precision_goal = tk.StringVar(value="0.90")
+        self.max_fpr_goal = tk.StringVar(value="0.03")
+        self.min_threshold_goal = tk.StringVar(value="0.08")
+        self.auto_max_val_fn = tk.StringVar(value="0")
+        self.auto_max_val_fp = tk.StringVar(value="5")
+        self.winner_mode = tk.StringVar(value="Arc-first")
+        self.auto_escalate = tk.BooleanVar(value=True)
+        self.current_workflow = None
         self.status_text = tk.StringVar(value="Ready")
         self.last_command = tk.StringVar(value="—")
+        self.progress_text = tk.StringVar(value="Idle")
+        self.progress_percent_text = tk.StringVar(value="0%")
+        self.cleaner_summary_text = tk.StringVar(value="Cleaner summary will appear here after running Cleaner.")
+        self._pending_cleaner_summary = None
+        self._progress_payload = None
+        self._root_canvas = None
+        self._root_canvas_window = None
 
+        self._adaptive_labels = []
         self._build_styles()
         self._build_ui()
+        self.bind("<Configure>", self._on_window_resize)
         self.after(120, self._drain_logs)
         self.refresh_views()
 
@@ -161,10 +190,24 @@ class TinyMLTrainerGUI(tk.Tk):
         self.columnconfigure(0, weight=1)
         self.rowconfigure(0, weight=1)
 
-        outer = ttk.Frame(self, padding=16)
-        outer.grid(row=0, column=0, sticky="nsew")
+        shell = tk.Frame(self, bg=APP_BG)
+        shell.grid(row=0, column=0, sticky="nsew")
+        shell.columnconfigure(0, weight=1)
+        shell.rowconfigure(0, weight=1)
+
+        self._root_canvas = tk.Canvas(shell, bg=APP_BG, highlightthickness=0, bd=0)
+        self._root_canvas.grid(row=0, column=0, sticky="nsew")
+        root_scroll = ttk.Scrollbar(shell, orient="vertical", command=self._root_canvas.yview)
+        root_scroll.grid(row=0, column=1, sticky="ns")
+        self._root_canvas.configure(yscrollcommand=root_scroll.set)
+
+        outer = ttk.Frame(self._root_canvas, padding=16)
+        self._root_canvas_window = self._root_canvas.create_window((0, 0), window=outer, anchor="nw")
+        outer.bind("<Configure>", lambda _e: self._root_canvas.configure(scrollregion=self._root_canvas.bbox("all")))
+        self._root_canvas.bind("<Configure>", self._on_root_canvas_resize)
+
         outer.columnconfigure(0, weight=1)
-        outer.rowconfigure(1, weight=1)
+        outer.rowconfigure(2, weight=1)
 
         top = ttk.Frame(outer)
         top.grid(row=0, column=0, sticky="ew")
@@ -205,15 +248,15 @@ class TinyMLTrainerGUI(tk.Tk):
             padx=14,
             pady=14,
         )
-        main_card.grid(row=1, column=0, sticky="nsew", pady=(14, 0))
+        main_card.grid(row=2, column=0, sticky="nsew", pady=(14, 0))
         main_card.columnconfigure(0, weight=1)
-        main_card.rowconfigure(3, weight=1)
+        main_card.rowconfigure(5, weight=1)
 
         self._card_label(main_card, "Actions", 0)
 
         actions = ttk.Frame(main_card)
         actions.grid(row=1, column=0, sticky="ew", pady=(0, 12))
-        for i in range(5):
+        for i in range(6):
             actions.columnconfigure(i, weight=1)
 
         self._btn(actions, "Cleaner", self.run_cleaner, 0, 0)
@@ -221,9 +264,48 @@ class TinyMLTrainerGUI(tk.Tk):
         self._btn(actions, "Extra Trees Only", self.run_et_only, 0, 2)
         self._btn(actions, "King Training", self.run_duel, 0, 3)
         self._btn(actions, "Refresh", self.refresh_views, 0, 4)
+        self._btn(actions, "Clear Output", self.clear_output, 0, 5)
+
+        options = tk.Frame(main_card, bg=CARD_BG_2, highlightthickness=1, highlightbackground=BORDER, padx=10, pady=10)
+        options.grid(row=2, column=0, sticky="ew", pady=(0, 12))
+        for i in range(5):
+            options.columnconfigure(i, weight=1)
+
+        tk.Label(options, text="Search tries", bg=CARD_BG_2, fg=MUTED, font=("Segoe UI", 9)).grid(row=0, column=0, sticky="w")
+        ttk.Entry(options, textvariable=self.search_iters, width=10).grid(row=1, column=0, sticky="ew", padx=(0, 8), pady=(4, 8))
+
+        tk.Label(options, text="Max tries", bg=CARD_BG_2, fg=MUTED, font=("Segoe UI", 9)).grid(row=0, column=1, sticky="w")
+        ttk.Entry(options, textvariable=self.max_search_iters, width=10).grid(row=1, column=1, sticky="ew", padx=(0, 8), pady=(4, 8))
+
+        tk.Label(options, text="Growth x", bg=CARD_BG_2, fg=MUTED, font=("Segoe UI", 9)).grid(row=0, column=2, sticky="w")
+        ttk.Entry(options, textvariable=self.iter_growth, width=10).grid(row=1, column=2, sticky="ew", padx=(0, 8), pady=(4, 8))
+
+        ttk.Checkbutton(options, text="Auto increase tries", variable=self.auto_escalate).grid(row=1, column=3, sticky="w", padx=(0, 8), pady=(4, 8))
+
+        tk.Label(options, text="Winner style", bg=CARD_BG_2, fg=MUTED, font=("Segoe UI", 9)).grid(row=0, column=4, sticky="w")
+        ttk.Combobox(options, textvariable=self.winner_mode, values=["Arc-first", "Balanced", "Legacy"], state="readonly", width=18).grid(row=1, column=4, sticky="ew", pady=(4, 8))
+
+        tk.Label(options, text="Min recall", bg=CARD_BG_2, fg=MUTED, font=("Segoe UI", 9)).grid(row=2, column=0, sticky="w")
+        ttk.Entry(options, textvariable=self.min_recall_goal, width=10).grid(row=3, column=0, sticky="ew", padx=(0, 8), pady=(4, 0))
+
+        tk.Label(options, text="Min precision", bg=CARD_BG_2, fg=MUTED, font=("Segoe UI", 9)).grid(row=2, column=1, sticky="w")
+        ttk.Entry(options, textvariable=self.min_precision_goal, width=10).grid(row=3, column=1, sticky="ew", padx=(0, 8), pady=(4, 0))
+
+        tk.Label(options, text="Max FPR", bg=CARD_BG_2, fg=MUTED, font=("Segoe UI", 9)).grid(row=2, column=2, sticky="w")
+        ttk.Entry(options, textvariable=self.max_fpr_goal, width=10).grid(row=3, column=2, sticky="ew", padx=(0, 8), pady=(4, 0))
+
+        tk.Label(options, text="Min threshold", bg=CARD_BG_2, fg=MUTED, font=("Segoe UI", 9)).grid(row=2, column=3, sticky="w")
+        ttk.Entry(options, textvariable=self.min_threshold_goal, width=10).grid(row=3, column=3, sticky="ew", padx=(0, 8), pady=(4, 0))
+
+        fpfn = tk.Frame(options, bg=CARD_BG_2)
+        fpfn.grid(row=3, column=4, sticky="ew")
+        tk.Label(fpfn, text="Target val FN ≤", bg=CARD_BG_2, fg=MUTED, font=("Segoe UI", 9)).pack(side="left")
+        ttk.Entry(fpfn, textvariable=self.auto_max_val_fn, width=5).pack(side="left", padx=(6, 8))
+        tk.Label(fpfn, text="FP ≤", bg=CARD_BG_2, fg=MUTED, font=("Segoe UI", 9)).pack(side="left")
+        ttk.Entry(fpfn, textvariable=self.auto_max_val_fp, width=5).pack(side="left", padx=(6, 0))
 
         status = tk.Frame(main_card, bg=CARD_BG)
-        status.grid(row=2, column=0, sticky="ew", pady=(0, 12))
+        status.grid(row=3, column=0, sticky="ew", pady=(0, 8))
         status.columnconfigure(3, weight=1)
 
         tk.Label(status, text="Status", bg=CARD_BG, fg=MUTED, font=("Segoe UI", 10)).grid(
@@ -241,24 +323,53 @@ class TinyMLTrainerGUI(tk.Tk):
             row=0, column=2, sticky="e"
         )
 
-        tk.Label(status, text="Last command", bg=CARD_BG, fg=MUTED, font=("Segoe UI", 9)).grid(
+        tk.Label(status, text="Progress", bg=CARD_BG, fg=MUTED, font=("Segoe UI", 9)).grid(
             row=1, column=0, sticky="w", pady=(10, 0)
         )
+        self.progress_label = tk.Label(
+            status,
+            textvariable=self.progress_text,
+            bg=CARD_BG,
+            fg=TEXT,
+            font=("Segoe UI", 9),
+            justify="left",
+            anchor="w",
+            wraplength=980,
+        )
+        self.progress_label.grid(row=1, column=1, columnspan=2, sticky="ew", padx=(8, 0), pady=(10, 0))
+        self._adaptive_labels.append((self.progress_label, 0.62, 320))
         tk.Label(
+            status,
+            textvariable=self.progress_percent_text,
+            bg=CARD_BG,
+            fg=ACCENT,
+            font=("Segoe UI", 10, "bold"),
+            justify="right",
+            anchor="e",
+            width=8,
+        ).grid(row=1, column=3, sticky="e", pady=(10, 0))
+
+        tk.Label(status, text="Last command", bg=CARD_BG, fg=MUTED, font=("Segoe UI", 9)).grid(
+            row=2, column=0, sticky="w", pady=(10, 0)
+        )
+        self.command_label = tk.Label(
             status,
             textvariable=self.last_command,
             bg=CARD_BG,
             fg=TEXT,
             font=("Consolas", 9),
             justify="left",
+            anchor="w",
             wraplength=1120,
-        ).grid(row=1, column=1, columnspan=3, sticky="w", padx=(8, 0), pady=(10, 0))
+        )
+        self.command_label.grid(row=2, column=1, columnspan=3, sticky="ew", padx=(8, 0), pady=(10, 0))
+        self._adaptive_labels.append((self.command_label, 0.74, 380))
 
-        self.pb = ttk.Progressbar(main_card, mode="indeterminate")
-        self.pb.grid(row=2, column=0, sticky="sew", pady=(52, 0))
+        self.pb = ttk.Progressbar(main_card, mode="determinate", maximum=100.0, value=0.0)
+        self.pb.grid(row=4, column=0, sticky="ew", pady=(0, 12))
 
         notebook = ttk.Notebook(main_card)
-        notebook.grid(row=3, column=0, sticky="nsew", pady=(12, 0))
+        notebook.grid(row=5, column=0, sticky="nsew", pady=(0, 0))
 
         logs_tab = ttk.Frame(notebook, padding=10)
         data_tab = ttk.Frame(notebook, padding=10)
@@ -271,6 +382,23 @@ class TinyMLTrainerGUI(tk.Tk):
         self._build_logs_tab(logs_tab)
         self._build_data_tab(data_tab)
         self._build_reports_tab(reports_tab)
+
+    def _on_root_canvas_resize(self, event=None):
+        if self._root_canvas is None or self._root_canvas_window is None:
+            return
+        width = max(100, int(getattr(event, "width", self._root_canvas.winfo_width())))
+        self._root_canvas.itemconfigure(self._root_canvas_window, width=width)
+
+    def clear_output(self):
+        try:
+            self.log_text.delete("1.0", "end")
+        except Exception:
+            pass
+        self._pending_cleaner_summary = None
+        self.cleaner_summary_text.set("Cleaner summary cleared.")
+        self.last_command.set("—")
+        self.status_text.set("Ready")
+        self._reset_progress()
 
     def _card_label(self, parent, text, row):
         tk.Label(
@@ -328,15 +456,25 @@ class TinyMLTrainerGUI(tk.Tk):
 
     def _build_data_tab(self, parent):
         parent.columnconfigure(0, weight=1)
-        parent.rowconfigure(1, weight=1)
+        parent.rowconfigure(2, weight=1)
 
         self.dataset_summary = tk.StringVar(value="No dataset loaded.")
-        tk.Label(
-            parent, textvariable=self.dataset_summary, bg=APP_BG, fg=MUTED, justify="left"
-        ).grid(row=0, column=0, sticky="w", pady=(0, 10))
+        self.dataset_summary_label = tk.Label(
+            parent, textvariable=self.dataset_summary, bg=APP_BG, fg=MUTED, justify="left", anchor="w", wraplength=1120
+        )
+        self.dataset_summary_label.grid(row=0, column=0, sticky="ew", pady=(0, 10))
+        self._adaptive_labels.append((self.dataset_summary_label, 0.78, 420))
+
+        cleaner_card = tk.Frame(parent, bg=CARD_BG, highlightthickness=1, highlightbackground=BORDER, padx=10, pady=10)
+        cleaner_card.grid(row=1, column=0, sticky="ew", pady=(0, 10))
+        cleaner_card.columnconfigure(0, weight=1)
+        tk.Label(cleaner_card, text="Latest Cleaner Summary", bg=CARD_BG, fg=TEXT, font=("Segoe UI", 10, "bold")).grid(row=0, column=0, sticky="w")
+        self.cleaner_summary_label = tk.Label(cleaner_card, textvariable=self.cleaner_summary_text, bg=CARD_BG, fg=MUTED, justify="left", anchor="w", wraplength=1200)
+        self.cleaner_summary_label.grid(row=1, column=0, sticky="ew", pady=(6, 0))
+        self._adaptive_labels.append((self.cleaner_summary_label, 0.76, 420))
 
         frame = tk.Frame(parent, bg=CARD_BG, highlightthickness=1, highlightbackground=BORDER)
-        frame.grid(row=1, column=0, sticky="nsew")
+        frame.grid(row=2, column=0, sticky="nsew")
         frame.columnconfigure(0, weight=1)
         frame.rowconfigure(0, weight=1)
 
@@ -346,9 +484,9 @@ class TinyMLTrainerGUI(tk.Tk):
             self.dataset_tree.heading(c, text=c.title())
             self.dataset_tree.column(c, width=w, anchor="center")
         self.dataset_tree.grid(row=0, column=0, sticky="nsew")
-        ttk.Scrollbar(frame, orient="vertical", command=self.dataset_tree.yview).grid(
-            row=0, column=1, sticky="ns"
-        )
+        dataset_scroll = ttk.Scrollbar(frame, orient="vertical", command=self.dataset_tree.yview)
+        dataset_scroll.grid(row=0, column=1, sticky="ns")
+        self.dataset_tree.configure(yscrollcommand=dataset_scroll.set)
 
     def _build_reports_tab(self, parent):
         parent.columnconfigure(0, weight=1)
@@ -475,9 +613,9 @@ class TinyMLTrainerGUI(tk.Tk):
             self.importance_tree.heading(c, text={"rf": "Random Forest", "et": "Extra Trees"}.get(c, c.title()))
             self.importance_tree.column(c, width=w, anchor="center")
         self.importance_tree.grid(row=0, column=0, sticky="nsew")
-        ttk.Scrollbar(frame2, orient="vertical", command=self.importance_tree.yview).grid(
-            row=0, column=1, sticky="ns"
-        )
+        importance_scroll = ttk.Scrollbar(frame2, orient="vertical", command=self.importance_tree.yview)
+        importance_scroll.grid(row=0, column=1, sticky="ns")
+        self.importance_tree.configure(yscrollcommand=importance_scroll.set)
 
     def _build_single_report_subtab(self, parent, prefix):
         parent.columnconfigure(0, weight=1)
@@ -522,9 +660,9 @@ class TinyMLTrainerGUI(tk.Tk):
         metric_tree.column("metric", width=320, anchor="w")
         metric_tree.column("value", width=220, anchor="center")
         metric_tree.grid(row=0, column=0, sticky="nsew")
-        ttk.Scrollbar(overview_tab, orient="vertical", command=metric_tree.yview).grid(
-            row=0, column=1, sticky="ns"
-        )
+        metric_scroll = ttk.Scrollbar(overview_tab, orient="vertical", command=metric_tree.yview)
+        metric_scroll.grid(row=0, column=1, sticky="ns")
+        metric_tree.configure(yscrollcommand=metric_scroll.set)
         setattr(self, f"{prefix}_metric_tree", metric_tree)
 
         class_tree = ttk.Treeview(
@@ -536,9 +674,9 @@ class TinyMLTrainerGUI(tk.Tk):
             class_tree.heading(c, text={"f1": "F1-score"}.get(c, c.title()))
             class_tree.column(c, width=w, anchor="center")
         class_tree.grid(row=0, column=0, sticky="nsew")
-        ttk.Scrollbar(class_tab, orient="vertical", command=class_tree.yview).grid(
-            row=0, column=1, sticky="ns"
-        )
+        class_scroll = ttk.Scrollbar(class_tab, orient="vertical", command=class_tree.yview)
+        class_scroll.grid(row=0, column=1, sticky="ns")
+        class_tree.configure(yscrollcommand=class_scroll.set)
         setattr(self, f"{prefix}_class_tree", class_tree)
 
         cm_tree = ttk.Treeview(cm_tab, columns=("label", "pred0", "pred1"), show="headings")
@@ -549,9 +687,9 @@ class TinyMLTrainerGUI(tk.Tk):
         cm_tree.column("pred0", width=120, anchor="center")
         cm_tree.column("pred1", width=120, anchor="center")
         cm_tree.grid(row=0, column=0, sticky="nsew")
-        ttk.Scrollbar(cm_tab, orient="vertical", command=cm_tree.yview).grid(
-            row=0, column=1, sticky="ns"
-        )
+        cm_scroll = ttk.Scrollbar(cm_tab, orient="vertical", command=cm_tree.yview)
+        cm_scroll.grid(row=0, column=1, sticky="ns")
+        cm_tree.configure(yscrollcommand=cm_scroll.set)
         setattr(self, f"{prefix}_cm_tree", cm_tree)
 
         param_tree = ttk.Treeview(params_tab, columns=("param", "value"), show="headings")
@@ -560,9 +698,9 @@ class TinyMLTrainerGUI(tk.Tk):
         param_tree.column("param", width=280, anchor="w")
         param_tree.column("value", width=220, anchor="center")
         param_tree.grid(row=0, column=0, sticky="nsew")
-        ttk.Scrollbar(params_tab, orient="vertical", command=param_tree.yview).grid(
-            row=0, column=1, sticky="ns"
-        )
+        param_scroll = ttk.Scrollbar(params_tab, orient="vertical", command=param_tree.yview)
+        param_scroll.grid(row=0, column=1, sticky="ns")
+        param_tree.configure(yscrollcommand=param_scroll.set)
         setattr(self, f"{prefix}_param_tree", param_tree)
 
         fi_tree = ttk.Treeview(fi_tab, columns=("rank", "feature", "importance"), show="headings")
@@ -573,10 +711,198 @@ class TinyMLTrainerGUI(tk.Tk):
         fi_tree.column("feature", width=320, anchor="w")
         fi_tree.column("importance", width=160, anchor="center")
         fi_tree.grid(row=0, column=0, sticky="nsew")
-        ttk.Scrollbar(fi_tab, orient="vertical", command=fi_tree.yview).grid(
-            row=0, column=1, sticky="ns"
-        )
+        fi_scroll = ttk.Scrollbar(fi_tab, orient="vertical", command=fi_tree.yview)
+        fi_scroll.grid(row=0, column=1, sticky="ns")
+        fi_tree.configure(yscrollcommand=fi_scroll.set)
         setattr(self, f"{prefix}_fi_tree", fi_tree)
+
+
+    def _get_int(self, value, default, minimum=None):
+        try:
+            if hasattr(value, "get"):
+                value = value.get()
+            out = int(float(str(value).strip()))
+        except Exception:
+            out = int(default)
+        if minimum is not None:
+            out = max(int(minimum), out)
+        return out
+
+    def _get_float(self, value, default, minimum=None, maximum=None):
+        try:
+            if hasattr(value, "get"):
+                value = value.get()
+            out = float(str(value).strip())
+        except Exception:
+            out = float(default)
+        if minimum is not None:
+            out = max(float(minimum), out)
+        if maximum is not None:
+            out = min(float(maximum), out)
+        return out
+
+    def _trainer_script_var_for_kind(self, kind):
+        if kind == "rf":
+            return self.rf_script
+        if kind == "et":
+            return self.et_script
+        return self.duel_script
+
+    def _common_training_flags(self, n_iter):
+        return [
+            "--n_iter", str(int(n_iter)),
+            "--min_recall", f"{self._get_float(self.min_recall_goal, 0.98, 0.0, 1.0):.6f}",
+            "--min_precision", f"{self._get_float(self.min_precision_goal, 0.90, 0.0, 1.0):.6f}",
+            "--max_fpr", f"{self._get_float(self.max_fpr_goal, 0.03, 0.0, 1.0):.6f}",
+            "--min_threshold", f"{self._get_float(self.min_threshold_goal, 0.08, 0.0, 0.99):.6f}",
+        ]
+
+
+    def _winner_mode_arg(self):
+        label = (self.winner_mode.get() or "Arc-first").strip()
+        return {
+            "Arc-first": "arc_guard",
+            "Balanced": "safety_composite",
+            "Legacy": "legacy_cv_ap",
+        }.get(label, "arc_guard")
+
+    def _build_training_command(self, kind, n_iter):
+        cmd = [
+            self.python_exe.get(),
+            str(self._project_path(self._trainer_script_var_for_kind(kind).get())),
+        ]
+        cmd.extend(self._common_training_flags(n_iter))
+        if kind == "duel":
+            cmd.extend(["--winner_mode", self._winner_mode_arg()])
+        return cmd
+
+    def _load_training_report_target(self, kind):
+        if kind == "rf":
+            payload = self._read_json(self.rf_report) or self._get_duel_result_by_key("rf") or {}
+            return payload
+        if kind == "et":
+            payload = self._read_json(self.et_report) or self._get_duel_result_by_key("et") or {}
+            return payload
+        payload = self._read_json(self.duel_report) or {}
+        return payload.get("winner") or payload
+
+    def _next_iteration_value(self, current_n_iter, max_n_iter, growth):
+        nxt = int(round(float(current_n_iter) * float(growth)))
+        if nxt <= int(current_n_iter):
+            nxt = int(current_n_iter) + max(8, int(current_n_iter) // 2)
+        return min(int(max_n_iter), max(int(current_n_iter) + 1, nxt))
+
+    def _evaluate_escalation_need(self, kind):
+        target = self._load_training_report_target(kind)
+        if not target:
+            return True, "no report was produced"
+
+        reasons = []
+        min_recall = self._get_float(self.min_recall_goal, 0.98, 0.0, 1.0)
+        min_precision = self._get_float(self.min_precision_goal, 0.90, 0.0, 1.0)
+        max_val_fn = self._get_int(self.auto_max_val_fn, 0, 0)
+        max_val_fp = self._get_int(self.auto_max_val_fp, 5, 0)
+
+        constraints_met = target.get("threshold_constraints_met")
+        if constraints_met is False:
+            reasons.append("threshold constraints not met")
+
+        holdout_recall = self._get_float(target.get("holdout_validation_recall", target.get("validation_recall", 0.0)), 0.0, 0.0, 1.0)
+        holdout_precision = self._get_float(target.get("holdout_validation_precision", target.get("validation_precision", 0.0)), 0.0, 0.0, 1.0)
+
+        val = target.get("validation_threshold_result", {}) or {}
+        val_fn = self._get_int(val.get("fn", 10**9), 10**9, 0)
+        val_fp = self._get_int(val.get("fp", 10**9), 10**9, 0)
+
+        if holdout_recall < min_recall:
+            reasons.append(f"holdout recall {holdout_recall:.4f} < {min_recall:.4f}")
+        if holdout_precision < min_precision:
+            reasons.append(f"holdout precision {holdout_precision:.4f} < {min_precision:.4f}")
+        if val_fn > max_val_fn:
+            reasons.append(f"validation FN {val_fn} > target {max_val_fn}")
+        if val_fp > max_val_fp:
+            reasons.append(f"validation FP {val_fp} > target {max_val_fp}")
+
+        return (len(reasons) > 0), "; ".join(reasons)
+
+    def _start_training_workflow(self, kind):
+        if self.proc is not None:
+            messagebox.showwarning("Busy", "Another process is already running.")
+            return
+
+        base_n_iter = self._get_int(self.search_iters, 120, 1)
+        max_n_iter = self._get_int(self.max_search_iters, max(base_n_iter, 240), 1)
+        growth = self._get_float(self.iter_growth, 2.0, 1.1, 8.0)
+        if max_n_iter < base_n_iter:
+            max_n_iter = base_n_iter
+
+        workflow = {
+            "kind": kind,
+            "current_n_iter": base_n_iter,
+            "max_n_iter": max_n_iter,
+            "growth": growth,
+            "attempt": 1,
+            "auto_escalate": bool(self.auto_escalate.get()) and kind in {"rf", "et", "duel"},
+        }
+        self.current_workflow = workflow
+        self._launch_training_attempt(workflow)
+
+    def _launch_training_attempt(self, workflow):
+        kind = workflow["kind"]
+        current_n_iter = workflow["current_n_iter"]
+        cmd = self._build_training_command(kind, current_n_iter)
+        label = {
+            "rf": "Random Forest",
+            "et": "Extra Trees",
+            "duel": "King Training",
+        }.get(kind, kind)
+        self.status_text.set(f"Running {label} (n_iter={current_n_iter}, attempt {workflow['attempt']})…")
+        self.progress_text.set(f"Preparing {label} search with n_iter={current_n_iter}")
+        self._start_subprocess(
+            cmd,
+            on_finish=lambda rc, wf=workflow: self._after_training_attempt(wf, rc),
+        )
+
+    def _after_training_attempt(self, workflow, rc):
+        if self.current_workflow is not workflow:
+            return
+        if rc != 0:
+            self.current_workflow = None
+            return
+
+        if not workflow.get("auto_escalate"):
+            self.current_workflow = None
+            return
+
+        should_retry, reason = self._evaluate_escalation_need(workflow["kind"])
+        current_n_iter = int(workflow["current_n_iter"])
+        max_n_iter = int(workflow["max_n_iter"])
+
+        if should_retry and current_n_iter < max_n_iter:
+            next_n_iter = self._next_iteration_value(current_n_iter, max_n_iter, workflow["growth"])
+            if next_n_iter > current_n_iter:
+                workflow["current_n_iter"] = next_n_iter
+                workflow["attempt"] = int(workflow.get("attempt", 1)) + 1
+                self.log(
+                    f"\nAuto-escalating search for {workflow['kind']} because {reason}. "
+                    f"Retrying with n_iter={next_n_iter}.\n"
+                )
+                self.status_text.set(f"Escalating search to n_iter={next_n_iter}…")
+                self.progress_text.set(f"Retrying because {reason}")
+                self.after(150, lambda wf=workflow: self._launch_training_attempt(wf))
+                return
+
+        self.current_workflow = None
+        if should_retry:
+            self.log(
+                f"\nStopped auto-escalation for {workflow['kind']} at n_iter={current_n_iter}. "
+                f"Still below target because {reason}.\n"
+            )
+        else:
+            self.log(
+                f"\nAuto-escalation stop condition met for {workflow['kind']} at "
+                f"n_iter={current_n_iter}.\n"
+            )
 
     def toggle_paths(self):
         self.paths_visible = not self.paths_visible
@@ -597,10 +923,158 @@ class TinyMLTrainerGUI(tk.Tk):
         if path:
             var.set(path)
 
+    def _format_cleaner_summary(self, data):
+        if not data:
+            return "Cleaner summary unavailable."
+        conflict = data.get("conflict_resolution", {})
+        policy = data.get("conflict_policy_counts", {})
+        return (
+            f"Rows: {data.get('rows_before_cleaning', 0)} → {data.get('rows_after_cleaning', 0)}  "
+            f"(removed {data.get('rows_removed', 0)})\n"
+            f"Trainable: {data.get('trainable_rows', 0)} | Trusted normal: {data.get('trusted_normal_rows', 0)} | Conflict-marked: {data.get('conflict_marked_rows', 0)}\n"
+            f"Conflict groups: {conflict.get('mixed_groups', 0)} | Prefer trusted normal: {conflict.get('prefer_trusted_normal', 0)} | Prefer stronger normal: {conflict.get('prefer_more_trusted_normal', 0)} | Keep stronger arc: {conflict.get('keep_more_trusted_arc', 0)} | Dropped ambiguous: {conflict.get('drop_ambiguous', 0)}\n"
+            f"Labels: {data.get('label_counts', {})} | Sources: {data.get('source_counts', {})} | Policies kept: {policy}"
+        )
+
+
+    def _reset_progress(self):
+        self._progress_payload = None
+        self.pb.configure(mode="determinate", maximum=100.0)
+        self.pb["value"] = 0.0
+        self.progress_text.set("Idle")
+        self.progress_percent_text.set("0%")
+
+    def _update_progress(self, payload):
+        payload = dict(payload or {})
+        current = payload.get("current", 0)
+        total = payload.get("total", 0)
+        try:
+            current = float(current)
+            total = float(total)
+        except Exception:
+            return
+        if total <= 0:
+            return
+
+        pct = max(0.0, min(100.0, (current / total) * 100.0))
+        self._progress_payload = payload
+        self.pb.configure(mode="determinate", maximum=100.0)
+        self.pb["value"] = pct
+
+        model_name = str(payload.get("model_name", "")).strip()
+        stage = str(payload.get("stage", "")).strip().replace("_", " ").title()
+        message = str(payload.get("message", "")).strip()
+
+        pieces = []
+        if model_name:
+            pieces.append(model_name)
+        if stage:
+            pieces.append(stage)
+        if message:
+            pieces.append(message)
+        if not pieces:
+            pieces.append(f"Step {int(current)}/{int(total)}")
+
+        self.progress_text.set(" • ".join(pieces))
+        self.progress_percent_text.set(f"{pct:0.1f}%")
+
+        stage_key = str(payload.get("stage", "")).strip().lower()
+        if payload.get("all_models_done"):
+            self.status_text.set("Finished")
+        elif stage_key in {"done", "workflow_done"}:
+            self.status_text.set("Finalizing…")
+
+    def _handle_progress_line(self, msg):
+        prefix = "[[PROGRESS]] "
+        if not msg.startswith(prefix):
+            return False
+        payload = msg[len(prefix):].strip()
+        try:
+            data = json.loads(payload)
+        except Exception:
+            self.log_queue.put(msg)
+            return True
+        self._update_progress(data)
+        return True
+
+    def _show_cleaner_summary_dialog(self, data):
+        if not data:
+            return
+
+        win = tk.Toplevel(self)
+        win.title("Cleaner Summary")
+        win.configure(bg=APP_BG)
+        win.transient(self)
+        win.grab_set()
+        win.geometry("760x440")
+        win.minsize(680, 380)
+
+        outer = tk.Frame(win, bg=APP_BG, padx=16, pady=16)
+        outer.pack(fill="both", expand=True)
+
+        card = tk.Frame(
+            outer,
+            bg=CARD_BG,
+            highlightthickness=1,
+            highlightbackground=BORDER,
+            padx=14,
+            pady=14,
+        )
+        card.pack(fill="both", expand=True)
+
+        tk.Label(
+            card,
+            text="Latest Cleaner Summary",
+            bg=CARD_BG,
+            fg=TEXT,
+            font=("Segoe UI", 12, "bold"),
+        ).pack(anchor="w")
+
+        summary = tk.Text(
+            card,
+            wrap="word",
+            font=("Segoe UI", 10),
+            bg=LOG_BG,
+            fg=TEXT,
+            relief="flat",
+            padx=12,
+            pady=12,
+            height=14,
+        )
+        summary.pack(fill="both", expand=True, pady=(10, 12))
+        summary.insert("1.0", self._format_cleaner_summary(data))
+        summary.configure(state="disabled")
+
+        btn_row = tk.Frame(card, bg=CARD_BG)
+        btn_row.pack(fill="x")
+        ttk.Button(btn_row, text="Close", command=win.destroy).pack(side="right")
+
+    def _handle_cleaner_summary_line(self, msg):
+        prefix = "__CLEANER_SUMMARY__ "
+        if not msg.startswith(prefix):
+            return False
+        payload = msg[len(prefix):].strip()
+        try:
+            data = json.loads(payload)
+        except Exception as exc:
+            self.cleaner_summary_text.set(f"Cleaner summary parse failed: {exc}")
+            self.log_queue.put(msg)
+            return True
+        self._pending_cleaner_summary = data
+        self.cleaner_summary_text.set(self._format_cleaner_summary(data))
+        pretty = self._format_cleaner_summary(data)
+        self.log_queue.put("\n[Cleaner Summary]\n" + pretty + "\n")
+        return True
+
+
     def _drain_logs(self):
         try:
             while True:
                 msg = self.log_queue.get_nowait()
+                if self._handle_progress_line(msg):
+                    continue
+                if self._handle_cleaner_summary_line(msg):
+                    continue
                 self.log_text.insert("end", msg)
                 self.log_text.see("end")
         except queue.Empty:
@@ -610,19 +1084,51 @@ class TinyMLTrainerGUI(tk.Tk):
     def log(self, msg):
         self.log_queue.put(msg)
 
+    def _on_window_resize(self, _event=None):
+        width = max(680, self.winfo_width())
+        for label, frac, floor in getattr(self, "_adaptive_labels", []):
+            try:
+                label.configure(wraplength=max(int(width * frac), int(floor)))
+            except Exception:
+                pass
+
     def _project_path(self, rel_or_abs):
         p = Path(rel_or_abs)
         if p.is_absolute():
             return p
         return Path(self.project_root.get()) / rel_or_abs
 
-    def _start_subprocess(self, cmd):
+    def _finalize_subprocess(self, rc, cmd, on_finish=None):
+        self.status_text.set(f"Finished (exit code {rc})")
+        if self._progress_payload is not None:
+            self._update_progress(self._progress_payload)
+        elif rc == 0:
+            self.pb.configure(mode="determinate", maximum=100.0)
+            self.pb.configure(value=100.0)
+            self.progress_percent_text.set("100.0%")
+            self.progress_text.set("Done")
+        if rc == 0 and cmd and Path(cmd[1]).name == "prepare_data.py" and self._pending_cleaner_summary:
+            self._show_cleaner_summary_dialog(self._pending_cleaner_summary)
+        if on_finish is not None:
+            on_finish(rc)
+        self.refresh_views()
+
+    def _handle_subprocess_failure(self, message):
+        self.status_text.set("Failed")
+        self.progress_text.set(f"Failed: {message}")
+        self.refresh_views()
+
+    def _start_subprocess(self, cmd, on_finish=None):
         if self.proc is not None:
             messagebox.showwarning("Busy", "Another process is already running.")
             return
 
-        self.pb.start(10)
+        self._reset_progress()
         self.status_text.set("Running…")
+        self.progress_text.set("Starting process…")
+        self.progress_percent_text.set("0%")
+        if cmd and Path(cmd[1]).name == "prepare_data.py":
+            self._pending_cleaner_summary = None
         self.last_command.set(" ".join(cmd))
         self.log("\n" + "=" * 100 + "\n")
         self.log("Running: " + " ".join(cmd) + "\n\n")
@@ -641,49 +1147,42 @@ class TinyMLTrainerGUI(tk.Tk):
                     self.log(line)
                 rc = self.proc.wait()
                 self.log(f"\nProcess finished with exit code {rc}\n")
-                self.status_text.set(f"Finished (exit code {rc})")
+                self.after(0, lambda rc=rc, cmd=cmd, on_finish=on_finish: self._finalize_subprocess(rc, cmd, on_finish))
             except Exception as e:
                 self.log(f"\nERROR: {e}\n")
-                self.status_text.set("Failed")
+                self.after(0, lambda message=str(e): self._handle_subprocess_failure(message))
             finally:
                 self.proc = None
-                self.pb.stop()
-                self.refresh_views()
 
         threading.Thread(target=worker, daemon=True).start()
 
     def stop_running(self):
+        self.current_workflow = None
         if self.proc is None:
             return
         try:
             self.proc.terminate()
             self.log("\nRequested process termination.\n")
+            self.status_text.set("Stopping…")
+            self.progress_text.set("Stopping process…")
         except Exception as e:
             self.log(f"\nStop failed: {e}\n")
 
     def run_cleaner(self):
+        self.current_workflow = None
         self._start_subprocess([
             self.python_exe.get(),
             str(self._project_path(self.prepare_script.get())),
         ])
 
     def run_rf_only(self):
-        self._start_subprocess([
-            self.python_exe.get(),
-            str(self._project_path(self.rf_script.get())),
-        ])
+        self._start_training_workflow("rf")
 
     def run_et_only(self):
-        self._start_subprocess([
-            self.python_exe.get(),
-            str(self._project_path(self.et_script.get())),
-        ])
+        self._start_training_workflow("et")
 
     def run_duel(self):
-        self._start_subprocess([
-            self.python_exe.get(),
-            str(self._project_path(self.duel_script.get())),
-        ])
+        self._start_training_workflow("duel")
 
     def refresh_views(self):
         self._refresh_dataset_view()
@@ -715,11 +1214,17 @@ class TinyMLTrainerGUI(tk.Tk):
         trainable = int(df["rf_train_row"].sum()) if "rf_train_row" in df.columns else rows
         label_counts = df["label_arc"].value_counts().to_dict() if "label_arc" in df.columns else {}
         source_counts = df["source_kind"].value_counts().to_dict() if "source_kind" in df.columns else {}
+        trusted_normal = int((df["trusted_normal_session"] == 1).sum()) if "trusted_normal_session" in df.columns else 0
+        conflict_rows = int((df["label_conflict"] == 1).sum()) if "label_conflict" in df.columns else 0
+        conflict_policy_counts = df["conflict_policy"].value_counts().to_dict() if "conflict_policy" in df.columns else {}
         self.dataset_summary.set(
             f"Rows: {rows}\n"
             f"Trainable rows: {trainable}\n"
+            f"Trusted normal rows: {trusted_normal}\n"
+            f"Conflict-marked rows: {conflict_rows}\n"
             f"Label counts: {label_counts}\n"
-            f"Source counts: {source_counts}"
+            f"Source counts: {source_counts}\n"
+            f"Conflict policies: {conflict_policy_counts}"
         )
 
         feature_cols = [

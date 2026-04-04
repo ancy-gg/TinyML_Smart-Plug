@@ -32,8 +32,8 @@ public:
   bool getInt(const char* path, int& out);
 
   bool consumePortalRequest();
-  bool consumeRelayOnRequest();
-  bool consumeRelayOffRequest();
+  bool consumeRelayOnRequest(String* tokenOut = nullptr);
+  bool consumeRelayOffRequest(String* tokenOut = nullptr);
   bool consumeFaultClearRequest();
   bool consumeRevertFirmwareRequest();
   bool consumeOtaCheckRequest();
@@ -45,11 +45,13 @@ public:
                          float midband_residual_rms, float hf_band_energy_ratio,
                          float spec_entropy, float neg_dip_event_ratio, float irms_drop_vs_baseline, float thd_i,
                          uint8_t model_pred,
-                         const String& state);
+                         const String& state,
+                         bool faultLatched, bool webControlsLocked, bool relayLatchedOn);
 
   bool logStatusEvent(const String& status, float v, float c, float apparentPower, float t);
   bool logFeatureEvent(const String& status, const FeatureFrame& f, float apparentPower, bool relayTrip);
   bool publishOtaDebug(const String& phase, const String& detail, int progress = -1);
+  bool publishControlAck(const String& kind, const String& token);
   void stopAllClients();
 
   void setLogEnabled(bool en);
@@ -72,6 +74,9 @@ private:
     float spec_entropy = 0.0f, neg_dip_event_ratio = 0.0f, irms_drop_vs_baseline = 0.0f, thd_i = 0.0f;
     uint8_t model_pred = 0;
     String state;
+    bool faultLatched = false;
+    bool webControlsLocked = false;
+    bool relayLatchedOn = false;
   };
 
   struct HistoryJob {

@@ -25,8 +25,10 @@ static constexpr uint32_t MAGIC = 0xC0FFEE42;
 static const uint32_t OTA_HTTP_TIMEOUT_MS   = 60000;
 static const uint32_t OTA_STREAM_IDLE_MS    = 60000;
 static const uint32_t OTA_RESTART_DELAY_MS  = 1200;
+static const uint32_t OTA_PREP_QUIET_MS     = 350;
+static const uint32_t OTA_CLIENT_DRAIN_MS   = 700;
 static const size_t   OTA_MIN_BIN_BYTES     = 128 * 1024;
-static const uint32_t OTA_TASK_STACK_BYTES  = 10240;
+static const uint32_t OTA_TASK_STACK_BYTES  = 12288;
 
 static bool isCrashReset(esp_reset_reason_t r) {
   switch (r) {
@@ -229,12 +231,8 @@ void UpdateManager::otaTaskThunk_(void* arg) {
 }
 
 void UpdateManager::otaTask_() {
-  auto publishDebug = [&](const String& phase, const String& detail, int progress = -1) {
-    if (_cloud && _cloud->isReady()) (void)_cloud->publishOtaDebug(phase, detail, progress);
-  };
-
   String url = _otaUrl;
-  bool ok = performUpdateFromUrl(url);
+  const bool ok = performUpdateFromUrl(url);
   if (ok) {
     _lastError = "";
     _otaUrl = "";
@@ -246,7 +244,6 @@ void UpdateManager::otaTask_() {
     ESP.restart();
   } else {
     if (!_lastError.length()) _lastError = otaErr_("OTA_FAILED");
-    publishDebug("FAIL", _lastError, -1);
     if (_cb) _cb(OtaEvent::FAIL, 0);
     _otaUrl = "";
     _otaInProgress = false;
@@ -331,6 +328,7 @@ void UpdateManager::loop() {
   if (_otaInProgress || _otaWorkerActive) return;
 
   if (_cb) _cb(OtaEvent::START, 0);
+  delay(OTA_PREP_QUIET_MS);
   if (!startOtaTask_(fwUrl)) {
     if (!_lastError.length()) _lastError = otaErr_("OTA_TASK_CREATE_FAILED");
     if (_cb) _cb(OtaEvent::FAIL, 0);
@@ -598,18 +596,11 @@ bool UpdateManager::performUpdateFromUrl(const String& rawUrl) {
     return false;
   }
 
-  String lastDetailSent = "";
-  int lastProgressSent = -999;
   auto publishStep = [&](const String& phase, const String& detail, int progress = -1) {
+    (void)detail;
+    (void)progress;
     currentStage = phase;
-    if (_cloud && _cloud->isReady()) {
-      if (phase != lastPhaseSent || detail != lastDetailSent || progress != lastProgressSent) {
-        (void)_cloud->publishOtaDebug(phase, detail, progress);
-        lastPhaseSent = phase;
-        lastDetailSent = detail;
-        lastProgressSent = progress;
-      }
-    }
+    lastPhaseSent = phase;
   };
 
   auto doAttempt = [&](const String& url) -> bool {
@@ -623,13 +614,9 @@ bool UpdateManager::performUpdateFromUrl(const String& rawUrl) {
 
       if (_cloud) {
         _cloud->stopAllClients();
-        delay(150);
       }
-      String resolveDetail;
-      resolveDetail.reserve(16 + u.host.length());
-      resolveDetail = "Resolving ";
-      resolveDetail += u.host;
-      publishStep("RESOLVE", resolveDetail, -1);
+      delay(OTA_CLIENT_DRAIN_MS);
+      publishStep("RESOLVE", u.host, -1);
 
       IPAddress resolvedIp;
       if (!WiFi.hostByName(u.host.c_str(), resolvedIp)) {
@@ -651,8 +638,8 @@ bool UpdateManager::performUpdateFromUrl(const String& rawUrl) {
         }
         secure->setTimeout(OTA_HTTP_TIMEOUT_MS / 1000);
         secure->setHandshakeTimeout(20);
-        setTlsBuffersIfSupported_(*secure, 512, 512);
         if (_insecureTLS) secure->setInsecure();
+        setTlsBuffersIfSupported_(*secure, 512, 256);
         client = secure.get();
       } else {
         plain.reset(new (std::nothrow) WiFiClient());
@@ -676,7 +663,18 @@ bool UpdateManager::performUpdateFromUrl(const String& rawUrl) {
       connectDetail += " max=";
       connectDetail += String(heap_caps_get_largest_free_block(MALLOC_CAP_8BIT));
       publishStep("CONNECTING", connectDetail, -1);
-      if (!client->connect(resolvedIp, u.port)) {
+      bool connected = false;
+      if (u.https && secure) {
+        connected = secure->connect(u.host.c_str(), u.port);
+        if (!connected) {
+          secure->stop();
+          setTlsBuffersIfSupported_(*secure, 512, 512);
+          connected = secure->connect(u.host.c_str(), u.port);
+        }
+      } else {
+        connected = client->connect(resolvedIp, u.port);
+      }
+      if (!connected) {
         String detail = "OTA_CONNECT_FAIL ";
         detail += u.host;
         detail += ":";

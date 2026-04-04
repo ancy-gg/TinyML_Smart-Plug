@@ -35,6 +35,85 @@ static QueueHandle_t qFeat = nullptr;
 static TaskHandle_t gCore0SenseTask = nullptr;
 static bool gSafeMode = false;
 static volatile bool gPauseByOta = false;
+static volatile bool gStopSenseTask = false;
+static volatile bool gSenseTaskRunning = false;
+
+static void Core0Task(void* pv);
+
+static bool allocSampleBuffer_() {
+  if (s_raw) return true;
+  s_raw = static_cast<uint16_t*>(heap_caps_malloc(sizeof(uint16_t) * N_SAMP, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT));
+  if (!s_raw) s_raw = static_cast<uint16_t*>(heap_caps_malloc(sizeof(uint16_t) * N_SAMP, MALLOC_CAP_8BIT));
+  return s_raw != nullptr;
+}
+
+static bool requestSenseTaskStop_(uint32_t waitMs = 3500UL) {
+  if (!gCore0SenseTask && !gSenseTaskRunning) {
+    gStopSenseTask = false;
+    return true;
+  }
+
+  gStopSenseTask = true;
+  const uint32_t t0 = millis();
+  while ((gCore0SenseTask || gSenseTaskRunning) && ((millis() - t0) < waitMs)) {
+    vTaskDelay(10 / portTICK_PERIOD_MS);
+  }
+
+  const bool stopped = (!gCore0SenseTask && !gSenseTaskRunning);
+  gStopSenseTask = false;
+  return stopped;
+}
+
+static bool stopSensePipeline_(bool freeBuffer = true) {
+  const bool stopped = requestSenseTaskStop_();
+  if (!stopped) return false;
+  if (qFeat) {
+    vQueueDelete(qFeat);
+    qFeat = nullptr;
+  }
+  if (freeBuffer && s_raw) {
+    heap_caps_free(s_raw);
+    s_raw = nullptr;
+  }
+  return true;
+}
+
+static bool startSensePipeline_() {
+  if (gCore0SenseTask) return true;
+  if (!allocSampleBuffer_()) return false;
+  if (!curSensor.begin()) return false;
+  if (!qFeat) qFeat = xQueueCreate(1, sizeof(FeatureFrame));
+  if (!qFeat) return false;
+  const BaseType_t ok = xTaskCreatePinnedToCore(Core0Task, "Core0Sense", 16384, nullptr, 3, &gCore0SenseTask, 0);
+  if (ok != pdPASS) {
+    gCore0SenseTask = nullptr;
+    vQueueDelete(qFeat);
+    qFeat = nullptr;
+    return false;
+  }
+  return true;
+}
+
+static bool enterOtaExclusiveMode_() {
+  gPauseByOta = true;
+  network.setLogEnabled(false);
+  network.setMlUploadSuspended(true);
+  network.stopAllClients();
+  delay(180);
+  const bool stopped = stopSensePipeline_(true);
+  network.stopAllClients();
+  delay(120);
+  return stopped;
+}
+
+static bool exitOtaExclusiveMode_() {
+  gPauseByOta = false;
+  network.setMlUploadSuspended(false);
+  network.stopAllClients();
+  delay(120);
+  if (gSafeMode) return true;
+  return startSensePipeline_();
+}
 
 static bool arcInputStable(bool currentValid, float irms) {
   static uint32_t stableSince = 0;
@@ -333,39 +412,54 @@ static void onOtaEvent(OtaEvent ev, int progress) {
   static int s_lastDbProgress = -100;
   if (ev == OtaEvent::START) {
     s_lastDbProgress = 0;
-    gPauseByOta = true;
     notification.setOta(true, 0);
     notification.notify(SND_OTA_START);
-    (void)network.publishOtaDebug("START", "OTA started", 0);
+    const bool prepOk = enterOtaExclusiveMode_();
+    (void)network.publishOtaDebug(prepOk ? "START" : "WARN",
+                                  prepOk ? "OTA exclusive mode ready" : "OTA exclusive prep partial",
+                                  0);
   } else if (ev == OtaEvent::PROGRESS) {
     const int pct = constrain(progress, 0, 100);
     notification.setOta(true, (uint8_t)pct);
-    s_lastDbProgress = pct;
+    if (pct == 0 || pct == 100 || (pct - s_lastDbProgress) >= 20) {
+      s_lastDbProgress = pct;
+    }
   } else if (ev == OtaEvent::SUCCESS) {
     s_lastDbProgress = 100;
     notification.setOta(true, 100);
     notification.notify(SND_OTA_OK);
-    (void)network.publishOtaDebug("SUCCESS", "OTA finished, rebooting", 100);
-    network.logStatusEvent("FIRMWARE UPDATED", 0.0f, 0.0f, 0.0f, 0.0f);
   } else if (ev == OtaEvent::FAIL) {
     s_lastDbProgress = -100;
-    gPauseByOta = false;
     notification.setOta(false, 0);
     notification.notify(SND_OTA_FAIL);
-    // FAIL debug/log is already handled inside UpdateManager::loop()
+    if (!exitOtaExclusiveMode_()) {
+      notification.showStatus("OTA FAILED", "Sense restart err");
+      delay(700);
+    }
+    // FAIL debug/log is handled after exclusive OTA mode exits.
   }
 }
 
 static void Core0Task(void* pv) {
   (void)pv;
+  gSenseTaskRunning = true;
   ArcDetectionResult out;
   FeatureFrame lastGood = {};
   bool hasGood = false;
 
-  while (millis() < SENSOR_BOOT_SETTLE_MS) vTaskDelay(20 / portTICK_PERIOD_MS);
+  while (millis() < SENSOR_BOOT_SETTLE_MS) {
+    if (gStopSenseTask) {
+      gSenseTaskRunning = false;
+      gCore0SenseTask = nullptr;
+      vTaskDelete(nullptr);
+    }
+    vTaskDelay(20 / portTICK_PERIOD_MS);
+  }
 
   while (true) {
+    if (gStopSenseTask) break;
     if (gPauseByOta || gSafeMode) {
+      if (gStopSenseTask) break;
       vTaskDelay(20 / portTICK_PERIOD_MS);
       continue;
     }
@@ -376,6 +470,7 @@ static void Core0Task(void* pv) {
     size_t got = curSensor.capture(s_raw, N_SAMP, &fs_hz);
 
     if (gPauseByOta || gSafeMode) {
+      if (gStopSenseTask) break;
       vTaskDelay(20 / portTICK_PERIOD_MS);
       continue;
     }
@@ -386,6 +481,7 @@ static void Core0Task(void* pv) {
     }
 
     if (gPauseByOta || gSafeMode) {
+      if (gStopSenseTask) break;
       vTaskDelay(20 / portTICK_PERIOD_MS);
       continue;
     }
@@ -410,6 +506,10 @@ static void Core0Task(void* pv) {
     }
     vTaskDelay(1);
   }
+
+  gSenseTaskRunning = false;
+  gCore0SenseTask = nullptr;
+  vTaskDelete(nullptr);
 }
 
 
@@ -458,11 +558,6 @@ void setup() {
   curSensor.setCalib(curCalib);
   tempSensor.begin(); tempSensor.setLongAverage(8.0f, 1.0f);
 
-  if (!s_raw) {
-    s_raw = static_cast<uint16_t*>(heap_caps_malloc(sizeof(uint16_t) * N_SAMP, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT));
-    if (!s_raw) s_raw = static_cast<uint16_t*>(heap_caps_malloc(sizeof(uint16_t) * N_SAMP, MALLOC_CAP_8BIT));
-  }
-
   network.begin(FIREBASE_API_KEY, FIREBASE_DB_URL);
   network.setFirmwareVersion(FW_VERSION);
   network.setNormalIntervalMs(CLOUD_LIVE_NORMAL_INTERVAL_MS);
@@ -475,12 +570,11 @@ void setup() {
   gSafeMode = updater.safeMode();
 
   if (!gSafeMode) {
-    if (s_raw && curSensor.begin()) {
-      qFeat = xQueueCreate(1, sizeof(FeatureFrame));
-      xTaskCreatePinnedToCore(Core0Task, "Core0Sense", 16384, nullptr, 3, &gCore0SenseTask, 0);
+    if (startSensePipeline_()) {
       notification.showStatus("Sensors", "MCP3204 ready");
     } else {
-      notification.showStatus("WARN", s_raw ? "No MCP3204" : "No sample RAM"); delay(700);
+      notification.showStatus("WARN", allocSampleBuffer_() ? "No MCP3204" : "No sample RAM");
+      delay(700);
     }
   } else {
     notification.showStatus("SAFE MODE", "OTA only");
@@ -758,15 +852,19 @@ void loop() {
   const bool unpluggedLiveCtl = classifyUnpluggedSocket(vRaw, vFast, irmsRawForLogic, f.current_valid != 0, st, &noPowerSinceMsCtl);
   const bool controlsLocked = gSafeMode || paused || bootSettling || protectionInhibit || unpluggedLiveCtl || protection.webControlLocked() || protection.voltageLockoutActive();
   const bool portalRequested = (!gSafeMode) ? network.consumePortalRequest() : false;
-  const bool relayOnRequested = (!gSafeMode) ? network.consumeRelayOnRequest() : false;
-  const bool relayOffRequested = (!gSafeMode) ? network.consumeRelayOffRequest() : false;
+  String relayOnToken = "";
+  String relayOffToken = "";
+  const bool relayOnRequested = (!gSafeMode) ? network.consumeRelayOnRequest(&relayOnToken) : false;
+  const bool relayOffRequested = (!gSafeMode) ? network.consumeRelayOffRequest(&relayOffToken) : false;
   if (!gSafeMode) {
     if (portalRequested && !controlsLocked) wifiMgr.requestPortal(true);
     if (!controlsLocked) {
       if (relayOffRequested) {
+        (void)network.publishControlAck("relay_off", relayOffToken);
         protection.pulseRelayOff();
         notification.notify(SND_RESET_ACK);
       } else if (relayOnRequested) {
+        (void)network.publishControlAck("relay_on", relayOnToken);
         protection.pulseRelayOn();
         notification.notify(SND_RESET_ACK);
       }
@@ -892,7 +990,8 @@ void loop() {
                               f.cycle_rms_drop_ratio, f.peak_fluct_cv,
                               f.midband_residual_rms, f.hf_band_energy_ratio,
                               f.spec_entropy, f.neg_dip_event_ratio, f.irms_drop_vs_baseline, f.thd_i,
-                              f.model_pred, stateStr);
+                              f.model_pred, stateStr,
+                              protection.webControlLocked(), controlsLocked, protection.relayLatchedOn());
   }
 
   if (!paused && ((int32_t)(relayNetQuietUntilMs - millis()) <= 0)) network.loop();
