@@ -1228,9 +1228,8 @@ class TinyMLTrainerGUI(tk.Tk):
         )
 
         feature_cols = [
-            "cycle_nmse", "zcv", "zc_dwell_ratio", "cycle_rms_drop_ratio",
-            "peak_fluct_cv", "midband_residual_rms", "hf_band_energy_ratio",
-            "spec_entropy", "neg_dip_event_ratio", "irms_drop_vs_baseline",
+            "spectral_flux_midhf", "residual_crest_factor", "edge_spike_ratio", "midband_residual_ratio",
+            "cycle_nmse", "peak_fluct_cv", "thd_i", "hf_energy_delta", "zcv", "abs_irms_zscore_vs_baseline",
         ]
         present = [c for c in feature_cols if c in df.columns]
         if not present:

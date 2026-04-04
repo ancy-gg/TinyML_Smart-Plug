@@ -1,10 +1,9 @@
-const BUILD_VERSION = "Web-v7.0";
+const BUILD_VERSION = "Web-v7.4";
 const CACHE_NAME = BUILD_VERSION;
 const APP_SHELL = [
   "./",
   "./index.html",
   "./guide.html",
-  "./session.html",
   "./styles.css",
   "./app.js",
   "./session.js",

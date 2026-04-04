@@ -508,18 +508,20 @@
       load_type: "load_type",
       epoch_ms: "epoch_ms",
       adc_fs_hz: "adc_fs_hz",
+      spectral_flux: "spectral_flux_midhf",
+      spectral_flux_midhf: "spectral_flux_midhf",
+      midhf_flux: "spectral_flux_midhf",
+      residual_crest_factor: "residual_crest_factor",
+      resid_crest_factor: "residual_crest_factor",
+      edge_spike_ratio: "edge_spike_ratio",
+      pre_dip_spike_ratio: "edge_spike_ratio",
+      midband_residual_ratio: "midband_residual_ratio",
       cycle_nmse: "cycle_nmse",
-      zcv: "zcv",
-      zc_dwell_ratio: "zc_dwell_ratio",
-      cycle_rms_drop_ratio: "cycle_rms_drop_ratio",
       peak_fluct_cv: "peak_fluct_cv",
-      midband_residual_rms: "midband_residual_rms",
-      hf_band_energy_ratio: "hf_band_energy_ratio",
-      spec_entropy: "spec_entropy",
-      neg_dip_event_ratio: "neg_dip_event_ratio",
-      pre_dip_spike_ratio: "irms_drop_vs_baseline",
-      irms_drop_vs_baseline: "irms_drop_vs_baseline",
-      thd_i: "thd_i"
+      thd_i: "thd_i",
+      hf_energy_delta: "hf_energy_delta",
+      zcv: "zcv",
+      abs_irms_zscore_vs_baseline: "abs_irms_zscore_vs_baseline"
     };
     return aliases[slug] || slug || raw;
   }
@@ -529,7 +531,7 @@
     const keys = Object.keys(rows[0]);
     return keys.filter((k) => {
       if (k === "timestamp" || k === "session_id" || k === "load_type") return false;
-      if (k === "epoch_ms" || k === "thd_i" || k === "wpe_entropy" || k === "dip_rebound_ratio") return false;
+      if (k === "epoch_ms" || k === "wpe_entropy" || k === "dip_rebound_ratio") return false;
       const val = rows.find((r) => r[k] !== undefined && r[k] !== null)?.[k];
       if (val === undefined) return false;
       const num = typeof val === "number" ? val : Number(String(val).trim());
@@ -724,7 +726,7 @@
   const showPref = new Map();
   const axisPref = new Map();
 
-  const DEFAULT_ON = new Set(["i_rms", "label_arc", "model_pred", "irms_drop_vs_baseline"]);
+  const DEFAULT_ON = new Set(["i_rms", "label_arc", "model_pred", "edge_spike_ratio", "spectral_flux_midhf"]);
   const DEFAULT_Y2 = new Set(["i_rms", "current", "v_rms", "voltage", "temp_c", "temp"]);
 
   setViewerOpen(false);
@@ -734,7 +736,7 @@
 
 
   function preferredDefaultKeys(keys) {
-    const preferred = ["i_rms", "label_arc", "model_pred", "irms_drop_vs_baseline", "cycle_rms_drop_ratio", "cycle_nmse", "zcv", "neg_dip_event_ratio", "v_rms", "temp_c", "current", "voltage", "temp"];
+    const preferred = ["i_rms", "label_arc", "model_pred", "spectral_flux_midhf", "edge_spike_ratio", "midband_residual_ratio", "cycle_nmse", "hf_energy_delta", "zcv", "abs_irms_zscore_vs_baseline", "v_rms", "temp_c", "current", "voltage", "temp"];
     const picked = preferred.filter((k) => keys.includes(k));
     if (picked.length) return picked.slice(0, 8);
     return keys.filter((k) => k !== "label_arc").slice(0, Math.min(8, keys.length));

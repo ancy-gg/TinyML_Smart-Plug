@@ -5,7 +5,10 @@ from dataclasses import dataclass
 from typing import Dict, List, Tuple
 
 import joblib
-import m2cgen as m2c
+try:
+    import m2cgen as m2c
+except Exception:
+    m2c = None
 import numpy as np
 import pandas as pd
 
@@ -32,19 +35,161 @@ except Exception:
 
 
 FEATURES = [
+    "spectral_flux_midhf",
+    "residual_crest_factor",
+    "edge_spike_ratio",
+    "midband_residual_ratio",
     "cycle_nmse",
-    "zcv",
-    "zc_dwell_ratio",
-    "cycle_rms_drop_ratio",
     "peak_fluct_cv",
-    "midband_residual_rms",
-    "hf_band_energy_ratio",
-    "spec_entropy",
-    "neg_dip_event_ratio",
-    "irms_drop_vs_baseline",
+    "thd_i",
+    "hf_energy_delta",
+    "zcv",
+    "abs_irms_zscore_vs_baseline",
 ]
 TARGET = "label_arc"
 GROUP_COL_CANDIDATES = ["session_id", "session", "sid"]
+
+DB_FEATURE_SPACE_VERSION = 3
+DB_RATIO_FLOOR = 1e-6
+DB_POWER_RATIO_FLOOR = 1e-6
+DB_RATIO_CLIP = (-80.0, 20.0)
+DB_RESIDUAL_CF_CLIP = (-20.0, 40.0)
+DB_THD_CLIP = (-80.0, 20.0)
+DB_HF_CLIP = (-24.0, 24.0)
+
+DB_ARC_THRESHOLDS = {
+    "residual_crest_factor": 12.568,
+    "edge_spike_ratio": -14.894,
+    "midband_residual_ratio": -21.412,
+    "thd_i": -13.151,
+    "hf_energy_delta": 1.500,
+}
+
+DB_NORMAL_ANCHORS = {
+    "residual_crest_factor": 6.0,
+    "edge_spike_ratio": -28.0,
+    "midband_residual_ratio": -34.0,
+    "thd_i": -24.0,
+    "hf_energy_delta": 0.0,
+}
+
+DB_ALIAS_MAP = {
+    "residual_crest_factor_db": "residual_crest_factor",
+    "edge_spike_ratio_db": "edge_spike_ratio",
+    "midband_residual_ratio_db": "midband_residual_ratio",
+    "thd_i_db": "thd_i",
+    "hf_energy_delta_db": "hf_energy_delta",
+}
+
+
+def _series_from(values) -> pd.Series:
+    if isinstance(values, pd.Series):
+        return pd.to_numeric(values, errors="coerce")
+    return pd.Series(pd.to_numeric(values, errors="coerce"), dtype=float)
+
+
+def _ratio_to_db20(values, floor: float = DB_RATIO_FLOOR) -> pd.Series:
+    s = _series_from(values)
+    arr = np.clip(s.to_numpy(dtype=float), floor, None)
+    return pd.Series(20.0 * np.log10(arr), index=s.index, dtype=float)
+
+
+def _ratio_to_db10(values, floor: float = DB_POWER_RATIO_FLOOR) -> pd.Series:
+    s = _series_from(values)
+    arr = np.clip(s.to_numpy(dtype=float), floor, None)
+    return pd.Series(10.0 * np.log10(arr), index=s.index, dtype=float)
+
+
+def _thd_percent_to_db(values) -> pd.Series:
+    s = _series_from(values).clip(lower=0.0)
+    return _ratio_to_db20(s / 100.0)
+
+
+def detect_feature_space_version(df: pd.DataFrame) -> int:
+    for col in ("feature_space_version", "arc_feature_space_version"):
+        if col in df.columns:
+            vals = pd.to_numeric(df[col], errors="coerce")
+            if (vals >= DB_FEATURE_SPACE_VERSION).any():
+                return DB_FEATURE_SPACE_VERSION
+            if ((vals > 0) & (vals < DB_FEATURE_SPACE_VERSION)).any():
+                return 2
+
+    for alias in DB_ALIAS_MAP:
+        if alias in df.columns:
+            return DB_FEATURE_SPACE_VERSION
+
+    db_votes = 0
+    linear_votes = 0
+
+    for col in ("edge_spike_ratio", "midband_residual_ratio", "thd_i"):
+        if col not in df.columns:
+            continue
+        s = pd.to_numeric(df[col], errors="coerce").dropna()
+        if s.empty:
+            continue
+        if (s < -1e-6).any():
+            db_votes += 2
+        else:
+            linear_votes += 1
+        if col == "thd_i":
+            q95 = float(s.quantile(0.95))
+            if q95 > 40.0:
+                linear_votes += 2
+            elif float(s.quantile(0.50)) < 0.0:
+                db_votes += 2
+
+    if "hf_energy_delta" in df.columns:
+        s = pd.to_numeric(df["hf_energy_delta"], errors="coerce").dropna()
+        if not s.empty:
+            if float(s.abs().quantile(0.95)) > 3.0:
+                db_votes += 1
+            elif float(s.min()) >= -1.05 and float(s.max()) <= 1.05:
+                linear_votes += 1
+
+    return DB_FEATURE_SPACE_VERSION if db_votes > linear_votes else 2
+
+
+def coerce_log_feature_space(df: pd.DataFrame) -> pd.DataFrame:
+    df = df.copy()
+    for alias, canonical in DB_ALIAS_MAP.items():
+        if alias in df.columns and canonical not in df.columns:
+            df[canonical] = pd.to_numeric(df[alias], errors="coerce")
+
+    src_version = detect_feature_space_version(df)
+
+    if src_version < DB_FEATURE_SPACE_VERSION:
+        if "midband_residual_ratio" in df.columns:
+            df["midband_residual_ratio"] = _ratio_to_db20(df["midband_residual_ratio"])
+        if "residual_crest_factor" in df.columns:
+            df["residual_crest_factor"] = _ratio_to_db20(df["residual_crest_factor"])
+        if "edge_spike_ratio" in df.columns:
+            df["edge_spike_ratio"] = _ratio_to_db20(df["edge_spike_ratio"])
+        if "thd_i" in df.columns:
+            df["thd_i"] = _thd_percent_to_db(df["thd_i"])
+
+        if {"hf_band_energy_ratio", "rolling_baseline_hf_band_energy_ratio"}.issubset(df.columns):
+            cur = pd.to_numeric(df["hf_band_energy_ratio"], errors="coerce")
+            base = pd.to_numeric(df["rolling_baseline_hf_band_energy_ratio"], errors="coerce")
+            df["hf_energy_delta"] = _ratio_to_db10((cur + DB_POWER_RATIO_FLOOR) / (base + DB_POWER_RATIO_FLOOR))
+        elif "hf_energy_delta" in df.columns:
+            legacy_delta = pd.to_numeric(df["hf_energy_delta"], errors="coerce")
+            df["hf_energy_delta"] = _ratio_to_db10((1.0 + legacy_delta).clip(lower=DB_POWER_RATIO_FLOOR))
+
+    df["feature_space_version"] = DB_FEATURE_SPACE_VERSION
+    return df
+
+
+def _db_threshold_score(series: pd.Series, neutral_db: float, arc_db: float, hi: float = 1.5) -> pd.Series:
+    s = _series_from(series)
+    span = max(float(arc_db) - float(neutral_db), 1e-6)
+    return ((s - float(neutral_db)) / span).clip(0.0, hi)
+
+
+def _db_negative_score(series: pd.Series, neutral_db: float = 0.0, floor_db: float = -6.0, hi: float = 1.5) -> pd.Series:
+    s = _series_from(series)
+    span = max(float(neutral_db) - float(floor_db), 1e-6)
+    return ((float(neutral_db) - s) / span).clip(0.0, hi)
+
 
 
 def resolve_n_jobs(default: int = -1) -> int:
@@ -139,19 +284,29 @@ def normalize_feature_names(df: pd.DataFrame) -> pd.DataFrame:
         "current_valid": "current_valid",
         "rf_train_row": "rf_train_row",
         "sample_weight": "sample_weight",
+        "spectral_flux_midhf": "spectral_flux_midhf",
+        "spectral_flux": "spectral_flux_midhf",
+        "midhf_flux": "spectral_flux_midhf",
+        "residual_crest_factor": "residual_crest_factor",
+        "resid_crest_factor": "residual_crest_factor",
+        "edge_spike_ratio": "edge_spike_ratio",
+        "pre_dip_spike_ratio": "edge_spike_ratio",
+        "midband_residual_ratio": "midband_residual_ratio",
         "cycle_nmse": "cycle_nmse",
-        "zcv": "zcv",
-        "zc_dwell_ratio": "zc_dwell_ratio",
-        "cycle_rms_drop_ratio": "cycle_rms_drop_ratio",
         "peak_fluct_cv": "peak_fluct_cv",
-        "midband_residual_rms": "midband_residual_rms",
-        "hf_band_energy_ratio": "hf_band_energy_ratio",
-        "spec_entropy": "spec_entropy",
-        "neg_dip_event_ratio": "neg_dip_event_ratio",
-        "irms_drop_vs_baseline": "irms_drop_vs_baseline",
-        "pre_dip_spike_ratio": "irms_drop_vs_baseline",
         "thd_i": "thd_i",
+        "hf_energy_delta": "hf_energy_delta",
+        "zcv": "zcv",
+        "abs_irms_zscore_vs_baseline": "abs_irms_zscore_vs_baseline",
+        "rolling_baseline_irms": "rolling_baseline_irms",
+        "rolling_baseline_irms_mean": "rolling_baseline_irms_mean",
+        "rolling_baseline_irms_std": "rolling_baseline_irms_std",
+        "rolling_baseline_hf_band_energy_ratio": "rolling_baseline_hf_band_energy_ratio",
+        "hf_band_energy_ratio": "hf_band_energy_ratio",
+        "midband_residual_rms": "midband_residual_rms",
+        "irms_drop_vs_baseline": "irms_drop_vs_baseline",
         "pulse_count_per_cycle": "pulse_count_per_cycle",
+        **DB_ALIAS_MAP,
     }
 
     rename_map = {
@@ -162,18 +317,40 @@ def normalize_feature_names(df: pd.DataFrame) -> pd.DataFrame:
     if rename_map:
         df = df.rename(columns=rename_map)
 
-    if (
-        "cycle_rms_drop_ratio" not in df.columns
-        and "pulse_count_per_cycle" in df.columns
-    ):
-        df["cycle_rms_drop_ratio"] = pd.to_numeric(
-            df["pulse_count_per_cycle"],
-            errors="coerce",
-        )
+    if "midband_residual_ratio" not in df.columns:
+        if "midband_residual_rms" in df.columns and "rolling_baseline_irms" in df.columns:
+            base = pd.to_numeric(df["rolling_baseline_irms"], errors="coerce").replace(0, np.nan)
+            df["midband_residual_ratio"] = pd.to_numeric(df["midband_residual_rms"], errors="coerce") / base
+        elif "midband_residual_rms" in df.columns and "i_rms" in df.columns:
+            base = pd.to_numeric(df["i_rms"], errors="coerce").replace(0, np.nan)
+            df["midband_residual_ratio"] = pd.to_numeric(df["midband_residual_rms"], errors="coerce") / base
+        elif "midband_residual_rms" in df.columns:
+            df["midband_residual_ratio"] = pd.to_numeric(df["midband_residual_rms"], errors="coerce")
 
-    for missing in ["neg_dip_event_ratio", "irms_drop_vs_baseline", "thd_i"]:
+    if "hf_energy_delta" not in df.columns:
+        if "hf_band_energy_ratio" in df.columns and "rolling_baseline_hf_band_energy_ratio" in df.columns:
+            cur = pd.to_numeric(df["hf_band_energy_ratio"], errors="coerce")
+            base = pd.to_numeric(df["rolling_baseline_hf_band_energy_ratio"], errors="coerce")
+            df["hf_energy_delta"] = _ratio_to_db10((cur + DB_POWER_RATIO_FLOOR) / (base + DB_POWER_RATIO_FLOOR))
+        elif "hf_band_energy_ratio" in df.columns:
+            df["hf_energy_delta"] = _ratio_to_db10(pd.to_numeric(df["hf_band_energy_ratio"], errors="coerce"))
+
+    if "abs_irms_zscore_vs_baseline" not in df.columns:
+        if {"i_rms", "rolling_baseline_irms_mean", "rolling_baseline_irms_std"}.issubset(df.columns):
+            mu = pd.to_numeric(df["rolling_baseline_irms_mean"], errors="coerce")
+            sd = pd.to_numeric(df["rolling_baseline_irms_std"], errors="coerce").replace(0, np.nan)
+            df["abs_irms_zscore_vs_baseline"] = (pd.to_numeric(df["i_rms"], errors="coerce") - mu).abs() / sd
+        elif "irms_drop_vs_baseline" in df.columns:
+            df["abs_irms_zscore_vs_baseline"] = pd.to_numeric(df["irms_drop_vs_baseline"], errors="coerce").abs()
+
+    df = coerce_log_feature_space(df)
+
+    for missing in FEATURES:
         if missing not in df.columns:
             df[missing] = 0.0
+
+    if "thd_i" not in df.columns:
+        df["thd_i"] = DB_THD_CLIP[0]
 
     return df
 
@@ -210,20 +387,20 @@ def clean_df(df: pd.DataFrame, include_invalid: bool = False) -> pd.DataFrame:
         x = df[FEATURES].replace([np.inf, -np.inf], np.nan)
         df = df.loc[x.notna().all(axis=1)].copy()
 
-    clip_hi = {
-        "cycle_nmse": 2.0,
-        "zcv": 10.0,
-        "zc_dwell_ratio": 1.0,
-        "cycle_rms_drop_ratio": 1.0,
-        "peak_fluct_cv": 2.5,
-        "midband_residual_rms": 5.0,
-        "hf_band_energy_ratio": 1.0,
-        "spec_entropy": 1.0,
-        "neg_dip_event_ratio": 1.0,
-        "irms_drop_vs_baseline": 2.0,
+    clip_bounds = {
+        "spectral_flux_midhf": (0.0, 2.0),
+        "residual_crest_factor": DB_RESIDUAL_CF_CLIP,
+        "edge_spike_ratio": DB_RATIO_CLIP,
+        "midband_residual_ratio": DB_RATIO_CLIP,
+        "cycle_nmse": (0.0, 2.0),
+        "peak_fluct_cv": (0.0, 3.0),
+        "thd_i": DB_THD_CLIP,
+        "hf_energy_delta": DB_HF_CLIP,
+        "zcv": (0.0, 10.0),
+        "abs_irms_zscore_vs_baseline": (0.0, 25.0),
     }
-    for c, hi in clip_hi.items():
-        df[c] = df[c].clip(0.0, hi)
+    for c, (lo, hi) in clip_bounds.items():
+        df[c] = df[c].clip(lo, hi)
 
     if "sample_weight" in df.columns:
         df["sample_weight"] = pd.to_numeric(
@@ -1674,6 +1851,110 @@ def pick_winner(
     return ranked[0], ranked, policy
 
 
+
+
+def _iter_ensemble_estimators(model):
+    estimators = getattr(model, "estimators_", None)
+    if estimators is None:
+        raise ValueError("Model has no fitted estimators_ to export.")
+    if isinstance(estimators, np.ndarray):
+        flat = list(estimators.ravel())
+    elif isinstance(estimators, (list, tuple)):
+        flat = []
+        for item in estimators:
+            if isinstance(item, (list, tuple, np.ndarray)):
+                flat.extend(list(np.asarray(item, dtype=object).ravel()))
+            else:
+                flat.append(item)
+    else:
+        flat = [estimators]
+    return [est for est in flat if est is not None]
+
+
+
+def _export_tree_ensemble_to_c(model, function_name: str = "arc_rf_predict") -> str:
+    classes = np.asarray(getattr(model, "classes_", []))
+    if classes.size != 2:
+        raise ValueError(f"Only binary classifiers are supported for C export; got classes={classes!r}")
+    pos_idx = int(np.where(classes == 1)[0][0]) if np.any(classes == 1) else int(classes.size - 1)
+    neg_idx = 1 - pos_idx
+
+    estimators = _iter_ensemble_estimators(model)
+    lines = []
+    lines.append("#include <stdint.h>")
+    lines.append("")
+    lines.append("static inline float arc_tree_predict_proba_pos(")
+    lines.append("    const int16_t *left,")
+    lines.append("    const int16_t *right,")
+    lines.append("    const int16_t *feature,")
+    lines.append("    const float *threshold,")
+    lines.append("    const float *leaf_pos,")
+    lines.append("    const double *input")
+    lines.append(") {")
+    lines.append("    int node = 0;")
+    lines.append("    while (left[node] != -1) {")
+    lines.append("        const int feat = feature[node];")
+    lines.append("        node = (((float)input[feat]) <= threshold[node]) ? left[node] : right[node];")
+    lines.append("    }")
+    lines.append("    return leaf_pos[node];")
+    lines.append("}")
+    lines.append("")
+
+    tree_calls = []
+    for tree_idx, est in enumerate(estimators):
+        tree = getattr(est, 'tree_', None)
+        if tree is None:
+            raise ValueError(f'Estimator {tree_idx} has no tree_ attribute.')
+        left = tree.children_left.astype(int).tolist()
+        right = tree.children_right.astype(int).tolist()
+        feature = tree.feature.astype(int).tolist()
+        threshold = tree.threshold.astype(float).tolist()
+        value = np.asarray(tree.value)
+        if value.ndim != 3 or value.shape[1] != 1 or value.shape[2] < 2:
+            raise ValueError(f'Unexpected tree.value shape for estimator {tree_idx}: {value.shape!r}')
+        leaf_pos = []
+        for node_idx in range(tree.node_count):
+            counts = value[node_idx, 0]
+            total = float(np.sum(counts))
+            if left[node_idx] == -1:
+                pos = float(counts[pos_idx]) / total if total > 0.0 else 0.0
+            else:
+                pos = 0.0
+            leaf_pos.append(pos)
+
+        def fmt_int_list(vals):
+            return ", ".join(str(int(v)) for v in vals)
+        def fmt_float_list(vals):
+            out = []
+            for v in vals:
+                fv = float(v)
+                if np.isnan(fv) or np.isinf(fv):
+                    fv = 0.0
+                out.append(f"{fv:.9g}f")
+            return ", ".join(out)
+
+        prefix = f"tree_{tree_idx}"
+        lines.append(f"static const int16_t {prefix}_left[{len(left)}] = {{{fmt_int_list(left)}}};")
+        lines.append(f"static const int16_t {prefix}_right[{len(right)}] = {{{fmt_int_list(right)}}};")
+        lines.append(f"static const int16_t {prefix}_feature[{len(feature)}] = {{{fmt_int_list(feature)}}};")
+        lines.append(f"static const float {prefix}_threshold[{len(threshold)}] = {{{fmt_float_list(threshold)}}};")
+        lines.append(f"static const float {prefix}_leaf_pos[{len(leaf_pos)}] = {{{fmt_float_list(leaf_pos)}}};")
+        lines.append("")
+        tree_calls.append(
+            f"    sum_pos += arc_tree_predict_proba_pos({prefix}_left, {prefix}_right, {prefix}_feature, {prefix}_threshold, {prefix}_leaf_pos, input);"
+        )
+
+    lines.append(f"static inline void {function_name}(double * input, double * output) {{")
+    lines.append("    float sum_pos = 0.0f;")
+    lines.extend(tree_calls)
+    lines.append(f"    const float pos = sum_pos / {max(1, len(estimators))}.0f;")
+    lines.append("    output[0] = (double)(1.0f - pos);")
+    lines.append("    output[1] = (double)pos;")
+    lines.append("}")
+    lines.append("")
+    return "\n".join(lines)
+
+
 def export_header(
     model,
     threshold: float,
@@ -1681,15 +1962,22 @@ def export_header(
     model_name: str,
 ) -> None:
     ensure_dir(out_header)
-    c_code = m2c.export_to_c(model, function_name="arc_rf_predict")
-    c_code = postprocess_m2c_header(c_code)
+    export_backend = "m2cgen"
+    try:
+        if m2c is None:
+            raise RuntimeError("m2cgen is unavailable")
+        c_code = m2c.export_to_c(model, function_name="arc_rf_predict")
+        c_code = postprocess_m2c_header(c_code)
+    except Exception:
+        export_backend = "native_tree_ensemble"
+        c_code = _export_tree_ensemble_to_c(model, function_name="arc_rf_predict")
 
     with open(out_header, "w", encoding="utf-8") as f:
         f.write("#pragma once\n")
         f.write(
-            f"// Auto-generated by m2cgen from scikit-learn {model_name}\n"
+            f"// Auto-generated C header from scikit-learn {model_name} ({export_backend})\n"
         )
-        f.write("#define ARC_MODEL_FEATURE_VERSION 2\n")
+        f.write("#define ARC_MODEL_FEATURE_VERSION 3\n")
         f.write(f"#define ARC_THRESHOLD {threshold:.4f}\n\n")
         f.write("// Input Feature Order:\n")
         for i, name in enumerate(FEATURES):

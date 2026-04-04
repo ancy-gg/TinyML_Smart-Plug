@@ -13,7 +13,7 @@ static constexpr bool ENABLE_AUTO_ARC_CAPTURE = false;
 // Cloud / OTA configuration
 static constexpr const char* FIREBASE_API_KEY = "AIzaSyAmJlZZszyWPJFgIkTAAl_TbIySys1nvEw";
 static constexpr const char* FIREBASE_DB_URL  = "tinyml-smart-plug-default-rtdb.asia-southeast1.firebasedatabase.app";
-static constexpr const char* FW_VERSION       = "v5.9-p-gen1";
+static constexpr const char* FW_VERSION       = "v6.0-p-gen0";
 static constexpr const char* OTA_DESIRED_VERSION_PATH = "/ota/desired_version";
 static constexpr const char* OTA_FIRMWARE_URL_PATH    = "/ota/firmware_url";
 
@@ -50,17 +50,16 @@ struct FeatureFrame {
   float irms   = 0.0f;
   float temp_c = 0.0f;
 
-  float cycle_nmse            = 0.0f;
-  float zcv                   = 0.0f;
-  float zc_dwell_ratio        = 0.0f;
-  float cycle_rms_drop_ratio  = 0.0f;
-  float peak_fluct_cv         = 0.0f;
-  float midband_residual_rms  = 0.0f;
-  float hf_band_energy_ratio  = 0.0f;
-  float spec_entropy          = 0.0f;
-  float neg_dip_event_ratio   = 0.0f;
-  float irms_drop_vs_baseline   = 0.0f;
-  float thd_i                 = 0.0f;
+  float spectral_flux_midhf          = 0.0f;
+  float residual_crest_factor        = 0.0f;
+  float edge_spike_ratio             = 0.0f;
+  float midband_residual_ratio       = 0.0f;
+  float cycle_nmse                   = 0.0f;
+  float peak_fluct_cv                = 0.0f;
+  float thd_i                        = 0.0f;
+  float hf_energy_delta              = 0.0f;
+  float zcv                          = 0.0f;
+  float abs_irms_zscore_vs_baseline  = 0.0f;
 
   float adc_fs_hz = 0.0f;
 
@@ -165,12 +164,32 @@ static constexpr uint32_t FAULT_BUZZ_MS      = 3000UL;
 static constexpr uint32_t FAULT_NET_QUIET_MS = 2350UL;
 static constexpr uint32_t OLED_RENDER_INTERVAL_MS = 33UL;
 
-static constexpr float ARC_SOFT_BASELINE_DROP = 0.055f;
-static constexpr float ARC_SOFT_DROP_RATIO    = 0.040f;
-static constexpr float ARC_SOFT_PEAK_FLUCT    = 0.0030f;
-static constexpr float ARC_SOFT_MIDBAND_RMS   = 0.055f;
-static constexpr float ARC_SOFT_CYCLE_NMSE    = 0.090f;
-static constexpr float ARC_SOFT_MIN_IRMS_A    = 0.08f;
+static constexpr int   ARC_RUNTIME_FEATURE_SPACE_VERSION = 3;
+static constexpr float DB_RATIO_EPS                 = 1e-6f;
+static constexpr float DB_POWER_RATIO_EPS           = 1e-6f;
+static constexpr float DB_RATIO_CLIP_MIN            = -80.0f;
+static constexpr float DB_RATIO_CLIP_MAX            = 20.0f;
+static constexpr float DB_THD_CLIP_MIN              = -80.0f;
+static constexpr float DB_THD_CLIP_MAX              = 20.0f;
+static constexpr float DB_HF_DELTA_CLIP_MIN         = -24.0f;
+static constexpr float DB_HF_DELTA_CLIP_MAX         = 24.0f;
+
+static constexpr float ARC_SIG_SPECTRAL_FLUX       = 0.085f;
+static constexpr float ARC_SIG_RESIDUAL_CF         = 12.568f;   // 20*log10(4.25)
+static constexpr float ARC_SIG_EDGE_SPIKE_RATIO    = -14.894f;  // 20*log10(0.180)
+static constexpr float ARC_SIG_MIDBAND_RATIO       = -21.412f;  // 20*log10(0.085)
+static constexpr float ARC_SIG_CYCLE_NMSE          = 0.090f;
+static constexpr float ARC_SIG_PEAK_FLUCT          = 0.012f;
+static constexpr float ARC_SIG_THD_I               = -13.151f;  // 20*log10(0.22)
+static constexpr float ARC_SIG_HF_ENERGY_DELTA     = 1.500f;    // 10*log10(power ratio), ~1.4x HF rise
+static constexpr float ARC_SIG_ZCV                 = 0.200f;
+static constexpr float ARC_SIG_IRMS_ZSCORE         = 2.35f;
+static constexpr float ARC_SOFT_MIN_IRMS_A         = 0.08f;
+
+static constexpr float BASELINE_STABLE_RESIDUAL_CF_DB    = 9.542f;   // 20*log10(3.0)
+static constexpr float BASELINE_STABLE_EDGE_SPIKE_DB     = -20.000f; // 20*log10(0.10)
+static constexpr float BASELINE_STABLE_MIDBAND_RATIO_DB  = -24.437f; // 20*log10(0.06)
+static constexpr float BASELINE_STABLE_HF_DELTA_DB       = 0.80f;
 
 static constexpr int HEAT_FRAMES_TRIP = 6;
 static constexpr int HEAT_FRAMES_DEC  = 1;
@@ -286,6 +305,22 @@ static constexpr float CURRENT_ANALYSIS_IDLE_A       = 0.020f;
 static constexpr uint32_t CURRENT_IDLE_SUPPRESS_HOLD_MS = 5000UL;
 static constexpr float ARC_WEAK_EVENT_RESID_MUL     = 0.75f;
 
+static constexpr float SPECTRAL_FLUX_LO_HZ             = 900.0f;
+static constexpr float SPECTRAL_FLUX_HI_HZ             = 15000.0f;
+static constexpr int   SPECTRAL_FLUX_HARM_SKIP_BINS    = 2;
+static constexpr float EDGE_SPIKE_WINDOW_MS            = 0.35f;
+static constexpr float EDGE_SPIKE_MIN_BASELINE_A       = 0.10f;
+static constexpr float BASELINE_MIN_IRMS_A             = 0.08f;
+static constexpr float BASELINE_RESET_IRMS_A           = 0.03f;
+static constexpr float BASELINE_STD_FLOOR_A            = 0.03f;
+static constexpr float BASELINE_STD_FLOOR_FRAC         = 0.08f;
+static constexpr float BASELINE_IRMS_ALPHA             = 0.08f;
+static constexpr float BASELINE_HF_ALPHA               = 0.10f;
+static constexpr float BASELINE_STEP_FREEZE_A          = 0.60f;
+static constexpr float BASELINE_STEP_FREEZE_FRAC       = 0.22f;
+static constexpr uint32_t BASELINE_FREEZE_MS           = 900UL;
+static constexpr uint32_t BASELINE_RESET_IDLE_MS       = 1800UL;
+
 static constexpr float CURRENT_CAL_C3 = 0.00061628f;
 static constexpr float CURRENT_CAL_C2 = -0.000465664f;
 static constexpr float CURRENT_CAL_C1 = 1.22698f;
@@ -308,6 +343,30 @@ struct CurrentCalib {
 // =========================
 static inline float eval_cubic_horner(float x, float c3, float c2, float c1, float c0) {
   return (((c3 * x) + c2) * x + c1) * x + c0;
+}
+
+static inline float ratio_to_db20(float ratio, float floor_ratio = DB_RATIO_EPS) {
+  return 20.0f * log10f(fmaxf(ratio, floor_ratio));
+}
+
+static inline float ratio_to_db10(float ratio, float floor_ratio = DB_POWER_RATIO_EPS) {
+  return 10.0f * log10f(fmaxf(ratio, floor_ratio));
+}
+
+static inline float db20_to_ratio(float db) {
+  return powf(10.0f, db / 20.0f);
+}
+
+static inline float db10_to_ratio(float db) {
+  return powf(10.0f, db / 10.0f);
+}
+
+static inline float thd_percent_to_db(float thd_percent) {
+  return ratio_to_db20(fmaxf(thd_percent, 0.0f) * 0.01f);
+}
+
+static inline float db_to_thd_percent(float thd_db) {
+  return 100.0f * db20_to_ratio(thd_db);
 }
 
 static constexpr float VOLTAGE_CAL_C3 = 0.00000122081f;

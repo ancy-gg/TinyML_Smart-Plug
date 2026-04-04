@@ -55,6 +55,148 @@ TRUSTED_NORMAL_NAME_TOKENS = (
 )
 
 
+DB_FEATURE_SPACE_VERSION = 3
+DB_RATIO_FLOOR = 1e-6
+DB_POWER_RATIO_FLOOR = 1e-6
+DB_RATIO_CLIP = (-80.0, 20.0)
+DB_RESIDUAL_CF_CLIP = (-20.0, 40.0)
+DB_THD_CLIP = (-80.0, 20.0)
+DB_HF_CLIP = (-24.0, 24.0)
+
+DB_ARC_THRESHOLDS = {
+    "residual_crest_factor": 12.568,
+    "edge_spike_ratio": -14.894,
+    "midband_residual_ratio": -21.412,
+    "thd_i": -13.151,
+    "hf_energy_delta": 1.500,
+}
+
+DB_NORMAL_ANCHORS = {
+    "residual_crest_factor": 6.0,
+    "edge_spike_ratio": -28.0,
+    "midband_residual_ratio": -34.0,
+    "thd_i": -24.0,
+    "hf_energy_delta": 0.0,
+}
+
+DB_ALIAS_MAP = {
+    "residual_crest_factor_db": "residual_crest_factor",
+    "edge_spike_ratio_db": "edge_spike_ratio",
+    "midband_residual_ratio_db": "midband_residual_ratio",
+    "thd_i_db": "thd_i",
+    "hf_energy_delta_db": "hf_energy_delta",
+}
+
+
+def _series_from(values) -> pd.Series:
+    if isinstance(values, pd.Series):
+        return pd.to_numeric(values, errors="coerce")
+    return pd.Series(pd.to_numeric(values, errors="coerce"), dtype=float)
+
+
+def _ratio_to_db20(values, floor: float = DB_RATIO_FLOOR) -> pd.Series:
+    s = _series_from(values)
+    arr = np.clip(s.to_numpy(dtype=float), floor, None)
+    return pd.Series(20.0 * np.log10(arr), index=s.index, dtype=float)
+
+
+def _ratio_to_db10(values, floor: float = DB_POWER_RATIO_FLOOR) -> pd.Series:
+    s = _series_from(values)
+    arr = np.clip(s.to_numpy(dtype=float), floor, None)
+    return pd.Series(10.0 * np.log10(arr), index=s.index, dtype=float)
+
+
+def _thd_percent_to_db(values) -> pd.Series:
+    s = _series_from(values).clip(lower=0.0)
+    return _ratio_to_db20(s / 100.0)
+
+
+def detect_feature_space_version(df: pd.DataFrame) -> int:
+    for col in ("feature_space_version", "arc_feature_space_version"):
+        if col in df.columns:
+            vals = pd.to_numeric(df[col], errors="coerce")
+            if (vals >= DB_FEATURE_SPACE_VERSION).any():
+                return DB_FEATURE_SPACE_VERSION
+            if ((vals > 0) & (vals < DB_FEATURE_SPACE_VERSION)).any():
+                return 2
+
+    for alias in DB_ALIAS_MAP:
+        if alias in df.columns:
+            return DB_FEATURE_SPACE_VERSION
+
+    db_votes = 0
+    linear_votes = 0
+
+    for col in ("edge_spike_ratio", "midband_residual_ratio", "thd_i"):
+        if col not in df.columns:
+            continue
+        s = pd.to_numeric(df[col], errors="coerce").dropna()
+        if s.empty:
+            continue
+        if (s < -1e-6).any():
+            db_votes += 2
+        else:
+            linear_votes += 1
+        if col == "thd_i":
+            q95 = float(s.quantile(0.95))
+            if q95 > 40.0:
+                linear_votes += 2
+            elif float(s.quantile(0.50)) < 0.0:
+                db_votes += 2
+
+    if "hf_energy_delta" in df.columns:
+        s = pd.to_numeric(df["hf_energy_delta"], errors="coerce").dropna()
+        if not s.empty:
+            if float(s.abs().quantile(0.95)) > 3.0:
+                db_votes += 1
+            elif float(s.min()) >= -1.05 and float(s.max()) <= 1.05:
+                linear_votes += 1
+
+    return DB_FEATURE_SPACE_VERSION if db_votes > linear_votes else 2
+
+
+def coerce_log_feature_space(df: pd.DataFrame) -> pd.DataFrame:
+    df = df.copy()
+    for alias, canonical in DB_ALIAS_MAP.items():
+        if alias in df.columns and canonical not in df.columns:
+            df[canonical] = pd.to_numeric(df[alias], errors="coerce")
+
+    src_version = detect_feature_space_version(df)
+
+    if src_version < DB_FEATURE_SPACE_VERSION:
+        if "midband_residual_ratio" in df.columns:
+            df["midband_residual_ratio"] = _ratio_to_db20(df["midband_residual_ratio"])
+        if "residual_crest_factor" in df.columns:
+            df["residual_crest_factor"] = _ratio_to_db20(df["residual_crest_factor"])
+        if "edge_spike_ratio" in df.columns:
+            df["edge_spike_ratio"] = _ratio_to_db20(df["edge_spike_ratio"])
+        if "thd_i" in df.columns:
+            df["thd_i"] = _thd_percent_to_db(df["thd_i"])
+
+        if {"hf_band_energy_ratio", "rolling_baseline_hf_band_energy_ratio"}.issubset(df.columns):
+            cur = pd.to_numeric(df["hf_band_energy_ratio"], errors="coerce")
+            base = pd.to_numeric(df["rolling_baseline_hf_band_energy_ratio"], errors="coerce")
+            df["hf_energy_delta"] = _ratio_to_db10((cur + DB_POWER_RATIO_FLOOR) / (base + DB_POWER_RATIO_FLOOR))
+        elif "hf_energy_delta" in df.columns:
+            legacy_delta = pd.to_numeric(df["hf_energy_delta"], errors="coerce")
+            df["hf_energy_delta"] = _ratio_to_db10((1.0 + legacy_delta).clip(lower=DB_POWER_RATIO_FLOOR))
+
+    df["feature_space_version"] = DB_FEATURE_SPACE_VERSION
+    return df
+
+
+def _db_threshold_score(series: pd.Series, neutral_db: float, arc_db: float, hi: float = 1.5) -> pd.Series:
+    s = _series_from(series)
+    span = max(float(arc_db) - float(neutral_db), 1e-6)
+    return ((s - float(neutral_db)) / span).clip(0.0, hi)
+
+
+def _db_negative_score(series: pd.Series, neutral_db: float = 0.0, floor_db: float = -6.0, hi: float = 1.5) -> pd.Series:
+    s = _series_from(series)
+    span = max(float(neutral_db) - float(floor_db), 1e-6)
+    return ((float(neutral_db) - s) / span).clip(0.0, hi)
+
+
 def resolve_csv_files(csv_glob: str, output_path: str):
     files = []
     out_abs = os.path.abspath(output_path)
@@ -72,29 +214,52 @@ def resolve_csv_files(csv_glob: str, output_path: str):
 def normalize_feature_names(df: pd.DataFrame) -> pd.DataFrame:
     df = df.copy()
     df.columns = [str(c).strip() for c in df.columns]
-    if (
-        "cycle_rms_drop_ratio" not in df.columns
-        and "pulse_count_per_cycle" in df.columns
-    ):
-        df["cycle_rms_drop_ratio"] = pd.to_numeric(
-            df["pulse_count_per_cycle"],
-            errors="coerce",
-        )
-        df["legacy_pulse_feature"] = 1
-    elif "cycle_rms_drop_ratio" in df.columns:
-        df["legacy_pulse_feature"] = 0
 
-    if "irms_drop_vs_baseline" not in df.columns and "pre_dip_spike_ratio" in df.columns:
-        df["irms_drop_vs_baseline"] = pd.to_numeric(
-            df["pre_dip_spike_ratio"],
-            errors="coerce",
-        )
+    alias_map = {
+        "spectral_flux": "spectral_flux_midhf",
+        "midhf_flux": "spectral_flux_midhf",
+        "resid_crest_factor": "residual_crest_factor",
+        "pre_dip_spike_ratio": "edge_spike_ratio",
+        **DB_ALIAS_MAP,
+    }
+    rename_map = {c: alias_map[c] for c in df.columns if c in alias_map}
+    if rename_map:
+        df = df.rename(columns=rename_map)
 
-    for missing in ["neg_dip_event_ratio", "irms_drop_vs_baseline", "thd_i"]:
+    if "midband_residual_ratio" not in df.columns:
+        if "midband_residual_rms" in df.columns and "rolling_baseline_irms" in df.columns:
+            base = pd.to_numeric(df["rolling_baseline_irms"], errors="coerce").replace(0, np.nan)
+            df["midband_residual_ratio"] = pd.to_numeric(df["midband_residual_rms"], errors="coerce") / base
+        elif "midband_residual_rms" in df.columns and "i_rms" in df.columns:
+            base = pd.to_numeric(df["i_rms"], errors="coerce").replace(0, np.nan)
+            df["midband_residual_ratio"] = pd.to_numeric(df["midband_residual_rms"], errors="coerce") / base
+        elif "midband_residual_rms" in df.columns:
+            df["midband_residual_ratio"] = pd.to_numeric(df["midband_residual_rms"], errors="coerce")
+
+    if "hf_energy_delta" not in df.columns:
+        if "hf_band_energy_ratio" in df.columns and "rolling_baseline_hf_band_energy_ratio" in df.columns:
+            cur = pd.to_numeric(df["hf_band_energy_ratio"], errors="coerce")
+            base = pd.to_numeric(df["rolling_baseline_hf_band_energy_ratio"], errors="coerce")
+            df["hf_energy_delta"] = _ratio_to_db10((cur + DB_POWER_RATIO_FLOOR) / (base + DB_POWER_RATIO_FLOOR))
+        elif "hf_band_energy_ratio" in df.columns:
+            df["hf_energy_delta"] = _ratio_to_db10(pd.to_numeric(df["hf_band_energy_ratio"], errors="coerce"))
+
+    if "abs_irms_zscore_vs_baseline" not in df.columns:
+        if {"i_rms", "rolling_baseline_irms_mean", "rolling_baseline_irms_std"}.issubset(df.columns):
+            mu = pd.to_numeric(df["rolling_baseline_irms_mean"], errors="coerce")
+            sd = pd.to_numeric(df["rolling_baseline_irms_std"], errors="coerce").replace(0, np.nan)
+            df["abs_irms_zscore_vs_baseline"] = (pd.to_numeric(df["i_rms"], errors="coerce") - mu).abs() / sd
+        elif "irms_drop_vs_baseline" in df.columns:
+            df["abs_irms_zscore_vs_baseline"] = pd.to_numeric(df["irms_drop_vs_baseline"], errors="coerce").abs()
+
+    df = coerce_log_feature_space(df)
+
+    for missing in FEATURES:
         if missing not in df.columns:
             df[missing] = 0.0
+    if "thd_i" not in df.columns:
+        df["thd_i"] = DB_THD_CLIP[0]
     return df
-
 
 
 def _normalized_name(path: str) -> str:
@@ -165,26 +330,49 @@ def _clip_score(series: pd.Series, ref: float, hi: float = 1.5) -> pd.Series:
 
 
 def build_quality_scores(df: pd.DataFrame) -> tuple[pd.Series, pd.Series]:
-    neg = _clip_score(_num(df, "neg_dip_event_ratio"), 0.040)
-    base_drop = _clip_score(_num(df, "irms_drop_vs_baseline"), 0.055)
-    cyc_drop = _clip_score(_num(df, "cycle_rms_drop_ratio"), 0.025)
-    peak = _clip_score(_num(df, "peak_fluct_cv"), 0.012)
-    mid = _clip_score(_num(df, "midband_residual_rms"), 0.055)
+    flux = _clip_score(_num(df, "spectral_flux_midhf"), 0.085)
+    crest = _db_threshold_score(
+        _num(df, "residual_crest_factor"),
+        DB_NORMAL_ANCHORS["residual_crest_factor"],
+        DB_ARC_THRESHOLDS["residual_crest_factor"],
+    )
+    edge = _db_threshold_score(
+        _num(df, "edge_spike_ratio"),
+        DB_NORMAL_ANCHORS["edge_spike_ratio"],
+        DB_ARC_THRESHOLDS["edge_spike_ratio"],
+    )
+    mid = _db_threshold_score(
+        _num(df, "midband_residual_ratio"),
+        DB_NORMAL_ANCHORS["midband_residual_ratio"],
+        DB_ARC_THRESHOLDS["midband_residual_ratio"],
+    )
     nmse = _clip_score(_num(df, "cycle_nmse"), 0.090)
+    peak = _clip_score(_num(df, "peak_fluct_cv"), 0.012)
+    thd = _db_threshold_score(
+        _num(df, "thd_i"),
+        DB_NORMAL_ANCHORS["thd_i"],
+        DB_ARC_THRESHOLDS["thd_i"],
+    )
+    hf_delta_pos = _db_threshold_score(
+        _num(df, "hf_energy_delta"),
+        DB_NORMAL_ANCHORS["hf_energy_delta"],
+        DB_ARC_THRESHOLDS["hf_energy_delta"],
+    )
+    hf_delta_neg = _db_negative_score(_num(df, "hf_energy_delta"), neutral_db=0.0, floor_db=-6.0)
     zcv = _clip_score(_num(df, "zcv"), 0.20)
-    hf = _clip_score(_num(df, "hf_band_energy_ratio"), 0.30)
-    ent = _clip_score(_num(df, "spec_entropy"), 0.65)
+    iz = _clip_score(_num(df, "abs_irms_zscore_vs_baseline"), 2.35)
 
     arc_base = (
-        0.24 * neg
-        + 0.20 * base_drop
-        + 0.18 * cyc_drop
-        + 0.12 * mid
-        + 0.10 * nmse
-        + 0.08 * peak
-        + 0.04 * zcv
-        + 0.02 * hf
-        + 0.02 * ent
+        0.20 * flux
+        + 0.14 * crest
+        + 0.18 * edge
+        + 0.14 * mid
+        + 0.11 * nmse
+        + 0.07 * peak
+        + 0.04 * thd
+        + 0.06 * hf_delta_pos
+        + 0.03 * zcv
+        + 0.03 * iz
     )
 
     if "session_id" in df.columns:
@@ -209,16 +397,19 @@ def build_quality_scores(df: pd.DataFrame) -> tuple[pd.Series, pd.Series]:
     i_active = ((i_rms >= 0.08) & (i_rms <= 20.0)).astype(float)
     trusted = (_num(df, "trusted_normal_session") >= 1.0).astype(float)
 
-    arc_like = (0.72 * arc_base) + (0.28 * arc_cluster.clip(0.0, 1.5))
+    arc_like = (0.76 * arc_base) + (0.24 * arc_cluster.clip(0.0, 1.5))
     arc_like = (arc_like * (0.85 + 0.15 * feat_valid) * (0.90 + 0.10 * cur_valid)).clip(0.0, 1.5)
 
     normal_like = (
-        (1.0 - arc_like.clip(0.0, 1.0)) * 0.70
-        + 0.12 * feat_valid
-        + 0.10 * cur_valid
+        (1.0 - arc_like.clip(0.0, 1.0)) * 0.62
+        + 0.10 * feat_valid
+        + 0.09 * cur_valid
         + 0.10 * v_normal
-        + 0.08 * i_active
-        + 0.35 * trusted
+        + 0.07 * i_active
+        + 0.10 * hf_delta_neg
+        + 0.08 * (1.0 - flux.clip(0.0, 1.0))
+        + 0.07 * (1.0 - edge.clip(0.0, 1.0))
+        + 0.12 * trusted
     ).clip(0.0, 1.5)
 
     return arc_like.astype(float), normal_like.astype(float)
@@ -315,6 +506,22 @@ def attach_training_metadata(df: pd.DataFrame) -> tuple[pd.DataFrame, dict]:
     df.loc[soft_positive, "clean_reason"] = "soft_positive_low_trust"
     df.loc[soft_positive, "clean_quality"] = "soft_positive"
 
+    flat_extinguish_positive = positive_mask & (
+        _num(df, "spectral_flux_midhf") < 0.040
+    ) & (
+        _num(df, "edge_spike_ratio") < -20.915
+    ) & (
+        _num(df, "peak_fluct_cv") < 0.010
+    ) & (
+        _num(df, "hf_energy_delta") < 0.80
+    ) & (
+        _num(df, "abs_irms_zscore_vs_baseline") >= 1.20
+    )
+
+    df.loc[flat_extinguish_positive, "rf_train_row"] = 0
+    df.loc[flat_extinguish_positive, "clean_reason"] = "flat_extinguish_positive"
+    df.loc[flat_extinguish_positive, "clean_quality"] = "excluded_extinguish_plateau"
+
     negative_mask = (df[TARGET].astype(int) == 0) & (df["rf_train_row"] == 1) & (df["trusted_normal_session"] == 0)
     strong_arc_like_negative = negative_mask & (df["arc_like_score"] >= STRONG_NEGATIVE_ARC_SCORE)
     soft_arc_like_negative = negative_mask & ~strong_arc_like_negative & (df["arc_like_score"] >= SOFT_NEGATIVE_ARC_SCORE)
@@ -378,6 +585,7 @@ def attach_training_metadata(df: pd.DataFrame) -> tuple[pd.DataFrame, dict]:
         "invalid_or_off_rows": int(invalid_or_off.sum()),
         "very_weak_positive_rows": int(very_weak_positive.sum()),
         "soft_positive_rows": int(soft_positive.sum()),
+        "flat_extinguish_positive_rows": int(flat_extinguish_positive.sum()),
         "strong_arc_like_negative_rows": int(strong_arc_like_negative.sum()),
         "soft_arc_like_negative_rows": int(soft_arc_like_negative.sum()),
     }
@@ -510,22 +718,21 @@ def clean_dataset(df: pd.DataFrame) -> tuple[pd.DataFrame, dict]:
     if "adc_fs_hz" in df.columns:
         df = df[df["adc_fs_hz"] > 0].copy()
 
-    clip_hi = {
-        "cycle_nmse": 2.0,
-        "zcv": 10.0,
-        "zc_dwell_ratio": 1.0,
-        "cycle_rms_drop_ratio": 1.0,
-        "peak_fluct_cv": 3.0,
-        "midband_residual_rms": 10.0,
-        "hf_band_energy_ratio": 1.0,
-        "spec_entropy": 1.0,
-        "neg_dip_event_ratio": 1.0,
-        "irms_drop_vs_baseline": 2.0,
-        "thd_i": 500.0,
+    clip_bounds = {
+        "spectral_flux_midhf": (0.0, 2.0),
+        "residual_crest_factor": DB_RESIDUAL_CF_CLIP,
+        "edge_spike_ratio": DB_RATIO_CLIP,
+        "midband_residual_ratio": DB_RATIO_CLIP,
+        "cycle_nmse": (0.0, 2.0),
+        "peak_fluct_cv": (0.0, 3.0),
+        "thd_i": DB_THD_CLIP,
+        "hf_energy_delta": DB_HF_CLIP,
+        "zcv": (0.0, 10.0),
+        "abs_irms_zscore_vs_baseline": (0.0, 25.0),
     }
-    for c, hi in clip_hi.items():
+    for c, (lo, hi) in clip_bounds.items():
         if c in df.columns:
-            df[c] = df[c].clip(0.0, hi)
+            df[c] = df[c].clip(lo, hi)
 
     df, quality_summary = attach_training_metadata(df)
     df, conflict_stats = resolve_near_duplicate_label_conflicts(df)

@@ -195,7 +195,7 @@
         <div class="quick-card accent-amber">
           <div class="quick-num">Step 3</div>
           <div class="quick-title">Review the live cards</div>
-          <p>Voltage, current, apparent power, temperature, and waveform features help you understand both electrical load behavior and arc-related signal behavior.</p>
+          <p>Voltage, current, apparent power, temperature, and the 10 current waveform features help you understand both electrical load behavior and arc-related signal behavior.</p>
         </div>
         <div class="quick-card accent-red">
           <div class="quick-num">Step 4</div>
@@ -258,8 +258,8 @@
           <p>This shows voltage, current, apparent power, and temperature from the latest live packet. The small hints under each value are quick interpretations, not full diagnostics.</p>
         </div>
         <div class="card accent-purple">
-          <h3>Time and Frequency Features</h3>
-          <p>The dashboard separates feature values into Time Domain and Frequency Domain so the user can review signal behavior more clearly.</p>
+          <h3>Primary and Secondary Features</h3>
+          <p>The dashboard now shows 10 live waveform features grouped into Primary Features and Secondary Features. These are the same feature cards used by the current UI, so the guide now matches the active dashboard instead of the older experimental feature list.</p>
         </div>
         <div class="card accent-amber">
           <h3>History</h3>
@@ -315,21 +315,21 @@
       <div class="section-head">
         <div>
           <div class="eyebrow teal"><span class="dot"></span>Waveform Feature Guide</div>
-          <h2>What the feature cards mean</h2>
+          <h2>What the current feature cards mean</h2>
         </div>
       </div>
+      <div class="note" style="margin-bottom:10px;">Most waveform features in the current dashboard are derived, dimensionless statistics. In practice, that means most cards are unitless. The two clearest exceptions in the current UI are <strong>Current THD</strong>, which is shown in <strong>%</strong>, and <strong>Absolute Z-Deviation</strong>, which is shown in <strong>standard deviations (σ)</strong>.</div>
       <div class="metric-list">
-        <div class="metric-item"><span class="metric-badge badge-time">TIME</span><div><h3>Cycle NMSE</h3><p>Shows how different one cycle is from the next. Higher inconsistency can suggest unstable conduction.</p></div></div>
-        <div class="metric-item"><span class="metric-badge badge-time">TIME</span><div><h3>ZC Variance</h3><p>Measures how irregular the zero-cross timing is. Arcs can disturb normal behavior near crossing points.</p></div></div>
-        <div class="metric-item"><span class="metric-badge badge-time">TIME</span><div><h3>ZC Dwell Ratio</h3><p>Shows how long the signal stays near the zero region. Abnormal dwell can be useful during arc review.</p></div></div>
-        <div class="metric-item"><span class="metric-badge badge-time">TIME</span><div><h3>Cycle RMS Drop</h3><p>Shows how strongly the weakest cycle in the window collapses compared with the typical cycle in that same window. This is more useful for heater-style conduction-drop arcs than the old micro-pulse counter.</p></div></div>
-        <div class="metric-item"><span class="metric-badge badge-time">TIME</span><div><h3>Peak Fluctuation CV</h3><p>Describes how much cycle peaks vary. Large variation usually means the waveform is less repeatable.</p></div></div>
-        <div class="metric-item"><span class="metric-badge badge-freq">FREQ</span><div><h3>HF Energy Ratio</h3><p>Compares high-frequency energy to the rest of the signal. Arcing often increases high-frequency content.</p></div></div>
-        <div class="metric-item"><span class="metric-badge badge-time">TIME</span><div><h3>Negative Dip Event Ratio</h3><p>Counts how often a loaded cycle is followed by a meaningful current-collapse cycle. This is useful for intermittent heater-style contact loss events.</p></div></div>
-        <div class="metric-item"><span class="metric-badge badge-time">TIME</span><div><h3>Current-Baseline Drop</h3><p>Measures how much the frame RMS current falls below a recent baseline current level. It replaces the older pre-dip spike feature because it better captures non-quick drop events.</p></div></div>
-        <div class="metric-item"><span class="metric-badge badge-freq">FREQ</span><div><h3>Spectral Entropy</h3><p>Measures how random or disorderly the frequency spectrum looks.</p></div></div>
-        <div class="metric-item"><span class="metric-badge badge-freq">FREQ</span><div><h3>Midband RMS</h3><p>Highlights residual mid-frequency content after smoother expected behavior is removed.</p></div></div>
-        <div class="metric-item"><span class="metric-badge badge-freq">FREQ</span><div><h3>THD Current</h3><p>Total harmonic distortion remains a logging-only distortion metric. It is intentionally excluded from the training feature set because it can bloat quickly on complex loads.</p></div></div>
+        <div class="metric-item"><span class="metric-badge badge-time">PRIMARY</span><div><h3>Spectral Flux (Mid/HF)</h3><p>Measures how quickly the mid- to high-frequency spectrum changes from one frame to the next. Higher values mean the spectral content is changing more abruptly. <strong>Unit:</strong> unitless score.</p></div></div>
+        <div class="metric-item"><span class="metric-badge badge-time">PRIMARY</span><div><h3>Residual Crest Factor</h3><p>Shows how peaky the residual waveform is after the dominant waveform content is removed. Sharper residual spikes push this value upward. <strong>Unit:</strong> crest factor (×), dimensionless.</p></div></div>
+        <div class="metric-item"><span class="metric-badge badge-time">PRIMARY</span><div><h3>Edge Spike Ratio</h3><p>Tracks how much of the frame is dominated by short spike-like behavior around fast conduction changes. Higher values suggest stronger spike activity. <strong>Unit:</strong> unitless ratio.</p></div></div>
+        <div class="metric-item"><span class="metric-badge badge-time">PRIMARY</span><div><h3>Midband Residual Ratio</h3><p>Measures how much residual energy remains in the midband after the expected low-frequency waveform shape is removed. <strong>Unit:</strong> unitless ratio.</p></div></div>
+        <div class="metric-item"><span class="metric-badge badge-time">PRIMARY</span><div><h3>Cycle NMSE</h3><p>Shows how different one cycle is from the next using normalized mean-squared error. Higher values mean the waveform is less repeatable. <strong>Unit:</strong> unitless error.</p></div></div>
+        <div class="metric-item"><span class="metric-badge badge-freq">SECONDARY</span><div><h3>Peak Fluctuation CV</h3><p>Describes how much the cycle peaks vary from each other. Larger variation usually means the waveform amplitude is less stable. <strong>Unit:</strong> unitless coefficient of variation.</p></div></div>
+        <div class="metric-item"><span class="metric-badge badge-freq">SECONDARY</span><div><h3>Current THD</h3><p>Total harmonic distortion of the current waveform. Larger values mean more harmonic distortion relative to the fundamental current component. <strong>Unit:</strong> %.</p></div></div>
+        <div class="metric-item"><span class="metric-badge badge-freq">SECONDARY</span><div><h3>HF Energy Delta</h3><p>Shows the relative change in the high-frequency energy portion of the waveform. It is useful for spotting frames where high-frequency activity shifts sharply. <strong>Unit:</strong> unitless delta.</p></div></div>
+        <div class="metric-item"><span class="metric-badge badge-time">SECONDARY</span><div><h3>ZC Variance</h3><p>Measures how irregular the zero-cross timing is. Arcs and unstable conduction can disturb the normal crossing pattern. <strong>Unit:</strong> unitless variance.</p></div></div>
+        <div class="metric-item"><span class="metric-badge badge-time">SECONDARY</span><div><h3>Absolute Z-Deviation</h3><p>Shows how far the current RMS is from its baseline in absolute z-score form. Larger values mean the current is further away from its recent normal level. <strong>Unit:</strong> standard deviations (σ).</p></div></div>
       </div>
     </section>
 

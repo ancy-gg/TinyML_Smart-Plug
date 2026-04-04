@@ -391,10 +391,11 @@ void FirebaseNetwork::pollControls(bool allowNet, bool portalActive) {
 }
 
 void FirebaseNetwork::requestLiveUpdate(float v, float c, float apparentPower, float t,
-                                        float cycle_nmse, float zcv, float zc_dwell_ratio,
-                                        float cycle_rms_drop_ratio, float peak_fluct_cv,
-                                        float midband_residual_rms, float hf_band_energy_ratio,
-                                        float spec_entropy, float neg_dip_event_ratio, float irms_drop_vs_baseline, float thd_i,
+                                        float spectral_flux_midhf, float residual_crest_factor,
+                                        float edge_spike_ratio, float midband_residual_ratio,
+                                        float cycle_nmse, float peak_fluct_cv,
+                                        float thd_i, float hf_energy_delta,
+                                        float zcv, float abs_irms_zscore_vs_baseline,
                                         uint8_t model_pred,
                                         const String& state,
                                         bool faultLatched, bool webControlsLocked, bool relayLatchedOn) {
@@ -409,17 +410,16 @@ void FirebaseNetwork::requestLiveUpdate(float v, float c, float apparentPower, f
   _live.c = c;
   _live.apparentPower = apparentPower;
   _live.t = t;
+  _live.spectral_flux_midhf = spectral_flux_midhf;
+  _live.residual_crest_factor = residual_crest_factor;
+  _live.edge_spike_ratio = edge_spike_ratio;
+  _live.midband_residual_ratio = midband_residual_ratio;
   _live.cycle_nmse = cycle_nmse;
-  _live.zcv = zcv;
-  _live.zc_dwell_ratio = zc_dwell_ratio;
-  _live.cycle_rms_drop_ratio = cycle_rms_drop_ratio;
   _live.peak_fluct_cv = peak_fluct_cv;
-  _live.midband_residual_rms = midband_residual_rms;
-  _live.hf_band_energy_ratio = hf_band_energy_ratio;
-  _live.spec_entropy = spec_entropy;
-  _live.neg_dip_event_ratio = neg_dip_event_ratio;
-  _live.irms_drop_vs_baseline = irms_drop_vs_baseline;
   _live.thd_i = thd_i;
+  _live.hf_energy_delta = hf_energy_delta;
+  _live.zcv = zcv;
+  _live.abs_irms_zscore_vs_baseline = abs_irms_zscore_vs_baseline;
   _live.model_pred = model_pred;
   _live.state = state;
   _live.faultLatched = faultLatched;
@@ -452,17 +452,16 @@ bool FirebaseNetwork::pushHistoryRecord_(const HistoryJob& job) {
     json.set("current", job.f.irms);
     json.set("apparent_power", job.apparentPower);
     json.set("temp", job.f.temp_c);
+    json.set("spectral_flux_midhf", job.f.spectral_flux_midhf);
+    json.set("residual_crest_factor", job.f.residual_crest_factor);
+    json.set("edge_spike_ratio", job.f.edge_spike_ratio);
+    json.set("midband_residual_ratio", job.f.midband_residual_ratio);
     json.set("cycle_nmse", job.f.cycle_nmse);
-    json.set("zcv", job.f.zcv);
-    json.set("zc_dwell_ratio", job.f.zc_dwell_ratio);
-    json.set("cycle_rms_drop_ratio", job.f.cycle_rms_drop_ratio);
     json.set("peak_fluct_cv", job.f.peak_fluct_cv);
-    json.set("midband_residual_rms", job.f.midband_residual_rms);
-    json.set("hf_band_energy_ratio", job.f.hf_band_energy_ratio);
-    json.set("spec_entropy", job.f.spec_entropy);
-    json.set("neg_dip_event_ratio", job.f.neg_dip_event_ratio);
-    json.set("irms_drop_vs_baseline", job.f.irms_drop_vs_baseline);
     json.set("thd_i", job.f.thd_i);
+    json.set("hf_energy_delta", job.f.hf_energy_delta);
+    json.set("zcv", job.f.zcv);
+    json.set("abs_irms_zscore_vs_baseline", job.f.abs_irms_zscore_vs_baseline);
     json.set("adc_fs_hz", job.f.adc_fs_hz);
     json.set("feat_valid", (int)job.f.feat_valid);
     json.set("current_valid", (int)job.f.current_valid);
@@ -475,17 +474,16 @@ bool FirebaseNetwork::pushHistoryRecord_(const HistoryJob& job) {
     json.set("current", job.f.irms);
     json.set("apparent_power", job.apparentPower);
     json.set("temp", job.f.temp_c);
+    json.set("spectral_flux_midhf", 0.0f);
+    json.set("residual_crest_factor", 0.0f);
+    json.set("edge_spike_ratio", 0.0f);
+    json.set("midband_residual_ratio", 0.0f);
     json.set("cycle_nmse", 0.0f);
-    json.set("zcv", 0.0f);
-    json.set("zc_dwell_ratio", 0.0f);
-    json.set("cycle_rms_drop_ratio", 0.0f);
     json.set("peak_fluct_cv", 0.0f);
-    json.set("midband_residual_rms", 0.0f);
-    json.set("hf_band_energy_ratio", 0.0f);
-    json.set("spec_entropy", 0.0f);
-    json.set("neg_dip_event_ratio", 0.0f);
-    json.set("irms_drop_vs_baseline", 0.0f);
     json.set("thd_i", 0.0f);
+    json.set("hf_energy_delta", 0.0f);
+    json.set("zcv", 0.0f);
+    json.set("abs_irms_zscore_vs_baseline", 0.0f);
     json.set("model_pred", 0);
     json.set("mains_present", job.f.vrms >= MAINS_PRESENT_ON_V);
     json.set("power_condition", powerConditionForState(job.status, job.f.vrms));
@@ -551,17 +549,16 @@ bool FirebaseNetwork::serviceLive_() {
   json.set("current", _live.c);
   json.set("apparent_power", _live.apparentPower);
   json.set("temp", _live.t);
+  json.set("spectral_flux_midhf", _live.spectral_flux_midhf);
+  json.set("residual_crest_factor", _live.residual_crest_factor);
+  json.set("edge_spike_ratio", _live.edge_spike_ratio);
+  json.set("midband_residual_ratio", _live.midband_residual_ratio);
   json.set("cycle_nmse", _live.cycle_nmse);
-  json.set("zcv", _live.zcv);
-  json.set("zc_dwell_ratio", _live.zc_dwell_ratio);
-  json.set("cycle_rms_drop_ratio", _live.cycle_rms_drop_ratio);
   json.set("peak_fluct_cv", _live.peak_fluct_cv);
-  json.set("midband_residual_rms", _live.midband_residual_rms);
-  json.set("hf_band_energy_ratio", _live.hf_band_energy_ratio);
-  json.set("spec_entropy", _live.spec_entropy);
-  json.set("neg_dip_event_ratio", _live.neg_dip_event_ratio);
-  json.set("irms_drop_vs_baseline", _live.irms_drop_vs_baseline);
   json.set("thd_i", _live.thd_i);
+  json.set("hf_energy_delta", _live.hf_energy_delta);
+  json.set("zcv", _live.zcv);
+  json.set("abs_irms_zscore_vs_baseline", _live.abs_irms_zscore_vs_baseline);
   json.set("model_pred", (int)_live.model_pred);
   json.set("status", _live.state);
   json.set("device_online", true);
@@ -686,17 +683,16 @@ void FirebaseNetwork::ingestLog(const FeatureFrame& f, FaultState st, int arcCou
 
   Rec& r = _buf[_count++];
   r.epoch_ms = f.epoch_ms;
+  r.spectral_flux_midhf = f.spectral_flux_midhf;
+  r.residual_crest_factor = f.residual_crest_factor;
+  r.edge_spike_ratio = f.edge_spike_ratio;
+  r.midband_residual_ratio = f.midband_residual_ratio;
   r.cycle_nmse = f.cycle_nmse;
-  r.zcv = f.zcv;
-  r.zc_dwell_ratio = f.zc_dwell_ratio;
-  r.cycle_rms_drop_ratio = f.cycle_rms_drop_ratio;
   r.peak_fluct_cv = f.peak_fluct_cv;
-  r.midband_residual_rms = f.midband_residual_rms;
-  r.hf_band_energy_ratio = f.hf_band_energy_ratio;
-  r.spec_entropy = f.spec_entropy;
-  r.neg_dip_event_ratio = f.neg_dip_event_ratio;
-  r.irms_drop_vs_baseline = f.irms_drop_vs_baseline;
   r.thd_i = f.thd_i;
+  r.hf_energy_delta = f.hf_energy_delta;
+  r.zcv = f.zcv;
+  r.abs_irms_zscore_vs_baseline = f.abs_irms_zscore_vs_baseline;
   r.v_rms = f.vrms;
   r.i_rms = f.irms;
   r.temp_c = f.temp_c;
@@ -824,24 +820,23 @@ bool FirebaseNetwork::serviceMlUpload_() {
 
   const uint16_t i0 = _uploadNextIndex;
   const uint16_t i1 = ((uint16_t)(i0 + ROWS_PER_CHUNK) < _uploadTotalCount) ? (uint16_t)(i0 + ROWS_PER_CHUNK) : _uploadTotalCount;
-  const char* header = "cycle_nmse,zcv,zc_dwell_ratio,cycle_rms_drop_ratio,peak_fluct_cv,midband_residual_rms,hf_band_energy_ratio,spec_entropy,neg_dip_event_ratio,irms_drop_vs_baseline,thd_i,v_rms,i_rms,temp_c,label_arc,load_type,session_id,epoch_ms,model_pred,feat_valid,current_valid,fault_state,arc_counter,adc_fs_hz,auto_capture\n";
+  const char* header = "spectral_flux_midhf,residual_crest_factor,edge_spike_ratio,midband_residual_ratio,cycle_nmse,peak_fluct_cv,thd_i,hf_energy_delta,zcv,abs_irms_zscore_vs_baseline,v_rms,i_rms,temp_c,label_arc,load_type,session_id,epoch_ms,model_pred,feat_valid,current_valid,fault_state,arc_counter,adc_fs_hz,auto_capture\n";
 
   String csv;
   csv.reserve((i1 - i0) * 220 + 320);
   csv += header;
   for (uint16_t i = i0; i < i1; ++i) {
     const Rec& r = _buf[i];
-    csv += String(r.cycle_nmse, 6);            csv += ",";
-    csv += String(r.zcv, 6);                   csv += ",";
-    csv += String(r.zc_dwell_ratio, 6);        csv += ",";
-    csv += String(r.cycle_rms_drop_ratio, 6); csv += ",";
-    csv += String(r.peak_fluct_cv, 6);         csv += ",";
-    csv += String(r.midband_residual_rms, 6);  csv += ",";
-    csv += String(r.hf_band_energy_ratio, 6);  csv += ",";
-    csv += String(r.spec_entropy, 6);          csv += ",";
-    csv += String(r.neg_dip_event_ratio, 6);   csv += ",";
-    csv += String(r.irms_drop_vs_baseline, 6); csv += ",";
-    csv += String(r.thd_i, 4);                 csv += ",";
+    csv += String(r.spectral_flux_midhf, 6);         csv += ",";
+    csv += String(r.residual_crest_factor, 6);       csv += ",";
+    csv += String(r.edge_spike_ratio, 6);            csv += ",";
+    csv += String(r.midband_residual_ratio, 6);      csv += ",";
+    csv += String(r.cycle_nmse, 6);                  csv += ",";
+    csv += String(r.peak_fluct_cv, 6);               csv += ",";
+    csv += String(r.thd_i, 4);                       csv += ",";
+    csv += String(r.hf_energy_delta, 6);             csv += ",";
+    csv += String(r.zcv, 6);                         csv += ",";
+    csv += String(r.abs_irms_zscore_vs_baseline, 6); csv += ",";
     csv += String(r.v_rms, 3);                 csv += ",";
     csv += String(r.i_rms, 6);                 csv += ",";
     csv += String(r.temp_c, 3);                csv += ",";
@@ -873,7 +868,7 @@ bool FirebaseNetwork::serviceMlUpload_() {
   json.set("meta/label_override", (int)_uploadSpec.labelOverride);
   json.set("meta/duration_s", (int)_uploadSpec.durationS);
   json.set("meta/auto_capture", _uploadAuto);
-  json.set("meta/feature_order", "cycle_nmse,zcv,zc_dwell_ratio,cycle_rms_drop_ratio,peak_fluct_cv,midband_residual_rms,hf_band_energy_ratio,spec_entropy,neg_dip_event_ratio,irms_drop_vs_baseline");
+  json.set("meta/feature_order", "spectral_flux_midhf,residual_crest_factor,edge_spike_ratio,midband_residual_ratio,cycle_nmse,peak_fluct_cv,thd_i,hf_energy_delta,zcv,abs_irms_zscore_vs_baseline");
 
   if (!Firebase.RTDB.pushJSON(&fbLog, path.c_str(), &json)) return false;
 

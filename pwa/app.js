@@ -57,16 +57,16 @@ const iHint  = el("iHint");
 const pHint  = el("pHint");
 const tHint  = el("tHint");
 
+const spectralFluxVal = el("spectralFluxVal");
+const residualCrestVal = el("residualCrestVal");
+const edgeSpikeVal = el("edgeSpikeVal");
+const midbandRatioVal = el("midbandRatioVal");
 const cycleNmseVal = el("cycleNmseVal");
-const zcvVal       = el("zcvVal");
-const zcDwellVal   = el("zcDwellVal");
-const cycleDropVal = el("cycleDropVal");
 const peakFluctVal = el("peakFluctVal");
-const midbandResidVal = el("midbandResidVal");
-const hfEnergyVal  = el("hfEnergyVal");
-const specEntropyVal = el("specEntropyVal");
-const negDipEventVal = el("negDipEventVal");
-const preDipSpikeVal = el("preDipSpikeVal");
+const thdIVal = el("thdIVal");
+const hfEnergyDeltaVal = el("hfEnergyDeltaVal");
+const zcvVal = el("zcvVal");
+const irmsZscoreVal = el("irmsZscoreVal");
 
 const alertEnable = el("alertEnable");
 const soundEnable = el("soundEnable");
@@ -766,9 +766,9 @@ function animateNumber(node) {
 function setLiveZeroes() {
   const zeroMap = [
     [vVal, "0.0"], [iVal, "0.000"], [pVal, "0.0"], [tVal, "0.0"],
-    [cycleNmseVal, "0.000"], [zcvVal, "0.000"], [zcDwellVal, "0.000"],
-    [cycleDropVal, "0.000"], [peakFluctVal, "0.000"], [midbandResidVal, "0.000"],
-    [hfEnergyVal, "0.000"], [specEntropyVal, "0.000"], [negDipEventVal, "0.000"], [preDipSpikeVal, "0.000"]
+    [spectralFluxVal, "0.000"], [residualCrestVal, "0.000"], [edgeSpikeVal, "0.000"],
+    [midbandRatioVal, "0.000"], [cycleNmseVal, "0.000"], [peakFluctVal, "0.000"],
+    [thdIVal, "0.000"], [hfEnergyDeltaVal, "0.000"], [zcvVal, "0.000"], [irmsZscoreVal, "0.000"]
   ];
   zeroMap.forEach(([node, text]) => { if (node) node.textContent = text; });
 }
@@ -822,8 +822,8 @@ function deriveLiveStatus(data) {
 function setLiveUnavailable() {
   const unavailableMap = [
     vVal, iVal, pVal, tVal,
-    cycleNmseVal, zcvVal, zcDwellVal, cycleDropVal, peakFluctVal, midbandResidVal,
-    hfEnergyVal, specEntropyVal, negDipEventVal, preDipSpikeVal
+    spectralFluxVal, residualCrestVal, edgeSpikeVal, midbandRatioVal, cycleNmseVal,
+    peakFluctVal, thdIVal, hfEnergyDeltaVal, zcvVal, irmsZscoreVal
   ];
   unavailableMap.forEach((node) => { if (node) node.textContent = "—"; });
 }
@@ -1279,31 +1279,31 @@ function updateLiveDom(data) {
   const i   = toFixedOrDash(data.current, 3);
   const p   = toFixedOrDash(data.apparent_power, 1);
   const t   = toFixedOrDash(data.temp, 1);
+  const sf  = toFixedOrDash(data.spectral_flux_midhf, 3);
+  const rcf = toFixedOrDash(data.residual_crest_factor, 3);
+  const esr = toFixedOrDash(data.edge_spike_ratio, 3);
+  const mrr = toFixedOrDash(data.midband_residual_ratio, 3);
   const cn  = toFixedOrDash(data.cycle_nmse, 3);
-  const z   = toFixedOrDash(data.zcv, 3);
-  const zd  = toFixedOrDash(data.zc_dwell_ratio, 3);
-  const cd  = toFixedOrDash(data.cycle_rms_drop_ratio, 3);
   const pf  = toFixedOrDash(data.peak_fluct_cv, 3);
-  const mr  = toFixedOrDash(data.midband_residual_rms, 3);
-  const hf  = toFixedOrDash(data.hf_band_energy_ratio, 3);
-  const se  = toFixedOrDash(data.spec_entropy, 3);
-  const nd  = toFixedOrDash(data.neg_dip_event_ratio, 3);
-  const pd  = toFixedOrDash(data.irms_drop_vs_baseline, 3);
+  const thd = toFixedOrDash(data.thd_i, 3);
+  const hfd = toFixedOrDash(data.hf_energy_delta, 3);
+  const z   = toFixedOrDash(data.zcv, 3);
+  const iz  = toFixedOrDash(data.abs_irms_zscore_vs_baseline, 3);
 
   if (vVal && vVal.textContent !== v) { vVal.textContent = v; animateNumber(vVal); }
   if (iVal && iVal.textContent !== i) { iVal.textContent = i; animateNumber(iVal); }
   if (pVal && pVal.textContent !== p) { pVal.textContent = p; animateNumber(pVal); }
   if (tVal && tVal.textContent !== t) { tVal.textContent = t; animateNumber(tVal); }
+  if (spectralFluxVal && spectralFluxVal.textContent !== sf) { spectralFluxVal.textContent = sf; animateNumber(spectralFluxVal); }
+  if (residualCrestVal && residualCrestVal.textContent !== rcf) { residualCrestVal.textContent = rcf; animateNumber(residualCrestVal); }
+  if (edgeSpikeVal && edgeSpikeVal.textContent !== esr) { edgeSpikeVal.textContent = esr; animateNumber(edgeSpikeVal); }
+  if (midbandRatioVal && midbandRatioVal.textContent !== mrr) { midbandRatioVal.textContent = mrr; animateNumber(midbandRatioVal); }
   if (cycleNmseVal && cycleNmseVal.textContent !== cn) { cycleNmseVal.textContent = cn; animateNumber(cycleNmseVal); }
-  if (zcvVal && zcvVal.textContent !== z) { zcvVal.textContent = z; animateNumber(zcvVal); }
-  if (zcDwellVal && zcDwellVal.textContent !== zd) { zcDwellVal.textContent = zd; animateNumber(zcDwellVal); }
-  if (cycleDropVal && cycleDropVal.textContent !== cd) { cycleDropVal.textContent = cd; animateNumber(cycleDropVal); }
   if (peakFluctVal && peakFluctVal.textContent !== pf) { peakFluctVal.textContent = pf; animateNumber(peakFluctVal); }
-  if (midbandResidVal && midbandResidVal.textContent !== mr) { midbandResidVal.textContent = mr; animateNumber(midbandResidVal); }
-  if (hfEnergyVal && hfEnergyVal.textContent !== hf) { hfEnergyVal.textContent = hf; animateNumber(hfEnergyVal); }
-  if (specEntropyVal && specEntropyVal.textContent !== se) { specEntropyVal.textContent = se; animateNumber(specEntropyVal); }
-  if (negDipEventVal && negDipEventVal.textContent !== nd) { negDipEventVal.textContent = nd; animateNumber(negDipEventVal); }
-  if (preDipSpikeVal && preDipSpikeVal.textContent !== pd) { preDipSpikeVal.textContent = pd; animateNumber(preDipSpikeVal); }
+  if (thdIVal && thdIVal.textContent !== thd) { thdIVal.textContent = thd; animateNumber(thdIVal); }
+  if (hfEnergyDeltaVal && hfEnergyDeltaVal.textContent !== hfd) { hfEnergyDeltaVal.textContent = hfd; animateNumber(hfEnergyDeltaVal); }
+  if (zcvVal && zcvVal.textContent !== z) { zcvVal.textContent = z; animateNumber(zcvVal); }
+  if (irmsZscoreVal && irmsZscoreVal.textContent !== iz) { irmsZscoreVal.textContent = iz; animateNumber(irmsZscoreVal); }
 
   applyMetricHints(data);
 }

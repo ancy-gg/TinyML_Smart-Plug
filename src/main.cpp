@@ -190,40 +190,44 @@ static bool arcTransientBlanking(bool relayOn,
 }
 
 static bool arcEventSignature(const FeatureFrame& f, float irmsLogic) {
-  if ((f.feat_valid == 0) || (irmsLogic < 0.08f)) return false;
+  if ((f.feat_valid == 0) || (irmsLogic < ARC_SOFT_MIN_IRMS_A)) return false;
 
   int hits = 0;
-  if (f.neg_dip_event_ratio   >= 0.040f) hits += 3;
-  if (f.irms_drop_vs_baseline >= 0.055f) hits += 2;
-  if (f.cycle_rms_drop_ratio  >= 0.025f) hits += 2;
-  if (f.peak_fluct_cv         >= 0.012f) hits += 1;
-  if (f.midband_residual_rms  >= 0.055f) hits += 1;
-  if (f.cycle_nmse            >= 0.090f) hits += 1;
+  if (f.spectral_flux_midhf >= ARC_SIG_SPECTRAL_FLUX) hits += 2;
+  if (f.residual_crest_factor >= ARC_SIG_RESIDUAL_CF) hits += 1;
+  if (f.edge_spike_ratio >= ARC_SIG_EDGE_SPIKE_RATIO) hits += 2;
+  if (f.midband_residual_ratio >= ARC_SIG_MIDBAND_RATIO) hits += 1;
+  if (f.cycle_nmse >= ARC_SIG_CYCLE_NMSE) hits += 1;
+  if (f.peak_fluct_cv >= ARC_SIG_PEAK_FLUCT) hits += 1;
+  if (f.hf_energy_delta >= ARC_SIG_HF_ENERGY_DELTA) hits += 1;
+  if (f.abs_irms_zscore_vs_baseline >= ARC_SIG_IRMS_ZSCORE) hits += 1;
 
-  return hits >= 2;
+  return hits >= 3;
 }
 
-static bool softArcDropEvent(const FeatureFrame& f,
-                             float irmsLogic,
-                             bool hadSteadyLoad,
-                             float vProtect) {
+static bool softArcBurstEvent(const FeatureFrame& f,
+                              float irmsLogic,
+                              bool hadSteadyLoad,
+                              float vProtect) {
   if (!hadSteadyLoad) return false;
   if ((f.feat_valid == 0) || (f.current_valid == 0)) return false;
   if (irmsLogic < ARC_SOFT_MIN_IRMS_A) return false;
   if (vProtect < VOLT_NORMAL_MIN_V || vProtect > VOLT_NORMAL_MAX_V) return false;
 
   int hits = 0;
-  if (f.irms_drop_vs_baseline >= ARC_SOFT_BASELINE_DROP) hits += 2;
-  if (f.cycle_rms_drop_ratio  >= ARC_SOFT_DROP_RATIO)    hits += 2;
-  if (f.midband_residual_rms  >= ARC_SOFT_MIDBAND_RMS)   hits += 1;
-  if (f.cycle_nmse            >= ARC_SOFT_CYCLE_NMSE)    hits += 1;
-  if (f.peak_fluct_cv         >= ARC_SOFT_PEAK_FLUCT)    hits += 1;
+  if (f.spectral_flux_midhf >= ARC_SIG_SPECTRAL_FLUX) hits += 2;
+  if (f.edge_spike_ratio >= ARC_SIG_EDGE_SPIKE_RATIO) hits += 2;
+  if (f.midband_residual_ratio >= ARC_SIG_MIDBAND_RATIO) hits += 1;
+  if (f.cycle_nmse >= ARC_SIG_CYCLE_NMSE) hits += 1;
+  if (f.peak_fluct_cv >= ARC_SIG_PEAK_FLUCT) hits += 1;
+  if (f.hf_energy_delta >= ARC_SIG_HF_ENERGY_DELTA) hits += 1;
+  if (f.abs_irms_zscore_vs_baseline >= ARC_SIG_IRMS_ZSCORE) hits += 1;
 
-  const bool hardDrop =
-      (f.cycle_rms_drop_ratio >= ARC_SOFT_DROP_RATIO) ||
-      (f.irms_drop_vs_baseline >= ARC_SOFT_BASELINE_DROP);
+  const bool primaryBurst =
+      (f.spectral_flux_midhf >= ARC_SIG_SPECTRAL_FLUX) ||
+      (f.edge_spike_ratio >= ARC_SIG_EDGE_SPIKE_RATIO);
 
-  return hardDrop && (hits >= 3);
+  return primaryBurst && (hits >= 4);
 }
 
 static bool debouncedMainsPresentForState(float vProtect) {
@@ -306,17 +310,16 @@ static bool stabilizeFeatureValidity(FeatureFrame& f, float vProtect, float irms
 
   if (!bridgeAllowed) return false;
 
+  f.spectral_flux_midhf = lastValidFeat.spectral_flux_midhf;
+  f.residual_crest_factor = lastValidFeat.residual_crest_factor;
+  f.edge_spike_ratio = lastValidFeat.edge_spike_ratio;
+  f.midband_residual_ratio = lastValidFeat.midband_residual_ratio;
   f.cycle_nmse = lastValidFeat.cycle_nmse;
-  f.zcv = lastValidFeat.zcv;
-  f.zc_dwell_ratio = lastValidFeat.zc_dwell_ratio;
-  f.cycle_rms_drop_ratio = lastValidFeat.cycle_rms_drop_ratio;
   f.peak_fluct_cv = lastValidFeat.peak_fluct_cv;
-  f.midband_residual_rms = lastValidFeat.midband_residual_rms;
-  f.hf_band_energy_ratio = lastValidFeat.hf_band_energy_ratio;
-  f.spec_entropy = lastValidFeat.spec_entropy;
-  f.neg_dip_event_ratio = lastValidFeat.neg_dip_event_ratio;
-  f.irms_drop_vs_baseline = lastValidFeat.irms_drop_vs_baseline;
   f.thd_i = lastValidFeat.thd_i;
+  f.hf_energy_delta = lastValidFeat.hf_energy_delta;
+  f.zcv = lastValidFeat.zcv;
+  f.abs_irms_zscore_vs_baseline = lastValidFeat.abs_irms_zscore_vs_baseline;
   f.adc_fs_hz = lastValidFeat.adc_fs_hz;
   f.feat_valid = 1;
   return true;
@@ -491,11 +494,11 @@ static void Core0Task(void* pv) {
     if (ok && out.current_valid) {
       f.adc_fs_hz = out.fs_hz; f.irms = out.irms_a; f.current_valid = 1; f.feat_valid = out.feat_valid ? 1 : 0;
       if (out.feat_valid) {
-        f.cycle_nmse = out.cycle_nmse; f.zcv = out.zcv; f.zc_dwell_ratio = out.zc_dwell_ratio;
-        f.cycle_rms_drop_ratio = out.cycle_rms_drop_ratio; f.peak_fluct_cv = out.peak_fluct_cv;
-        f.midband_residual_rms = out.midband_residual_rms; f.hf_band_energy_ratio = out.hf_band_energy_ratio;
-        f.spec_entropy = out.spec_entropy; f.neg_dip_event_ratio = out.neg_dip_event_ratio;
-        f.irms_drop_vs_baseline = out.irms_drop_vs_baseline; f.thd_i = out.thd_i;
+        f.spectral_flux_midhf = out.spectral_flux_midhf; f.residual_crest_factor = out.residual_crest_factor;
+        f.edge_spike_ratio = out.edge_spike_ratio; f.midband_residual_ratio = out.midband_residual_ratio;
+        f.cycle_nmse = out.cycle_nmse; f.peak_fluct_cv = out.peak_fluct_cv;
+        f.thd_i = out.thd_i; f.hf_energy_delta = out.hf_energy_delta;
+        f.zcv = out.zcv; f.abs_irms_zscore_vs_baseline = out.abs_irms_zscore_vs_baseline;
       }
       lastGood = f; hasGood = true; if (qFeat) xQueueOverwrite(qFeat, &f);
     } else {
@@ -633,10 +636,9 @@ void loop() {
     f = lastF;
     if ((millis() - lastFeatRxMs) > FEAT_STALE_MS) {
       f.irms = 0.0f; f.current_valid = 0; f.feat_valid = 0; f.model_pred = 0; f.adc_fs_hz = 0.0f;
-      f.cycle_nmse = f.zcv = f.zc_dwell_ratio = f.cycle_rms_drop_ratio = f.peak_fluct_cv = 0.0f;
-      f.midband_residual_rms = f.hf_band_energy_ratio = f.spec_entropy = 0.0f;
-      f.neg_dip_event_ratio = f.irms_drop_vs_baseline = 0.0f;
-      f.thd_i = 0.0f;
+      f.spectral_flux_midhf = f.residual_crest_factor = f.edge_spike_ratio = 0.0f;
+      f.midband_residual_ratio = f.cycle_nmse = f.peak_fluct_cv = 0.0f;
+      f.thd_i = f.hf_energy_delta = f.zcv = f.abs_irms_zscore_vs_baseline = 0.0f;
       lastF = f;
     }
   } else { memset(&f, 0, sizeof(f)); f.uptime_ms = millis(); }
@@ -757,7 +759,7 @@ void loop() {
       protection.relayLatchedOn() &&
       !arcBlankActive &&
       arcInputStable(f.current_valid != 0, irmsRawForLogic) &&
-      softArcDropEvent(f, irmsRawForLogic, hadSteadyLoad, vFast);
+      softArcBurstEvent(f, irmsRawForLogic, hadSteadyLoad, vFast);
 
   const bool haveUsableFeatures = (f.feat_valid != 0);
   const bool mlArcEligible =
@@ -810,16 +812,16 @@ void loop() {
 
   int pred = 0;
   if (!faultClearSuppressActive && mlArcEligible) {
-    pred = arcDetect.predict(f.cycle_nmse,
-                             f.zcv,
-                             f.zc_dwell_ratio,
-                             f.cycle_rms_drop_ratio,
+    pred = arcDetect.predict(f.spectral_flux_midhf,
+                             f.residual_crest_factor,
+                             f.edge_spike_ratio,
+                             f.midband_residual_ratio,
+                             f.cycle_nmse,
                              f.peak_fluct_cv,
-                             f.midband_residual_rms,
-                             f.hf_band_energy_ratio,
-                             f.spec_entropy,
-                             f.neg_dip_event_ratio,
-                             f.irms_drop_vs_baseline,
+                             f.thd_i,
+                             f.hf_energy_delta,
+                             f.zcv,
+                             f.abs_irms_zscore_vs_baseline,
                              f.vrms,
                              irmsRawForLogic,
                              f.temp_c);
@@ -986,10 +988,11 @@ void loop() {
     else if (unpluggedLive && st != STATE_ARCING && st != STATE_HEATING) stateStr = "UNPLUGGED";
     else stateStr = String(stateToCstr(st));
     network.requestLiveUpdate(vRms, f.irms, apparentPowerVa, tC,
-                              f.cycle_nmse, f.zcv, f.zc_dwell_ratio,
-                              f.cycle_rms_drop_ratio, f.peak_fluct_cv,
-                              f.midband_residual_rms, f.hf_band_energy_ratio,
-                              f.spec_entropy, f.neg_dip_event_ratio, f.irms_drop_vs_baseline, f.thd_i,
+                              f.spectral_flux_midhf, f.residual_crest_factor,
+                              f.edge_spike_ratio, f.midband_residual_ratio,
+                              f.cycle_nmse, f.peak_fluct_cv,
+                              f.thd_i, f.hf_energy_delta,
+                              f.zcv, f.abs_irms_zscore_vs_baseline,
                               f.model_pred, stateStr,
                               protection.webControlLocked(), controlsLocked, protection.relayLatchedOn());
   }
