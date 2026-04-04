@@ -75,6 +75,30 @@ FaultState ProtectionManager::update(float vProtect, float vRaw, float tempC, fl
 
   if (arcModelOut == 1) _arcCnt += ARC_CNT_INC; else _arcCnt -= ARC_CNT_DEC;
   _arcCnt = clampi(_arcCnt, 0, ARC_CNT_MAX);
+
+#if !PROTECTION
+  _tripOffEdge = false;
+  _autoOnEdge = false;
+  _webLockout = false;
+  _resetRequired = false;
+  _voltageLockout = false;
+  _voltageLockoutKind = STATE_NORMAL;
+  _voltageRecoverySince = 0;
+
+  if (!_loadOn) {
+    if (irmsA >= LOAD_ON_DETECT_A) {
+      if (_loadOnSince == 0) _loadOnSince = now;
+      if ((now - _loadOnSince) >= LOAD_ON_DETECT_MS) { _loadOn = true; _loadOffSince = 0; }
+    } else _loadOnSince = 0;
+  } else {
+    if (irmsA <= LOAD_OFF_DETECT_A) {
+      if (_loadOffSince == 0) _loadOffSince = now;
+      if ((now - _loadOffSince) >= LOAD_OFF_DETECT_MS) { _loadOn = false; _loadOnSince = 0; }
+    } else _loadOffSince = 0;
+  }
+
+  return STATE_NORMAL;
+#endif
   const bool arcTrip = (_arcCnt >= ARC_CNT_TRIP);
   if (arcTrip) _arcHoldUntil = now + ARC_HOLD_MS;
   const bool arcActive = arcTrip || (now < _arcHoldUntil);

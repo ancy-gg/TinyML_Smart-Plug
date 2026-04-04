@@ -612,7 +612,7 @@ bool FirebaseNetwork::serviceLive_() {
 }
 
 const FirebaseNetwork::SessionSpec& FirebaseNetwork::activeSpec() const {
-  return _manualEnabled ? _manual : _auto;
+  return _manual;
 }
 
 void FirebaseNetwork::setLogSession(const String& sessionId, const String& loadType, int labelOverride) {
@@ -633,28 +633,13 @@ void FirebaseNetwork::setLogDurationSeconds(uint16_t sec) {
 }
 
 bool FirebaseNetwork::startAutoCapture(const String& reason, uint16_t sec) {
-  if (_manualEnabled || _autoEnabled || _mlUploadActive) return false;
-  if (sec < ML_LOG_AUTO_MIN_DURATION_S) sec = ML_LOG_AUTO_MIN_DURATION_S;
-  if (sec > ML_LOG_AUTO_MAX_DURATION_S) sec = ML_LOG_AUTO_MAX_DURATION_S;
-  String autoSession = String("auto_");
-  autoSession += reason;
-  autoSession += "_";
-  autoSession += String((unsigned long)millis());
-  _auto.sessionId = sanitizeToken(autoSession);
-
-  String autoLoadType = String("auto_");
-  autoLoadType += reason;
-  _auto.loadType = sanitizeToken(autoLoadType);
-  _auto.labelOverride = ML_UNKNOWN_LABEL;
-  _auto.durationS = sec;
-  _autoEnabled = true;
-  resetLoggerRuntime_();
-  return true;
+  (void)reason;
+  (void)sec;
+  return false;
 }
 
 void FirebaseNetwork::stopAutoCapture() {
   _autoEnabled = false;
-  resetLoggerRuntime_();
 }
 
 void FirebaseNetwork::ingestLog(const FeatureFrame& f, FaultState st, int arcCounter) {
@@ -707,6 +692,7 @@ void FirebaseNetwork::resetLoggerRuntime_() {
   _uploadChunkIndex = 0;
   _uploadFinalFlush = false;
   _uploadAuto = false;
+  _suspendMlUpload = false;
 }
 
 bool FirebaseNetwork::closeManualSession_(const String& finishedSessionId) {
@@ -752,8 +738,8 @@ void FirebaseNetwork::serviceMlState_() {
   const uint32_t now = millis();
   if (_sessionStartMs == 0) _sessionStartMs = now;
 
-  const bool manualTimeUp = (_manualEnabled && !_autoEnabled) && ((now - _sessionStartMs) >= ((uint32_t)spec.durationS * 1000UL));
-  const bool autoTimeUp   = activeIsAuto() && ((now - _sessionStartMs) >= ((uint32_t)spec.durationS * 1000UL));
+  const bool manualTimeUp = _manualEnabled && ((now - _sessionStartMs) >= ((uint32_t)spec.durationS * 1000UL));
+  const bool autoTimeUp   = false;
   const bool chunkTimeUp  = (_count > 0) && (_chunkStartMs != 0) && ((now - _chunkStartMs) >= ((uint32_t)ML_LOG_CHUNK_DURATION_S * 1000UL));
   const bool full         = (_maxRec > 0) && (_count >= _maxRec);
 
@@ -784,6 +770,12 @@ void FirebaseNetwork::serviceMlState_() {
 
 bool FirebaseNetwork::serviceMlUpload_() {
   if (!_mlUploadActive || !isReady()) return false;
+#if defined(ARDUINO_ARCH_ESP32)
+  if (ESP.getFreeHeap() < 32000 || heap_caps_get_largest_free_block(MALLOC_CAP_8BIT) < 24000) {
+    _txBackoffUntilMs = millis() + 900UL;
+    return false;
+  }
+#endif
   if (_uploadNextIndex >= _uploadTotalCount) {
     const String finishedSessionId = _uploadSpec.sessionId;
     _count = 0;
@@ -870,7 +862,7 @@ void FirebaseNetwork::loop() {
   if ((int32_t)(now - _txBackoffUntilMs) < 0) return;
   if ((now - _lastTxMs) < CLOUD_TX_MIN_GAP_MS) return;
 
-  if (serviceLive_()) return;
   if (serviceHistory_()) return;
-  if (serviceMlUpload_()) return;
+  if (serviceLive_()) return;
+  if (!_suspendMlUpload && serviceMlUpload_()) return;
 }

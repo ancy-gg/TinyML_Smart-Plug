@@ -532,7 +532,7 @@ void Notification::updateBuzzer(FaultState st, float vProtect, float i, float t)
   if (wantedFaultSound != 255) {
     if (wantedFaultSound != s_faultHoldSound) {
       s_faultHoldSound = wantedFaultSound;
-      s_faultHoldUntil = now + FAULT_ALERT_MIN_MS;
+      s_faultHoldUntil = now + FAULT_BUZZ_MS;
       soundStart(wantedFaultSound);
     } else if (s_faultHoldSound != 255 && (int32_t)(s_faultHoldUntil - now) > 0) {
       soundStart(s_faultHoldSound);

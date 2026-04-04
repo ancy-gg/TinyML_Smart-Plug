@@ -114,14 +114,37 @@ static bool arcEventSignature(const FeatureFrame& f, float irmsLogic) {
   if ((f.feat_valid == 0) || (irmsLogic < 0.08f)) return false;
 
   int hits = 0;
-  if (f.neg_dip_event_ratio  >= 0.040f) hits += 3;
-  if (f.irms_drop_vs_baseline >= 0.060f) hits += 2;
-  if (f.cycle_rms_drop_ratio >= 0.025f) hits += 2;
-  if (f.peak_fluct_cv        >= 0.012f) hits += 1;
-  if (f.midband_residual_rms >= 0.055f) hits += 1;
-  if (f.cycle_nmse           >= 0.090f) hits += 1;
+  if (f.neg_dip_event_ratio   >= 0.040f) hits += 3;
+  if (f.irms_drop_vs_baseline >= 0.055f) hits += 2;
+  if (f.cycle_rms_drop_ratio  >= 0.025f) hits += 2;
+  if (f.peak_fluct_cv         >= 0.012f) hits += 1;
+  if (f.midband_residual_rms  >= 0.055f) hits += 1;
+  if (f.cycle_nmse            >= 0.090f) hits += 1;
 
   return hits >= 2;
+}
+
+static bool softArcDropEvent(const FeatureFrame& f,
+                             float irmsLogic,
+                             bool hadSteadyLoad,
+                             float vProtect) {
+  if (!hadSteadyLoad) return false;
+  if ((f.feat_valid == 0) || (f.current_valid == 0)) return false;
+  if (irmsLogic < ARC_SOFT_MIN_IRMS_A) return false;
+  if (vProtect < VOLT_NORMAL_MIN_V || vProtect > VOLT_NORMAL_MAX_V) return false;
+
+  int hits = 0;
+  if (f.irms_drop_vs_baseline >= ARC_SOFT_BASELINE_DROP) hits += 2;
+  if (f.cycle_rms_drop_ratio  >= ARC_SOFT_DROP_RATIO)    hits += 2;
+  if (f.midband_residual_rms  >= ARC_SOFT_MIDBAND_RMS)   hits += 1;
+  if (f.cycle_nmse            >= ARC_SOFT_CYCLE_NMSE)    hits += 1;
+  if (f.peak_fluct_cv         >= ARC_SOFT_PEAK_FLUCT)    hits += 1;
+
+  const bool hardDrop =
+      (f.cycle_rms_drop_ratio >= ARC_SOFT_DROP_RATIO) ||
+      (f.irms_drop_vs_baseline >= ARC_SOFT_BASELINE_DROP);
+
+  return hardDrop && (hits >= 3);
 }
 
 static bool debouncedMainsPresentForState(float vProtect) {
@@ -418,21 +441,6 @@ static void pollMlControl(FirebaseNetwork& network, Notification& notifyUi) {
   lastEnabled = enabled;
 }
 
-static void maybeStartAutoArcCapture(FirebaseNetwork& network, Notification& notifyUi, bool paused, bool safeMode, bool modelPositive) {
-  static bool lastPositive = false;
-  static uint32_t lastAutoStartMs = 0;
-  const bool rising = (modelPositive && !lastPositive);
-  lastPositive = modelPositive;
-  if (!paused && !safeMode && !network.manualEnabled() && rising) {
-    const uint32_t now = millis();
-    if ((now - lastAutoStartMs) >= AUTO_ARC_CAPTURE_COOLDOWN_MS) {
-      if (network.startAutoCapture("model_arc", AUTO_ARC_CAPTURE_DURATION_S)) {
-        lastAutoStartMs = now; notification.notify(SND_LOGGER_ON); notifyUi.triggerCollecting(1000);
-      }
-    }
-  }
-}
-
 void setup() {
   esp_log_level_set("*", ESP_LOG_NONE);
   notification.begin(PIN_BUZZER_PWM);
@@ -651,6 +659,12 @@ void loop() {
        ((collapseSinceMs && (millis() - collapseSinceMs) >= 40UL)) ||
        ((voltDipSinceMs && (millis() - voltDipSinceMs) >= 40UL)));
 
+  const bool softFallbackArcEvent =
+      protection.relayLatchedOn() &&
+      !arcBlankActive &&
+      arcInputStable(f.current_valid != 0, irmsRawForLogic) &&
+      softArcDropEvent(f, irmsRawForLogic, hadSteadyLoad, vFast);
+
   const bool haveUsableFeatures = (f.feat_valid != 0);
   const bool mlArcEligible =
       (!gSafeMode &&
@@ -666,7 +680,7 @@ void loop() {
   static uint32_t relayNetQuietUntilMs = 0;
   static bool pendingProtectionTripOff = false;
   static bool pendingProtectionAutoOn = false;
-  const bool relayNetQuietActive = ((int32_t)(relayNetQuietUntilMs - millis()) > 0);
+  bool relayNetQuietActive = ((int32_t)(relayNetQuietUntilMs - millis()) > 0);
 
   network.pollControls(!paused && !portalActive && wifiConnected && !relayNetQuietActive, portalActive);
 
@@ -680,7 +694,7 @@ void loop() {
   updater.loop();
   if (faultClearRequested) {
     protection.resetLatch();
-    faultClearSuppressUntilMs = millis() + 2500UL;
+    faultClearSuppressUntilMs = millis() + FAULT_NET_QUIET_MS;
     loadRefA = 0.0f;
     invalidBurstSinceMs = 0;
     collapseSinceMs = 0;
@@ -720,7 +734,7 @@ void loop() {
       pred = 0;
     }
   }
-  if (!faultClearSuppressActive && !arcBlankActive && fallbackArcEvent) {
+  if (!faultClearSuppressActive && !arcBlankActive && (fallbackArcEvent || softFallbackArcEvent)) {
     pred = 1;
   }
   f.model_pred = (uint8_t)pred;
@@ -741,16 +755,7 @@ void loop() {
   prevVFast = vFast;
 
   static uint32_t noPowerSinceMsCtl = 0;
-  static bool unpluggedOffIssued = false;
   const bool unpluggedLiveCtl = classifyUnpluggedSocket(vRaw, vFast, irmsRawForLogic, f.current_valid != 0, st, &noPowerSinceMsCtl);
-  if (unpluggedLiveCtl) {
-    if (!unpluggedOffIssued) {
-      protection.pulseRelayOff();
-      unpluggedOffIssued = true;
-    }
-  } else {
-    unpluggedOffIssued = false;
-  }
   const bool controlsLocked = gSafeMode || paused || bootSettling || protectionInhibit || unpluggedLiveCtl || protection.webControlLocked() || protection.voltageLockoutActive();
   const bool portalRequested = (!gSafeMode) ? network.consumePortalRequest() : false;
   const bool relayOnRequested = (!gSafeMode) ? network.consumeRelayOnRequest() : false;
@@ -780,12 +785,14 @@ void loop() {
   if (protectionEnabled && tripOffEdge) {
     pendingProtectionTripOff = true;
     pendingProtectionAutoOn = false;
-    relayActionAtMs = millis() + 35UL;
-    relayNetQuietUntilMs = relayActionAtMs + 600UL;
+    relayActionAtMs = millis();
+    if ((int32_t)(relayNetQuietUntilMs - (relayActionAtMs + FAULT_NET_QUIET_MS)) < 0) {
+      relayNetQuietUntilMs = relayActionAtMs + FAULT_NET_QUIET_MS;
+    }
   }
   if (protectionEnabled && autoOnEdge && !controlsLocked && !pendingProtectionTripOff) {
     pendingProtectionAutoOn = true;
-    relayActionAtMs = millis() + 35UL;
+    relayActionAtMs = millis();
     if ((int32_t)(relayNetQuietUntilMs - (relayActionAtMs + 400UL)) < 0) relayNetQuietUntilMs = relayActionAtMs + 400UL;
   }
 
@@ -798,13 +805,23 @@ void loop() {
     pendingProtectionAutoOn = false;
   }
 
+  relayNetQuietActive = ((int32_t)(relayNetQuietUntilMs - millis()) > 0);
+
+  if (tripOffEdge && !paused && !gSafeMode) {
+    FeatureFrame fTrip = f;
+    fTrip.epoch_ms = network.isSynced() ? network.nowEpochMs() : 0;
+    fTrip.irms = irmsRawForLogic;
+    network.ingestLog(fTrip, st, protection.arcCounter());
+  }
+
   protection.apply(st, vRms, vFast, irmsRawForLogic, tC);
   notification.updateBuzzer(st, vFast, irmsRawForLogic, tC);
   const bool mainsPresentStable = debouncedMainsPresentForState(vFast);
   handleCueEvents(vRaw, vFast, irmsRawForLogic, mainsPresentStable, paused || gSafeMode || protectionInhibit, st);
 
-  maybeStartAutoArcCapture(network, notification, paused || protectionInhibit, gSafeMode, (!faultClearSuppressActive && (mlArcEligible || fallbackArcEvent) && f.model_pred == 1));
-  if (!paused && !gSafeMode) pollMlControl(network, notification); else network.setLogEnabled(false);
+  network.setMlUploadSuspended(relayNetQuietActive || paused || gSafeMode);
+  if (!paused && !gSafeMode && !relayNetQuietActive) pollMlControl(network, notification);
+  else if (paused || gSafeMode) network.setLogEnabled(false);
   if (!paused && !gSafeMode) {
     static uint32_t lastMl = 0;
     const uint32_t period = 1000UL / ML_LOG_RATE_HZ;
@@ -839,7 +856,17 @@ void loop() {
                             ((wifiBannerUntilMs == 0) || ((int32_t)(wifiBannerUntilMs - millis()) > 0) || portalActive || wifiPhase == WifiHandler::PHASE_AP_WAIT_CLIENT);
   notification.setWiFi(wifiConnected, wifiMgr.rssi(), wifiMgr.isBlockingPhase(), portalActive, wifiTimedOutUi, wifiPhase == WifiHandler::PHASE_AP_WAIT_CLIENT);
   if (!gPauseByOta && !showWifiWait) notification.setOta(false, 0);
-  notification.render();
+  static uint32_t lastUiRenderMs = 0;
+  static OledOverlay lastUiOv = OledOverlay::NONE;
+  static FaultState lastUiState = STATE_NORMAL;
+  const FaultState uiState = displayFaultActive ? displayFaultState : st;
+  const bool uiUrgent = (ov != lastUiOv) || (uiState != lastUiState);
+  if (uiUrgent || ((millis() - lastUiRenderMs) >= OLED_RENDER_INTERVAL_MS)) {
+    notification.render();
+    lastUiRenderMs = millis();
+    lastUiOv = ov;
+    lastUiState = uiState;
+  }
 
   static FaultState lastImmediateFaultState = STATE_NORMAL;
   if (!gSafeMode && !paused && !bootSettling) {
@@ -850,7 +877,7 @@ void loop() {
   }
 
   static uint32_t lastLive = 0;
-  if (!paused && (millis() - lastLive > 1000)) {
+  if (!paused && !relayNetQuietActive && (millis() - lastLive > 1000)) {
     lastLive = millis();
     static uint32_t noPowerSinceMs = 0;
     const bool unpluggedLive = classifyUnpluggedSocket(vRaw, vFast, irmsRawForLogic, f.current_valid != 0, st, &noPowerSinceMs);

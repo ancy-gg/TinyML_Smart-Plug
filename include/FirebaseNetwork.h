@@ -55,8 +55,9 @@ public:
   void setLogEnabled(bool en);
   bool logEnabled() const { return _manualEnabled || _autoEnabled; }
   bool manualEnabled() const { return _manualEnabled; }
-  bool autoCaptureActive() const { return _autoEnabled; }
+  bool autoCaptureActive() const { return false; }
   void setLogDurationSeconds(uint16_t sec);
+  void setMlUploadSuspended(bool en) { _suspendMlUpload = en; }
   void setLogSession(const String& sessionId, const String& loadType, int labelOverride);
   bool startAutoCapture(const String& reason, uint16_t sec = AUTO_ARC_CAPTURE_DURATION_S);
   void stopAutoCapture();
@@ -104,7 +105,7 @@ private:
   static constexpr uint32_t CLOUD_TX_MIN_GAP_MS = 140UL;
   static constexpr uint32_t CLOUD_TX_RETRY_MS = 1800UL;
   static constexpr uint32_t CLOUD_CTRL_READ_GAP_MS = 350UL;
-  static constexpr uint16_t ROWS_PER_CHUNK = 24;
+  static constexpr uint16_t ROWS_PER_CHUNK = 12;
 
   FirebaseData fbLive;
   FirebaseData fbRead;
@@ -192,6 +193,7 @@ private:
   uint16_t _uploadChunkIndex = 0;
   bool _uploadFinalFlush = false;
   bool _uploadAuto = false;
+  bool _suspendMlUpload = false;
 
   static bool timeLooksValid(time_t t);
   static String powerConditionForState(const String& state, float v);
