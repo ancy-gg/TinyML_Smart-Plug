@@ -446,6 +446,7 @@ bool FirebaseNetwork::pushHistoryRecord_(const HistoryJob& job) {
   json.set("ts_epoch_ms", (double)epochMs);
   json.set("ts_iso", iso);
   json.set("uptime_ms", (int)millis());
+  json.set("feature_space_version", ARC_RUNTIME_FEATURE_SPACE_VERSION);
 
   if (job.useFeaturePayload) {
     json.set("voltage", job.f.vrms);
@@ -574,6 +575,7 @@ bool FirebaseNetwork::serviceLive_() {
   json.set("ts_epoch_ms", (double)epochMs);
   json.set("ts_iso", iso);
   json.set("uptime_ms", (int)millis());
+  json.set("feature_space_version", ARC_RUNTIME_FEATURE_SPACE_VERSION);
   json.set("server_ts/.sv", "timestamp");
 
   if (!Firebase.RTDB.updateNode(&fbLive, "/live_data", &json)) {
@@ -669,7 +671,7 @@ void FirebaseNetwork::stopAutoCapture() {
 }
 
 void FirebaseNetwork::ingestLog(const FeatureFrame& f, FaultState st, int arcCounter) {
-  if (!logEnabled() || _mlUploadActive) return;
+  if (!logEnabled()) return;
   const SessionSpec& spec = activeSpec();
   if (spec.sessionId.length() < 3 || !_buf || _maxRec == 0 || _count >= _maxRec) return;
 
@@ -680,9 +682,11 @@ void FirebaseNetwork::ingestLog(const FeatureFrame& f, FaultState st, int arcCou
 
   if (_sessionStartMs == 0) _sessionStartMs = millis();
   if (_count == 0) _chunkStartMs = millis();
+  if (_count >= _maxRec) return;
 
   Rec& r = _buf[_count++];
   r.epoch_ms = f.epoch_ms;
+  r.uptime_ms = f.uptime_ms;
   r.spectral_flux_midhf = f.spectral_flux_midhf;
   r.residual_crest_factor = f.residual_crest_factor;
   r.edge_spike_ratio = f.edge_spike_ratio;
@@ -704,6 +708,7 @@ void FirebaseNetwork::ingestLog(const FeatureFrame& f, FaultState st, int arcCou
   r.arc_counter = (int16_t)arcCounter;
   r.adc_fs_hz = f.adc_fs_hz;
   r.auto_capture = activeIsAuto() ? 1 : 0;
+  r.feature_space_version = ARC_RUNTIME_FEATURE_SPACE_VERSION;
 }
 
 void FirebaseNetwork::resetLoggerRuntime_() {
@@ -803,14 +808,18 @@ bool FirebaseNetwork::serviceMlUpload_() {
 #endif
   if (_uploadNextIndex >= _uploadTotalCount) {
     const String finishedSessionId = _uploadSpec.sessionId;
-    _count = 0;
-    _chunkStartMs = 0;
+    const uint16_t tailCount = (_count > _uploadTotalCount) ? (uint16_t)(_count - _uploadTotalCount) : 0;
+    if (tailCount > 0) {
+      memmove(_buf, _buf + _uploadTotalCount, sizeof(Rec) * tailCount);
+    }
+    _count = tailCount;
+    _chunkStartMs = (tailCount > 0) ? millis() : 0;
     _mlUploadActive = false;
     _uploadTotalCount = 0;
     _uploadNextIndex = 0;
     _uploadChunkIndex = 0;
     _uploadChunkCount = 0;
-    if (_uploadFinalFlush) {
+    if (_uploadFinalFlush && tailCount == 0) {
       if (_uploadAuto) _autoEnabled = false;
       else (void)closeManualSession_(finishedSessionId);
       _sessionStartMs = 0;
@@ -820,7 +829,7 @@ bool FirebaseNetwork::serviceMlUpload_() {
 
   const uint16_t i0 = _uploadNextIndex;
   const uint16_t i1 = ((uint16_t)(i0 + ROWS_PER_CHUNK) < _uploadTotalCount) ? (uint16_t)(i0 + ROWS_PER_CHUNK) : _uploadTotalCount;
-  const char* header = "spectral_flux_midhf,residual_crest_factor,edge_spike_ratio,midband_residual_ratio,cycle_nmse,peak_fluct_cv,thd_i,hf_energy_delta,zcv,abs_irms_zscore_vs_baseline,v_rms,i_rms,temp_c,label_arc,load_type,session_id,epoch_ms,model_pred,feat_valid,current_valid,fault_state,arc_counter,adc_fs_hz,auto_capture\n";
+  const char* header = "spectral_flux_midhf,residual_crest_factor,edge_spike_ratio,midband_residual_ratio,cycle_nmse,peak_fluct_cv,thd_i,hf_energy_delta,zcv,abs_irms_zscore_vs_baseline,v_rms,i_rms,temp_c,label_arc,load_type,session_id,epoch_ms,uptime_ms,model_pred,feat_valid,current_valid,fault_state,arc_counter,adc_fs_hz,auto_capture,feature_space_version\n";
 
   String csv;
   csv.reserve((i1 - i0) * 220 + 320);
@@ -844,13 +853,15 @@ bool FirebaseNetwork::serviceMlUpload_() {
     csv += _uploadSpec.loadType;               csv += ",";
     csv += _uploadSpec.sessionId;              csv += ",";
     csv += String((unsigned long long)r.epoch_ms); csv += ",";
+    csv += String((unsigned long)r.uptime_ms); csv += ",";
     csv += String((int)r.model_pred);          csv += ",";
     csv += String((int)r.feat_valid);          csv += ",";
     csv += String((int)r.current_valid);       csv += ",";
     csv += String((int)r.fault_state);         csv += ",";
     csv += String((int)r.arc_counter);         csv += ",";
     csv += String(r.adc_fs_hz, 2);             csv += ",";
-    csv += String((int)r.auto_capture);        csv += "\n";
+    csv += String((int)r.auto_capture);        csv += ",";
+    csv += String((int)r.feature_space_version); csv += "\n";
   }
 
   String path = "/ml_logs/";

@@ -37,6 +37,10 @@ static bool gSafeMode = false;
 static volatile bool gPauseByOta = false;
 static volatile bool gStopSenseTask = false;
 static volatile bool gSenseTaskRunning = false;
+static volatile uint32_t gRelayArtifactBlankUntilMs = 0;
+static bool gManualRelayAssumedOn = false;
+static uint32_t gManualRelayCandidateSinceMs = 0;
+static uint32_t gManualRelayReleaseSinceMs = 0;
 
 static void Core0Task(void* pv);
 
@@ -112,6 +116,24 @@ static bool exitOtaExclusiveMode_() {
   network.stopAllClients();
   delay(120);
   if (gSafeMode) return true;
+  return startSensePipeline_();
+}
+
+static inline void armRelayArtifactBlank_(uint32_t extraMs = RELAY_ARTIFACT_BLANK_MS) {
+  gRelayArtifactBlankUntilMs = millis() + extraMs;
+  arcDetect.resetRuntime();
+}
+
+static inline void clearManualRelayAssume_() {
+  gManualRelayAssumedOn = false;
+  gManualRelayCandidateSinceMs = 0;
+  gManualRelayReleaseSinceMs = 0;
+}
+
+static bool restartSensePipelineSoft_() {
+  if (!stopSensePipeline_(false)) return false;
+  arcDetect.resetRuntime();
+  delay(40);
   return startSensePipeline_();
 }
 
@@ -655,14 +677,73 @@ void loop() {
     hasLast = false;
     lastFeatRxMs = 0;
     memset(&lastF, 0, sizeof(lastF));
+    arcDetect.resetRuntime();
+    armRelayArtifactBlank_(1200UL);
   }
   lastMainsPresentForFeat = mainsPresentForFeat;
 
   f.vrms = vRms; f.temp_c = tC;
   const float irmsRawMeasured = f.irms;
   float irmsRawForLogic = cleanLogicCurrent(irmsRawMeasured, f.current_valid != 0, vRaw, vFast);
-  const bool featureBridgeUsed = stabilizeFeatureValidity(f, vFast, irmsRawForLogic, !protection.relayLatchedOn());
+
+  if (protection.relayLatchedOn() || vFast <= MAINS_PRESENT_OFF_V) {
+    clearManualRelayAssume_();
+  }
+
+  const bool manualRelayRearmSignal =
+      (!protection.relayLatchedOn()) &&
+      (vFast >= MAINS_PRESENT_ON_V) &&
+      (f.current_valid != 0) &&
+      (irmsRawMeasured >= MANUAL_RELAY_REARM_MIN_A);
+
+  if (!gManualRelayAssumedOn) {
+    if (manualRelayRearmSignal) {
+      if (gManualRelayCandidateSinceMs == 0) gManualRelayCandidateSinceMs = millis();
+      else if ((millis() - gManualRelayCandidateSinceMs) >= MANUAL_RELAY_REARM_DEBOUNCE_MS) {
+        gManualRelayAssumedOn = true;
+        gManualRelayCandidateSinceMs = 0;
+        gManualRelayReleaseSinceMs = 0;
+        armRelayArtifactBlank_(MANUAL_RELAY_REARM_BLANK_MS);
+      }
+    } else {
+      gManualRelayCandidateSinceMs = 0;
+    }
+  } else {
+    const bool manualRelayKeepAlive =
+        (vFast >= MAINS_PRESENT_ON_V) &&
+        (irmsRawMeasured >= MANUAL_RELAY_REARM_RELEASE_A);
+    if (!manualRelayKeepAlive) {
+      if (gManualRelayReleaseSinceMs == 0) gManualRelayReleaseSinceMs = millis();
+      else if ((millis() - gManualRelayReleaseSinceMs) >= MANUAL_RELAY_REARM_RELEASE_MS) clearManualRelayAssume_();
+    } else {
+      gManualRelayReleaseSinceMs = 0;
+    }
+  }
+
+  const bool effectiveRelayLatchedOn = protection.relayLatchedOn() || gManualRelayAssumedOn;
+  const bool featureBridgeUsed = stabilizeFeatureValidity(f, vFast, irmsRawForLogic, !effectiveRelayLatchedOn);
   (void)featureBridgeUsed;
+
+  const bool relayArtifactBlankActive =
+      (!effectiveRelayLatchedOn) &&
+      ((int32_t)(gRelayArtifactBlankUntilMs - millis()) > 0);
+  if (relayArtifactBlankActive && irmsRawForLogic <= RELAY_ARTIFACT_FORCE_ZERO_A) {
+    irmsRawForLogic = 0.0f;
+    f.irms = 0.0f;
+    f.current_valid = 0;
+    f.feat_valid = 0;
+    f.model_pred = 0;
+    f.spectral_flux_midhf = 0.0f;
+    f.residual_crest_factor = 0.0f;
+    f.edge_spike_ratio = 0.0f;
+    f.midband_residual_ratio = 0.0f;
+    f.cycle_nmse = 0.0f;
+    f.peak_fluct_cv = 0.0f;
+    f.thd_i = 0.0f;
+    f.hf_energy_delta = 0.0f;
+    f.zcv = 0.0f;
+    f.abs_irms_zscore_vs_baseline = 0.0f;
+  }
 
   static uint32_t lowIrmsSinceMs = 0;
   const bool mainsOnForIdle = (vFast >= MAINS_PRESENT_ON_V);
@@ -683,13 +764,13 @@ void loop() {
   const float apparentPowerVa = (vRms > 0.10f && f.irms > 0.001f) ? (vRms * f.irms) : 0.0f;
   const bool voltageNormal = (vFast >= VOLT_NORMAL_MIN_V && vFast <= VOLT_NORMAL_MAX_V);
   const bool arcTurnOnBlankActive =
-      arcTurnOnBlanking(protection.relayLatchedOn(),
+      arcTurnOnBlanking(effectiveRelayLatchedOn,
                         f.current_valid != 0,
                         vFast,
                         irmsRawForLogic);
 
   const bool arcTransientBlankActive =
-      arcTransientBlanking(protection.relayLatchedOn(),
+      arcTransientBlanking(effectiveRelayLatchedOn,
                            f.current_valid != 0,
                            vFast,
                            irmsRawForLogic);
@@ -706,9 +787,9 @@ void loop() {
   static uint32_t voltDipSinceMs = 0;
   static uint32_t faultClearSuppressUntilMs = 0;
 
-  if (protection.relayLatchedOn() && vFast >= MAINS_PRESENT_ON_V && irmsRawForLogic >= 0.50f) {
+  if (effectiveRelayLatchedOn && vFast >= MAINS_PRESENT_ON_V && irmsRawForLogic >= 0.50f) {
     loadRefA += 0.10f * (irmsRawForLogic - loadRefA);
-  } else if (!protection.relayLatchedOn() || vFast <= MAINS_PRESENT_OFF_V) {
+  } else if (!effectiveRelayLatchedOn || vFast <= MAINS_PRESENT_OFF_V) {
     loadRefA = 0.0f;
   }
 
@@ -750,13 +831,13 @@ void loop() {
   }
 
   const bool fallbackArcEvent =
-      protection.relayLatchedOn() &&
+      effectiveRelayLatchedOn &&
       (((invalidBurstSinceMs && (millis() - invalidBurstSinceMs) >= 80UL)) ||
        ((collapseSinceMs && (millis() - collapseSinceMs) >= 40UL)) ||
        ((voltDipSinceMs && (millis() - voltDipSinceMs) >= 40UL)));
 
   const bool softFallbackArcEvent =
-      protection.relayLatchedOn() &&
+      effectiveRelayLatchedOn &&
       !arcBlankActive &&
       arcInputStable(f.current_valid != 0, irmsRawForLogic) &&
       softArcBurstEvent(f, irmsRawForLogic, hadSteadyLoad, vFast);
@@ -789,7 +870,9 @@ void loop() {
   }
   updater.loop();
   if (faultClearRequested) {
+    clearManualRelayAssume_();
     protection.resetLatch();
+    armRelayArtifactBlank_();
     faultClearSuppressUntilMs = millis() + FAULT_NET_QUIET_MS;
     loadRefA = 0.0f;
     invalidBurstSinceMs = 0;
@@ -863,11 +946,15 @@ void loop() {
     if (!controlsLocked) {
       if (relayOffRequested) {
         (void)network.publishControlAck("relay_off", relayOffToken);
+        clearManualRelayAssume_();
         protection.pulseRelayOff();
+        armRelayArtifactBlank_();
         notification.notify(SND_RESET_ACK);
       } else if (relayOnRequested) {
         (void)network.publishControlAck("relay_on", relayOnToken);
+        clearManualRelayAssume_();
         protection.pulseRelayOn();
+        armRelayArtifactBlank_(1200UL);
         notification.notify(SND_RESET_ACK);
       }
     }
@@ -897,11 +984,15 @@ void loop() {
   }
 
   if (pendingProtectionTripOff && (int32_t)(millis() - relayActionAtMs) >= 0) {
+    clearManualRelayAssume_();
     protection.pulseRelayOff();
+    armRelayArtifactBlank_();
     pendingProtectionTripOff = false;
   }
   if (pendingProtectionAutoOn && (int32_t)(millis() - relayActionAtMs) >= 0) {
+    clearManualRelayAssume_();
     protection.pulseRelayOn();
+    armRelayArtifactBlank_(1200UL);
     pendingProtectionAutoOn = false;
   }
 
@@ -918,6 +1009,27 @@ void loop() {
   notification.updateBuzzer(st, vFast, irmsRawForLogic, tC);
   const bool mainsPresentStable = debouncedMainsPresentForState(vFast);
   handleCueEvents(vRaw, vFast, irmsRawForLogic, mainsPresentStable, paused || gSafeMode || protectionInhibit, st);
+
+  static uint32_t relayArtifactSinceMs = 0;
+  static uint32_t lastRelayArtifactHealMs = 0;
+  const bool suspiciousRelayOffArtifact =
+      !effectiveRelayLatchedOn &&
+      (vFast >= MAINS_PRESENT_ON_V) &&
+      (irmsRawMeasured > CURRENT_DISPLAY_ON_A) &&
+      (irmsRawMeasured <= RELAY_ARTIFACT_FORCE_ZERO_A);
+  if (suspiciousRelayOffArtifact) {
+    if (relayArtifactSinceMs == 0) relayArtifactSinceMs = millis();
+  } else {
+    relayArtifactSinceMs = 0;
+  }
+  if (!paused && !gSafeMode && !portalActive && relayArtifactSinceMs != 0 &&
+      (millis() - relayArtifactSinceMs) >= RELAY_ARTIFACT_SELF_HEAL_MS &&
+      (millis() - lastRelayArtifactHealMs) >= 5000UL) {
+    lastRelayArtifactHealMs = millis();
+    armRelayArtifactBlank_();
+    (void)restartSensePipelineSoft_();
+    relayArtifactSinceMs = 0;
+  }
 
   network.setMlUploadSuspended(relayNetQuietActive || paused || gSafeMode);
   if (!paused && !gSafeMode && !relayNetQuietActive) pollMlControl(network, notification);
@@ -994,7 +1106,7 @@ void loop() {
                               f.thd_i, f.hf_energy_delta,
                               f.zcv, f.abs_irms_zscore_vs_baseline,
                               f.model_pred, stateStr,
-                              protection.webControlLocked(), controlsLocked, protection.relayLatchedOn());
+                              protection.webControlLocked(), controlsLocked, effectiveRelayLatchedOn);
   }
 
   if (!paused && ((int32_t)(relayNetQuietUntilMs - millis()) <= 0)) network.loop();

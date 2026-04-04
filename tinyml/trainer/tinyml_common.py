@@ -49,19 +49,19 @@ FEATURES = [
 TARGET = "label_arc"
 GROUP_COL_CANDIDATES = ["session_id", "session", "sid"]
 
-DB_FEATURE_SPACE_VERSION = 3
+DB_FEATURE_SPACE_VERSION = 4
 DB_RATIO_FLOOR = 1e-6
 DB_POWER_RATIO_FLOOR = 1e-6
 DB_RATIO_CLIP = (-80.0, 20.0)
 DB_RESIDUAL_CF_CLIP = (-20.0, 40.0)
-DB_THD_CLIP = (-80.0, 20.0)
-DB_HF_CLIP = (-24.0, 24.0)
+DB_THD_CLIP = (0.0, 200.0)
+DB_HF_CLIP = (-18.0, 18.0)
 
 DB_ARC_THRESHOLDS = {
     "residual_crest_factor": 12.568,
     "edge_spike_ratio": -14.894,
     "midband_residual_ratio": -21.412,
-    "thd_i": -13.151,
+    "thd_i": 22.0,
     "hf_energy_delta": 1.500,
 }
 
@@ -69,7 +69,7 @@ DB_NORMAL_ANCHORS = {
     "residual_crest_factor": 6.0,
     "edge_spike_ratio": -28.0,
     "midband_residual_ratio": -34.0,
-    "thd_i": -24.0,
+    "thd_i": 6.0,
     "hf_energy_delta": 0.0,
 }
 
@@ -105,18 +105,30 @@ def _thd_percent_to_db(values) -> pd.Series:
     return _ratio_to_db20(s / 100.0)
 
 
+def _db20_to_ratio(values) -> pd.Series:
+    s = _series_from(values)
+    arr = np.power(10.0, s.to_numpy(dtype=float) / 20.0)
+    return pd.Series(arr, index=s.index, dtype=float)
+
+
+def _db_to_thd_percent(values) -> pd.Series:
+    return 100.0 * _db20_to_ratio(values)
+
+
 def detect_feature_space_version(df: pd.DataFrame) -> int:
     for col in ("feature_space_version", "arc_feature_space_version"):
         if col in df.columns:
             vals = pd.to_numeric(df[col], errors="coerce")
             if (vals >= DB_FEATURE_SPACE_VERSION).any():
                 return DB_FEATURE_SPACE_VERSION
-            if ((vals > 0) & (vals < DB_FEATURE_SPACE_VERSION)).any():
+            if (vals == 3).any():
+                return 3
+            if ((vals > 0) & (vals < 3)).any():
                 return 2
 
     for alias in DB_ALIAS_MAP:
         if alias in df.columns:
-            return DB_FEATURE_SPACE_VERSION
+            return 3
 
     db_votes = 0
     linear_votes = 0
@@ -146,7 +158,7 @@ def detect_feature_space_version(df: pd.DataFrame) -> int:
             elif float(s.min()) >= -1.05 and float(s.max()) <= 1.05:
                 linear_votes += 1
 
-    return DB_FEATURE_SPACE_VERSION if db_votes > linear_votes else 2
+    return 3 if db_votes > linear_votes else 2
 
 
 def coerce_log_feature_space(df: pd.DataFrame) -> pd.DataFrame:
@@ -157,15 +169,13 @@ def coerce_log_feature_space(df: pd.DataFrame) -> pd.DataFrame:
 
     src_version = detect_feature_space_version(df)
 
-    if src_version < DB_FEATURE_SPACE_VERSION:
+    if src_version < 3:
         if "midband_residual_ratio" in df.columns:
             df["midband_residual_ratio"] = _ratio_to_db20(df["midband_residual_ratio"])
         if "residual_crest_factor" in df.columns:
             df["residual_crest_factor"] = _ratio_to_db20(df["residual_crest_factor"])
         if "edge_spike_ratio" in df.columns:
             df["edge_spike_ratio"] = _ratio_to_db20(df["edge_spike_ratio"])
-        if "thd_i" in df.columns:
-            df["thd_i"] = _thd_percent_to_db(df["thd_i"])
 
         if {"hf_band_energy_ratio", "rolling_baseline_hf_band_energy_ratio"}.issubset(df.columns):
             cur = pd.to_numeric(df["hf_band_energy_ratio"], errors="coerce")
@@ -174,6 +184,14 @@ def coerce_log_feature_space(df: pd.DataFrame) -> pd.DataFrame:
         elif "hf_energy_delta" in df.columns:
             legacy_delta = pd.to_numeric(df["hf_energy_delta"], errors="coerce")
             df["hf_energy_delta"] = _ratio_to_db10((1.0 + legacy_delta).clip(lower=DB_POWER_RATIO_FLOOR))
+
+    if src_version == 3 and "thd_i" in df.columns:
+        df["thd_i"] = _db_to_thd_percent(df["thd_i"])
+
+    for col in ("spectral_flux_midhf", "cycle_nmse", "peak_fluct_cv"):
+        if col in df.columns:
+            s = pd.to_numeric(df[col], errors="coerce")
+            df[col] = (s * 100.0) if src_version < 4 else s
 
     df["feature_space_version"] = DB_FEATURE_SPACE_VERSION
     return df
@@ -388,12 +406,12 @@ def clean_df(df: pd.DataFrame, include_invalid: bool = False) -> pd.DataFrame:
         df = df.loc[x.notna().all(axis=1)].copy()
 
     clip_bounds = {
-        "spectral_flux_midhf": (0.0, 2.0),
+        "spectral_flux_midhf": (0.0, 200.0),
         "residual_crest_factor": DB_RESIDUAL_CF_CLIP,
         "edge_spike_ratio": DB_RATIO_CLIP,
         "midband_residual_ratio": DB_RATIO_CLIP,
-        "cycle_nmse": (0.0, 2.0),
-        "peak_fluct_cv": (0.0, 3.0),
+        "cycle_nmse": (0.0, 200.0),
+        "peak_fluct_cv": (0.0, 300.0),
         "thd_i": DB_THD_CLIP,
         "hf_energy_delta": DB_HF_CLIP,
         "zcv": (0.0, 10.0),
@@ -1977,7 +1995,7 @@ def export_header(
         f.write(
             f"// Auto-generated C header from scikit-learn {model_name} ({export_backend})\n"
         )
-        f.write("#define ARC_MODEL_FEATURE_VERSION 3\n")
+        f.write("#define ARC_MODEL_FEATURE_VERSION 4\n")
         f.write(f"#define ARC_THRESHOLD {threshold:.4f}\n\n")
         f.write("// Input Feature Order:\n")
         for i, name in enumerate(FEATURES):

@@ -457,7 +457,12 @@
 
     const chunksObj = snap.val() || {};
     const keys = Object.keys(chunksObj);
-    keys.sort((a, b) => (chunksObj[a]?.created_at || 0) - (chunksObj[b]?.created_at || 0));
+    keys.sort((a, b) => {
+      const ai = Number(chunksObj[a]?.chunk_index);
+      const bi = Number(chunksObj[b]?.chunk_index);
+      if (Number.isFinite(ai) && Number.isFinite(bi) && ai !== bi) return ai - bi;
+      return (chunksObj[a]?.created_at || 0) - (chunksObj[b]?.created_at || 0);
+    });
 
     let header = "";
     let rows = [];
@@ -482,12 +487,66 @@
     return header + "\n" + rows.join("\n") + "\n";
   }
 
-  function pickTimeAxis(rows) {
-    const hasEpoch = rows.length && rows[0].epoch_ms !== undefined;
-    if (!hasEpoch) return rows.map((_, i) => i);
+  let TIME_AXIS_SOURCE = "index";
+  let TIME_AXIS_REPAIRED_GAPS = 0;
 
-    const t0 = Number(rows[0].epoch_ms) || 0;
-    return rows.map((r) => ((Number(r.epoch_ms) || t0) - t0) / 1000.0);
+  function medianPositiveDiff(values) {
+    const diffs = [];
+    for (let i = 1; i < values.length; i++) {
+      const d = Number(values[i]) - Number(values[i - 1]);
+      if (Number.isFinite(d) && d > 0) diffs.push(d);
+    }
+    if (!diffs.length) return 0;
+    diffs.sort((a, b) => a - b);
+    const mid = diffs.length >> 1;
+    return (diffs.length & 1) ? diffs[mid] : 0.5 * (diffs[mid - 1] + diffs[mid]);
+  }
+
+  function buildContinuousTimeAxisFromField(rows, field, scale = 1.0) {
+    const raw = rows.map((r) => Number(r?.[field]));
+    if (!raw.length || !raw.some((v) => Number.isFinite(v) && v > 0)) return null;
+
+    const medianStep = Math.max(1e-6, medianPositiveDiff(raw) * scale || (1 / 30));
+    const gapThreshold = Math.max(medianStep * 4.0, 0.75);
+    const out = new Array(rows.length).fill(0);
+    TIME_AXIS_REPAIRED_GAPS = 0;
+
+    let prevRaw = Number.isFinite(raw[0]) ? raw[0] : 0;
+    for (let i = 1; i < rows.length; i++) {
+      const curRaw = Number.isFinite(raw[i]) ? raw[i] : prevRaw;
+      let dt = (curRaw - prevRaw) * scale;
+      if (!Number.isFinite(dt) || dt <= 0) dt = medianStep;
+      if (dt > gapThreshold) {
+        dt = medianStep;
+        TIME_AXIS_REPAIRED_GAPS++;
+      }
+      out[i] = out[i - 1] + dt;
+      prevRaw = curRaw;
+    }
+    return out;
+  }
+
+  function pickTimeAxis(rows) {
+    TIME_AXIS_SOURCE = "index";
+    TIME_AXIS_REPAIRED_GAPS = 0;
+
+    const fromEpoch = rows.length && rows[0].epoch_ms !== undefined
+      ? buildContinuousTimeAxisFromField(rows, "epoch_ms", 0.001)
+      : null;
+    if (fromEpoch) {
+      TIME_AXIS_SOURCE = "epoch_ms";
+      return fromEpoch;
+    }
+
+    const fromUptime = rows.length && rows[0].uptime_ms !== undefined
+      ? buildContinuousTimeAxisFromField(rows, "uptime_ms", 0.001)
+      : null;
+    if (fromUptime) {
+      TIME_AXIS_SOURCE = "uptime_ms";
+      return fromUptime;
+    }
+
+    return rows.map((_, i) => i / 30.0);
   }
 
   function normalizeHeaderName(name) {
@@ -507,7 +566,9 @@
       session_id: "session_id",
       load_type: "load_type",
       epoch_ms: "epoch_ms",
+      uptime_ms: "uptime_ms",
       adc_fs_hz: "adc_fs_hz",
+      feature_space_version: "feature_space_version",
       spectral_flux: "spectral_flux_midhf",
       spectral_flux_midhf: "spectral_flux_midhf",
       midhf_flux: "spectral_flux_midhf",
@@ -531,7 +592,7 @@
     const keys = Object.keys(rows[0]);
     return keys.filter((k) => {
       if (k === "timestamp" || k === "session_id" || k === "load_type") return false;
-      if (k === "epoch_ms" || k === "wpe_entropy" || k === "dip_rebound_ratio") return false;
+      if (k === "epoch_ms" || k === "uptime_ms" || k === "feature_space_version" || k === "wpe_entropy" || k === "dip_rebound_ratio") return false;
       const val = rows.find((r) => r[k] !== undefined && r[k] !== null)?.[k];
       if (val === undefined) return false;
       const num = typeof val === "number" ? val : Number(String(val).trim());
@@ -563,7 +624,7 @@
       };
 
       const nameEl = document.createElement("div");
-      nameEl.textContent = k;
+      nameEl.textContent = displaySeriesName(k);
 
       const sel = document.createElement("select");
       sel.className = "axisSel";
@@ -640,9 +701,12 @@
       return false;
     }
 
+    const axisNote = TIME_AXIS_REPAIRED_GAPS > 0
+      ? ` | Time axis=${TIME_AXIS_SOURCE} (repaired ${TIME_AXIS_REPAIRED_GAPS} gaps)`
+      : ` | Time axis=${TIME_AXIS_SOURCE}`;
     const readyStatus = Object.prototype.hasOwnProperty.call(options, "readyStatus")
       ? String(options.readyStatus || "")
-      : `Rows: ${ROWS.length} | Arc markers=${ARC_IDXS.length}`;
+      : `Rows: ${ROWS.length} | Arc markers=${ARC_IDXS.length}${axisNote}`;
     setStatus(readyStatus.replace(/__ROWS__/g, String(ROWS.length)).replace(/__ARCS__/g, String(ARC_IDXS.length)));
     clearValueReadout();
 
@@ -723,17 +787,63 @@
   let ARC_IDXS = [];
   let statsVisible = true;
 
+  const SERIES_META = {
+    spectral_flux_midhf: { label: "Spectral Flux (Mid/HF)", unit: "%", decimals: 2 },
+    residual_crest_factor: { label: "Residual Crest Factor", unit: "dB", decimals: 2 },
+    edge_spike_ratio: { label: "Edge Spike Ratio", unit: "dB", decimals: 2 },
+    midband_residual_ratio: { label: "Midband Residual Ratio", unit: "dB", decimals: 2 },
+    cycle_nmse: { label: "Cycle NMSE", unit: "%", decimals: 2 },
+    peak_fluct_cv: { label: "Peak Fluctuation CV", unit: "%", decimals: 2 },
+    thd_i: { label: "Current THD", unit: "%", decimals: 2 },
+    hf_energy_delta: { label: "HF Energy Delta", unit: "dB", decimals: 2 },
+    zcv: { label: "ZC Variance", unit: "ms", decimals: 3 },
+    abs_irms_zscore_vs_baseline: { label: "Absolute Z-Deviation", unit: "σ", decimals: 2 },
+    i_rms: { label: "Current", unit: "A", decimals: 3 },
+    current: { label: "Current", unit: "A", decimals: 3 },
+    v_rms: { label: "Voltage", unit: "V", decimals: 1 },
+    voltage: { label: "Voltage", unit: "V", decimals: 1 },
+    temp_c: { label: "Temperature", unit: "°C", decimals: 1 },
+    temp: { label: "Temperature", unit: "°C", decimals: 1 },
+    label_arc: { label: "Arc Label", unit: "", decimals: 0 },
+    model_pred: { label: "Model Prediction", unit: "", decimals: 0 },
+    feat_valid: { label: "Feature Valid", unit: "", decimals: 0 },
+    current_valid: { label: "Current Valid", unit: "", decimals: 0 },
+    fault_state: { label: "Fault State", unit: "", decimals: 0 },
+    arc_counter: { label: "Arc Counter", unit: "", decimals: 0 },
+    adc_fs_hz: { label: "ADC Rate", unit: "Hz", decimals: 1 },
+    auto_capture: { label: "Auto Capture", unit: "", decimals: 0 },
+  };
+
   const showPref = new Map();
   const axisPref = new Map();
 
-  const DEFAULT_ON = new Set(["i_rms", "label_arc", "model_pred", "edge_spike_ratio", "spectral_flux_midhf"]);
-  const DEFAULT_Y2 = new Set(["i_rms", "current", "v_rms", "voltage", "temp_c", "temp"]);
+  const DEFAULT_ON = new Set(["label_arc", "model_pred", "spectral_flux_midhf", "edge_spike_ratio", "midband_residual_ratio", "cycle_nmse", "peak_fluct_cv", "thd_i", "hf_energy_delta", "zcv", "abs_irms_zscore_vs_baseline"]);
+  const DEFAULT_Y2 = new Set(["residual_crest_factor", "edge_spike_ratio", "midband_residual_ratio", "hf_energy_delta", "i_rms", "current", "v_rms", "voltage", "temp_c", "temp"]);
 
   setViewerOpen(false);
   ensureArcEditorControls();
   refreshDownloadBinding();
   applyStatsVisibility();
 
+
+  function seriesMeta(key) {
+    return SERIES_META[key] || null;
+  }
+
+  function displaySeriesName(key) {
+    const meta = seriesMeta(key);
+    if (!meta) return key;
+    return meta.unit ? `${meta.label} [${meta.unit}]` : meta.label;
+  }
+
+  function formatSeriesValue(key, value) {
+    if (value == null || Number.isNaN(Number(value))) return "—";
+    const meta = seriesMeta(key);
+    const n = Number(value);
+    const decimals = meta?.decimals ?? 3;
+    const body = Number.isInteger(n) && decimals === 0 ? String(Math.round(n)) : n.toFixed(decimals);
+    return meta?.unit ? `${body} ${meta.unit}` : body;
+  }
 
   function preferredDefaultKeys(keys) {
     const preferred = ["i_rms", "label_arc", "model_pred", "spectral_flux_midhf", "edge_spike_ratio", "midband_residual_ratio", "cycle_nmse", "hf_energy_delta", "zcv", "abs_irms_zscore_vs_baseline", "v_rms", "temp_c", "current", "voltage", "temp"];
@@ -1270,7 +1380,7 @@
       const v = DATA_RAW[i + 1]?.[playIdx];
       const chip = document.createElement("div");
       chip.className = "vchip";
-      chip.innerHTML = `<span class="vdot" style="background:${palette[i % palette.length]}"></span><span class="vk">${k}</span><span class="vv">${fmt(v)}</span>`;
+      chip.innerHTML = `<span class="vdot" style="background:${palette[i % palette.length]}"></span><span class="vk">${displaySeriesName(k)}</span><span class="vv">${formatSeriesValue(k, v)}</span>`;
       valueLine.appendChild(chip);
       shown++;
     }
@@ -1361,11 +1471,11 @@
 
       return `
         <tr>
-          <td class="mono">${k}</td>
-          <td class="mono">${fmt(st.mean)}</td>
-          <td class="mono">${fmt(st.min)}</td>
-          <td class="mono">${fmt(st.max)}</td>
-          <td class="mono">${fmt(st.std)}</td>
+          <td class="mono">${displaySeriesName(k)}</td>
+          <td class="mono">${formatSeriesValue(k, st.mean)}</td>
+          <td class="mono">${formatSeriesValue(k, st.min)}</td>
+          <td class="mono">${formatSeriesValue(k, st.max)}</td>
+          <td class="mono">${formatSeriesValue(k, st.std)}</td>
           <td class="mono">${st.n}</td>
         </tr>
       `;

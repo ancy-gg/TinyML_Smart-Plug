@@ -220,11 +220,11 @@
           </div>
 
           <div class="feature-grid feature-grid-2col feature-grid-tight">
-            <div class="card feature-card"><div class="card-label">Spectral Flux (Mid/HF)</div><div class="card-value"><span id="spectralFluxVal">—</span></div></div>
+            <div class="card feature-card"><div class="card-label">Spectral Flux (Mid/HF)</div><div class="card-value"><span id="spectralFluxVal">—</span><span class="unit">%</span></div></div>
             <div class="card feature-card"><div class="card-label">Residual Crest Factor</div><div class="card-value"><span id="residualCrestVal">—</span><span class="unit">dB</span></div></div>
             <div class="card feature-card"><div class="card-label">Edge Spike Ratio</div><div class="card-value"><span id="edgeSpikeVal">—</span><span class="unit">dB</span></div></div>
             <div class="card feature-card"><div class="card-label">Midband Residual Ratio</div><div class="card-value"><span id="midbandRatioVal">—</span><span class="unit">dB</span></div></div>
-            <div class="card feature-card"><div class="card-label">Cycle NMSE</div><div class="card-value"><span id="cycleNmseVal">—</span></div></div>
+            <div class="card feature-card"><div class="card-label">Cycle NMSE</div><div class="card-value"><span id="cycleNmseVal">—</span><span class="unit">%</span></div></div>
           </div>
         </section>
 
@@ -237,10 +237,10 @@
           </div>
 
           <div class="feature-grid feature-grid-2col feature-grid-tight">
-            <div class="card feature-card"><div class="card-label">Peak Fluctuation CV</div><div class="card-value"><span id="peakFluctVal">—</span><span class="unit">σ²</span></div></div>
-            <div class="card feature-card"><div class="card-label">Current THD</div><div class="card-value"><span id="thdIVal">—</span><span class="unit">dB</span></div></div>
+            <div class="card feature-card"><div class="card-label">Peak Fluctuation CV</div><div class="card-value"><span id="peakFluctVal">—</span><span class="unit">%</span></div></div>
+            <div class="card feature-card"><div class="card-label">Current THD</div><div class="card-value"><span id="thdIVal">—</span><span class="unit">%</span></div></div>
             <div class="card feature-card"><div class="card-label">HF Energy Delta</div><div class="card-value"><span id="hfEnergyDeltaVal">—</span><span class="unit">dB</span></div></div>
-            <div class="card feature-card"><div class="card-label">ZC Variance</div><div class="card-value"><span id="zcvVal">—</span><span class="unit">σ²</span></div></div>
+            <div class="card feature-card"><div class="card-label">ZC Variance</div><div class="card-value"><span id="zcvVal">—</span><span class="unit">ms</span></div></div>
             <div class="card feature-card"><div class="card-label">Absolute Z-Deviation</div><div class="card-value"><span id="irmsZscoreVal">—</span><span class="unit">σ</span></div></div>
           </div>
         </section>
@@ -441,7 +441,7 @@
               Axis: <span class="mono">Y1</span>=left, <span class="mono">Y2</span>=right
             </div>
 
-            <input id="seriesSearch" class="seriesSearch mono" placeholder="Filter series (e.g., rms, dip, entropy…)">
+            <input id="seriesSearch" class="seriesSearch mono" placeholder="Filter series (e.g., THD, flux, z-score…)">
 
             <div class="seriesActions">
               <button class="btn btn-small" id="btnSelDefault" type="button">Default</button>

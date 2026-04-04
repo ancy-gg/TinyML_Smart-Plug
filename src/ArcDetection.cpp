@@ -10,9 +10,7 @@
 #include "dsp_common.h"
 #include "esp_err.h"
 
-#ifndef CONFIG_DSP_MAX_FFT_SIZE
 #define CONFIG_DSP_MAX_FFT_SIZE 4096
-#endif
 
 static inline float clampf(float x, float lo, float hi) {
   return (x < lo) ? lo : (x > hi) ? hi : x;
@@ -154,6 +152,16 @@ struct RollingBaselineTracker {
   }
 };
 
+static float s_prevFluxNorm[N_SAMP / 2] = {0.0f};
+static bool s_havePrevFluxNorm = false;
+static RollingBaselineTracker s_baseline;
+
+void ArcDetection::resetRuntime() {
+  memset(s_prevFluxNorm, 0, sizeof(s_prevFluxNorm));
+  s_havePrevFluxNorm = false;
+  s_baseline.reset();
+}
+
 static inline bool shouldSkipHarmonicBin(int k, bool haveFund, int k1, int half) {
   if (!haveFund || k1 <= 0) return false;
   for (int h = 1; h <= 24; ++h) {
@@ -162,6 +170,24 @@ static inline bool shouldSkipHarmonicBin(int k, bool haveFund, int k1, int half)
     if (abs(k - kh) <= SPECTRAL_FLUX_HARM_SKIP_BINS) return true;
   }
   return false;
+}
+
+static inline float bandPeakExcess(const float* spec, int half, int kCenter, int halfWidth = 1, int floorOffset = 4) {
+  float peak = 0.0f;
+  for (int dk = -halfWidth; dk <= halfWidth; ++dk) {
+    const int k = clampi(kCenter + dk, 1, half - 1);
+    peak = fmaxf(peak, spec[k]);
+  }
+  float noise = 0.0f;
+  int cnt = 0;
+  for (int dk = -1; dk <= 1; ++dk) {
+    int kl = kCenter - floorOffset + dk;
+    int kr = kCenter + floorOffset + dk;
+    if (kl >= 1 && kl < half) { noise += spec[kl]; cnt++; }
+    if (kr >= 1 && kr < half) { noise += spec[kr]; cnt++; }
+  }
+  if (cnt > 0) noise /= (float)cnt;
+  return fmaxf(0.0f, peak - noise);
 }
 
 bool ArcDetection::compute(const uint16_t* raw, size_t n, float fs_hz,
@@ -403,7 +429,7 @@ bool ArcDetection::compute(const uint16_t* raw, size_t n, float fs_hz,
       vv += d * d;
     }
     vv /= (double)peakN;
-    out.peak_fluct_cv = (float)(sqrt(vv) / (mu + 1e-9));
+    out.peak_fluct_cv = (float)(sqrt(vv) / (mu + 1e-9)) * FEATURE_PERCENT_SCALE;
   }
 
   if (peakN >= 2) {
@@ -424,7 +450,7 @@ bool ArcDetection::compute(const uint16_t* raw, size_t n, float fs_hz,
     (void)minCycle;
   }
 
-  if (nmsePairs > 0) out.cycle_nmse = nmseAcc / (float)nmsePairs;
+  if (nmsePairs > 0) out.cycle_nmse = (nmseAcc / (float)nmsePairs) * FEATURE_PERCENT_SCALE;
 
   for (size_t i = 0; i < n; ++i) {
     fft_cf[2 * i + 0] = sigFilt[i] * win[i];
@@ -461,6 +487,7 @@ bool ArcDetection::compute(const uint16_t* raw, size_t n, float fs_hz,
     if (sig[k] > fundP) { fundP = sig[k]; k1 = k; }
   }
 
+  fundP = bandPeakExcess(sig, half, k1, 1, 4);
   const double avgNoise = pTotNoDc / (double)(half - 1);
   const double snr = (avgNoise > 0.0) ? ((double)fundP / avgNoise) : 0.0;
   const bool haveFund = (fundP >= FUND_MAG_MIN) && (snr >= FUND_SNR_MIN);
@@ -475,18 +502,11 @@ bool ArcDetection::compute(const uint16_t* raw, size_t n, float fs_hz,
     for (int h = 2; h <= 10; ++h) {
       const int khNom = h * k1;
       if (khNom >= half) break;
-      float hmP = 0.0f;
-      for (int dk = -1; dk <= 1; ++dk) {
-        const int kh = clampi(khNom + dk, 1, half - 1);
-        hmP = fmaxf(hmP, sig[kh]);
-      }
-      harmP += hmP;
+      harmP += bandPeakExcess(sig, half, khNom, 1, 4);
     }
-    out.legacy_thd_i = (fundP > 1e-12f) ? (float)(sqrt(harmP / (double)fundP) * 100.0) : 0.0f;
-    out.thd_i = clampf(thd_percent_to_db(out.legacy_thd_i), DB_THD_CLIP_MIN, DB_THD_CLIP_MAX);
+    out.thd_i = (fundP > 1e-12f) ? clampf((float)(sqrt(harmP / (double)fundP) * 100.0), DB_THD_CLIP_MIN, DB_THD_CLIP_MAX) : 0.0f;
   } else {
-    out.legacy_thd_i = 0.0f;
-    out.thd_i = DB_THD_CLIP_MIN;
+    out.thd_i = 0.0f;
   }
 
   int kSpec0 = 0, kSpec1 = 0;
@@ -529,16 +549,14 @@ bool ArcDetection::compute(const uint16_t* raw, size_t n, float fs_hz,
 
   float residPeak = 0.0f;
   for (size_t i = 0; i < n; ++i) residPeak = fmaxf(residPeak, fabsf(resid[i]));
-  out.legacy_residual_crest_factor = (residRms > 1e-6f)
+  const float residualCrestLinear = (residRms > 1e-6f)
       ? clampf(residPeak / (residRms + 1e-6f), 0.0f, 100.0f)
       : 0.0f;
   out.residual_crest_factor = clampf(
-      ratio_to_db20(out.legacy_residual_crest_factor),
+      ratio_to_db20(residualCrestLinear),
       -20.0f,
       40.0f);
 
-  static float prevFluxNorm[N_SAMP / 2] = {0.0f};
-  static bool havePrevFluxNorm = false;
   double fluxMagSum = 0.0;
   int kFlux0 = 0, kFlux1 = 0;
   if (makeBandBins(SPECTRAL_FLUX_LO_HZ, SPECTRAL_FLUX_HI_HZ, binHz, half, kFlux0, kFlux1)) {
@@ -553,21 +571,20 @@ bool ArcDetection::compute(const uint16_t* raw, size_t n, float fs_hz,
         if (!shouldSkipHarmonicBin(k, haveFund, k1, half)) {
           cur = (float)(sqrt((double)fmaxf(sig[k], 0.0f)) / fluxMagSum);
         }
-        if (havePrevFluxNorm) fluxAcc += fabs((double)cur - (double)prevFluxNorm[k]);
-        prevFluxNorm[k] = cur;
+        if (s_havePrevFluxNorm) fluxAcc += fabs((double)cur - (double)s_prevFluxNorm[k]);
+        s_prevFluxNorm[k] = cur;
       }
-      out.spectral_flux_midhf = havePrevFluxNorm ? clampf((float)(0.5 * fluxAcc), 0.0f, 2.0f) : 0.0f;
-      havePrevFluxNorm = true;
+      out.spectral_flux_midhf = s_havePrevFluxNorm ? clampf((float)(0.5 * fluxAcc) * FEATURE_PERCENT_SCALE, 0.0f, 200.0f) : 0.0f;
+      s_havePrevFluxNorm = true;
     } else {
       out.spectral_flux_midhf = 0.0f;
     }
   }
 
-  static RollingBaselineTracker baseline;
   const uint32_t nowMs = millis();
-  const float baselineIrms = baseline.baselineIrms();
-  const float baselineStd = baseline.baselineStd();
-  const float baselineHf = baseline.baselineHf();
+  const float baselineIrms = s_baseline.baselineIrms();
+  const float baselineStd = s_baseline.baselineStd();
+  const float baselineHf = s_baseline.baselineHf();
 
   const int edgeWin = clampi((int)lroundf((EDGE_SPIKE_WINDOW_MS * 1e-3f) * fs_hz), 4, 24);
   int strongestEdgeIdx = 1;
@@ -583,23 +600,23 @@ bool ArcDetection::compute(const uint16_t* raw, size_t n, float fs_hz,
   const int edgeA = clampi(strongestEdgeIdx - edgeWin, 0, (int)n - 1);
   const int edgeB = clampi(strongestEdgeIdx + edgeWin, 0, (int)n - 1);
   for (int i = edgeA; i <= edgeB; ++i) edgeBurst = fmaxf(edgeBurst, fabsf(resid[i]));
-  out.legacy_edge_spike_ratio = clampf(edgeBurst / fmaxf(baselineIrms, EDGE_SPIKE_MIN_BASELINE_A), 0.0f, 10.0f);
+  const float edgeSpikeLinear = clampf(edgeBurst / fmaxf(baselineIrms, EDGE_SPIKE_MIN_BASELINE_A), 0.0f, 10.0f);
   out.edge_spike_ratio = clampf(
-      ratio_to_db20(out.legacy_edge_spike_ratio),
+      ratio_to_db20(edgeSpikeLinear),
       DB_RATIO_CLIP_MIN,
       DB_RATIO_CLIP_MAX);
 
-  out.legacy_midband_residual_ratio = clampf(
+  const float midbandResidualLinear = clampf(
       midbandResidualRms / fmaxf(baselineIrms, EDGE_SPIKE_MIN_BASELINE_A),
       0.0f,
       10.0f);
   out.midband_residual_ratio = clampf(
-      ratio_to_db20(out.legacy_midband_residual_ratio),
+      ratio_to_db20(midbandResidualLinear),
       DB_RATIO_CLIP_MIN,
       DB_RATIO_CLIP_MAX);
 
-  out.legacy_hf_energy_delta = clampf(hfBandEnergyRatio - baselineHf, -1.0f, 1.0f);
-  const float hfEnergyRatio = (hfBandEnergyRatio + DB_POWER_RATIO_EPS) / (baselineHf + DB_POWER_RATIO_EPS);
+  const float hfBaselineRef = fmaxf(baselineHf, HF_DELTA_MIN_BASELINE_SHARE);
+  const float hfEnergyRatio = (hfBandEnergyRatio + DB_POWER_RATIO_EPS) / (hfBaselineRef + DB_POWER_RATIO_EPS);
   out.hf_energy_delta = clampf(
       ratio_to_db10(hfEnergyRatio),
       DB_HF_DELTA_CLIP_MIN,
@@ -607,8 +624,8 @@ bool ArcDetection::compute(const uint16_t* raw, size_t n, float fs_hz,
 
   out.abs_irms_zscore_vs_baseline = clampf(fabsf(out.irms_a - baselineIrms) / (baselineStd + 1e-6f), 0.0f, 25.0f);
 
-  const bool baselineStep = baseline.initialized &&
-      (fabsf(out.irms_a - baseline.irmsMean) >= fmaxf(BASELINE_STEP_FREEZE_A, BASELINE_STEP_FREEZE_FRAC * fmaxf(baseline.irmsMean, out.irms_a)));
+  const bool baselineStep = s_baseline.initialized &&
+      (fabsf(out.irms_a - s_baseline.irmsMean) >= fmaxf(BASELINE_STEP_FREEZE_A, BASELINE_STEP_FREEZE_FRAC * fmaxf(s_baseline.irmsMean, out.irms_a)));
   const bool suspectedArcLike =
       (out.spectral_flux_midhf >= ARC_SIG_SPECTRAL_FLUX) ||
       (out.residual_crest_factor >= ARC_SIG_RESIDUAL_CF) ||
@@ -619,44 +636,44 @@ bool ArcDetection::compute(const uint16_t* raw, size_t n, float fs_hz,
       (out.hf_energy_delta >= ARC_SIG_HF_ENERGY_DELTA) ||
       (out.abs_irms_zscore_vs_baseline >= ARC_SIG_IRMS_ZSCORE);
 
-  if (baselineStep || suspectedArcLike) baseline.freezeUntilMs = nowMs + BASELINE_FREEZE_MS;
+  if (baselineStep || suspectedArcLike) s_baseline.freezeUntilMs = nowMs + BASELINE_FREEZE_MS;
 
-  const bool baselineFrozen = ((int32_t)(baseline.freezeUntilMs - nowMs) > 0);
+  const bool baselineFrozen = ((int32_t)(s_baseline.freezeUntilMs - nowMs) > 0);
   const bool stableForBaseline =
       out.current_valid &&
       (out.irms_a >= BASELINE_MIN_IRMS_A) &&
       !baselineFrozen &&
-      (out.spectral_flux_midhf < 0.045f) &&
+      (out.spectral_flux_midhf < 4.5f) &&
       (out.residual_crest_factor < BASELINE_STABLE_RESIDUAL_CF_DB) &&
       (out.edge_spike_ratio < BASELINE_STABLE_EDGE_SPIKE_DB) &&
       (out.midband_residual_ratio < BASELINE_STABLE_MIDBAND_RATIO_DB) &&
-      (out.cycle_nmse < 0.055f) &&
-      (out.peak_fluct_cv < 0.010f) &&
+      (out.cycle_nmse < 5.5f) &&
+      (out.peak_fluct_cv < 1.0f) &&
       (fabsf(out.hf_energy_delta) < BASELINE_STABLE_HF_DELTA_DB) &&
       (out.abs_irms_zscore_vs_baseline < 1.5f);
 
   if (out.irms_a <= BASELINE_RESET_IRMS_A) {
-    if (baseline.idleSinceMs == 0) baseline.idleSinceMs = nowMs;
-    if ((nowMs - baseline.idleSinceMs) >= BASELINE_RESET_IDLE_MS) baseline.reset();
+    if (s_baseline.idleSinceMs == 0) s_baseline.idleSinceMs = nowMs;
+    if ((nowMs - s_baseline.idleSinceMs) >= BASELINE_RESET_IDLE_MS) s_baseline.reset();
   } else {
-    baseline.idleSinceMs = 0;
+    s_baseline.idleSinceMs = 0;
   }
 
   if (stableForBaseline) {
-    if (!baseline.initialized) {
-      baseline.initialized = true;
-      baseline.irmsMean = out.irms_a;
-      baseline.irmsVar = powf(fmaxf(BASELINE_STD_FLOOR_A, BASELINE_STD_FLOOR_FRAC * out.irms_a), 2.0f);
-      baseline.hfMean = hfBandEnergyRatio;
+    if (!s_baseline.initialized) {
+      s_baseline.initialized = true;
+      s_baseline.irmsMean = out.irms_a;
+      s_baseline.irmsVar = powf(fmaxf(BASELINE_STD_FLOOR_A, BASELINE_STD_FLOOR_FRAC * out.irms_a), 2.0f);
+      s_baseline.hfMean = hfBandEnergyRatio;
     } else {
-      const float prevMean = baseline.irmsMean;
-      baseline.irmsMean += BASELINE_IRMS_ALPHA * (out.irms_a - baseline.irmsMean);
+      const float prevMean = s_baseline.irmsMean;
+      s_baseline.irmsMean += BASELINE_IRMS_ALPHA * (out.irms_a - s_baseline.irmsMean);
       const float err = out.irms_a - prevMean;
-      baseline.irmsVar = (1.0f - BASELINE_IRMS_ALPHA) * baseline.irmsVar + BASELINE_IRMS_ALPHA * err * err;
-      baseline.hfMean += BASELINE_HF_ALPHA * (hfBandEnergyRatio - baseline.hfMean);
+      s_baseline.irmsVar = (1.0f - BASELINE_IRMS_ALPHA) * s_baseline.irmsVar + BASELINE_IRMS_ALPHA * err * err;
+      s_baseline.hfMean += BASELINE_HF_ALPHA * (hfBandEnergyRatio - s_baseline.hfMean);
     }
   }
-  baseline.lastIrms = out.irms_a;
+  s_baseline.lastIrms = out.irms_a;
 
   out.feat_valid = true;
   return true;
@@ -669,8 +686,9 @@ int ArcDetection::predict(float spectral_flux_midhf, float residual_crest_factor
                           float zcv, float abs_irms_zscore_vs_baseline,
                           float v_rms, float i_rms, float temp_c) const {
   (void)v_rms; (void)i_rms; (void)temp_c;
-  // Heuristic fallback operates directly in the new mixed feature space
-  // where the listed ratio/energy terms are already in dB.
+  // Heuristic fallback operates directly in the current mixed feature space
+  // where spectral flux / NMSE / CV / THD are percentages, ratio terms are in dB,
+  // hf_energy_delta is a dB power-ratio delta, and zcv is in milliseconds.
   float score = 0.0f;
   if (spectral_flux_midhf >= ARC_SIG_SPECTRAL_FLUX) score += 1.3f;
   if (residual_crest_factor >= ARC_SIG_RESIDUAL_CF) score += 0.9f;
@@ -695,7 +713,7 @@ int ArcDetection::computeAndPredict(const uint16_t* raw, size_t n, float fs_hz,
     return 0;
   }
 
-#if defined(ARC_MODEL_FEATURE_VERSION) && (ARC_MODEL_FEATURE_VERSION >= 3)
+#if defined(ARC_MODEL_FEATURE_VERSION) && (ARC_MODEL_FEATURE_VERSION >= 4)
   double input_features[10] = {
     (double)out.spectral_flux_midhf,
     (double)out.residual_crest_factor,
@@ -710,23 +728,6 @@ int ArcDetection::computeAndPredict(const uint16_t* raw, size_t n, float fs_hz,
   };
   double output_probs[2] = {0.0, 0.0};
   arc_rf_predict(input_features, output_probs);
-  out.model_pred = (output_probs[1] >= ARC_THRESHOLD) ? 1 : 0;
-  return out.model_pred;
-#elif defined(ARC_MODEL_FEATURE_VERSION) && (ARC_MODEL_FEATURE_VERSION >= 2)
-  double legacy_input_features[10] = {
-    (double)out.spectral_flux_midhf,
-    (double)out.legacy_residual_crest_factor,
-    (double)out.legacy_edge_spike_ratio,
-    (double)out.legacy_midband_residual_ratio,
-    (double)out.cycle_nmse,
-    (double)out.peak_fluct_cv,
-    (double)out.legacy_thd_i,
-    (double)out.legacy_hf_energy_delta,
-    (double)out.zcv,
-    (double)out.abs_irms_zscore_vs_baseline
-  };
-  double output_probs[2] = {0.0, 0.0};
-  arc_rf_predict(legacy_input_features, output_probs);
   out.model_pred = (output_probs[1] >= ARC_THRESHOLD) ? 1 : 0;
   return out.model_pred;
 #else

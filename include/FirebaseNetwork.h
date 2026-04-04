@@ -98,6 +98,7 @@ private:
 
   struct Rec {
     uint64_t epoch_ms;
+    uint32_t uptime_ms;
     float spectral_flux_midhf, residual_crest_factor, edge_spike_ratio, midband_residual_ratio, cycle_nmse;
     float peak_fluct_cv, thd_i, hf_energy_delta, zcv, abs_irms_zscore_vs_baseline;
     float v_rms, i_rms, temp_c;
@@ -106,6 +107,7 @@ private:
     int16_t arc_counter;
     float   adc_fs_hz;
     uint8_t auto_capture;
+    uint8_t feature_space_version;
   };
 
   static constexpr uint8_t HISTORY_QUEUE_MAX = 12;
@@ -189,7 +191,7 @@ private:
   uint32_t _sessionStartMs = 0;
   uint32_t _chunkStartMs = 0;
   uint16_t _count = 0;
-  static constexpr uint16_t MAX_REC_LIMIT = 600;
+  static constexpr uint16_t MAX_REC_LIMIT = 2400;
   uint16_t _maxRec = 0;
   Rec* _buf = nullptr;
   bool _mlUploadActive = false;

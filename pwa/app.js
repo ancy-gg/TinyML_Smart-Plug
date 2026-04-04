@@ -1274,21 +1274,39 @@ btnDismissInstall?.addEventListener("click", () => {
 btnRefreshNow?.addEventListener("click", () => window.location.reload());
 updateInstallHelp();
 
+function formatFeatureValue(key, value) {
+  const n = Number(value);
+  if (!Number.isFinite(n)) return "—";
+  const decimals = {
+    spectral_flux_midhf: 2,
+    residual_crest_factor: 2,
+    edge_spike_ratio: 2,
+    midband_residual_ratio: 2,
+    cycle_nmse: 2,
+    peak_fluct_cv: 2,
+    thd_i: 2,
+    hf_energy_delta: 2,
+    zcv: 3,
+    abs_irms_zscore_vs_baseline: 2,
+  }[key] ?? 3;
+  return n.toFixed(decimals);
+}
+
 function updateLiveDom(data) {
   const v   = toFixedOrDash(data.voltage, 1);
   const i   = toFixedOrDash(data.current, 3);
   const p   = toFixedOrDash(data.apparent_power, 1);
   const t   = toFixedOrDash(data.temp, 1);
-  const sf  = toFixedOrDash(data.spectral_flux_midhf, 3);
-  const rcf = toFixedOrDash(data.residual_crest_factor, 3);
-  const esr = toFixedOrDash(data.edge_spike_ratio, 3);
-  const mrr = toFixedOrDash(data.midband_residual_ratio, 3);
-  const cn  = toFixedOrDash(data.cycle_nmse, 3);
-  const pf  = toFixedOrDash(data.peak_fluct_cv, 3);
-  const thd = toFixedOrDash(data.thd_i, 3);
-  const hfd = toFixedOrDash(data.hf_energy_delta, 3);
-  const z   = toFixedOrDash(data.zcv, 3);
-  const iz  = toFixedOrDash(data.abs_irms_zscore_vs_baseline, 3);
+  const sf  = formatFeatureValue("spectral_flux_midhf", data.spectral_flux_midhf);
+  const rcf = formatFeatureValue("residual_crest_factor", data.residual_crest_factor);
+  const esr = formatFeatureValue("edge_spike_ratio", data.edge_spike_ratio);
+  const mrr = formatFeatureValue("midband_residual_ratio", data.midband_residual_ratio);
+  const cn  = formatFeatureValue("cycle_nmse", data.cycle_nmse);
+  const pf  = formatFeatureValue("peak_fluct_cv", data.peak_fluct_cv);
+  const thd = formatFeatureValue("thd_i", data.thd_i);
+  const hfd = formatFeatureValue("hf_energy_delta", data.hf_energy_delta);
+  const z   = formatFeatureValue("zcv", data.zcv);
+  const iz  = formatFeatureValue("abs_irms_zscore_vs_baseline", data.abs_irms_zscore_vs_baseline);
 
   if (vVal && vVal.textContent !== v) { vVal.textContent = v; animateNumber(vVal); }
   if (iVal && iVal.textContent !== i) { iVal.textContent = i; animateNumber(iVal); }
@@ -1576,7 +1594,12 @@ async function fetchSessionCsv(sessionId) {
   const snap = await db.ref(`ml_logs/${sessionId}`).get();
   if (!snap.exists()) return "";
   const chunksObj = snap.val() || {};
-  const keys = Object.keys(chunksObj).sort((a,b) => (chunksObj[a]?.created_at || 0) - (chunksObj[b]?.created_at || 0));
+  const keys = Object.keys(chunksObj).sort((a,b) => {
+    const ai = Number(chunksObj[a]?.chunk_index);
+    const bi = Number(chunksObj[b]?.chunk_index);
+    if (Number.isFinite(ai) && Number.isFinite(bi) && ai !== bi) return ai - bi;
+    return (chunksObj[a]?.created_at || 0) - (chunksObj[b]?.created_at || 0);
+  });
   let header = "";
   let rows = [];
   for (const k of keys) {

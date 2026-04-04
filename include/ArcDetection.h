@@ -17,12 +17,6 @@ struct ArcDetectionResult {
   float zcv                         = 0.0f;
   float abs_irms_zscore_vs_baseline = 0.0f;
 
-  // Internal compatibility companions for older linear-space model headers.
-  float legacy_residual_crest_factor = 0.0f;
-  float legacy_edge_spike_ratio = 0.0f;
-  float legacy_midband_residual_ratio = 0.0f;
-  float legacy_thd_i = 0.0f;
-  float legacy_hf_energy_delta = 0.0f;
 
   bool feat_valid    = false;
   bool current_valid = false;
@@ -31,6 +25,7 @@ struct ArcDetectionResult {
 
 class ArcDetection {
 public:
+  void resetRuntime();
   bool compute(const uint16_t* raw, size_t n, float fs_hz,
                const CurrentCalib& cal, float mainsHz,
                ArcDetectionResult& out);

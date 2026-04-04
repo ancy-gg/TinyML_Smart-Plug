@@ -3,7 +3,7 @@
 #include <math.h>
 
 #ifndef PROTECTION
-#define PROTECTION 1
+#define PROTECTION 0
 #endif
 
 static constexpr bool ENABLE_MODEL_INFERENCE = true;
@@ -13,7 +13,7 @@ static constexpr bool ENABLE_AUTO_ARC_CAPTURE = false;
 // Cloud / OTA configuration
 static constexpr const char* FIREBASE_API_KEY = "AIzaSyAmJlZZszyWPJFgIkTAAl_TbIySys1nvEw";
 static constexpr const char* FIREBASE_DB_URL  = "tinyml-smart-plug-default-rtdb.asia-southeast1.firebasedatabase.app";
-static constexpr const char* FW_VERSION       = "v6.0-p-gen0";
+static constexpr const char* FW_VERSION       = "v6.1-c-gen0";
 static constexpr const char* OTA_DESIRED_VERSION_PATH = "/ota/desired_version";
 static constexpr const char* OTA_FIRMWARE_URL_PATH    = "/ota/firmware_url";
 
@@ -164,23 +164,25 @@ static constexpr uint32_t FAULT_BUZZ_MS      = 3000UL;
 static constexpr uint32_t FAULT_NET_QUIET_MS = 2350UL;
 static constexpr uint32_t OLED_RENDER_INTERVAL_MS = 33UL;
 
-static constexpr int   ARC_RUNTIME_FEATURE_SPACE_VERSION = 3;
+static constexpr int   ARC_RUNTIME_FEATURE_SPACE_VERSION = 4;
 static constexpr float DB_RATIO_EPS                 = 1e-6f;
 static constexpr float DB_POWER_RATIO_EPS           = 1e-6f;
 static constexpr float DB_RATIO_CLIP_MIN            = -80.0f;
 static constexpr float DB_RATIO_CLIP_MAX            = 20.0f;
-static constexpr float DB_THD_CLIP_MIN              = -80.0f;
-static constexpr float DB_THD_CLIP_MAX              = 20.0f;
-static constexpr float DB_HF_DELTA_CLIP_MIN         = -24.0f;
-static constexpr float DB_HF_DELTA_CLIP_MAX         = 24.0f;
+static constexpr float DB_THD_CLIP_MIN              = 0.0f;
+static constexpr float DB_THD_CLIP_MAX              = 200.0f;
+static constexpr float DB_HF_DELTA_CLIP_MIN         = -18.0f;
+static constexpr float DB_HF_DELTA_CLIP_MAX         = 18.0f;
+static constexpr float HF_DELTA_MIN_BASELINE_SHARE  = 0.010f;
+static constexpr float FEATURE_PERCENT_SCALE        = 100.0f;
 
-static constexpr float ARC_SIG_SPECTRAL_FLUX       = 0.085f;
+static constexpr float ARC_SIG_SPECTRAL_FLUX       = 8.50f;     // percent
 static constexpr float ARC_SIG_RESIDUAL_CF         = 12.568f;   // 20*log10(4.25)
 static constexpr float ARC_SIG_EDGE_SPIKE_RATIO    = -14.894f;  // 20*log10(0.180)
 static constexpr float ARC_SIG_MIDBAND_RATIO       = -21.412f;  // 20*log10(0.085)
-static constexpr float ARC_SIG_CYCLE_NMSE          = 0.090f;
-static constexpr float ARC_SIG_PEAK_FLUCT          = 0.012f;
-static constexpr float ARC_SIG_THD_I               = -13.151f;  // 20*log10(0.22)
+static constexpr float ARC_SIG_CYCLE_NMSE          = 9.00f;     // percent
+static constexpr float ARC_SIG_PEAK_FLUCT          = 1.20f;     // percent
+static constexpr float ARC_SIG_THD_I               = 22.0f;     // percent THD
 static constexpr float ARC_SIG_HF_ENERGY_DELTA     = 1.500f;    // 10*log10(power ratio), ~1.4x HF rise
 static constexpr float ARC_SIG_ZCV                 = 0.200f;
 static constexpr float ARC_SIG_IRMS_ZSCORE         = 2.35f;
@@ -221,6 +223,14 @@ static constexpr float LOAD_ON_DETECT_A   = 0.12f;
 static constexpr float LOAD_OFF_DETECT_A  = 0.03f;
 static constexpr uint32_t LOAD_ON_DETECT_MS  = 350UL;
 static constexpr uint32_t LOAD_OFF_DETECT_MS = 1200UL;
+static constexpr uint32_t RELAY_ARTIFACT_BLANK_MS = 2500UL;
+static constexpr float    RELAY_ARTIFACT_FORCE_ZERO_A = 0.75f;
+static constexpr uint32_t RELAY_ARTIFACT_SELF_HEAL_MS = 1200UL;
+static constexpr float    MANUAL_RELAY_REARM_MIN_A = 0.90f;
+static constexpr float    MANUAL_RELAY_REARM_RELEASE_A = 0.12f;
+static constexpr uint32_t MANUAL_RELAY_REARM_DEBOUNCE_MS = 1800UL;
+static constexpr uint32_t MANUAL_RELAY_REARM_RELEASE_MS = 1500UL;
+static constexpr uint32_t MANUAL_RELAY_REARM_BLANK_MS = 1400UL;
 
 // =========================
 // Logger / control polling
