@@ -104,7 +104,21 @@
             <div class="summary-card summary-card-health summary-card-health-mixed">
               <div class="summary-head">
                 <div class="summary-kicker">Overall Health</div>
-                <div id="overviewHealthBadge" class="mini-badge mini-badge-OK">Healthy</div>
+                <div class="health-head-side">
+                  <div class="health-telemetry" aria-label="Wi-Fi signal and relay latency">
+                    <div class="health-chip health-chip-wifi" id="healthWifiChip" title="Wi-Fi signal strength">
+                      <span class="wifi-bars wifi-bars-0" id="healthWifiBars" aria-hidden="true">
+                        <span></span><span></span><span></span><span></span>
+                      </span>
+                      <span id="healthWifiText">—</span>
+                    </div>
+                    <div class="health-chip health-chip-latency" id="healthLatencyChip" title="Device command latency">
+                      <span class="health-chip-icon" aria-hidden="true">↔</span>
+                      <span id="healthLatencyText">—</span>
+                    </div>
+                  </div>
+                  <div id="overviewHealthBadge" class="mini-badge mini-badge-OK">Healthy</div>
+                </div>
               </div>
 
               <div class="health-main-row">
@@ -356,7 +370,7 @@
         <table class="history-table">
           <thead>
             <tr>
-              <th>Session</th>
+              <th>Name</th>
               <th>Start</th>
               <th>End</th>
               <th>Duration</th>

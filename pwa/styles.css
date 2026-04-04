@@ -4375,3 +4375,308 @@ body.showSeries .plot-drawer #seriesPanel{
     min-width:0;
   }
 }
+
+
+/* ===== v9.2 overall health telemetry ===== */
+.dashboard-overview .health-head-side{
+  display:flex !important;
+  align-items:center !important;
+  justify-content:flex-end !important;
+  gap:10px !important;
+  flex-wrap:wrap !important;
+}
+
+.dashboard-overview .health-telemetry{
+  display:flex !important;
+  align-items:center !important;
+  gap:8px !important;
+  flex-wrap:wrap !important;
+  justify-content:flex-end !important;
+}
+
+.dashboard-overview .health-chip{
+  display:inline-flex !important;
+  align-items:center !important;
+  gap:8px !important;
+  min-height:28px !important;
+  padding:4px 10px !important;
+  border-radius:999px !important;
+  border:1px solid rgba(241,196,15,0.22) !important;
+  background:rgba(241,196,15,0.10) !important;
+  color:#ffe38a !important;
+  font-size:11px !important;
+  font-weight:900 !important;
+  letter-spacing:0.02em !important;
+  box-shadow:0 8px 16px rgba(0,0,0,0.18) !important;
+}
+
+.dashboard-overview .health-chip-icon{
+  display:inline-flex !important;
+  align-items:center !important;
+  justify-content:center !important;
+  width:12px !important;
+  font-size:12px !important;
+  line-height:1 !important;
+}
+.dashboard-overview .health-chip.is-offline{
+  opacity:0.72 !important;
+}
+
+
+.dashboard-overview .wifi-bars{
+  display:inline-flex !important;
+  align-items:flex-end !important;
+  gap:2px !important;
+  height:14px !important;
+  width:18px !important;
+}
+
+.dashboard-overview .wifi-bars span{
+  display:block !important;
+  width:3px !important;
+  border-radius:999px !important;
+  background:rgba(241,196,15,0.28) !important;
+  transition:opacity 180ms ease, transform 180ms ease, background 180ms ease !important;
+  transform-origin:bottom center !important;
+}
+
+.dashboard-overview .wifi-bars span:nth-child(1){ height:4px !important; }
+.dashboard-overview .wifi-bars span:nth-child(2){ height:7px !important; }
+.dashboard-overview .wifi-bars span:nth-child(3){ height:10px !important; }
+.dashboard-overview .wifi-bars span:nth-child(4){ height:13px !important; }
+
+.dashboard-overview .wifi-bars.wifi-bars-0 span:nth-child(n + 1),
+.dashboard-overview .wifi-bars.wifi-bars-1 span:nth-child(-n + 1),
+.dashboard-overview .wifi-bars.wifi-bars-2 span:nth-child(-n + 2),
+.dashboard-overview .wifi-bars.wifi-bars-3 span:nth-child(-n + 3),
+.dashboard-overview .wifi-bars.wifi-bars-4 span:nth-child(-n + 4){
+  background:#f1c40f !important;
+  opacity:1 !important;
+}
+
+.dashboard-overview .wifi-bars.wifi-bars-0 span:nth-child(n + 1){ opacity:0.18 !important; }
+.dashboard-overview .wifi-bars.wifi-bars-1 span:nth-child(n + 2),
+.dashboard-overview .wifi-bars.wifi-bars-2 span:nth-child(n + 3),
+.dashboard-overview .wifi-bars.wifi-bars-3 span:nth-child(n + 4){ opacity:0.22 !important; }
+
+@keyframes wifiPulse{
+  0%{ transform:scaleY(0.90); filter:brightness(0.92); }
+  50%{ transform:scaleY(1.06); filter:brightness(1.08); }
+  100%{ transform:scaleY(0.90); filter:brightness(0.92); }
+}
+
+.dashboard-overview .wifi-bars.is-live span{
+  animation:wifiPulse 1.25s ease-in-out infinite;
+}
+
+.dashboard-overview .wifi-bars.is-live span:nth-child(2){ animation-delay:0.08s; }
+.dashboard-overview .wifi-bars.is-live span:nth-child(3){ animation-delay:0.16s; }
+.dashboard-overview .wifi-bars.is-live span:nth-child(4){ animation-delay:0.24s; }
+
+@media (max-width: 860px){
+  .dashboard-overview .health-head-side{
+    width:100% !important;
+    justify-content:space-between !important;
+  }
+
+  .dashboard-overview .health-telemetry{
+    justify-content:flex-start !important;
+  }
+}
+
+@media (max-width: 520px){
+  .dashboard-overview .summary-head{
+    align-items:flex-start !important;
+  }
+
+  .dashboard-overview .health-head-side{
+    flex-direction:column !important;
+    align-items:flex-end !important;
+    gap:6px !important;
+  }
+
+  .dashboard-overview .health-telemetry{
+    justify-content:flex-end !important;
+  }
+}
+
+
+/* ===== v9.3 PWA session highlight + mobile health row + final control colors ===== */
+.history-table tbody tr[data-session-row].is-active-view td{
+  background:rgba(241,196,15,0.12) !important;
+  box-shadow:inset 0 1px 0 rgba(241,196,15,0.14), inset 0 -1px 0 rgba(241,196,15,0.10) !important;
+}
+.history-table tbody tr[data-session-row].is-active-view td:first-child{
+  border-left:2px solid rgba(241,196,15,0.60) !important;
+}
+
+.dashboard-overview .health-chip.signal-excellent{
+  border-color:rgba(84,214,126,0.30) !important;
+  background:rgba(46,204,113,0.14) !important;
+  color:#9affbf !important;
+}
+.dashboard-overview .health-chip.signal-strong{
+  border-color:rgba(52,160,95,0.32) !important;
+  background:rgba(35,117,68,0.18) !important;
+  color:#8fe3aa !important;
+}
+.dashboard-overview .health-chip.signal-weak{
+  border-color:rgba(241,196,15,0.28) !important;
+  background:rgba(241,196,15,0.12) !important;
+  color:#ffe38a !important;
+}
+.dashboard-overview .health-chip.signal-poor{
+  border-color:rgba(231,76,60,0.32) !important;
+  background:rgba(231,76,60,0.14) !important;
+  color:#ffc0b8 !important;
+}
+.dashboard-overview .health-chip.signal-offline,
+.dashboard-overview .health-chip.is-offline{
+  border-color:rgba(120,42,50,0.36) !important;
+  background:rgba(92,28,36,0.22) !important;
+  color:#e2a2aa !important;
+}
+.dashboard-overview .wifi-bars.signal-excellent span{ background:#54d67e !important; }
+.dashboard-overview .wifi-bars.signal-strong span{ background:#2f8a54 !important; }
+.dashboard-overview .wifi-bars.signal-weak span{ background:#f1c40f !important; }
+.dashboard-overview .wifi-bars.signal-poor span{ background:#e74c3c !important; }
+.dashboard-overview .wifi-bars.signal-offline span{ background:#7a2a34 !important; }
+.dashboard-overview .wifi-bars.signal-offline span{ opacity:0.35 !important; }
+
+.dashboard-overview .summary-head{
+  display:grid !important;
+  grid-template-columns:minmax(0, 1fr) auto !important;
+  align-items:center !important;
+  gap:10px !important;
+}
+.dashboard-overview .health-head-side{
+  display:grid !important;
+  grid-template-columns:minmax(0, 1fr) auto !important;
+  align-items:center !important;
+  gap:10px !important;
+  flex-wrap:nowrap !important;
+}
+.dashboard-overview .health-telemetry{
+  flex-wrap:nowrap !important;
+  justify-content:flex-end !important;
+}
+
+#btnRelayOn{
+  background:linear-gradient(180deg, rgba(87,214,152,0.28), rgba(30,138,90,0.14)) !important;
+  border:1px solid rgba(110,236,176,0.28) !important;
+  color:#dbffec !important;
+  box-shadow:0 10px 18px rgba(0,0,0,0.16) !important;
+}
+#btnRelayOff{
+  background:linear-gradient(180deg, rgba(255,110,120,0.24), rgba(180,48,65,0.14)) !important;
+  border:1px solid rgba(255,138,150,0.28) !important;
+  color:#ffe5e8 !important;
+  box-shadow:0 10px 18px rgba(0,0,0,0.16) !important;
+}
+#btnRelayOn:hover:not(:disabled){
+  filter:brightness(1.08) !important;
+  background:linear-gradient(180deg, rgba(87,214,152,0.34), rgba(30,138,90,0.18)) !important;
+}
+#btnRelayOff:hover:not(:disabled){
+  filter:brightness(1.08) !important;
+  background:linear-gradient(180deg, rgba(255,110,120,0.30), rgba(180,48,65,0.18)) !important;
+}
+#btnRelayOn:disabled,
+#btnRelayOff:disabled{
+  opacity:0.55 !important;
+}
+
+@media (max-width: 860px){
+  .dashboard-overview .health-head-side{
+    grid-template-columns:minmax(0, 1fr) auto !important;
+    justify-content:space-between !important;
+    width:100% !important;
+  }
+  .dashboard-overview .health-telemetry{
+    justify-content:flex-start !important;
+  }
+}
+@media (max-width: 520px){
+  .dashboard-overview .summary-head,
+  .dashboard-overview .health-head-side{
+    grid-template-columns:minmax(0, 1fr) auto !important;
+    align-items:center !important;
+    gap:8px !important;
+  }
+  .dashboard-overview .health-telemetry{
+    flex-wrap:nowrap !important;
+    gap:6px !important;
+    justify-content:flex-start !important;
+  }
+  .dashboard-overview .health-chip,
+  .dashboard-overview .mini-badge{
+    min-height:24px !important;
+    padding:3px 8px !important;
+    font-size:10px !important;
+  }
+}
+
+/* ===== v9.4 themed dropdown menus ===== */
+select,
+.select,
+.axisSel{
+  color-scheme:dark;
+  background:
+    linear-gradient(180deg, rgba(44,44,46,0.96) 0%, rgba(24,24,26,0.96) 100%) !important;
+  background-color:#17181b !important;
+  color:#f3f3f3 !important;
+  border:1px solid rgba(255,255,255,0.12) !important;
+  box-shadow:
+    inset 0 1px 0 rgba(255,255,255,0.06),
+    0 10px 18px rgba(0,0,0,0.16) !important;
+}
+
+select:hover,
+.select:hover,
+.axisSel:hover{
+  border-color:rgba(241,196,15,0.22) !important;
+  background:
+    linear-gradient(180deg, rgba(52,52,54,0.98) 0%, rgba(27,27,29,0.98) 100%) !important;
+}
+
+select:focus,
+.select:focus,
+.axisSel:focus{
+  border-color:rgba(241,196,15,0.34) !important;
+  box-shadow:
+    0 0 0 1px rgba(241,196,15,0.14),
+    0 10px 18px rgba(0,0,0,0.18) !important;
+}
+
+select option,
+.select option,
+.axisSel option{
+  background-color:#18191c !important;
+  color:#f3f3f3 !important;
+}
+
+select option:checked,
+.select option:checked,
+.axisSel option:checked{
+  background:
+    linear-gradient(180deg, rgba(241,196,15,0.22) 0%, rgba(154,121,16,0.18) 100%) !important;
+  background-color:#3a3218 !important;
+  color:#fff0ae !important;
+}
+
+select option:disabled,
+.select option:disabled,
+.axisSel option:disabled{
+  background-color:#151619 !important;
+  color:rgba(255,255,255,0.32) !important;
+}
+
+@supports selector(select:open){
+  select:open,
+  .select:open,
+  .axisSel:open{
+    border-color:rgba(241,196,15,0.30) !important;
+    background:
+      linear-gradient(180deg, rgba(52,52,54,0.98) 0%, rgba(27,27,29,0.98) 100%) !important;
+  }
+}

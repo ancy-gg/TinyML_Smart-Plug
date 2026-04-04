@@ -86,6 +86,69 @@
   let csvHeaders = [];
   let currentDownloadName = "TSP_ML_session.csv";
 
+  function formatDisplayTimestamp(ms) {
+    if (!ms || ms <= 0) return "—";
+    const d = new Date(ms);
+    const datePart = new Intl.DateTimeFormat("en-US", {
+      timeZone: "Asia/Manila",
+      month: "long",
+      day: "2-digit",
+      year: "numeric"
+    }).format(d);
+    const timePart = new Intl.DateTimeFormat("en-US", {
+      timeZone: "Asia/Manila",
+      hour: "2-digit",
+      minute: "2-digit",
+      second: "2-digit",
+      hour12: true
+    }).format(d);
+    return `${datePart} | ${timePart}`;
+  }
+
+  function titleizeTokenText(v, fallback = "Session") {
+    const base = String(v || "")
+      .replace(/\.[a-z0-9]+$/i, "")
+      .replace(/[_-]+/g, " ")
+      .replace(/\s+/g, " ")
+      .trim();
+    if (!base) return fallback;
+    return base.replace(/\b\w+/g, (m) => m.charAt(0).toUpperCase() + m.slice(1).toLowerCase());
+  }
+
+  function safeFilenameSegment(v, fallback = "session") {
+    return String(v || fallback)
+      .replace(/\.[a-z0-9]+$/i, "")
+      .replace(/[^a-zA-Z0-9_-]+/g, "_")
+      .replace(/^_+|_+$/g, "")
+      .slice(0, 64) || fallback;
+  }
+
+  function isUploadedCsvSession(meta) {
+    return !!(meta?.uploaded_csv || String(meta?.load_type || "").trim().toLowerCase() === "uploaded_csv");
+  }
+
+  function viewerDisplayName(meta, sessionId) {
+    const sourceFile = String(meta?.source_file || "").trim();
+    if (sourceFile) return titleizeTokenText(sourceFile, sourceFile);
+    const load = String(meta?.load_type || "").trim();
+    if (load && load.toLowerCase() !== "uploaded_csv" && load.toLowerCase() !== "unknown") return titleizeTokenText(load, load);
+    if (isUploadedCsvSession(meta)) return "Uploaded CSV";
+    const start = Number(meta?.start_ms || 0);
+    if (start) return `Session ${formatDisplayTimestamp(start)}`;
+    return titleizeTokenText(sessionId || "session", "Session");
+  }
+
+  function viewerDownloadName(meta, sessionId) {
+    const base = viewerDisplayName(meta, sessionId);
+    return `TSP_ML_${safeFilenameSegment(base, safeFilenameSegment(sessionId || 'session', 'session'))}.csv`;
+  }
+
+  function announceActiveSession(sessionId) {
+    const activeSid = String(sessionId || "").trim();
+    window.__tspActiveViewerSid = activeSid;
+    document.dispatchEvent(new CustomEvent("tsp-active-session-changed", { detail: { sid: activeSid } }));
+  }
+
   function normalizeBinaryLabel(v) {
     if (typeof v === "boolean") return v ? 1 : 0;
     const n = Number(String(v ?? "").trim());
@@ -107,12 +170,13 @@
   }
 
   function viewerMetaText(meta) {
-    const load = meta?.load_type ?? "—";
+    const load = String(meta?.load_type || meta?.source_file || "—").trim();
     const dur = viewerDurationSeconds(meta);
     const durText = (dur === null)
       ? "—"
-      : (Math.abs(dur - Math.round(dur)) < 0.05 ? String(Math.round(dur)) : dur.toFixed(1));
-    return `load=${load}  duration=${durText}s`;
+      : (Math.abs(dur - Math.round(dur)) < 0.05 ? `${Math.round(dur)}s` : `${dur.toFixed(1)}s`);
+    const startText = Number(meta?.start_ms || 0) > 0 ? formatDisplayTimestamp(Number(meta.start_ms)) : "—";
+    return `${titleizeTokenText(load, "Unknown")} • ${durText} • ${startText}`;
   }
 
   function ensureCsvHeadersAndLabelArc(rows, parsedFields = []) {
@@ -1523,15 +1587,15 @@
       return;
     }
 
-    titleEl.textContent = `Session: ${sid}`;
-
     try {
       let meta = metaOverride || null;
       if (!meta) {
         const metaSnap = await db.ref(`ml_sessions/${sid}`).get();
         meta = metaSnap.exists() ? metaSnap.val() : {};
       }
-      metaEl.textContent = viewerMetaText(meta);
+      titleEl.textContent = viewerDisplayName(meta, sid);
+      metaEl.textContent = `${viewerMetaText(meta)} • ${sid}`;
+      currentDownloadName = viewerDownloadName(meta, sid);
 
       setStatus("Fetching CSV chunks…");
       const csv = await fetchSessionCsv(sid);
@@ -1542,12 +1606,12 @@
         return;
       }
 
-      btnDownload.onclick = () => downloadTextFile(`TSP_ML_${sid}.csv`, currentCsv);
+      btnDownload.onclick = () => downloadTextFile(currentDownloadName, currentCsv);
 
       setStatus("Parsing CSV…");
       const parsed = Papa.parse(csv.trim(), { header: true, dynamicTyping: true, skipEmptyLines: true, transformHeader: normalizeHeaderName });
       ingestParsedCsv(parsed, {
-        downloadName: `TSP_ML_${sid}.csv`,
+        downloadName: currentDownloadName,
         emptyStatus: "Parsed 0 rows. (CSV exists but has no data rows.)",
         noNumericStatus: "No numeric series found in this session CSV.",
         readyStatus: ""
@@ -1561,6 +1625,7 @@
 
 
   function openSessionViewer(targetSid, metaOverride = null) {
+    announceActiveSession(targetSid);
     setViewerOpen(true);
     setTimeout(() => {
       plotDrawer?.scrollIntoView?.({ behavior: "smooth", block: "start" });
@@ -1569,6 +1634,7 @@
   }
 
   function openSessionViewerFromCsv(name, csvText, metaOverride = null) {
+    announceActiveSession("");
     setViewerOpen(true);
     setTimeout(() => {
       plotDrawer?.scrollIntoView?.({ behavior: "smooth", block: "start" });
@@ -1576,9 +1642,10 @@
 
     sid = (name || "uploaded_csv").replace(/[^a-zA-Z0-9_.-]/g, "_");
     resetState();
-    titleEl.textContent = `CSV: ${sid}`;
     const meta = metaOverride || {};
-    metaEl.textContent = viewerMetaText(meta);
+    titleEl.textContent = viewerDisplayName(meta, sid);
+    metaEl.textContent = `${viewerMetaText(meta)} • Local CSV`;
+    currentDownloadName = viewerDownloadName(meta, sid);
     currentCsv = csvText || "";
 
     try {
@@ -1591,7 +1658,7 @@
       setStatus("Parsing uploaded CSV…");
       const parsed = Papa.parse(currentCsv.trim(), { header: true, dynamicTyping: true, skipEmptyLines: true, transformHeader: normalizeHeaderName });
       ingestParsedCsv(parsed, {
-        downloadName: `TSP_ML_${sid}.csv`,
+        downloadName: currentDownloadName,
         emptyStatus: "Parsed 0 rows from uploaded CSV.",
         noNumericStatus: "No numeric series found in uploaded CSV.",
         readyStatus: ""
@@ -1604,6 +1671,7 @@
   }
 
   function closeSessionViewer() {
+    announceActiveSession("");
     closeSeries();
     resetState();
     refreshDownloadBinding();

@@ -22,6 +22,11 @@ const deviceIpText = el("deviceIpText");
 const deviceMdnsText = el("deviceMdnsText");
 
 const overviewHealthBadge = el("overviewHealthBadge");
+const healthWifiChip = el("healthWifiChip");
+const healthWifiBars = el("healthWifiBars");
+const healthWifiText = el("healthWifiText");
+const healthLatencyChip = el("healthLatencyChip");
+const healthLatencyText = el("healthLatencyText");
 const overviewPrimary = el("overviewPrimary");
 const overviewSecondary = el("overviewSecondary");
 const overviewMeta = el("overviewMeta");
@@ -119,6 +124,11 @@ let lastNotifiedAt = 0;
 let previousPowerCondition = "UNKNOWN";
 let previousFresh = false;
 let previousEffectiveStatus = "UNKNOWN";
+let latchedFaultUi = false;
+let pendingDeviceCommand = null;
+let lastCommandLatencyMs = null;
+let lastDeviceAckTokenSeen = "";
+let activeViewedSessionSid = "";
 
 const LS_ALERT = "tsp_alert_enabled";
 const LS_SOUND = "tsp_sound_enabled";
@@ -168,6 +178,91 @@ function buildRepoFirmwareUrl(desiredVersion, binName) {
 function isLikelyVersion(v) {
   return typeof v === "string" && v.trim().length >= 3;
 }
+
+function safeFilenameSegment(v, fallback = "session") {
+  return String(v || fallback)
+    .replace(/\.[a-z0-9]+$/i, "")
+    .replace(/[^a-zA-Z0-9_-]+/g, "_")
+    .replace(/^_+|_+$/g, "")
+    .slice(0, 64) || fallback;
+}
+
+function titleizeTokenText(v, fallback = "Unknown") {
+  const base = String(v || "")
+    .replace(/\.[a-z0-9]+$/i, "")
+    .replace(/[_-]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+  if (!base) return fallback;
+  return base.replace(/\b\w+/g, (m) => m.charAt(0).toUpperCase() + m.slice(1).toLowerCase());
+}
+
+function formatSessionStamp(ms) {
+  if (!ms) return "Unknown Time";
+  return formatDisplayTimestamp(ms);
+}
+
+function sessionDisplayName(meta, sessionId) {
+  const sourceFile = String(meta?.source_file || "").trim();
+  if (sourceFile) return titleizeTokenText(sourceFile, sourceFile);
+  const load = String(meta?.load_type || "").trim();
+  if (load && load.toLowerCase() !== "uploaded_csv" && load.toLowerCase() !== "unknown") return titleizeTokenText(load, load);
+  if (isUploadedCsvSession(meta)) return "Uploaded CSV";
+  const start = Number(meta?.start_ms || 0);
+  if (start) return `Session ${formatSessionStamp(start)}`;
+  return titleizeTokenText(sessionId || "session", "Session");
+}
+
+function sessionSecondaryText(meta, sessionId) {
+  const load = String(meta?.load_type || "").trim();
+  if (isUploadedCsvSession(meta)) return sessionId || "uploaded_csv";
+  if (load && load.toLowerCase() !== "unknown") return `${sessionId || "session"} • ${titleizeTokenText(load, load)}`;
+  return sessionId || "session";
+}
+
+function sessionLoadText(meta) {
+  const sourceFile = String(meta?.source_file || "").trim();
+  const load = String(meta?.load_type || "").trim();
+  if (isUploadedCsvSession(meta)) return sourceFile ? titleizeTokenText(sourceFile, sourceFile) : "Uploaded CSV";
+  if (load && load.toLowerCase() !== "unknown") return titleizeTokenText(load, load);
+  return "Unknown";
+}
+
+function wifiBarsForRssi(rssi, fresh) {
+  if (!fresh || !Number.isFinite(rssi)) return 0;
+  if (rssi >= -55) return 4;
+  if (rssi >= -67) return 3;
+  if (rssi >= -75) return 2;
+  if (rssi >= -85) return 1;
+  return 0;
+}
+
+function formatLatencyMs(ms) {
+  if (!Number.isFinite(ms) || ms < 0) return "—";
+  return `${Math.round(ms)} ms`;
+}
+
+function wifiSignalQuality(bars, fresh) {
+  if (!fresh || bars <= 0) return { key: "offline", label: "Offline", bars: 0 };
+  if (bars >= 4) return { key: "excellent", label: "Excellent", bars: 4 };
+  if (bars === 3) return { key: "strong", label: "Strong", bars: 3 };
+  if (bars === 2) return { key: "weak", label: "Weak", bars: 2 };
+  return { key: "poor", label: "Poor", bars: 1 };
+}
+
+function renderHealthTelemetry() {
+  const fresh = liveIsFresh();
+  const rssi = Number(lastLiveData?.wifi_rssi);
+  const bars = wifiBarsForRssi(rssi, fresh);
+  const quality = wifiSignalQuality(bars, fresh);
+
+  if (healthWifiBars) healthWifiBars.className = `wifi-bars wifi-bars-${quality.bars} signal-${quality.key}${fresh ? " is-live" : ""}`;
+  if (healthWifiText) healthWifiText.textContent = quality.label;
+  if (healthWifiChip) healthWifiChip.className = `health-chip health-chip-wifi signal-${quality.key}`;
+
+  if (healthLatencyText) healthLatencyText.textContent = formatLatencyMs(lastCommandLatencyMs);
+  if (healthLatencyChip) healthLatencyChip.classList.toggle("is-offline", !Number.isFinite(lastCommandLatencyMs));
+}
 function isHttpsUrl(u) {
   try {
     const url = new URL(u);
@@ -216,6 +311,25 @@ function formatEpochMsTZ(ms, tz = DISPLAY_TZ) {
   const mmm  = String(d.getMilliseconds()).padStart(3, "0");
 
   return `${yyyy}-${MM}-${dd} ${HH}:${mm}:${ss}.${mmm}`;
+}
+
+function formatDisplayTimestamp(ms, tz = DISPLAY_TZ) {
+  if (!ms || ms <= 0) return "—";
+  const d = new Date(ms);
+  const datePart = new Intl.DateTimeFormat("en-US", {
+    timeZone: tz,
+    month: "long",
+    day: "2-digit",
+    year: "numeric"
+  }).format(d);
+  const timePart = new Intl.DateTimeFormat("en-US", {
+    timeZone: tz,
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+    hour12: true
+  }).format(d);
+  return `${datePart} | ${timePart}`;
 }
 
 function parseTsIsoToEpoch(tsIso) {
@@ -303,7 +417,7 @@ modeButtons.forEach((btn) => btn.addEventListener("click", () => setHeaderMenuOp
 
 const CONTROL_PULSE_DEBOUNCE_MS = 1500;
 
-async function sendControlPulse(buttonEl, busyText, okText, errText, payload) {
+async function sendControlPulse(buttonEl, busyText, okText, errText, payload, ackInfo = null) {
   setHeaderMenuOpen(false);
   const now = Date.now();
   if (buttonEl && buttonEl._tspBusyUntil && now < buttonEl._tspBusyUntil) return;
@@ -315,6 +429,22 @@ async function sendControlPulse(buttonEl, busyText, okText, errText, payload) {
   }
   try {
     await db.ref("/controls").update(payload);
+    if (ackInfo?.kind && ackInfo?.token && ackInfo?.requestPath) {
+      let requestMs = null;
+      try {
+        const reqSnap = await db.ref(ackInfo.requestPath).get();
+        const reqNum = Number(reqSnap.val());
+        if (Number.isFinite(reqNum) && reqNum > 0) requestMs = reqNum;
+      } catch (readErr) {
+        console.warn("Failed to read control request timestamp", readErr);
+      }
+      pendingDeviceCommand = {
+        kind: ackInfo.kind,
+        token: ackInfo.token,
+        requestMs,
+        localSentMs: Date.now()
+      };
+    }
     toast(okText, "ok");
   } catch (e) {
     console.error(e);
@@ -346,6 +476,12 @@ btnChangeWifi?.addEventListener("click", async () => {
       open_portal_token: token,
       open_portal_requested_at: firebase.database.ServerValue.TIMESTAMP
     });
+    pendingDeviceCommand = {
+      kind: "open_portal",
+      token,
+      requestMs: Date.now(),
+      localSentMs: Date.now()
+    };
     console.log("Change WiFi requested:", token);
     toast("Hotspot request sent. AP will open for 15s.", "ok");
   } catch (e) {
@@ -377,6 +513,12 @@ btnRevertFirmware?.addEventListener("click", async () => {
       revert_fw_token: token,
       revert_fw_requested_at: firebase.database.ServerValue.TIMESTAMP
     });
+    pendingDeviceCommand = {
+      kind: "revert_fw",
+      token,
+      requestMs: Date.now(),
+      localSentMs: Date.now()
+    };
     toast("Firmware revert requested. Device will reboot into the previous OTA slot if available.", "warn");
   } catch (e) {
     console.error("Firmware revert write failed:", e);
@@ -390,6 +532,7 @@ btnRevertFirmware?.addEventListener("click", async () => {
 });
 
 btnRelayOn?.addEventListener("click", async () => {
+  const token = `relay_on_${Date.now()}`;
   await sendControlPulse(
     btnRelayOn,
     "Sending...",
@@ -397,13 +540,19 @@ btnRelayOn?.addEventListener("click", async () => {
     "Failed to send Relay ON.",
     {
       relay_off_token: "",
-      relay_on_token: `relay_on_${Date.now()}`,
+      relay_on_token: token,
       relay_on_requested_at: firebase.database.ServerValue.TIMESTAMP
+    },
+    {
+      kind: "relay_on",
+      token,
+      requestPath: "/controls/relay_on_requested_at"
     }
   );
 });
 
 btnRelayOff?.addEventListener("click", async () => {
+  const token = `relay_off_${Date.now()}`;
   await sendControlPulse(
     btnRelayOff,
     "Sending...",
@@ -411,8 +560,13 @@ btnRelayOff?.addEventListener("click", async () => {
     "Failed to send Relay OFF.",
     {
       relay_on_token: "",
-      relay_off_token: `relay_off_${Date.now()}`,
+      relay_off_token: token,
       relay_off_requested_at: firebase.database.ServerValue.TIMESTAMP
+    },
+    {
+      kind: "relay_off",
+      token,
+      requestPath: "/controls/relay_off_requested_at"
     }
   );
 });
@@ -422,10 +576,18 @@ btnFaultCleared?.addEventListener("click", async () => {
   btnFaultCleared.disabled = true;
   btnFaultCleared.textContent = "Clearing...";
   try {
+    const token = `fault_clear_${Date.now()}`;
     await db.ref("/controls").update({
-      fault_clear_token: `fault_clear_${Date.now()}`,
+      fault_clear_token: token,
       fault_clear_requested_at: firebase.database.ServerValue.TIMESTAMP
     });
+    pendingDeviceCommand = {
+      kind: "fault_clear",
+      token,
+      requestMs: Date.now(),
+      localSentMs: Date.now()
+    };
+    latchedFaultUi = false;
     toast("Fault clear requested.", "ok");
   } catch (e) {
     console.error(e);
@@ -795,8 +957,10 @@ function renderOverview() {
   const ip = (live.ip || "").toString().trim();
   const mdns = (live.mdns || "tinyml-smart-plug.local").toString();
   const lastEventStatus = latestHistoryRecord ? prettyStatus(latestHistoryRecord.status || "") : "—";
-  const lastEventTime = latestHistoryRecord ? formatEpochMsTZ(getRecordEpochMs(latestHistoryRecord)) : "—";
+  const lastEventTime = latestHistoryRecord ? formatDisplayTimestamp(getRecordEpochMs(latestHistoryRecord)) : "—";
   const loadActive = fresh && isLiveLoadActive(live);
+  const faultLatched = !!live.fault_latched || !!live.web_controls_locked;
+  if (fresh && (["ARCING", "HEATING", "SUSTAINED_OVERLOAD", "UNDERVOLTAGE", "OVERVOLTAGE"].includes(status) || faultLatched)) latchedFaultUi = true;
 
   if (overviewPrimary) {
     if (!fresh) overviewPrimary.textContent = "Offline";
@@ -868,15 +1032,17 @@ function renderOverview() {
 
   liveStateHints.forEach((node) => { node.textContent = fresh ? "LIVE" : "STALE"; });
   if (deviceMdnsText) deviceMdnsText.textContent = mdns || "tinyml-smart-plug.local";
+  renderHealthTelemetry();
 }
 
 function renderTopState() {
   const status = effectiveStatusKind();
   setTopStatus(status);
   const ts = effectiveTimestamp();
-  if (lastUpdateText) lastUpdateText.textContent = ts ? formatEpochMsTZ(ts) : "—";
+  if (lastUpdateText) lastUpdateText.textContent = ts ? formatDisplayTimestamp(ts) : "—";
   updateFreshnessText();
   renderOverview();
+  renderHealthTelemetry();
   updateRelayControls();
   maybeHandleEffectiveStatusChange();
 }
@@ -936,7 +1102,8 @@ function historyDurationMsDesc(sorted, idx) {
 
 function relayControlsLocked() {
   const k = classifyStatus(effectiveStatusKind());
-  return !liveIsFresh() || ["ARCING", "HEATING", "OVERLOAD", "SUSTAINED_OVERLOAD", "UNDERVOLTAGE", "OVERVOLTAGE", "UNPLUGGED", "DEVICE_DISCONNECTED", "SAFE_MODE", "STARTUP_STABILIZING", "OTA_UPDATING", "CONFIG_PORTAL", "WIFI_CONNECTING"].includes(k);
+  const liveLock = !!lastLiveData?.fault_latched || !!lastLiveData?.web_controls_locked;
+  return !liveIsFresh() || liveLock || latchedFaultUi || ["ARCING", "HEATING", "OVERLOAD", "SUSTAINED_OVERLOAD", "UNDERVOLTAGE", "OVERVOLTAGE", "UNPLUGGED", "DEVICE_DISCONNECTED", "SAFE_MODE", "STARTUP_STABILIZING", "OTA_UPDATING", "CONFIG_PORTAL", "WIFI_CONNECTING"].includes(k);
 }
 
 function updateRelayControls() {
@@ -967,7 +1134,7 @@ function applyHistoryFilter() {
   filtered.sort((a, b) => getRecordEpochMs(b) - getRecordEpochMs(a));
   const rows = filtered.slice(0, MAX_RENDER_ROWS).map((r, idx) => {
     const epoch = getRecordEpochMs(r);
-    const timeStr = formatEpochMsTZ(epoch);
+    const timeStr = formatDisplayTimestamp(epoch);
     const durStr = formatDurationMs(historyDurationMsDesc(filtered, idx));
     return `
       <tr class="row-in" style="animation-delay:${Math.min(idx, 10) * 25}ms">
@@ -1118,6 +1285,21 @@ db.ref("live_data").on("value", (snap) => {
   lastReceiptMs = Date.now();
   lastSeenMs = getRecordEpochMs(data) || lastSeenMs || lastReceiptMs;
   lastLiveData = data;
+
+  const ackToken = String(data.last_control_ack_token || "").trim();
+  const ackKind = String(data.last_control_ack_kind || "").trim();
+  const ackServerMs = Number(data.last_control_ack_server_ts || 0);
+  if (ackToken && ackToken !== lastDeviceAckTokenSeen) {
+    lastDeviceAckTokenSeen = ackToken;
+    if (pendingDeviceCommand && pendingDeviceCommand.token === ackToken && (!pendingDeviceCommand.kind || pendingDeviceCommand.kind === ackKind)) {
+      if (Number.isFinite(pendingDeviceCommand.requestMs) && pendingDeviceCommand.requestMs > 0 && Number.isFinite(ackServerMs) && ackServerMs > 0) {
+        lastCommandLatencyMs = Math.max(0, ackServerMs - pendingDeviceCommand.requestMs);
+      } else if (Number.isFinite(pendingDeviceCommand.localSentMs)) {
+        lastCommandLatencyMs = Math.max(0, Date.now() - pendingDeviceCommand.localSentMs);
+      }
+      pendingDeviceCommand = null;
+    }
+  }
 
   const wifi = !!data.wifi_connected;
   const ip = (data.ip || "").toString().trim();
@@ -1292,6 +1474,18 @@ const mlSessionBody = el("mlSessionBody");
 let currentSessionId = "";
 let lastMlLogEnabled = null;
 
+function applyActiveMlSessionRow() {
+  if (!mlSessionBody) return;
+  mlSessionBody.querySelectorAll("tr[data-session-row]").forEach((row) => {
+    row.classList.toggle("is-active-view", !!activeViewedSessionSid && row.getAttribute("data-session-row") === activeViewedSessionSid);
+  });
+}
+
+document.addEventListener("tsp-active-session-changed", (ev) => {
+  activeViewedSessionSid = String(ev?.detail?.sid || "").trim();
+  applyActiveMlSessionRow();
+});
+
 function downloadTextFileGeneric(filename, text, mime="text/csv;charset=utf-8") {
   const blob = new Blob([text], { type: mime });
   const url = URL.createObjectURL(blob);
@@ -1332,10 +1526,18 @@ function durationText(meta) {
     const uploadedDur = uploadedCsvDurationSeconds(meta);
     if (uploadedDur !== null) return formatDurationSeconds(uploadedDur);
   }
+
+  const configuredSec = Number(meta?.duration_s);
   const st = Number(meta?.start_ms || 0);
   const en = Number(meta?.end_ms || 0);
+  const wallSec = (st && en > st) ? ((en - st) / 1000) : null;
+
+  if (Number.isFinite(configuredSec) && configuredSec > 0 && !!meta?.closed_by_device) return formatDurationSeconds(configuredSec);
+  if (Number.isFinite(configuredSec) && configuredSec > 0 && wallSec !== null && Math.abs(wallSec - configuredSec) > 1.5) return formatDurationSeconds(configuredSec);
+  if (wallSec !== null) return formatDurationSeconds(Math.max(0, wallSec));
+  if (Number.isFinite(configuredSec) && configuredSec > 0 && !st) return formatDurationSeconds(configuredSec);
   if (!st) return "—";
-  const durMs = (en > st ? en : Date.now()) - st;
+  const durMs = Date.now() - st;
   return formatDurationSeconds(Math.max(0, durMs / 1000));
 }
 
@@ -1364,12 +1566,14 @@ async function fetchSessionCsv(sessionId) {
 }
 
 function sessionFilename(meta, sessionId) {
-  const start = meta?.start_ms || 0;
-  const end = meta?.end_ms || 0;
-  const startStr = start ? formatEpochMsTZ(start).replace(/[ :.]/g,"-") : "START";
-  const endStr   = end ? formatEpochMsTZ(end).replace(/[ :.]/g,"-") : "OPEN";
-  const load = (meta?.load_type || "unknown").toString().replace(/[^a-zA-Z0-9_-]/g,"_");
-  return `TSP_ML_${startStr}__${endStr}__${load}__${sessionId}.csv`;
+  const start = Number(meta?.start_ms || 0);
+  const label = safeFilenameSegment(labelText(meta?.label_override), "AUTO");
+  const stamp = start ? formatEpochMsTZ(start).replace(/[ :.]/g, "-") : "UNKNOWN_TIME";
+  const sourceFile = String(meta?.source_file || "").trim();
+  const baseName = sourceFile
+    ? safeFilenameSegment(sourceFile, "uploaded_csv")
+    : safeFilenameSegment(sessionDisplayName(meta, sessionId), safeFilenameSegment(sessionId, "session"));
+  return `TSP_ML_${baseName}_${label}_${stamp}.csv`;
 }
 
 if (mlLogEnable) {
@@ -1439,17 +1643,18 @@ if (mlSessionBody) {
     const ids = Object.keys(obj).sort((a,b) => (obj[b]?.start_ms||0) - (obj[a]?.start_ms||0));
     mlSessionBody.innerHTML = ids.map((sid) => {
       const meta = obj[sid] || {};
-      const st = meta.start_ms ? formatEpochMsTZ(meta.start_ms) : "—";
-      const en = meta.end_ms ? formatEpochMsTZ(meta.end_ms) : "—";
-      const load = meta.load_type || "unknown";
+      const st = meta.start_ms ? formatDisplayTimestamp(meta.start_ms) : "—";
+      const en = meta.end_ms ? formatDisplayTimestamp(meta.end_ms) : "—";
+      const load = sessionLoadText(meta);
       const lab  = labelText(meta.label_override);
+      const isActiveView = sid === activeViewedSessionSid;
       return `
-        <tr>
-          <td class="mono">${sid}</td>
+        <tr data-session-row="${sid}" class="${isActiveView ? "is-active-view" : ""}">
+          <td><div class="mono">${sessionDisplayName(meta, sid)}</div><div class="muted small mono">${sessionSecondaryText(meta, sid)}</div></td>
           <td class="mono">${st}</td>
           <td class="mono">${en}</td>
           <td class="mono">${durationText(meta)}</td>
-          <td class="mono">${String(load)}</td>
+          <td class="mono">${load}</td>
           <td class="mono">${lab}</td>
           <td class="session-actions">
             <button type="button" class="btn btn-small" data-view-sid="${sid}">View</button>
@@ -1486,6 +1691,8 @@ if (mlSessionBody) {
         toast("Plot viewer failed to initialize. Please refresh once.", "warn");
       });
     });
+
+    applyActiveMlSessionRow();
 
     mlSessionBody.querySelectorAll("button[data-del-sid]").forEach(btn => {
       btn.addEventListener("click", async () => {
