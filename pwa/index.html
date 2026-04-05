@@ -498,6 +498,25 @@
             </div>
           </div>
 
+          <div class="segment-tools panel panel-segment-tools">
+            <div class="segment-tools-head">
+              <div style="font-weight:900;">Segment Divider</div>
+              <div class="smallnote mono" id="segmentHint">Create non-overlapping Start / Steady / Arc / Close ranges for split CSV export.</div>
+            </div>
+            <div class="segment-toolbar">
+              <div class="chip"><label class="mono" for="segLabelSelect">Label</label><select id="segLabelSelect"><option value="start">Start</option><option value="steady" selected>Steady</option><option value="arc">Arc</option><option value="close">Close</option></select></div>
+              <div class="chip"><input id="segStartInput" class="viewer-index-input mono" type="text" placeholder="start idx" /></div>
+              <button class="btn btn-small" id="btnSegStartFromPlay" type="button">Set Start</button>
+              <div class="chip"><input id="segEndInput" class="viewer-index-input mono" type="text" placeholder="end idx" /></div>
+              <button class="btn btn-small" id="btnSegEndFromPlay" type="button">Set End</button>
+              <div class="chip"><input id="segLoadInput" class="viewer-index-input mono" type="text" placeholder="load type" /></div>
+              <div class="chip"><input id="segTrialInput" class="viewer-index-input mono" type="number" min="1" step="1" placeholder="trial" /></div>
+              <button class="btn btn-small btn-info" id="btnAddSegment" type="button">Add Segment</button>
+              <button class="btn btn-small btn-danger" id="btnClearSegment" type="button">Remove Segment</button>
+            </div>
+            <div id="segmentList" class="segment-list mono"></div>
+          </div>
+
           <div id="statusLine" class="smallnote mono"></div>
           <div id="valueLine" class="valueLineWrap mono"></div>
 

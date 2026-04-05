@@ -21,15 +21,15 @@ TINYML_DIR = SCRIPT_DIR.parent
 PROJECT_ROOT = TINYML_DIR.parent
 
 CSV_PATH = str(PROJECT_ROOT / "tinyml" / "data" / "cleaned_data.csv")
-OUT_HEADER = str(PROJECT_ROOT / "tinyml" / "TinyMLTreeEnsemble.h")
-OUT_JOBLIB = str(PROJECT_ROOT / "tinyml" / "trainer" / "TinyMLTreeEnsemble.joblib")
+OUT_HEADER = str(PROJECT_ROOT / "tinyml" / "model" / "TinyMLTreeEnsemble.h")
+OUT_JOBLIB = str(PROJECT_ROOT / "tinyml" / "trainer" / "lib" / "TinyMLTreeEnsemble.joblib")
 OUT_REPORT = str(PROJECT_ROOT / "tinyml" / "benchmark" / "benchmark_report.json")
 RF_REPORT = str(PROJECT_ROOT / "tinyml" / "benchmark" / "TinyMLTreeEnsemble_RF_report.json")
 ET_REPORT = str(PROJECT_ROOT / "tinyml" / "benchmark" / "TinyMLTreeEnsemble_ET_report.json")
-RF_JOBLIB = str(PROJECT_ROOT / "tinyml" / "trainer" / "TinyMLTreeEnsemble_RF.joblib")
-ET_JOBLIB = str(PROJECT_ROOT / "tinyml" / "trainer" / "TinyMLTreeEnsemble_ET.joblib")
-RF_HEADER = str(PROJECT_ROOT / "tinyml" / "TinyMLTreeEnsemble_RF.h")
-ET_HEADER = str(PROJECT_ROOT / "tinyml" / "TinyMLTreeEnsemble_ET.h")
+RF_JOBLIB = str(PROJECT_ROOT / "tinyml" / "trainer" / "lib" / "TinyMLTreeEnsemble_RF.joblib")
+ET_JOBLIB = str(PROJECT_ROOT / "tinyml" / "trainer" / "lib" / "TinyMLTreeEnsemble_ET.joblib")
+RF_HEADER = str(PROJECT_ROOT / "tinyml" / "model" / "TinyMLTreeEnsemble_RF.h")
+ET_HEADER = str(PROJECT_ROOT / "tinyml" / "model" / "TinyMLTreeEnsemble_ET.h")
 
 CHILD_MODEL_CONFIG = {
     "rf": {

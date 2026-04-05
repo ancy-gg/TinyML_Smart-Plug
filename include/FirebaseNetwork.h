@@ -203,6 +203,8 @@ private:
   bool _uploadFinalFlush = false;
   bool _uploadAuto = false;
   bool _suspendMlUpload = false;
+  bool _loggerFrozen = false;
+  uint32_t _sessionChunkSerial = 0;
 
   static bool timeLooksValid(time_t t);
   static String powerConditionForState(const String& state, float v);

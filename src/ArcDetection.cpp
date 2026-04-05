@@ -10,7 +10,7 @@
 #include "dsp_common.h"
 #include "esp_err.h"
 
-#define CONFIG_DSP_MAX_FFT_SIZE 4096
+#define CONFIG_DSP_MAX_FFT_SIZE 2048
 
 static inline float clampf(float x, float lo, float hi) {
   return (x < lo) ? lo : (x > hi) ? hi : x;
@@ -194,6 +194,7 @@ bool ArcDetection::compute(const uint16_t* raw, size_t n, float fs_hz,
                            const CurrentCalib& cal, float mainsHz,
                            ArcDetectionResult& out) {
   out = ArcDetectionResult{};
+  if (fabsf(fs_hz - FS_TARGET_HZ) <= FS_CANONICALIZE_TOL_HZ) fs_hz = FS_TARGET_HZ;
   out.fs_hz = fs_hz;
 
   if (!raw || n != N_SAMP || fs_hz < 1000.0f) return false;

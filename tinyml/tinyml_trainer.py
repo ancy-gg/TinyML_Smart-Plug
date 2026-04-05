@@ -932,9 +932,11 @@ class TinyMLTrainerGUI(tk.Tk):
             f"Rows: {data.get('rows_before_cleaning', 0)} → {data.get('rows_after_cleaning', 0)}  "
             f"(removed {data.get('rows_removed', 0)})\n"
             f"Trainable: {data.get('trainable_rows', 0)} | Trusted normal: {data.get('trusted_normal_rows', 0)} | Conflict-marked: {data.get('conflict_marked_rows', 0)}\n"
+            f"Forced-normal section rows: {data.get('forced_normal_section_rows', 0)} | Unknown-division rows: {data.get('unknown_division_rows', 0)} | Division counts: {data.get('division_counts', {})}\n"
             f"Conflict groups: {conflict.get('mixed_groups', 0)} | Prefer trusted normal: {conflict.get('prefer_trusted_normal', 0)} | Prefer stronger normal: {conflict.get('prefer_more_trusted_normal', 0)} | Keep stronger arc: {conflict.get('keep_more_trusted_arc', 0)} | Dropped ambiguous: {conflict.get('drop_ambiguous', 0)}\n"
             f"Labels: {data.get('label_counts', {})} | Sources: {data.get('source_counts', {})} | Policies kept: {policy}"
         )
+
 
 
     def _reset_progress(self):
@@ -1214,18 +1216,24 @@ class TinyMLTrainerGUI(tk.Tk):
         trainable = int(df["rf_train_row"].sum()) if "rf_train_row" in df.columns else rows
         label_counts = df["label_arc"].value_counts().to_dict() if "label_arc" in df.columns else {}
         source_counts = df["source_kind"].value_counts().to_dict() if "source_kind" in df.columns else {}
+        division_counts = df["division_tag"].fillna("").replace("", "unknown").value_counts().to_dict() if "division_tag" in df.columns else {}
         trusted_normal = int((df["trusted_normal_session"] == 1).sum()) if "trusted_normal_session" in df.columns else 0
         conflict_rows = int((df["label_conflict"] == 1).sum()) if "label_conflict" in df.columns else 0
+        trial_groups = int(df["trial_id"].astype(str).nunique()) if "trial_id" in df.columns else 0
+        section_groups = int(df["session_id"].astype(str).nunique()) if "session_id" in df.columns else 0
         conflict_policy_counts = df["conflict_policy"].value_counts().to_dict() if "conflict_policy" in df.columns else {}
         self.dataset_summary.set(
             f"Rows: {rows}\n"
             f"Trainable rows: {trainable}\n"
             f"Trusted normal rows: {trusted_normal}\n"
             f"Conflict-marked rows: {conflict_rows}\n"
+            f"Trial groups: {trial_groups} | Section groups: {section_groups}\n"
             f"Label counts: {label_counts}\n"
+            f"Division counts: {division_counts}\n"
             f"Source counts: {source_counts}\n"
             f"Conflict policies: {conflict_policy_counts}"
         )
+
 
         feature_cols = [
             "spectral_flux_midhf", "residual_crest_factor", "edge_spike_ratio", "midband_residual_ratio",

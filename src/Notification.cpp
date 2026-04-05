@@ -513,14 +513,23 @@ void Notification::updateBuzzer(FaultState st, float vProtect, float i, float t)
   const uint32_t now = millis();
 #if PROTECTION
   const float heatWarnC = TEMP_WARN_C;
-#else
-  const float heatWarnC = TEMP_DATA_WARN_C;
-#endif
   const bool heatActive = (st == STATE_HEATING) || (t >= heatWarnC);
   const bool arcActive  = (st == STATE_ARCING);
   const bool underVoltActive = (st == STATE_UNDERVOLTAGE);
   const bool overVoltActive  = (st == STATE_OVERVOLTAGE);
   const bool overloadActive  = (st == STATE_OVERLOAD) || (st == STATE_SUSTAINED_OVERLOAD) || (i >= OVERLOAD_WARN_A);
+#else
+  const float heatWarnC = TEMP_DATA_WARN_C;
+  (void)heatWarnC;
+  (void)vProtect;
+  (void)i;
+  (void)t;
+  const bool heatActive = false;
+  const bool arcActive  = false;
+  const bool underVoltActive = false;
+  const bool overVoltActive  = false;
+  const bool overloadActive  = false;
+#endif
 
   uint8_t wantedFaultSound = 255;
   if (heatActive) wantedFaultSound = SND_FAULT_HEAT;
@@ -549,6 +558,7 @@ void Notification::updateBuzzer(FaultState st, float vProtect, float i, float t)
     }
   }
 
+#if PROTECTION
   static bool mainsStable = false;
   static bool mainsInit = false;
   static uint32_t mainsOffSince = 0;
@@ -574,6 +584,7 @@ void Notification::updateBuzzer(FaultState st, float vProtect, float i, float t)
     mainsOffSince = 0;
     mainsOnSince = 0;
   }
+#endif
 
   soundLoop();
 }

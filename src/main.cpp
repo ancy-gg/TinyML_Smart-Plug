@@ -651,9 +651,10 @@ void loop() {
   static FeatureFrame lastF = {};
   static bool hasLast = false;
   static uint32_t lastFeatRxMs = 0;
+  bool freshFeatThisLoop = false;
   FeatureFrame f;
   if (qFeat && xQueueReceive(qFeat, &f, 0) == pdTRUE) {
-    lastF = f; hasLast = true; lastFeatRxMs = millis();
+    lastF = f; hasLast = true; lastFeatRxMs = millis(); freshFeatThisLoop = true;
   } else if (hasLast) {
     f = lastF;
     if ((millis() - lastFeatRxMs) > FEAT_STALE_MS) {
@@ -1008,7 +1009,9 @@ void loop() {
   protection.apply(st, vRms, vFast, irmsRawForLogic, tC);
   notification.updateBuzzer(st, vFast, irmsRawForLogic, tC);
   const bool mainsPresentStable = debouncedMainsPresentForState(vFast);
+#if PROTECTION
   handleCueEvents(vRaw, vFast, irmsRawForLogic, mainsPresentStable, paused || gSafeMode || protectionInhibit, st);
+#endif
 
   static uint32_t relayArtifactSinceMs = 0;
   static uint32_t lastRelayArtifactHealMs = 0;
@@ -1035,11 +1038,13 @@ void loop() {
   if (!paused && !gSafeMode && !relayNetQuietActive) pollMlControl(network, notification);
   else if (paused || gSafeMode) network.setLogEnabled(false);
   if (!paused && !gSafeMode) {
-    static uint32_t lastMl = 0;
-    const uint32_t period = 1000UL / ML_LOG_RATE_HZ;
-    if (millis() - lastMl >= period) {
-      lastMl = millis(); f.epoch_ms = network.isSynced() ? network.nowEpochMs() : 0;
-      FeatureFrame fLog = f; fLog.irms = irmsRawForLogic; network.ingestLog(fLog, st, protection.arcCounter());
+    static uint32_t lastLoggedFeatUptimeMs = 0;
+    if (freshFeatThisLoop && f.uptime_ms != 0 && f.uptime_ms != lastLoggedFeatUptimeMs) {
+      lastLoggedFeatUptimeMs = f.uptime_ms;
+      f.epoch_ms = network.isSynced() ? network.nowEpochMs() : 0;
+      FeatureFrame fLog = f;
+      fLog.irms = irmsRawForLogic;
+      network.ingestLog(fLog, st, protection.arcCounter());
     }
   }
 

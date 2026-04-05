@@ -17,8 +17,8 @@ TINYML_DIR = SCRIPT_DIR.parent
 PROJECT_ROOT = TINYML_DIR.parent
 
 CSV_PATH = str(PROJECT_ROOT / "tinyml" / "data" / "cleaned_data.csv")
-OUT_HEADER = str(PROJECT_ROOT / "tinyml" / "TinyMLTreeEnsemble_ET.h")
-OUT_JOBLIB = str(PROJECT_ROOT / "tinyml" / "trainer" / "TinyMLTreeEnsemble_ET.joblib")
+OUT_HEADER = str(PROJECT_ROOT / "tinyml" / "model" / "TinyMLTreeEnsemble_ET.h")
+OUT_JOBLIB = str(PROJECT_ROOT / "tinyml" / "trainer" / "lib" / "TinyMLTreeEnsemble_ET.joblib")
 OUT_REPORT = str(PROJECT_ROOT / "tinyml" / "benchmark" / "TinyMLTreeEnsemble_ET_report.json")
 
 

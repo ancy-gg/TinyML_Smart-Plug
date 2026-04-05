@@ -282,9 +282,6 @@ void UpdateManager::setInsecureTLS(bool en) {
 void UpdateManager::loop() {
   bootGuardLoop_();
 
-  // Confirm as early as possible after a successful boot.
-  if (!confirmNow()) return;
-
   if (WiFi.status() != WL_CONNECTED || !_cloud || !_cloud->isReady()) return;
 
   const uint32_t now = millis();

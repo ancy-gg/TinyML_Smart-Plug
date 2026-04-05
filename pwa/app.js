@@ -1547,7 +1547,95 @@ function downloadTextFileGeneric(filename, text, mime="text/csv;charset=utf-8") 
   URL.revokeObjectURL(url);
 }
 
-const UPLOADED_CSV_SAMPLE_RATE_HZ = 30;
+
+function normalizeUploadedCsvHeader(name) {
+  return String(name || "")
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "_")
+    .replace(/^_+|_+$/g, "");
+}
+
+function medianPositiveDiff(values) {
+  const diffs = [];
+  for (let i = 1; i < values.length; i++) {
+    const a = Number(values[i - 1]);
+    const b = Number(values[i]);
+    const d = b - a;
+    if (Number.isFinite(d) && d > 0) diffs.push(d);
+  }
+  if (!diffs.length) return null;
+  diffs.sort((a, b) => a - b);
+  return diffs[Math.floor(diffs.length / 2)] || null;
+}
+
+function buildContinuousSecondsFromField(rows, field, scale = 0.001) {
+  const raw = rows.map((row) => Number(row?.[field])).filter((v) => Number.isFinite(v));
+  if (raw.length < 2) return null;
+  const medianStep = Math.max(1e-6, ((medianPositiveDiff(raw) || 0) * scale) || 0);
+  if (!(medianStep > 0)) return null;
+  const gapThreshold = Math.max(medianStep * 4.0, 0.75);
+  let total = 0;
+  let prev = raw[0];
+  for (let i = 1; i < raw.length; i++) {
+    const cur = raw[i];
+    let dt = (cur - prev) * scale;
+    if (!Number.isFinite(dt) || dt <= 0) dt = medianStep;
+    if (dt > gapThreshold) dt = medianStep;
+    total += dt;
+    prev = cur;
+  }
+  return total > 0 ? total : null;
+}
+
+function parseDatasetFilenameMeta(name) {
+  const stem = String(name || "").replace(/\.[a-z0-9]+$/i, "").trim();
+  const parts = stem.split(/[_\s-]+/).filter(Boolean);
+  const aliases = { startup: "start", start: "start", steady: "steady", baseline: "steady", arc: "arc", close: "close", closing: "close" };
+  const last = String(parts[parts.length - 1] || "").toLowerCase();
+  const division = aliases[last] || "";
+  let trial = 1;
+  let endIdx = parts.length;
+  if (division) endIdx -= 1;
+  if (endIdx > 0) {
+    const maybeTrial = Number(parts[endIdx - 1]);
+    if (Number.isInteger(maybeTrial) && maybeTrial > 0) {
+      trial = maybeTrial;
+      endIdx -= 1;
+    }
+  }
+  const loadType = safeFilenameSegment(parts.slice(0, Math.max(0, endIdx)).join("_"), "uploaded_csv");
+  return { loadType, trial, division };
+}
+
+function deriveUploadedCsvTimingMeta(csvText) {
+  const clean = String(csvText || "").replace(/^\uFEFF/, "").trim();
+  if (!clean) return { rowCount: 0, durationS: null, startMs: null, endMs: null, sourceSampleRateHz: null };
+  const parsed = Papa.parse(clean, { header: true, dynamicTyping: true, skipEmptyLines: true, transformHeader: normalizeUploadedCsvHeader });
+  const rows = (parsed?.data || []).filter((row) => row && Object.keys(row).length);
+  const rowCount = rows.length;
+  if (!rowCount) return { rowCount: 0, durationS: null, startMs: null, endMs: null, sourceSampleRateHz: null };
+
+  const epochVals = rows.map((row) => Number(row?.epoch_ms)).filter((v) => Number.isFinite(v) && v > 0);
+  if (epochVals.length >= 2) {
+    const startMs = epochVals[0];
+    const endMs = epochVals[epochVals.length - 1];
+    return { rowCount, durationS: endMs > startMs ? ((endMs - startMs) / 1000) : null, startMs, endMs, sourceSampleRateHz: null };
+  }
+
+  const uptimeDuration = buildContinuousSecondsFromField(rows, "uptime_ms", 0.001);
+  if (uptimeDuration != null) {
+    const nowMs = Date.now();
+    return { rowCount, durationS: uptimeDuration, startMs: nowMs, endMs: nowMs + Math.round(uptimeDuration * 1000), sourceSampleRateHz: null };
+  }
+
+  const sourceFs = rows.map((row) => Number(row?.source_sample_rate_hz ?? row?.adc_fs_hz)).find((v) => Number.isFinite(v) && v > 0);
+  if (Number.isFinite(sourceFs) && sourceFs > 0) {
+    return { rowCount, durationS: rowCount / sourceFs, startMs: null, endMs: null, sourceSampleRateHz: sourceFs };
+  }
+
+  return { rowCount, durationS: null, startMs: null, endMs: null, sourceSampleRateHz: null };
+}
 
 function makeSessionId() { return "sess_" + Date.now(); }
 function labelText(v) {
@@ -1563,9 +1651,15 @@ function formatDurationSeconds(seconds) {
   return `${sec.toFixed(1)}s`;
 }
 function uploadedCsvDurationSeconds(meta) {
+  const explicit = Number(meta?.duration_s ?? meta?.source_duration_s);
+  if (Number.isFinite(explicit) && explicit > 0) return explicit;
+  const st = Number(meta?.start_ms || 0);
+  const en = Number(meta?.end_ms || 0);
+  if (st > 0 && en > st) return (en - st) / 1000;
   const rows = Number(meta?.row_count || 0);
-  if (rows <= 0) return null;
-  return rows / UPLOADED_CSV_SAMPLE_RATE_HZ;
+  const sourceFs = Number(meta?.source_sample_rate_hz || 0);
+  if (rows > 0 && Number.isFinite(sourceFs) && sourceFs > 0) return rows / sourceFs;
+  return null;
 }
 function isUploadedCsvSession(meta) {
   return !!(meta?.uploaded_csv || String(meta?.load_type || "").trim().toLowerCase() === "uploaded_csv");
@@ -1595,10 +1689,21 @@ async function fetchSessionCsv(sessionId) {
   if (!snap.exists()) return "";
   const chunksObj = snap.val() || {};
   const keys = Object.keys(chunksObj).sort((a,b) => {
-    const ai = Number(chunksObj[a]?.chunk_index);
-    const bi = Number(chunksObj[b]?.chunk_index);
+    const ax = chunksObj[a] || {};
+    const bx = chunksObj[b] || {};
+    const aSeq = Number(ax.chunk_seq);
+    const bSeq = Number(bx.chunk_seq);
+    if (Number.isFinite(aSeq) && Number.isFinite(bSeq) && aSeq !== bSeq) return aSeq - bSeq;
+    const aCreated = Number(ax.created_at || 0);
+    const bCreated = Number(bx.created_at || 0);
+    if (Number.isFinite(aCreated) && Number.isFinite(bCreated) && aCreated !== bCreated) return aCreated - bCreated;
+    const aFirstUp = Number(ax.first_uptime_ms);
+    const bFirstUp = Number(bx.first_uptime_ms);
+    if (Number.isFinite(aFirstUp) && Number.isFinite(bFirstUp) && aFirstUp !== bFirstUp) return aFirstUp - bFirstUp;
+    const ai = Number(ax.chunk_index);
+    const bi = Number(bx.chunk_index);
     if (Number.isFinite(ai) && Number.isFinite(bi) && ai !== bi) return ai - bi;
-    return (chunksObj[a]?.created_at || 0) - (chunksObj[b]?.created_at || 0);
+    return String(a).localeCompare(String(b));
   });
   let header = "";
   let rows = [];
@@ -1665,7 +1770,7 @@ if (mlLogEnable) {
         duration_s: dur,
         label_override: labelOv
       });
-      if (mlLogStatus) mlLogStatus.textContent = `Logging enabled. Session: ${sid} • Total ${dur}s • Upload chunk 10s`;
+      if (mlLogStatus) mlLogStatus.textContent = `Logging enabled. Session: ${sid} • Total ${dur}s • Uploads on finish or buffer pressure`;
       toast(`Logger enabled for ${dur}s.`, "ok");
     } else {
       const sid = currentSessionId;
@@ -1850,20 +1955,26 @@ async function storeUploadedCsvSession(fileName, csvText) {
   const sid = `upload_${Date.now()}_${safeSessionToken(fileName)}`;
   const header = lines[0].trimEnd();
   const rows = lines.slice(1);
+  const timing = deriveUploadedCsvTimingMeta(clean);
+  const fileMeta = parseDatasetFilenameMeta(fileName);
   const nowMs = Date.now();
-  const derivedDurationS = rows.length / UPLOADED_CSV_SAMPLE_RATE_HZ;
-  const derivedDurationMs = Math.max(0, Math.round(derivedDurationS * 1000));
+  const durationS = timing.durationS;
+  const durationMs = durationS != null ? Math.max(0, Math.round(durationS * 1000)) : 0;
+  const startMs = Number.isFinite(timing.startMs) && timing.startMs > 0 ? timing.startMs : nowMs;
+  const endMs = Number.isFinite(timing.endMs) && timing.endMs > startMs ? timing.endMs : (durationMs > 0 ? startMs + durationMs : null);
 
   const meta = {
-    start_ms: nowMs,
-    end_ms: nowMs + derivedDurationMs,
-    load_type: "uploaded_csv",
-    duration_s: derivedDurationS,
+    start_ms: startMs,
+    end_ms: endMs,
+    load_type: fileMeta.loadType || "uploaded_csv",
+    duration_s: durationS,
     label_override: -1,
     uploaded_csv: true,
     source_file: fileName || "uploaded_csv.csv",
-    row_count: rows.length,
-    source_sample_rate_hz: UPLOADED_CSV_SAMPLE_RATE_HZ
+    row_count: timing.rowCount || rows.length,
+    source_sample_rate_hz: timing.sourceSampleRateHz,
+    trial_number: fileMeta.trial,
+    division_tag: fileMeta.division || ""
   };
 
   await db.ref(`ml_sessions/${sid}`).set(meta);
@@ -1908,18 +2019,21 @@ mlCsvUpload?.addEventListener("change", async (ev) => {
     } catch (cloudErr) {
       console.error(cloudErr);
       const clean = String(text || "").replace(/^\uFEFF/, "").trim();
-      const rowCount = clean ? Math.max(0, clean.split(/\r?\n/).filter((line) => line.trim().length).length - 1) : 0;
-      const durationS = rowCount / UPLOADED_CSV_SAMPLE_RATE_HZ;
-      const startMs = Date.now();
+      const timing = deriveUploadedCsvTimingMeta(clean);
+      const fileMeta = parseDatasetFilenameMeta(file.name);
+      const startMs = Number.isFinite(timing.startMs) && timing.startMs > 0 ? timing.startMs : Date.now();
+      const endMs = Number.isFinite(timing.endMs) && timing.endMs > startMs ? timing.endMs : (timing.durationS != null ? startMs + Math.max(0, Math.round(timing.durationS * 1000)) : null);
       const meta = {
-        load_type: "uploaded_csv",
+        load_type: fileMeta.loadType || "uploaded_csv",
         uploaded_csv: true,
-        row_count: rowCount,
-        duration_s: durationS,
+        row_count: timing.rowCount,
+        duration_s: timing.durationS,
         start_ms: startMs,
-        end_ms: startMs + Math.max(0, Math.round(durationS * 1000)),
+        end_ms: endMs,
         source_file: file.name,
-        source_sample_rate_hz: UPLOADED_CSV_SAMPLE_RATE_HZ
+        source_sample_rate_hz: timing.sourceSampleRateHz,
+        trial_number: fileMeta.trial,
+        division_tag: fileMeta.division || ""
       };
       if (typeof window.openSessionViewerFromCsv !== "function") await waitForSessionViewerFns();
       if (typeof window.openSessionViewerFromCsv === "function") {

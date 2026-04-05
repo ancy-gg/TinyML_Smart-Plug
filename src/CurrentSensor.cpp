@@ -137,7 +137,29 @@ size_t CurrentSensor::capture(uint16_t* dst, size_t n, float* measuredFsHz) {
 
   const int64_t t1 = esp_timer_get_time();
   if (measuredFsHz && t1 > t0 && count > 0) {
-    *measuredFsHz = (count * 1000000.0f) / float(t1 - t0);
+    float rawFs = (count * 1000000.0f) / float(t1 - t0);
+    if (!isfinite(rawFs) || rawFs < MCP3204_FS_MIN_ACCEPT_HZ || rawFs > MCP3204_FS_MAX_ACCEPT_HZ) {
+      rawFs = MCP3204_FS_SNAP_HZ;
+    }
+
+    static bool fsPrimed = false;
+    static float fsFiltered = MCP3204_FS_SNAP_HZ;
+
+    if (!fsPrimed) {
+      fsFiltered = rawFs;
+      fsPrimed = true;
+    } else {
+      fsFiltered += MCP3204_FS_FILTER_ALPHA * (rawFs - fsFiltered);
+    }
+
+    float reportedFs = fsFiltered;
+    if (fabsf(rawFs - MCP3204_FS_SNAP_HZ) <= MCP3204_FS_SNAP_BAND_HZ ||
+        fabsf(fsFiltered - MCP3204_FS_SNAP_HZ) <= (0.5f * MCP3204_FS_SNAP_BAND_HZ)) {
+      reportedFs = MCP3204_FS_SNAP_HZ;
+      fsFiltered = reportedFs;
+    }
+
+    *measuredFsHz = reportedFs;
   }
   return count;
 }

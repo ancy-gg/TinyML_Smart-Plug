@@ -13,7 +13,7 @@ static constexpr bool ENABLE_AUTO_ARC_CAPTURE = false;
 // Cloud / OTA configuration
 static constexpr const char* FIREBASE_API_KEY = "AIzaSyAmJlZZszyWPJFgIkTAAl_TbIySys1nvEw";
 static constexpr const char* FIREBASE_DB_URL  = "tinyml-smart-plug-default-rtdb.asia-southeast1.firebasedatabase.app";
-static constexpr const char* FW_VERSION       = "v6.1-c-gen0";
+static constexpr const char* FW_VERSION       = "v7.0-c-gen0";
 static constexpr const char* OTA_DESIRED_VERSION_PATH = "/ota/desired_version";
 static constexpr const char* OTA_FIRMWARE_URL_PATH    = "/ota/firmware_url";
 
@@ -86,8 +86,9 @@ static constexpr uint8_t  BUZZER_STATUS_MAX_DUTY = 26;
 // =========================
 // Sampling and FFT
 // =========================
-static constexpr float    FS_TARGET_HZ = 35000.0f;
-static constexpr uint16_t N_SAMP       = 4096;
+static constexpr float    FS_TARGET_HZ = 32768.0f;
+static constexpr uint16_t N_SAMP       = 2048;
+static constexpr float    FS_CANONICALIZE_TOL_HZ = 4096.0f;
 static constexpr float    MAINS_F0_HZ  = 60.0f;
 
 static constexpr bool     CURRENT_SOFT_AAF_ENABLE = true;
@@ -274,6 +275,11 @@ static constexpr uint8_t  MCP3204_MEDIAN_SAMPLES = 1;
 static constexpr uint16_t MCP3204_STARTUP_FLUSH  = 256;
 static constexpr uint8_t  MCP3204_WARMUP_BURSTS  = 2;
 static constexpr uint8_t  MCP3204_BURST_FLUSH    = 4;
+static constexpr float    MCP3204_FS_FILTER_ALPHA = 0.18f;
+static constexpr float    MCP3204_FS_MIN_ACCEPT_HZ = 24000.0f;
+static constexpr float    MCP3204_FS_MAX_ACCEPT_HZ = 45000.0f;
+static constexpr float    MCP3204_FS_SNAP_HZ = FS_TARGET_HZ;
+static constexpr float    MCP3204_FS_SNAP_BAND_HZ = 4096.0f;
 
 static constexpr float IRMS_GATE_ON_A               = 0.050f;
 static constexpr float IRMS_GATE_OFF_A              = 0.025f;

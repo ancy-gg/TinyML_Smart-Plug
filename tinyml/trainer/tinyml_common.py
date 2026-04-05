@@ -47,7 +47,7 @@ FEATURES = [
     "abs_irms_zscore_vs_baseline",
 ]
 TARGET = "label_arc"
-GROUP_COL_CANDIDATES = ["session_id", "session", "sid"]
+GROUP_COL_CANDIDATES = ["trial_id", "session_id", "section_id", "session", "sid"]
 
 DB_FEATURE_SPACE_VERSION = 4
 DB_RATIO_FLOOR = 1e-6
@@ -295,6 +295,8 @@ def normalize_feature_names(df: pd.DataFrame) -> pd.DataFrame:
         "v_rms": "v_rms",
         "temp_c": "temp_c",
         "label_arc": "label_arc",
+        "trial_id": "trial_id",
+        "section_id": "section_id",
         "session_id": "session_id",
         "epoch_ms": "epoch_ms",
         "adc_fs_hz": "adc_fs_hz",
@@ -953,6 +955,7 @@ def load_clean_dataset(csv_path: str, include_invalid: bool = False):
         group_col = "_group"
 
     groups = df[group_col].astype(str)
+    df["_group_col_used"] = group_col
     X = df[FEATURES].astype(float)
     y = df[TARGET].astype(int)
     w = df["sample_weight"].astype(float).to_numpy()
@@ -1105,6 +1108,7 @@ def make_group_splits(X, y, groups, test_size=0.20):
             "negative_group_count": neg_group_count,
             "recommended_cv_splits": int(recommended_cv_splits),
             "stratified_group_cv": bool(StratifiedGroupKFold is not None and recommended_cv_splits >= 2),
+            "grouping_note": "Grouping prefers trial_id over session_id so start/steady/arc/close sections from one trial stay together.",
         },
     }
 
@@ -2002,6 +2006,17 @@ def export_header(
             f.write(f"// [{i}] {name}\n")
         f.write("\n#include <string.h>\n")
         f.write(c_code)
+
+    norm_out = out_header.replace("\\", "/")
+    marker = "/tinyml/model/"
+    if marker in norm_out:
+        compat_path = os.path.join(norm_out.split(marker, 1)[0], "tinyml", os.path.basename(out_header))
+        if os.path.abspath(compat_path) != os.path.abspath(out_header):
+            ensure_dir(compat_path)
+            with open(compat_path, "w", encoding="utf-8") as shim:
+                shim.write("#pragma once\n")
+                shim.write(f"// Compatibility shim that forwards to model/{os.path.basename(out_header)}\n")
+                shim.write(f"#include \"model/{os.path.basename(out_header)}\"\n")
 
 
 def save_model_bundle(

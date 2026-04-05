@@ -51,6 +51,17 @@
   const statsBody = $("statsBody");
   const btnCopyStats = $("btnCopyStats");
 
+  const segLabelSelect = $("segLabelSelect");
+  const segStartInput = $("segStartInput");
+  const segEndInput = $("segEndInput");
+  const segLoadInput = $("segLoadInput");
+  const segTrialInput = $("segTrialInput");
+  const btnSegStartFromPlay = $("btnSegStartFromPlay");
+  const btnSegEndFromPlay = $("btnSegEndFromPlay");
+  const btnAddSegment = $("btnAddSegment");
+  const btnClearSegment = $("btnClearSegment");
+  const segmentList = $("segmentList");
+
   const btnSeries = $("btnSeries");
   const btnCloseSeries = $("btnCloseSeries");
   const seriesSearch = $("seriesSearch");
@@ -85,6 +96,8 @@
   let currentCsv = "";
   let csvHeaders = [];
   let currentDownloadName = "TSP_ML_session.csv";
+  let currentMeta = {};
+  let SEGMENTS = [];
 
   function formatDisplayTimestamp(ms) {
     if (!ms || ms <= 0) return "—";
@@ -162,10 +175,14 @@
   }
 
   function viewerDurationSeconds(meta) {
-    const explicit = Number(meta?.duration_s);
+    const explicit = Number(meta?.duration_s ?? meta?.source_duration_s);
     if (Number.isFinite(explicit) && explicit > 0) return explicit;
+    const st = Number(meta?.start_ms || 0);
+    const en = Number(meta?.end_ms || 0);
+    if (st > 0 && en > st) return (en - st) / 1000;
     const rows = Number(meta?.row_count || 0);
-    if (rows > 0) return rows / 30;
+    const sourceFs = Number(meta?.source_sample_rate_hz || 0);
+    if (rows > 0 && Number.isFinite(sourceFs) && sourceFs > 0) return rows / sourceFs;
     return null;
   }
 
@@ -177,6 +194,189 @@
       : (Math.abs(dur - Math.round(dur)) < 0.05 ? `${Math.round(dur)}s` : `${dur.toFixed(1)}s`);
     const startText = Number(meta?.start_ms || 0) > 0 ? formatDisplayTimestamp(Number(meta.start_ms)) : "—";
     return `${titleizeTokenText(load, "Unknown")} • ${durText} • ${startText}`;
+  }
+
+  function parseDatasetFilenameMeta(name) {
+    const stem = String(name || "").replace(/\.[a-z0-9]+$/i, "").trim();
+    const parts = stem.split(/[_\s-]+/).filter(Boolean);
+    const aliases = { startup: "start", start: "start", steady: "steady", baseline: "steady", arc: "arc", close: "close", closing: "close" };
+    const last = String(parts[parts.length - 1] || "").toLowerCase();
+    const division = aliases[last] || "";
+    let trial = 1;
+    let endIdx = parts.length;
+    if (division) endIdx -= 1;
+    if (endIdx > 0) {
+      const maybeTrial = Number(parts[endIdx - 1]);
+      if (Number.isInteger(maybeTrial) && maybeTrial > 0) {
+        trial = maybeTrial;
+        endIdx -= 1;
+      }
+    }
+    const loadType = safeFilenameSegment(parts.slice(0, Math.max(0, endIdx)).join("_"), "session");
+    return { loadType, trial, division };
+  }
+
+  function safePositiveInt(value, fallback = 1) {
+    const n = Number(value);
+    return Number.isInteger(n) && n > 0 ? n : fallback;
+  }
+
+  function segmentLabelTitle(label) {
+    const norm = String(label || "steady").trim().toLowerCase();
+    return norm ? norm.charAt(0).toUpperCase() + norm.slice(1) : "Steady";
+  }
+
+  function segmentColor(label, alpha = 0.16) {
+    const a = Math.max(0.04, Math.min(0.85, alpha));
+    const colors = {
+      start: `rgba(77,163,255,${a})`,
+      steady: `rgba(46,204,113,${a})`,
+      arc: `rgba(255,140,26,${a})`,
+      close: `rgba(232,91,83,${a})`,
+    };
+    return colors[label] || `rgba(255,255,255,${a})`;
+  }
+
+  function normalizeSegmentLabel(label) {
+    const raw = String(label || "").trim().toLowerCase();
+    const aliases = { startup: "start", start: "start", steady: "steady", baseline: "steady", arc: "arc", close: "close", closing: "close" };
+    return aliases[raw] || "steady";
+  }
+
+  function getSegmentLoadValue() {
+    return safeFilenameSegment((segLoadInput?.value || currentMeta?.load_type || parseDatasetFilenameMeta(currentMeta?.source_file || sid).loadType || "session").trim(), "session");
+  }
+
+  function getSegmentTrialValue() {
+    return safePositiveInt(segTrialInput?.value || currentMeta?.trial_number || parseDatasetFilenameMeta(currentMeta?.source_file || sid).trial || 1, 1);
+  }
+
+  function applySegmentDefaults(meta = {}) {
+    const parsed = parseDatasetFilenameMeta(meta?.source_file || sid || "session");
+    if (segLoadInput) {
+      const preferredLoad = String(meta?.load_type || "").trim();
+      segLoadInput.value = safeFilenameSegment(preferredLoad && preferredLoad.toLowerCase() !== "uploaded_csv" ? preferredLoad : parsed.loadType, "session");
+    }
+    if (segTrialInput) segTrialInput.value = String(safePositiveInt(meta?.trial_number || parsed.trial || 1, 1));
+    if (segLabelSelect) segLabelSelect.value = normalizeSegmentLabel(meta?.division_tag || parsed.division || "steady");
+    if (segStartInput) segStartInput.value = "";
+    if (segEndInput) segEndInput.value = "";
+  }
+
+  function sortedSegments() {
+    return SEGMENTS.slice().sort((a, b) => (a.start - b.start) || (a.end - b.end) || String(a.label).localeCompare(String(b.label)));
+  }
+
+  function validateSegmentRange(startIdx, endIdx) {
+    if (!ROWS.length) throw new Error("No rows available for segmentation.");
+    if (!Number.isInteger(startIdx) || !Number.isInteger(endIdx)) throw new Error("Segment start/end must be whole row indices.");
+    if (startIdx < 0 || endIdx < 0 || startIdx >= ROWS.length || endIdx >= ROWS.length) throw new Error(`Segment indices must stay within 0-${Math.max(0, ROWS.length - 1)}.`);
+    if (endIdx < startIdx) throw new Error("Segment end must be greater than or equal to start.");
+    for (const seg of SEGMENTS) {
+      const overlap = !(endIdx < seg.start || startIdx > seg.end);
+      if (overlap) throw new Error(`Segment overlaps existing ${segmentLabelTitle(seg.label)} range ${seg.start}-${seg.end}.`);
+    }
+  }
+
+  function updateSegmentHint() {
+    const hint = $("segmentHint");
+    if (!hint) return;
+    hint.textContent = !ROWS.length
+      ? "Create non-overlapping Start / Steady / Arc / Close ranges for split CSV export."
+      : `Rows 0-${Math.max(0, ROWS.length - 1)} • Segments=${SEGMENTS.length} • Download splits by load/trial/label.`;
+  }
+
+  function renderSegmentList() {
+    if (!segmentList) return;
+    if (!SEGMENTS.length) {
+      segmentList.innerHTML = '<div class="segment-empty">No divider ranges yet. Add a non-overlapping Start / Steady / Arc / Close segment.</div>';
+      updateSegmentHint();
+      if (plot) plot.redraw();
+      return;
+    }
+    const sorted = sortedSegments();
+    segmentList.innerHTML = sorted.map((seg, idx) => `
+      <div class="segment-row" data-segment-id="${seg.id}">
+        <div class="segment-row-main">
+          <span class="segment-pill segment-pill-${seg.label}">${segmentLabelTitle(seg.label)}</span>
+          <span>#${idx + 1}</span>
+          <span>rows ${seg.start}-${seg.end}</span>
+          <span>(${Math.max(1, (seg.end - seg.start) + 1)} rows)</span>
+        </div>
+        <button type="button" class="btn btn-small btn-danger" data-remove-segment="${seg.id}">Remove</button>
+      </div>
+    `).join("");
+    segmentList.querySelectorAll("[data-remove-segment]").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        const id = btn.getAttribute("data-remove-segment");
+        SEGMENTS = SEGMENTS.filter((seg) => seg.id !== id);
+        renderSegmentList();
+        refreshDownloadBinding();
+      });
+    });
+    updateSegmentHint();
+    if (plot) plot.redraw();
+  }
+
+  function addSegmentFromInputs() {
+    const startRaw = String(segStartInput?.value || "").trim();
+    const endRaw = String(segEndInput?.value || "").trim();
+    const start = startRaw ? Number(startRaw) : playIdx;
+    const end = endRaw ? Number(endRaw) : start;
+    validateSegmentRange(start, end);
+    SEGMENTS.push({ id: `seg_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`, label: normalizeSegmentLabel(segLabelSelect?.value || "steady"), start, end });
+    SEGMENTS = sortedSegments();
+    if (segStartInput && !startRaw) segStartInput.value = String(start);
+    if (segEndInput && !endRaw) segEndInput.value = String(end);
+    renderSegmentList();
+    refreshDownloadBinding();
+    setStatus(`Added ${segmentLabelTitle(segLabelSelect?.value || "steady")} segment ${start}-${end}.`);
+  }
+
+  function removeSegmentFromInputs() {
+    if (!SEGMENTS.length) {
+      setStatus("No segments to remove.");
+      return;
+    }
+    const startRaw = String(segStartInput?.value || "").trim();
+    const endRaw = String(segEndInput?.value || "").trim();
+    const start = startRaw ? Number(startRaw) : playIdx;
+    const end = endRaw ? Number(endRaw) : start;
+    const before = SEGMENTS.length;
+    SEGMENTS = SEGMENTS.filter((seg) => (end < seg.start || start > seg.end));
+    renderSegmentList();
+    refreshDownloadBinding();
+    setStatus(before !== SEGMENTS.length ? `Removed ${before - SEGMENTS.length} segment(s).` : "No segment matched that selection.");
+  }
+
+  function buildSegmentCsvFiles() {
+    if (!SEGMENTS.length) return [];
+    csvHeaders = ensureCsvHeadersAndLabelArc(ROWS, csvHeaders);
+    const loadToken = getSegmentLoadValue();
+    const trial = getSegmentTrialValue();
+    const sorted = sortedSegments();
+    const labelTotals = {};
+    sorted.forEach((seg) => { labelTotals[seg.label] = (labelTotals[seg.label] || 0) + 1; });
+    const labelSeen = {};
+    return sorted.map((seg, idx) => {
+      labelSeen[seg.label] = (labelSeen[seg.label] || 0) + 1;
+      const rows = ROWS.slice(seg.start, seg.end + 1).map((row) => ({ ...row, load_type: loadToken, session_id: `${safeFilenameSegment(sid || 'session', 'session')}__${seg.label}_${String(idx + 1).padStart(2, '0')}` }));
+      const labelTitle = segmentLabelTitle(seg.label);
+      const suffix = labelTotals[seg.label] > 1 ? `_${labelSeen[seg.label]}` : "";
+      const filename = safeCsvFilename(`${loadToken}_${trial}_${labelTitle}${suffix}.csv`);
+      const text = Papa.unparse({ fields: csvHeaders, data: rows.map((row) => csvHeaders.map((field) => row?.[field] ?? ((field === 'label_arc') ? 0 : ""))) });
+      return { filename, text };
+    });
+  }
+
+  function downloadSegmentedCsvs() {
+    const files = buildSegmentCsvFiles();
+    if (!files.length) {
+      setStatus("No segments available for split download.");
+      return;
+    }
+    files.forEach((file, idx) => setTimeout(() => downloadTextFile(file.filename, file.text), idx * 140));
+    setStatus(`Downloading ${files.length} split CSV file(s).`);
   }
 
   function ensureCsvHeadersAndLabelArc(rows, parsedFields = []) {
@@ -208,7 +408,13 @@
 
   function refreshDownloadBinding() {
     if (!btnDownload) return;
+    const hasSegments = SEGMENTS.length > 0;
+    btnDownload.textContent = hasSegments ? `Download Split (${SEGMENTS.length})` : "Download CSV";
     btnDownload.onclick = () => {
+      if (hasSegments) {
+        downloadSegmentedCsvs();
+        return;
+      }
       const csv = buildCsvFromRows();
       if (!csv) return;
       currentCsv = csv;
@@ -458,10 +664,21 @@
     const chunksObj = snap.val() || {};
     const keys = Object.keys(chunksObj);
     keys.sort((a, b) => {
-      const ai = Number(chunksObj[a]?.chunk_index);
-      const bi = Number(chunksObj[b]?.chunk_index);
+      const ax = chunksObj[a] || {};
+      const bx = chunksObj[b] || {};
+      const aSeq = Number(ax.chunk_seq);
+      const bSeq = Number(bx.chunk_seq);
+      if (Number.isFinite(aSeq) && Number.isFinite(bSeq) && aSeq !== bSeq) return aSeq - bSeq;
+      const aCreated = Number(ax.created_at || 0);
+      const bCreated = Number(bx.created_at || 0);
+      if (Number.isFinite(aCreated) && Number.isFinite(bCreated) && aCreated !== bCreated) return aCreated - bCreated;
+      const aFirstUp = Number(ax.first_uptime_ms);
+      const bFirstUp = Number(bx.first_uptime_ms);
+      if (Number.isFinite(aFirstUp) && Number.isFinite(bFirstUp) && aFirstUp !== bFirstUp) return aFirstUp - bFirstUp;
+      const ai = Number(ax.chunk_index);
+      const bi = Number(bx.chunk_index);
       if (Number.isFinite(ai) && Number.isFinite(bi) && ai !== bi) return ai - bi;
-      return (chunksObj[a]?.created_at || 0) - (chunksObj[b]?.created_at || 0);
+      return String(a).localeCompare(String(b));
     });
 
     let header = "";
@@ -717,6 +934,8 @@
         applyZoomPercent(100, X[0]);
       }
       updateStats();
+      renderSegmentList();
+      refreshDownloadBinding();
       updateArcEditButtons();
     });
 
@@ -817,7 +1036,7 @@
   const showPref = new Map();
   const axisPref = new Map();
 
-  const DEFAULT_ON = new Set(["label_arc", "model_pred", "spectral_flux_midhf", "edge_spike_ratio", "midband_residual_ratio", "cycle_nmse", "peak_fluct_cv", "thd_i", "hf_energy_delta", "zcv", "abs_irms_zscore_vs_baseline"]);
+  const DEFAULT_ON = new Set(["i_rms", "current", "label_arc", "model_pred"]);
   const DEFAULT_Y2 = new Set(["residual_crest_factor", "edge_spike_ratio", "midband_residual_ratio", "hf_energy_delta", "i_rms", "current", "v_rms", "voltage", "temp_c", "temp"]);
 
   setViewerOpen(false);
@@ -846,10 +1065,10 @@
   }
 
   function preferredDefaultKeys(keys) {
-    const preferred = ["i_rms", "label_arc", "model_pred", "spectral_flux_midhf", "edge_spike_ratio", "midband_residual_ratio", "cycle_nmse", "hf_energy_delta", "zcv", "abs_irms_zscore_vs_baseline", "v_rms", "temp_c", "current", "voltage", "temp"];
+    const preferred = ["i_rms", "current", "label_arc", "model_pred"];
     const picked = preferred.filter((k) => keys.includes(k));
-    if (picked.length) return picked.slice(0, 8);
-    return keys.filter((k) => k !== "label_arc").slice(0, Math.min(8, keys.length));
+    if (picked.length) return picked;
+    return keys.filter((k) => k === "label_arc" || k === "model_pred" || k === "i_rms" || k === "current").slice(0, 4);
   }
 
   function resetState() {
@@ -877,6 +1096,8 @@
     currentCsv = "";
     csvHeaders = [];
     currentDownloadName = "TSP_ML_session.csv";
+    currentMeta = {};
+    SEGMENTS = [];
     if (toggleList) toggleList.innerHTML = "";
     if (valueLine) valueLine.innerHTML = "";
     if (statsBody) statsBody.innerHTML = "";
@@ -886,6 +1107,9 @@
     setStatus("Loading…");
     if (scrub) { scrub.min = "0"; scrub.max = "0"; scrub.value = "0"; }
     if (timeReadout) timeReadout.textContent = "t=—";
+    applySegmentDefaults({});
+    renderSegmentList();
+    refreshDownloadBinding();
     updateArcEditButtons();
   }
 
@@ -1195,19 +1419,42 @@
       hooks: {
         draw: [
           (u) => {
-            if (!chkEvents?.checked || ARC_SERIES_INDEX < 0 || !ARC_IDXS.length) return;
             const { ctx } = u;
             ctx.save();
-            ctx.strokeStyle = "rgba(255,90,60,0.85)";
-            ctx.lineWidth = 1;
-            for (const idx of ARC_IDXS) {
-              const x = X[idx];
-              if (x < u.scales.x.min || x > u.scales.x.max) continue;
-              const px = Math.round(u.valToPos(x, "x", true));
+            for (const seg of sortedSegments()) {
+              const x0 = X[seg.start];
+              const x1 = X[seg.end];
+              if (!Number.isFinite(x0) || !Number.isFinite(x1)) continue;
+              if (x1 < u.scales.x.min || x0 > u.scales.x.max) continue;
+              const left = Math.round(u.valToPos(x0, "x", true));
+              const right = Math.round(u.valToPos(x1, "x", true));
+              const width = Math.max(1, right - left);
+              ctx.fillStyle = segmentColor(seg.label, 0.10);
+              ctx.fillRect(left, u.bbox.top, width, u.bbox.height);
+              ctx.strokeStyle = segmentColor(seg.label, 0.55);
+              ctx.lineWidth = 1;
               ctx.beginPath();
-              ctx.moveTo(px + 0.5, u.bbox.top);
-              ctx.lineTo(px + 0.5, u.bbox.top + u.bbox.height);
+              ctx.moveTo(left + 0.5, u.bbox.top);
+              ctx.lineTo(left + 0.5, u.bbox.top + u.bbox.height);
+              ctx.moveTo(right + 0.5, u.bbox.top);
+              ctx.lineTo(right + 0.5, u.bbox.top + u.bbox.height);
               ctx.stroke();
+              ctx.fillStyle = segmentColor(seg.label, 0.90);
+              ctx.font = "12px system-ui";
+              ctx.fillText(segmentLabelTitle(seg.label), left + 6, u.bbox.top + 14);
+            }
+            if (chkEvents?.checked && ARC_SERIES_INDEX >= 0 && ARC_IDXS.length) {
+              ctx.strokeStyle = "rgba(255,90,60,0.85)";
+              ctx.lineWidth = 1;
+              for (const idx of ARC_IDXS) {
+                const x = X[idx];
+                if (x < u.scales.x.min || x > u.scales.x.max) continue;
+                const px = Math.round(u.valToPos(x, "x", true));
+                ctx.beginPath();
+                ctx.moveTo(px + 0.5, u.bbox.top);
+                ctx.lineTo(px + 0.5, u.bbox.top + u.bbox.height);
+                ctx.stroke();
+              }
             }
             ctx.restore();
           }
@@ -1636,6 +1883,10 @@
   btnSelAll?.addEventListener("click", () => setAllSeries(true));
   btnSelNone?.addEventListener("click", () => setAllSeries(false));
   btnSelDefault?.addEventListener("click", () => applyDefaultSelection());
+  btnSegStartFromPlay?.addEventListener("click", () => { if (ROWS.length) segStartInput.value = String(playIdx); });
+  btnSegEndFromPlay?.addEventListener("click", () => { if (ROWS.length) segEndInput.value = String(playIdx); });
+  btnAddSegment?.addEventListener("click", () => { try { addSegmentFromInputs(); } catch (err) { setStatus(err?.message || "Failed to add segment."); } });
+  btnClearSegment?.addEventListener("click", () => removeSegmentFromInputs());
   arcIndexInput?.addEventListener("keydown", (ev) => {
     if (ev.key !== "Enter") return;
     ev.preventDefault();
@@ -1705,9 +1956,14 @@
         const metaSnap = await db.ref(`ml_sessions/${sid}`).get();
         meta = metaSnap.exists() ? metaSnap.val() : {};
       }
+      currentMeta = meta || {};
+      SEGMENTS = [];
       titleEl.textContent = viewerDisplayName(meta, sid);
       metaEl.textContent = `${viewerMetaText(meta)} • ${sid}`;
       currentDownloadName = viewerDownloadName(meta, sid);
+      applySegmentDefaults(currentMeta);
+      renderSegmentList();
+      refreshDownloadBinding();
 
       setStatus("Fetching CSV chunks…");
       const csv = await fetchSessionCsv(sid);
@@ -1718,7 +1974,7 @@
         return;
       }
 
-      btnDownload.onclick = () => downloadTextFile(currentDownloadName, currentCsv);
+      refreshDownloadBinding();
 
       setStatus("Parsing CSV…");
       const parsed = Papa.parse(csv.trim(), { header: true, dynamicTyping: true, skipEmptyLines: true, transformHeader: normalizeHeaderName });
@@ -1755,10 +2011,15 @@
     sid = (name || "uploaded_csv").replace(/[^a-zA-Z0-9_.-]/g, "_");
     resetState();
     const meta = metaOverride || {};
+    currentMeta = meta || {};
+    SEGMENTS = [];
     titleEl.textContent = viewerDisplayName(meta, sid);
     metaEl.textContent = `${viewerMetaText(meta)} • Local CSV`;
     currentDownloadName = viewerDownloadName(meta, sid);
     currentCsv = csvText || "";
+    applySegmentDefaults(currentMeta);
+    renderSegmentList();
+    refreshDownloadBinding();
 
     try {
       if (!currentCsv.trim()) {

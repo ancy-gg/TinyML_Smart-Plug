@@ -15,7 +15,7 @@ SCRIPT_DIR = Path(__file__).resolve().parent
 TINYML_DIR = SCRIPT_DIR.parent
 PROJECT_ROOT = TINYML_DIR.parent
 
-DEFAULT_INPUT_GLOB = str(PROJECT_ROOT / "tinyml" / "data" / "raw" / "*.csv")
+DEFAULT_INPUT_GLOB = str(PROJECT_ROOT / "tinyml" / "data" / "raw" / "**" / "*.csv")
 DEFAULT_OUTPUT = str(PROJECT_ROOT / "tinyml" / "data" / "cleaned_data.csv")
 
 REAL_NEG_WEIGHT = 3.5
@@ -54,6 +54,15 @@ TRUSTED_NORMAL_NAME_TOKENS = (
     "arc_free",
 )
 
+FILENAME_DIVISION_ALIASES = {
+    "startup": "start",
+    "start": "start",
+    "steady": "steady",
+    "baseline": "steady",
+    "arc": "arc",
+    "close": "close",
+    "closing": "close",
+}
 
 DB_FEATURE_SPACE_VERSION = 4
 DB_RATIO_FLOOR = 1e-6
@@ -218,13 +227,14 @@ def _db_negative_score(series: pd.Series, neutral_db: float = 0.0, floor_db: flo
 def resolve_csv_files(csv_glob: str, output_path: str):
     files = []
     out_abs = os.path.abspath(output_path)
-    for path in sorted(glob.glob(csv_glob)):
-        if os.path.abspath(path) == out_abs:
+    for path in sorted(glob.glob(csv_glob, recursive=True)):
+        abs_path = os.path.abspath(path)
+        if abs_path == out_abs:
             continue
-        if os.path.isfile(path):
-            files.append(os.path.abspath(path))
+        if os.path.isfile(abs_path) and abs_path.lower().endswith(".csv"):
+            files.append(abs_path)
     if not files:
-        raise ValueError("No CSV files found in tinyml/data.")
+        raise ValueError(f"No CSV files found for pattern: {csv_glob}")
     return files
 
 
@@ -292,10 +302,58 @@ def _has_any_name_token(path: str, tokens) -> bool:
 
 
 
+def parse_filename_tokens(path: str) -> dict:
+    stem = Path(path).stem
+    parts = [p for p in re.split(r"[_\s-]+", stem) if p]
+    norm_parts = [str(p).lower() for p in parts]
+
+    division = ""
+    trial = 1
+    division_idx = None
+    trial_idx = None
+
+    for idx in range(len(norm_parts) - 1, -1, -1):
+        maybe_div = FILENAME_DIVISION_ALIASES.get(norm_parts[idx], "")
+        if maybe_div:
+            division = maybe_div
+            division_idx = idx
+            break
+
+    for idx in range(len(norm_parts) - 1, -1, -1):
+        if idx == division_idx:
+            continue
+        if re.fullmatch(r"\d+", norm_parts[idx] or ""):
+            trial = max(1, int(norm_parts[idx]))
+            trial_idx = idx
+            break
+
+    keep_tokens = []
+    for idx, token in enumerate(parts):
+        if idx in {division_idx, trial_idx}:
+            continue
+        keep_tokens.append(token)
+
+    load_type = re.sub(r"[^a-z0-9]+", "_", "_".join(keep_tokens).lower()).strip("_") or "unknown"
+    trial_key = f"{load_type}__trial{int(trial):03d}"
+    section_key = division or "unknown"
+    return {
+        "division_tag": division,
+        "trial_number": int(trial),
+        "parsed_load_type": load_type,
+        "trial_key": trial_key,
+        "section_key": section_key,
+    }
+
 def infer_source_kind(path: str):
     name = os.path.basename(path).lower()
+    tokens = parse_filename_tokens(path)
+    division = tokens.get("division_tag", "")
     if "scaffold" in name:
         return "scaffold", 1, 0
+    if division == "steady":
+        return "real", 4, 1
+    if division in {"start", "close"}:
+        return "real", 3, 0
     if _has_any_name_token(path, TRUSTED_NORMAL_NAME_TOKENS):
         return "real", 4, 1
     return "real", 3, 0
@@ -304,22 +362,44 @@ def infer_source_kind(path: str):
 
 def load_and_tag_csvs(csv_files):
     frames = []
+    raw_root = (PROJECT_ROOT / "tinyml" / "data" / "raw").resolve()
+
     for i, path in enumerate(csv_files):
         print(f"[{i + 1}/{len(csv_files)}] Loading: {path}")
         df = normalize_feature_names(pd.read_csv(path).copy())
-        base = os.path.splitext(os.path.basename(path))[0]
-        group_col = pick_group_column(df)
 
-        if group_col is None:
-            df["session_id"] = f"file_{i + 1:04d}_{base}"
-        else:
-            df[group_col] = base + "__" + df[group_col].astype(str)
+        path_obj = Path(path).resolve()
+        try:
+            rel_path = path_obj.relative_to(raw_root)
+        except ValueError:
+            rel_path = Path(path_obj.name)
 
+        rel_no_ext = rel_path.with_suffix("")
+        section_prefix = str(rel_no_ext).replace(chr(92), "__").replace("/", "__")
+
+        file_tokens = parse_filename_tokens(path)
         source_kind, source_priority, trusted_normal_session = infer_source_kind(path)
-        df["_source_file"] = os.path.basename(path)
+        source_folder = str(rel_path.parent).replace(chr(92), "/") if str(rel_path.parent) != "." else ""
+        trial_stem = f"{file_tokens.get('trial_key', 'unknown__trial001')}"
+        trial_prefix = "__".join([p for p in [source_folder.replace('/', '__'), trial_stem] if p]) or trial_stem
+
+        group_col = pick_group_column(df)
+        if group_col is None:
+            df["session_id"] = f"section__{section_prefix}"
+        else:
+            df[group_col] = section_prefix + "__" + df[group_col].astype(str)
+        df["trial_id"] = trial_prefix
+        df["section_id"] = section_prefix
+
+        df["_source_file"] = str(rel_path).replace(chr(92), "/")
+        df["_source_folder"] = source_folder
         df["source_kind"] = source_kind
         df["source_priority"] = source_priority
         df["trusted_normal_session"] = int(trusted_normal_session)
+        df["division_tag"] = file_tokens.get("division_tag", "")
+        df["trial_number"] = int(file_tokens.get("trial_number", 1))
+        df["parsed_load_type"] = file_tokens.get("parsed_load_type", "unknown")
+        df["section_key"] = file_tokens.get("section_key", "unknown")
         if "rf_train_row" not in df.columns:
             df["rf_train_row"] = 1
         frames.append(df)
@@ -488,8 +568,15 @@ def attach_training_metadata(df: pd.DataFrame) -> tuple[pd.DataFrame, dict]:
         df["rf_train_row"] = 1
     df["rf_train_row"] = pd.to_numeric(df["rf_train_row"], errors="coerce").fillna(1).astype(int)
 
+    division_tag = df.get("division_tag", pd.Series("", index=df.index, dtype=object)).astype(str).str.lower()
+
     # Explicit trusted-normal files remain strong negatives.
     df.loc[df["trusted_normal_session"] == 1, TARGET] = 0
+
+    # Section semantics: start/steady/close are all normal-only. Only arc sections may
+    # contain positive rows, and even those may still include label 0 rows.
+    forced_normal_section = division_tag.isin(["start", "steady", "close"])
+    df.loc[forced_normal_section, TARGET] = 0
 
     df["label_trust"] = _build_label_trust(df)
     df["arc_like_score"], df["normal_like_score"] = build_quality_scores(df)
@@ -580,7 +667,7 @@ def attach_training_metadata(df: pd.DataFrame) -> tuple[pd.DataFrame, dict]:
         transient_norm = (
             (df[TARGET] == 0)
             & (df["rf_train_row"] == 1)
-            & turn_like
+            & (turn_like | division_tag.isin(["start", "close"]))
             & (df["trusted_normal_session"] == 0)
             & (df["arc_like_score"] < SOFT_NEGATIVE_ARC_SCORE)
         )
@@ -806,6 +893,10 @@ def clean_dataset(df: pd.DataFrame) -> tuple[pd.DataFrame, dict]:
             else {}
         ),
         "quality_summary": {str(k): int(v) for k, v in quality_summary.items()},
+        "division_counts": ({str(k): int(v) for k, v in df["division_tag"].fillna("").replace("", "unknown").value_counts().to_dict().items()} if "division_tag" in df.columns else {}),
+        "trial_counts": ({str(k): int(v) for k, v in df["trial_id"].astype(str).value_counts().to_dict().items()} if "trial_id" in df.columns else {}),
+        "unknown_division_rows": int((df.get("division_tag", pd.Series("", index=df.index, dtype=object)).astype(str).str.strip() == "").sum()),
+        "forced_normal_section_rows": int((df.get("division_tag", pd.Series("", index=df.index, dtype=object)).astype(str).str.lower().isin(["start", "steady", "close"])).sum()),
         "conflict_resolution": {str(k): int(v) for k, v in conflict_stats.items()},
     }
     return df, summary

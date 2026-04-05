@@ -675,6 +675,12 @@ void FirebaseNetwork::ingestLog(const FeatureFrame& f, FaultState st, int arcCou
   const SessionSpec& spec = activeSpec();
   if (spec.sessionId.length() < 3 || !_buf || _maxRec == 0 || _count >= _maxRec) return;
 
+  const bool manualExpired =
+      _manualEnabled &&
+      (_sessionStartMs != 0) &&
+      ((millis() - _sessionStartMs) >= ((uint32_t)spec.durationS * 1000UL));
+  if (manualExpired) return;
+
   const bool usefulCurrent = (f.current_valid != 0) || (f.feat_valid != 0) || (f.irms >= CURRENT_DISPLAY_OFF_A);
   const bool mainsPresent = (f.vrms >= MAINS_PRESENT_ON_V);
   const bool keepFault = (st != STATE_NORMAL);
@@ -829,6 +835,8 @@ bool FirebaseNetwork::serviceMlUpload_() {
 
   const uint16_t i0 = _uploadNextIndex;
   const uint16_t i1 = ((uint16_t)(i0 + ROWS_PER_CHUNK) < _uploadTotalCount) ? (uint16_t)(i0 + ROWS_PER_CHUNK) : _uploadTotalCount;
+  const Rec& firstRec = _buf[i0];
+  const Rec& lastRec  = _buf[i1 - 1];
   const char* header = "spectral_flux_midhf,residual_crest_factor,edge_spike_ratio,midband_residual_ratio,cycle_nmse,peak_fluct_cv,thd_i,hf_energy_delta,zcv,abs_irms_zscore_vs_baseline,v_rms,i_rms,temp_c,label_arc,load_type,session_id,epoch_ms,uptime_ms,model_pred,feat_valid,current_valid,fault_state,arc_counter,adc_fs_hz,auto_capture,feature_space_version\n";
 
   String csv;
@@ -871,7 +879,12 @@ bool FirebaseNetwork::serviceMlUpload_() {
   json.set("count", (int)(i1 - i0));
   json.set("total_count", (int)_uploadTotalCount);
   json.set("chunk_index", (int)_uploadChunkIndex);
+  json.set("chunk_seq", (int)_uploadChunkIndex);
   json.set("chunk_count", (int)_uploadChunkCount);
+  json.set("first_epoch_ms", (double)firstRec.epoch_ms);
+  json.set("last_epoch_ms", (double)lastRec.epoch_ms);
+  json.set("first_uptime_ms", (int)firstRec.uptime_ms);
+  json.set("last_uptime_ms", (int)lastRec.uptime_ms);
   json.set("final", _uploadFinalFlush && (i1 >= _uploadTotalCount));
   json.set("csv", csv);
   json.set("meta/session_id", _uploadSpec.sessionId);
