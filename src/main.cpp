@@ -856,11 +856,13 @@ void loop() {
 
   static uint32_t relayActionAtMs = 0;
   static uint32_t relayNetQuietUntilMs = 0;
+  static uint32_t controlPollMuteUntilMs = 0;
   static bool pendingProtectionTripOff = false;
   static bool pendingProtectionAutoOn = false;
   bool relayNetQuietActive = ((int32_t)(relayNetQuietUntilMs - millis()) > 0);
+  const bool controlPollMuted = ((int32_t)(controlPollMuteUntilMs - millis()) > 0);
 
-  network.pollControls(!paused && !portalActive && wifiConnected && !relayNetQuietActive, portalActive);
+  network.pollControls(!paused && !portalActive && wifiConnected && !relayNetQuietActive && !controlPollMuted, portalActive);
 
   const bool faultClearRequested = (!gSafeMode) ? network.consumeFaultClearRequest() : false;
   const bool revertFirmwareRequested = network.consumeRevertFirmwareRequest();
@@ -999,6 +1001,11 @@ void loop() {
 
   relayNetQuietActive = ((int32_t)(relayNetQuietUntilMs - millis()) > 0);
 
+  if (st != STATE_NORMAL || tripOffEdge || relayNetQuietActive) {
+    const uint32_t muteUntil = millis() + FAULT_NET_QUIET_MS;
+    if ((int32_t)(controlPollMuteUntilMs - muteUntil) < 0) controlPollMuteUntilMs = muteUntil;
+  }
+
   if (tripOffEdge && !paused && !gSafeMode) {
     FeatureFrame fTrip = f;
     fTrip.epoch_ms = network.isSynced() ? network.nowEpochMs() : 0;
@@ -1034,7 +1041,7 @@ void loop() {
     relayArtifactSinceMs = 0;
   }
 
-  network.setMlUploadSuspended(relayNetQuietActive || paused || gSafeMode);
+  network.setMlUploadSuspended(relayNetQuietActive || paused || gSafeMode || (st != STATE_NORMAL));
   if (!paused && !gSafeMode && !relayNetQuietActive) pollMlControl(network, notification);
   else if (paused || gSafeMode) network.setLogEnabled(false);
   if (!paused && !gSafeMode) {
@@ -1111,7 +1118,7 @@ void loop() {
                               f.thd_i, f.hf_energy_delta,
                               f.zcv, f.abs_irms_zscore_vs_baseline,
                               f.model_pred, stateStr,
-                              protection.webControlLocked(), controlsLocked, effectiveRelayLatchedOn);
+                              protection.faultLatched(), controlsLocked, effectiveRelayLatchedOn);
   }
 
   if (!paused && ((int32_t)(relayNetQuietUntilMs - millis()) <= 0)) network.loop();

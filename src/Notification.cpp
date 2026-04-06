@@ -415,7 +415,7 @@ void Notification::drawUnplugged(uint32_t nowMs) {
 void Notification::drawFaultSlide(uint32_t nowMs, OledOverlay ov) {
   (void)nowMs;
 
-  if (ov == OledOverlay::FAULT_OVERVOLT || ov == OledOverlay::FAULT_SURGE) {
+  if (ov == OledOverlay::FAULT_OVERVOLT) {
     drawCenteredText("OVERVOLTAGE", 12, 1);
     return;
   }
@@ -431,7 +431,7 @@ void Notification::drawFaultSlide(uint32_t nowMs, OledOverlay ov) {
     return;
   }
 
-  if (ov == OledOverlay::FAULT_HEAT || ov == OledOverlay::FAULT_TEMP_CRITICAL) {
+  if (ov == OledOverlay::FAULT_HEAT) {
     drawCenteredText("HEATING", 12, 1);
     return;
   }

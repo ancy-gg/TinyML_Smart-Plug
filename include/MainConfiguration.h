@@ -13,7 +13,7 @@ static constexpr bool ENABLE_AUTO_ARC_CAPTURE = false;
 // Cloud / OTA configuration
 static constexpr const char* FIREBASE_API_KEY = "AIzaSyAmJlZZszyWPJFgIkTAAl_TbIySys1nvEw";
 static constexpr const char* FIREBASE_DB_URL  = "tinyml-smart-plug-default-rtdb.asia-southeast1.firebasedatabase.app";
-static constexpr const char* FW_VERSION       = "v7.0-c-gen0";
+static constexpr const char* FW_VERSION       = "v7.0.3-c-gen0";
 static constexpr const char* OTA_DESIRED_VERSION_PATH = "/ota/desired_version";
 static constexpr const char* OTA_FIRMWARE_URL_PATH    = "/ota/firmware_url";
 
@@ -71,7 +71,6 @@ struct FeatureFrame {
 // =========================
 // Relay / buzzer hardware
 // =========================
-static constexpr bool RELAY_ACTIVE_LOW      = true;
 static constexpr bool BUZZER_PASSIVE_PWM    = true;
 static constexpr uint8_t BUZZER_PWM_BITS    = 8;
 static constexpr uint8_t BUZZER_PWM_DUTY    = 128;
@@ -99,31 +98,29 @@ static constexpr float    CURRENT_SOFT_AAF_MAX_FRAC_NYQUIST = 0.98f;
 // =========================
 // Wi-Fi startup / portal
 // =========================
-static constexpr uint32_t WIFI_BOOT_CONNECT_MS      = 10000UL;
-static constexpr uint32_t WIFI_CONNECT_TIMEOUT_MS   = 10000UL;
-static constexpr uint32_t WIFI_PORTAL_TIMEOUT_MS    = 30000UL;
+static constexpr uint32_t WIFI_BOOT_CONNECT_MS      = 15000UL;
+static constexpr uint32_t WIFI_CONNECT_TIMEOUT_MS   = 15000UL;
+static constexpr uint32_t WIFI_PORTAL_TIMEOUT_MS    = 45000UL;
 static constexpr uint32_t WIFI_BACKGROUND_RETRY_MS  = 60000UL;
 static constexpr uint32_t WIFI_STA_RETRY_MS         = 2500UL;
-static constexpr uint32_t WIFI_BOOT_NO_CRED_AP_WINDOW_MS = 10000UL;
-static constexpr uint32_t WIFI_MANUAL_AP_WINDOW_MS  = 30000UL;
-static constexpr uint32_t WIFI_MANUAL_PORTAL_TIMEOUT_MS = 180000UL;
+static constexpr uint32_t WIFI_BOOT_NO_CRED_AP_WINDOW_MS = 15000UL;
+static constexpr uint32_t WIFI_MANUAL_AP_WINDOW_MS  = 45000UL;
+static constexpr uint32_t WIFI_MANUAL_PORTAL_TIMEOUT_MS = 240000UL;
 static constexpr uint32_t WIFI_PORTAL_AP_GRACE_MS   = 1500UL;
 static constexpr const char* WIFI_PORTAL_SSID       = "TinyML-SmartPlug";
 
 // =========================
 // Protection thresholds
 // =========================
-static constexpr float VOLT_NORMAL_MIN_V = 207.0f;
-static constexpr float VOLT_NORMAL_MAX_V = 253.0f;
+static constexpr float VOLT_NORMAL_MIN_V = 200.0f;
+static constexpr float VOLT_NORMAL_MAX_V = 250.0f;
 static constexpr float VOLT_UV_INSTANT_V = 170.0f;
 static constexpr float VOLT_UV_DELAY_V   = 200.0f;
-static constexpr float VOLT_UV_WARN_V    = 207.0f;
 static constexpr float VOLT_OV_DELAY_V   = 250.0f;
-static constexpr float VOLT_OV_INSTANT_V = 265.0f;
+static constexpr float VOLT_OV_INSTANT_V = 260.0f;
 
 static constexpr uint32_t VOLT_UV_INSTANT_MS = 0UL;
 static constexpr uint32_t VOLT_UV_DELAY_MS   = 7000UL;
-static constexpr uint32_t VOLT_UV_WARN_MS    = 60000UL;
 static constexpr uint32_t VOLT_OV_DELAY_MS   = 7000UL;
 static constexpr uint32_t VOLT_OV_INSTANT_MS = 0UL;
 
@@ -133,9 +130,7 @@ static constexpr float VOLT_RECOVER_MAX_V = 250.0f;
 static constexpr uint32_t VOLTAGE_RECLOSE_STABLE_MS = 5UL * 60UL * 1000UL;
 
 static constexpr float OVERLOAD_WARN_A      = 10.0f;
-static constexpr float OVERLOAD_HARD_TRIP_A = 15.0f;
 static constexpr float SUSTAINED_OVERLOAD_TRIP_A = 14.5f;
-static constexpr uint32_t OVERLOAD_TRIP_MS  = 250UL;
 static constexpr uint32_t SUSTAINED_OVERLOAD_TRIP_MS = 60UL * 1000UL;
 
 static constexpr float TEMP_WARN_C          = 60.0f;
@@ -194,8 +189,6 @@ static constexpr float BASELINE_STABLE_EDGE_SPIKE_DB     = -20.000f; // 20*log10
 static constexpr float BASELINE_STABLE_MIDBAND_RATIO_DB  = -24.437f; // 20*log10(0.06)
 static constexpr float BASELINE_STABLE_HF_DELTA_DB       = 0.80f;
 
-static constexpr int HEAT_FRAMES_TRIP = 6;
-static constexpr int HEAT_FRAMES_DEC  = 1;
 
 // =========================
 // Pins (XIAO ESP32S3)

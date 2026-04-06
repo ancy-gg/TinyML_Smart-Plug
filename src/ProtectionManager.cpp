@@ -30,7 +30,6 @@ void ProtectionManager::begin(int pinLatchOn, int pinLatchOff) {
   _relayLatchedOn   = false;
   _pulseOnUntil     = 0;
   _pulseOffUntil    = 0;
-  _loadDetectSince  = 0;
   _lastRelayPulseMs = 0;
 
   resetLatch();
@@ -138,9 +137,7 @@ FaultState ProtectionManager::update(float vProtect, float vRaw, float tempC, fl
 
   if (underVoltCandidate && !arcActive) {
     if (_underVoltSince == 0) _underVoltSince = now;
-    uint32_t need = VOLT_UV_WARN_MS;
-    if (vVote <= VOLT_UV_INSTANT_V) need = VOLT_UV_INSTANT_MS;
-    else if (vVote <= VOLT_UV_DELAY_V) need = VOLT_UV_DELAY_MS;
+    const uint32_t need = (vVote <= VOLT_UV_INSTANT_V) ? VOLT_UV_INSTANT_MS : VOLT_UV_DELAY_MS;
     underVoltValid = (need == 0UL) || ((now - _underVoltSince) >= need);
   } else {
     _underVoltSince = 0;
@@ -224,34 +221,21 @@ void ProtectionManager::apply(FaultState st, float vDisplay, float vProtect, flo
   updateRelayPulse_();
 
   const bool arcActive  = (st == STATE_ARCING);
-  const bool heatWarnActive = (st == STATE_HEATING) || (t >= TEMP_WARN_C);
   const bool heatTripActive = (t >= heatTripTempC());
   const bool underVoltActive = (st == STATE_UNDERVOLTAGE);
   const bool overVoltActive  = (st == STATE_OVERVOLTAGE);
   const bool overloadTripActive = (st == STATE_SUSTAINED_OVERLOAD);
 
-  static bool mainsStable = false;
-  static bool mainsInit = false;
   static uint32_t mainsOffSince = 0;
-  static uint32_t mainsOnSince = 0;
-  const bool rawOn = (vProtect >= MAINS_PRESENT_ON_V);
   const bool rawOff = (vProtect <= MAINS_PRESENT_OFF_V);
-  if (!mainsInit) { mainsStable = rawOn; mainsInit = true; }
+
   if (rawOff) {
     if (mainsOffSince == 0) mainsOffSince = now;
-    mainsOnSince = 0;
-    if (mainsStable && (now - mainsOffSince) >= UNPLUGGED_BUZZ_DELAY_MS) mainsStable = false;
-  } else if (rawOn) {
-    if (mainsOnSince == 0) mainsOnSince = now;
-    mainsOffSince = 0;
-    if (!mainsStable && (now - mainsOnSince) >= MAINS_EDGE_DEBOUNCE_MS) mainsStable = true;
   } else {
     mainsOffSince = 0;
-    mainsOnSince = 0;
   }
 
   const bool unplugged = rawOff && (mainsOffSince != 0) && ((now - mainsOffSince) >= UNPLUGGED_STATE_DELAY_MS);
-  const bool criticalBlock = arcActive || heatTripActive || underVoltActive || overVoltActive || overloadTripActive;
 
   if (unplugged && _relayLatchedOn) {
     pulseRelayOff(LATCH_OFF_PULSE_MS);
@@ -259,8 +243,5 @@ void ProtectionManager::apply(FaultState st, float vDisplay, float vProtect, flo
 
   // Keep the relay latched OFF after protection trips.
   // Re-close should only happen from explicit commands or the dedicated voltage-recovery path.
-  (void)criticalBlock;
-  (void)mainsStable;
   (void)i;
-  _loadDetectSince = 0;
 }

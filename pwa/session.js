@@ -663,21 +663,35 @@
 
     const chunksObj = snap.val() || {};
     const keys = Object.keys(chunksObj);
+    const hasMonotonicSessionSeq = keys.every((k) => Number.isFinite(Number(chunksObj[k]?.session_chunk_seq)));
     keys.sort((a, b) => {
       const ax = chunksObj[a] || {};
       const bx = chunksObj[b] || {};
-      const aSeq = Number(ax.chunk_seq);
-      const bSeq = Number(bx.chunk_seq);
-      if (Number.isFinite(aSeq) && Number.isFinite(bSeq) && aSeq !== bSeq) return aSeq - bSeq;
-      const aCreated = Number(ax.created_at || 0);
-      const bCreated = Number(bx.created_at || 0);
-      if (Number.isFinite(aCreated) && Number.isFinite(bCreated) && aCreated !== bCreated) return aCreated - bCreated;
+
+      const aSessionSeq = Number(ax.session_chunk_seq);
+      const bSessionSeq = Number(bx.session_chunk_seq);
+      if (hasMonotonicSessionSeq && aSessionSeq !== bSessionSeq) return aSessionSeq - bSessionSeq;
+
       const aFirstUp = Number(ax.first_uptime_ms);
       const bFirstUp = Number(bx.first_uptime_ms);
       if (Number.isFinite(aFirstUp) && Number.isFinite(bFirstUp) && aFirstUp !== bFirstUp) return aFirstUp - bFirstUp;
+
+      const aFirstEpoch = Number(ax.first_epoch_ms);
+      const bFirstEpoch = Number(bx.first_epoch_ms);
+      if (Number.isFinite(aFirstEpoch) && Number.isFinite(bFirstEpoch) && aFirstEpoch !== bFirstEpoch) return aFirstEpoch - bFirstEpoch;
+
+      const aCreated = Number(ax.created_at || 0);
+      const bCreated = Number(bx.created_at || 0);
+      if (Number.isFinite(aCreated) && Number.isFinite(bCreated) && aCreated !== bCreated) return aCreated - bCreated;
+
+      const aSeq = Number(ax.chunk_seq);
+      const bSeq = Number(bx.chunk_seq);
+      if (Number.isFinite(aSeq) && Number.isFinite(bSeq) && aSeq !== bSeq) return aSeq - bSeq;
+
       const ai = Number(ax.chunk_index);
       const bi = Number(bx.chunk_index);
       if (Number.isFinite(ai) && Number.isFinite(bi) && ai !== bi) return ai - bi;
+
       return String(a).localeCompare(String(b));
     });
 

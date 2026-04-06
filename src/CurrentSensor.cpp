@@ -34,6 +34,7 @@ namespace {
 }
 
 bool CurrentSensor::initMcp3204_() {
+  if (_dev != nullptr) return true;
   pinMode(PIN_ADC_CS, OUTPUT);
   digitalWrite(PIN_ADC_CS, HIGH);
   delayMicroseconds(50);
@@ -62,6 +63,7 @@ bool CurrentSensor::initMcp3204_() {
 }
 
 bool CurrentSensor::begin() {
+  if (_dev != nullptr) return true;
   if (!initMcp3204_()) return false;
 
   spi_transaction_t t;

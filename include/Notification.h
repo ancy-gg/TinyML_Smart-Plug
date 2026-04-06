@@ -22,8 +22,6 @@ enum class OledOverlay : uint8_t {
   FAULT_OVERLOAD,
   FAULT_UNDERVOLT,
   FAULT_OVERVOLT,
-  FAULT_SURGE,
-  FAULT_TEMP_CRITICAL,
   UNPLUGGED
 };
 

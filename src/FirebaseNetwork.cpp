@@ -225,10 +225,13 @@ bool FirebaseNetwork::publishControlAck(const String& kind, const String& token)
 
 
 bool FirebaseNetwork::enqueueHistory_(const HistoryJob& job) {
-  if (_historyCount >= HISTORY_QUEUE_MAX) return false;
+  if (_historyCount >= HISTORY_QUEUE_MAX) {
+    HistoryJob dropped;
+    (void)dequeueHistory_(dropped);
+  }
   _historyQueue[_historyTail] = job;
   _historyTail = (uint8_t)((_historyTail + 1U) % HISTORY_QUEUE_MAX);
-  _historyCount++;
+  if (_historyCount < HISTORY_QUEUE_MAX) _historyCount++;
   return true;
 }
 
@@ -729,6 +732,7 @@ void FirebaseNetwork::resetLoggerRuntime_() {
   _uploadFinalFlush = false;
   _uploadAuto = false;
   _suspendMlUpload = false;
+  _sessionChunkSerial = 0;
 }
 
 bool FirebaseNetwork::closeManualSession_(const String& finishedSessionId) {
@@ -757,7 +761,7 @@ void FirebaseNetwork::serviceMlState_() {
       _uploadTotalCount = _count;
       _uploadNextIndex = 0;
       _uploadChunkCount = (_uploadTotalCount + ROWS_PER_CHUNK - 1U) / ROWS_PER_CHUNK;
-      _uploadChunkIndex = 0;
+      _uploadChunkIndex = _sessionChunkSerial;
       _uploadFinalFlush = true;
       _uploadAuto = activeIsAuto();
       _mlUploadActive = (_uploadTotalCount > 0);
@@ -798,7 +802,7 @@ void FirebaseNetwork::serviceMlState_() {
   _uploadTotalCount = _count;
   _uploadNextIndex = 0;
   _uploadChunkCount = (_uploadTotalCount + ROWS_PER_CHUNK - 1U) / ROWS_PER_CHUNK;
-  _uploadChunkIndex = 0;
+  _uploadChunkIndex = _sessionChunkSerial;
   _uploadFinalFlush = manualTimeUp || autoTimeUp;
   _uploadAuto = activeIsAuto();
   _mlUploadActive = (_uploadTotalCount > 0);
@@ -823,7 +827,6 @@ bool FirebaseNetwork::serviceMlUpload_() {
     _mlUploadActive = false;
     _uploadTotalCount = 0;
     _uploadNextIndex = 0;
-    _uploadChunkIndex = 0;
     _uploadChunkCount = 0;
     if (_uploadFinalFlush && tailCount == 0) {
       if (_uploadAuto) _autoEnabled = false;
@@ -875,11 +878,14 @@ bool FirebaseNetwork::serviceMlUpload_() {
   String path = "/ml_logs/";
   path += _uploadSpec.sessionId;
   FirebaseJson json;
+  const uint16_t localChunkIndex = (uint16_t)(i0 / ROWS_PER_CHUNK);
+
   json.set("created_at/.sv", "timestamp");
   json.set("count", (int)(i1 - i0));
   json.set("total_count", (int)_uploadTotalCount);
-  json.set("chunk_index", (int)_uploadChunkIndex);
+  json.set("chunk_index", (int)localChunkIndex);
   json.set("chunk_seq", (int)_uploadChunkIndex);
+  json.set("session_chunk_seq", (int)_uploadChunkIndex);
   json.set("chunk_count", (int)_uploadChunkCount);
   json.set("first_epoch_ms", (double)firstRec.epoch_ms);
   json.set("last_epoch_ms", (double)lastRec.epoch_ms);
@@ -898,6 +904,7 @@ bool FirebaseNetwork::serviceMlUpload_() {
 
   _uploadNextIndex = i1;
   _uploadChunkIndex++;
+  _sessionChunkSerial = _uploadChunkIndex;
   _lastTxMs = millis();
   return true;
 }

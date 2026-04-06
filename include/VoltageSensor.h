@@ -25,6 +25,7 @@ private:
   uint32_t _windowUs = 500000;
   bool _sampling = false;
   uint32_t _startTime = 0;
+  uint32_t _nextSampleUs = 0;
   uint32_t _count = 0;
   double   _sum   = 0.0;
   double   _sumSq = 0.0;
@@ -46,6 +47,8 @@ private:
   uint8_t _healthyVoteCount = 0;
 
   static constexpr uint8_t WINDOW_RING = 5;
+  static constexpr uint16_t SAMPLE_INTERVAL_US = 250;
+  static constexpr uint8_t MAX_FILTERED_SAMPLES_PER_CALL = 32;
   float _winVrms[WINDOW_RING] = {0};
   uint8_t _winValid[WINDOW_RING] = {0};
   uint8_t _winPos = 0;

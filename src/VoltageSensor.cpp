@@ -48,10 +48,11 @@ void VoltageSensor::setClampHysteresis(float v_off, float v_on) { if (v_off < 0)
 void VoltageSensor::setLongAverage(float tauS, float jumpV) { if (tauS < 0.6f) tauS = 0.6f; if (tauS > 8.0f) tauS = 8.0f; if (jumpV < 6.0f) jumpV = 6.0f; _avgTauS = tauS; _avgJumpV = jumpV; }
 
 float VoltageSensor::update() {
-  const uint32_t now = micros();
+  uint32_t now = micros();
   if (!_sampling) {
     _sampling = true;
     _startTime = now;
+    _nextSampleUs = now;
     _count = 0;
     _sum = 0.0;
     _sumSq = 0.0;
@@ -61,8 +62,8 @@ float VoltageSensor::update() {
     return -1.0f;
   }
 
-  constexpr int FILTERED_SAMPLES_PER_CALL = 10;
-  for (int i = 0; i < FILTERED_SAMPLES_PER_CALL; ++i) {
+  uint8_t took = 0;
+  while ((int32_t)(now - _nextSampleUs) >= 0 && took < MAX_FILTERED_SAMPLES_PER_CALL) {
     const int s0 = analogRead(_pin), s1 = analogRead(_pin), s2 = analogRead(_pin), s3 = analogRead(_pin), s4 = analogRead(_pin);
     const int med  = _median5(s0, s1, s2, s3, s4);
     const int mean = (s0 + s1 + s2 + s3 + s4 + 2) / 5;
@@ -73,6 +74,10 @@ float VoltageSensor::update() {
     _count++;
     _sum += val;
     _sumSq += (double)val * (double)val;
+
+    _nextSampleUs += SAMPLE_INTERVAL_US;
+    took++;
+    now = micros();
   }
 
   if ((uint32_t)(now - _startTime) < _windowUs) return -1.0f;

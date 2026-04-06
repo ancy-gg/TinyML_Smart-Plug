@@ -10,7 +10,9 @@
 #include "dsp_common.h"
 #include "esp_err.h"
 
+#ifndef CONFIG_DSP_MAX_FFT_SIZE
 #define CONFIG_DSP_MAX_FFT_SIZE 2048
+#endif
 
 static inline float clampf(float x, float lo, float hi) {
   return (x < lo) ? lo : (x > hi) ? hi : x;

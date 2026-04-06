@@ -13,6 +13,7 @@ public:
   bool consumeAutoOnEdge();
   bool webControlLocked() const { return _webLockout; }
   bool voltageLockoutActive() const { return _voltageLockout; }
+  bool faultLatched() const { return _resetRequired || _voltageLockout; }
   const char* loadState() const { return _loadOn ? "LOAD ON" : "LOAD OFF"; }
 
   void apply(FaultState st, float vDisplay, float vProtect, float i, float t);
@@ -28,7 +29,6 @@ private:
   uint32_t _pulseOnUntil = 0;
   uint32_t _pulseOffUntil = 0;
   uint32_t _lastRelayPulseMs = 0;
-  uint32_t _loadDetectSince = 0;
 
   int _arcCnt = 0;
   int _heatFrames = 0;
