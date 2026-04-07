@@ -62,6 +62,33 @@ FILENAME_DIVISION_ALIASES = {
     "arc": "arc",
     "close": "close",
     "closing": "close",
+    "end": "close",
+    "ending": "close",
+}
+
+FILENAME_SUFFIX_TOKENS = {
+    "capture",
+    "captured",
+    "processed",
+    "process",
+    "labeled",
+    "labelled",
+    "edited",
+    "edit",
+    "review",
+    "original",
+    "raw",
+}
+
+FILENAME_PREFIX_TOKENS = {
+    "proc",
+    "processed",
+    "upload",
+    "uploaded",
+    "sess",
+    "session",
+    "logger",
+    "log",
 }
 
 DB_FEATURE_SPACE_VERSION = 4
@@ -307,8 +334,20 @@ def parse_filename_tokens(path: str) -> dict:
     parts = [p for p in re.split(r"[_\s-]+", stem) if p]
     norm_parts = [str(p).lower() for p in parts]
 
+    def _parse_trial(token: str):
+        raw = str(token or "").strip().lower()
+        if not raw:
+            return None
+        if re.fullmatch(r"\d+", raw):
+            return max(1, int(raw))
+        match = re.fullmatch(r"(?:t|trial)(\d{1,4})", raw)
+        if match:
+            return max(1, int(match.group(1)))
+        return None
+
     division = ""
     trial = 1
+    segment_index = 0
     division_idx = None
     trial_idx = None
 
@@ -322,16 +361,24 @@ def parse_filename_tokens(path: str) -> dict:
     for idx in range(len(norm_parts) - 1, -1, -1):
         if idx == division_idx:
             continue
-        if re.fullmatch(r"\d+", norm_parts[idx] or ""):
-            trial = max(1, int(norm_parts[idx]))
+        maybe_trial = _parse_trial(norm_parts[idx])
+        if maybe_trial:
+            trial = maybe_trial
             trial_idx = idx
             break
 
-    keep_tokens = []
-    for idx, token in enumerate(parts):
-        if idx in {division_idx, trial_idx}:
-            continue
-        keep_tokens.append(token)
+    keep_tokens = [token for idx, token in enumerate(parts) if idx not in {division_idx, trial_idx}]
+
+    if keep_tokens:
+        seg_match = re.fullmatch(r"(?:seg|part|slice)(\d{1,4})", str(keep_tokens[-1]).lower())
+        if seg_match:
+            segment_index = max(1, int(seg_match.group(1)))
+            keep_tokens.pop()
+
+    while len(keep_tokens) > 1 and (str(keep_tokens[0]).lower() in FILENAME_PREFIX_TOKENS or re.fullmatch(r"\d{6,}", str(keep_tokens[0]))):
+        keep_tokens.pop(0)
+    while keep_tokens and str(keep_tokens[-1]).lower() in FILENAME_SUFFIX_TOKENS:
+        keep_tokens.pop()
 
     load_type = re.sub(r"[^a-z0-9]+", "_", "_".join(keep_tokens).lower()).strip("_") or "unknown"
     trial_key = f"{load_type}__trial{int(trial):03d}"
@@ -342,6 +389,7 @@ def parse_filename_tokens(path: str) -> dict:
         "parsed_load_type": load_type,
         "trial_key": trial_key,
         "section_key": section_key,
+        "segment_index": int(segment_index),
     }
 
 def infer_source_kind(path: str):

@@ -27,6 +27,7 @@
 
   const btnBack = $("btnBack");
   const btnDownload = $("btnDownload");
+  const btnSaveProcessed = $("btnSaveProcessed");
 
   const btnPlay = $("btnPlay");
   const btnPause = $("btnPause");
@@ -136,24 +137,79 @@
       .slice(0, 64) || fallback;
   }
 
+  const FILENAME_DIVISION_ALIASES = {
+    startup: "start",
+    start: "start",
+    steady: "steady",
+    baseline: "steady",
+    arc: "arc",
+    close: "close",
+    closing: "close",
+    end: "close",
+    ending: "close",
+  };
+  const FILENAME_SUFFIX_TOKENS = new Set(["capture", "captured", "processed", "process", "labeled", "labelled", "edited", "edit", "review", "original", "raw"]);
+  const FILENAME_PREFIX_TOKENS = new Set(["proc", "processed", "upload", "uploaded", "sess", "session", "logger", "log"]);
+
+  function parseTrialToken(token) {
+    const raw = String(token || "").trim().toLowerCase();
+    if (!raw) return null;
+    if (/^\d+$/.test(raw)) return Math.max(1, Number(raw));
+    const tagged = raw.match(/^(?:t|trial)(\d{1,4})$/i);
+    if (tagged) return Math.max(1, Number(tagged[1]));
+    return null;
+  }
+
+  function formatTrialToken(trial) {
+    return `t${String(safePositiveInt(trial, 1)).padStart(2, "0")}`;
+  }
+
+  function normalizeDivisionToken(value) {
+    return FILENAME_DIVISION_ALIASES[String(value || "").trim().toLowerCase()] || "";
+  }
+
+  function divisionFileToken(division) {
+    const normalized = normalizeDivisionToken(division);
+    if (!normalized) return "";
+    return normalized === "close" ? "end" : normalized;
+  }
+
+  function divisionDisplayLabel(division, fallback = "") {
+    const normalized = normalizeDivisionToken(division);
+    if (!normalized) return fallback;
+    return ({ start: "Start", steady: "Steady", arc: "Arc", close: "End" })[normalized] || fallback || titleizeTokenText(normalized, fallback || "Section");
+  }
+
+  function trimFilenameLoadTokens(tokens) {
+    const out = Array.from(tokens || []).filter(Boolean);
+    while (out.length > 1 && (FILENAME_PREFIX_TOKENS.has(String(out[0] || "").toLowerCase()) || /^\d{6,}$/.test(String(out[0] || "")))) out.shift();
+    while (out.length && FILENAME_SUFFIX_TOKENS.has(String(out[out.length - 1] || "").toLowerCase())) out.pop();
+    return out;
+  }
+
   function isUploadedCsvSession(meta) {
     return !!(meta?.uploaded_csv || String(meta?.load_type || "").trim().toLowerCase() === "uploaded_csv");
   }
 
   function viewerDisplayName(meta, sessionId) {
     const sourceFile = String(meta?.source_file || "").trim();
-    if (sourceFile) return titleizeTokenText(sourceFile, sourceFile);
-    const load = String(meta?.load_type || "").trim();
-    if (load && load.toLowerCase() !== "uploaded_csv" && load.toLowerCase() !== "unknown") return titleizeTokenText(load, load);
-    if (isUploadedCsvSession(meta)) return "Uploaded CSV";
+    const parsed = parseDatasetFilenameMeta(sourceFile || sessionId || "");
+    const load = safeFilenameSegment(meta?.load_type || parsed.loadType || "", "").toLowerCase();
+    const trial = safePositiveInt(meta?.trial_number || parsed.trial || 1, 1);
+    const division = normalizeDivisionToken(meta?.division_tag || parsed.division || "");
+    if (load && load !== "uploaded_csv" && load !== "unknown") {
+      const base = `${titleizeTokenText(load, load)} • ${formatTrialToken(trial).toUpperCase()}`;
+      return division ? `${base} • ${divisionDisplayLabel(division)}` : base;
+    }
     const start = Number(meta?.start_ms || 0);
     if (start) return `Session ${formatDisplayTimestamp(start)}`;
     return titleizeTokenText(sessionId || "session", "Session");
   }
 
   function viewerDownloadName(meta, sessionId) {
-    const base = viewerDisplayName(meta, sessionId);
-    return `TSP_ML_${safeFilenameSegment(base, safeFilenameSegment(sessionId || 'session', 'session'))}.csv`;
+    const sourceFile = String(meta?.source_file || "").trim();
+    if (sourceFile) return safeCsvFilename(sourceFile);
+    return safeCsvFilename(canonicalSourceFileName(String(sessionId || "session"), meta, meta?.processed_csv ? "processed" : "original"));
   }
 
   function announceActiveSession(sessionId) {
@@ -174,6 +230,139 @@
     return out.replace(/[\/:*?"<>|]+/g, "_");
   }
 
+  function stripCsvExtension(name) {
+    return String(name || "").replace(/\.csv$/i, "").trim();
+  }
+
+  function parseDatasetFilenameMeta(name) {
+    const stem = String(name || "").replace(/\.[a-z0-9]+$/i, "").trim();
+    const parts = stem.split(/[_\s-]+/).filter(Boolean);
+    const normParts = parts.map((p) => String(p || "").toLowerCase());
+
+    let division = "";
+    let trial = 1;
+    let segmentIndex = 0;
+    let divisionIdx = -1;
+    let trialIdx = -1;
+
+    for (let idx = normParts.length - 1; idx >= 0; idx--) {
+      const maybeDivision = normalizeDivisionToken(normParts[idx]);
+      if (maybeDivision) {
+        division = maybeDivision;
+        divisionIdx = idx;
+        break;
+      }
+    }
+
+    for (let idx = normParts.length - 1; idx >= 0; idx--) {
+      if (idx === divisionIdx) continue;
+      const maybeTrial = parseTrialToken(normParts[idx]);
+      if (maybeTrial) {
+        trial = maybeTrial;
+        trialIdx = idx;
+        break;
+      }
+    }
+
+    let keepTokens = parts.filter((_, idx) => idx !== divisionIdx && idx !== trialIdx);
+    const maybeSegment = String(keepTokens[keepTokens.length - 1] || "").match(/^(?:seg|part|slice)(\d{1,4})$/i);
+    if (maybeSegment) {
+      segmentIndex = Math.max(1, Number(maybeSegment[1] || 0));
+      keepTokens.pop();
+    }
+    keepTokens = trimFilenameLoadTokens(keepTokens);
+    const loadType = safeFilenameSegment(keepTokens.join("_"), "session").toLowerCase();
+    return { loadType, trial, division, segmentIndex };
+  }
+
+  function safePositiveInt(value, fallback = 1) {
+    const n = Number(value);
+    return Number.isInteger(n) && n > 0 ? n : fallback;
+  }
+
+  function canonicalizeDatasetStem(name, fallback = "session") {
+    const parsed = parseDatasetFilenameMeta(name || fallback);
+    const stem = stripCsvExtension(canonicalSourceFileName(name || fallback, {
+      load_type: parsed.loadType || fallback,
+      trial_number: parsed.trial || 1,
+      division_tag: parsed.division || "",
+      segment_index: parsed.segmentIndex || 0,
+    }, parsed.division || parsed.segmentIndex ? "processed" : "original"));
+    return stem || fallback;
+  }
+
+  function canonicalSourceFileName(name, meta = {}, category = "original") {
+    const parsed = parseDatasetFilenameMeta(name || meta?.source_file || sid || "session");
+    const load = safeFilenameSegment(meta?.load_type || parsed.loadType || "session", "session").toLowerCase();
+    const trial = safePositiveInt(meta?.trial_number || parsed.trial || 1, 1);
+    const division = normalizeDivisionToken(meta?.division_tag || parsed.division || "");
+    const segmentIndex = safePositiveInt(meta?.segment_index || parsed.segmentIndex || 0, 0);
+    const parts = [load, formatTrialToken(trial)];
+    if (segmentIndex > 1) parts.push(`seg${String(segmentIndex).padStart(2, "0")}`);
+    if (division) parts.push(divisionFileToken(division));
+    else if (category === "processed") parts.push("labeled");
+    return safeCsvFilename(`${parts.join("_")}.csv`);
+  }
+
+  function safeSessionToken(name) {
+    return String(name || "uploaded_csv")
+      .replace(/\.csv$/i, "")
+      .replace(/[^a-zA-Z0-9_-]+/g, "_")
+      .replace(/^_+|_+$/g, "")
+      .slice(0, 42) || "uploaded_csv";
+  }
+
+  async function storeCsvSessionInCloud(fileName, csvText, meta = {}, category = "processed") {
+    const clean = String(csvText || "").replace(/^﻿/, "").trim();
+    const lines = clean.split(/\r?\n/).filter((line) => line.trim().length);
+    if (lines.length < 2) throw new Error("CSV needs a header and at least one row.");
+
+    const canonicalFile = canonicalSourceFileName(fileName, meta, category);
+    const sessionId = `${category === "processed" ? "proc" : "upload"}_${Date.now()}_${safeSessionToken(canonicalFile)}`;
+    const header = lines[0].trimEnd();
+    const rows = lines.slice(1);
+    const uploadedMeta = {
+      start_ms: Number(meta?.start_ms || Date.now()),
+      end_ms: Number(meta?.end_ms || 0) || null,
+      load_type: meta?.load_type || parseDatasetFilenameMeta(canonicalFile).loadType || "uploaded_csv",
+      duration_s: Number.isFinite(Number(meta?.duration_s)) ? Number(meta?.duration_s) : null,
+      label_override: -1,
+      uploaded_csv: true,
+      processed_csv: category === "processed",
+      session_category: category,
+      source_file: canonicalFile,
+      original_source_file: String(meta?.source_file || fileName || canonicalFile),
+      row_count: Number(meta?.row_count || rows.length) || rows.length,
+      source_sample_rate_hz: Number(meta?.source_sample_rate_hz || 0) || null,
+      trial_number: safePositiveInt(meta?.trial_number || parseDatasetFilenameMeta(canonicalFile).trial || 1, 1),
+      division_tag: String(meta?.division_tag || parseDatasetFilenameMeta(canonicalFile).division || "").toLowerCase(),
+      segment_index: safePositiveInt(meta?.segment_index || parseDatasetFilenameMeta(canonicalFile).segmentIndex || 0, 0),
+      source_session_id: String(meta?.source_session_id || sid || "")
+    };
+
+    await db.ref(`ml_sessions/${sessionId}`).set(uploadedMeta);
+
+    const CHUNK_ROWS = 250;
+    const updates = {};
+    const createdBase = Date.now();
+    for (let i = 0; i < rows.length; i += CHUNK_ROWS) {
+      const chunkRows = rows.slice(i, i + CHUNK_ROWS);
+      const chunkSeq = (i / CHUNK_ROWS) + 1;
+      const key = `chunk_${String(chunkSeq).padStart(4, "0")}`;
+      updates[`ml_logs/${sessionId}/${key}`] = {
+        csv: [header, ...chunkRows].join("\n") + "\n",
+        count: chunkRows.length,
+        created_at: createdBase + (i / CHUNK_ROWS),
+        uploaded_csv: true,
+        processed_csv: category === "processed",
+        source_file: canonicalFile,
+        session_chunk_seq: chunkSeq
+      };
+    }
+    await db.ref().update(updates);
+    return { sid: sessionId, meta: uploadedMeta };
+  }
+
   function viewerDurationSeconds(meta) {
     const explicit = Number(meta?.duration_s ?? meta?.source_duration_s);
     if (Number.isFinite(explicit) && explicit > 0) return explicit;
@@ -187,43 +376,27 @@
   }
 
   function viewerMetaText(meta) {
-    const load = String(meta?.load_type || meta?.source_file || "—").trim();
+    const sourceFile = String(meta?.source_file || "").trim();
+    const parsed = parseDatasetFilenameMeta(sourceFile || sid || "");
+    const load = safeFilenameSegment(meta?.load_type || parsed.loadType || "", "").toLowerCase();
+    const trial = safePositiveInt(meta?.trial_number || parsed.trial || 1, 1);
+    const division = normalizeDivisionToken(meta?.division_tag || parsed.division || "");
     const dur = viewerDurationSeconds(meta);
     const durText = (dur === null)
       ? "—"
       : (Math.abs(dur - Math.round(dur)) < 0.05 ? `${Math.round(dur)}s` : `${dur.toFixed(1)}s`);
     const startText = Number(meta?.start_ms || 0) > 0 ? formatDisplayTimestamp(Number(meta.start_ms)) : "—";
-    return `${titleizeTokenText(load, "Unknown")} • ${durText} • ${startText}`;
-  }
-
-  function parseDatasetFilenameMeta(name) {
-    const stem = String(name || "").replace(/\.[a-z0-9]+$/i, "").trim();
-    const parts = stem.split(/[_\s-]+/).filter(Boolean);
-    const aliases = { startup: "start", start: "start", steady: "steady", baseline: "steady", arc: "arc", close: "close", closing: "close" };
-    const last = String(parts[parts.length - 1] || "").toLowerCase();
-    const division = aliases[last] || "";
-    let trial = 1;
-    let endIdx = parts.length;
-    if (division) endIdx -= 1;
-    if (endIdx > 0) {
-      const maybeTrial = Number(parts[endIdx - 1]);
-      if (Number.isInteger(maybeTrial) && maybeTrial > 0) {
-        trial = maybeTrial;
-        endIdx -= 1;
-      }
-    }
-    const loadType = safeFilenameSegment(parts.slice(0, Math.max(0, endIdx)).join("_"), "session");
-    return { loadType, trial, division };
-  }
-
-  function safePositiveInt(value, fallback = 1) {
-    const n = Number(value);
-    return Number.isInteger(n) && n > 0 ? n : fallback;
+    const parts = [];
+    if (load && load !== "uploaded_csv" && load !== "unknown") parts.push(`${titleizeTokenText(load, load)} • ${formatTrialToken(trial).toUpperCase()}`);
+    if (division) parts.push(divisionDisplayLabel(division));
+    parts.push(durText);
+    parts.push(startText);
+    if (sourceFile) parts.push(sourceFile);
+    return parts.join(" • ");
   }
 
   function segmentLabelTitle(label) {
-    const norm = String(label || "steady").trim().toLowerCase();
-    return norm ? norm.charAt(0).toUpperCase() + norm.slice(1) : "Steady";
+    return divisionDisplayLabel(label, "Steady");
   }
 
   function segmentColor(label, alpha = 0.16) {
@@ -238,9 +411,7 @@
   }
 
   function normalizeSegmentLabel(label) {
-    const raw = String(label || "").trim().toLowerCase();
-    const aliases = { startup: "start", start: "start", steady: "steady", baseline: "steady", arc: "arc", close: "close", closing: "close" };
-    return aliases[raw] || "steady";
+    return normalizeDivisionToken(label) || "steady";
   }
 
   function getSegmentLoadValue() {
@@ -252,7 +423,7 @@
   }
 
   function applySegmentDefaults(meta = {}) {
-    const parsed = parseDatasetFilenameMeta(meta?.source_file || sid || "session");
+    const parsed = parseDatasetFilenameMeta(meta?.source_file || "");
     if (segLoadInput) {
       const preferredLoad = String(meta?.load_type || "").trim();
       segLoadInput.value = safeFilenameSegment(preferredLoad && preferredLoad.toLowerCase() !== "uploaded_csv" ? preferredLoad : parsed.loadType, "session");
@@ -282,14 +453,14 @@
     const hint = $("segmentHint");
     if (!hint) return;
     hint.textContent = !ROWS.length
-      ? "Create non-overlapping Start / Steady / Arc / Close ranges for split CSV export."
-      : `Rows 0-${Math.max(0, ROWS.length - 1)} • Segments=${SEGMENTS.length} • Download splits by load/trial/label.`;
+      ? "Edit arc markers and create non-overlapping Start / Steady / Arc / End ranges for split CSV export."
+      : `Rows 0-${Math.max(0, ROWS.length - 1)} • Segments=${SEGMENTS.length} • Download clean split names by load, trial, and label.`;
   }
 
   function renderSegmentList() {
     if (!segmentList) return;
     if (!SEGMENTS.length) {
-      segmentList.innerHTML = '<div class="segment-empty">No divider ranges yet. Add a non-overlapping Start / Steady / Arc / Close segment.</div>';
+      segmentList.innerHTML = '<div class="segment-empty">No log edits yet. Add a non-overlapping Start / Steady / Arc / End range.</div>';
       updateSegmentHint();
       if (plot) plot.redraw();
       return;
@@ -330,12 +501,12 @@
     if (segEndInput && !endRaw) segEndInput.value = String(end);
     renderSegmentList();
     refreshDownloadBinding();
-    setStatus(`Added ${segmentLabelTitle(segLabelSelect?.value || "steady")} segment ${start}-${end}.`);
+    setStatus(`Added ${segmentLabelTitle(segLabelSelect?.value || "steady")} range ${start}-${end}.`);
   }
 
   function removeSegmentFromInputs() {
     if (!SEGMENTS.length) {
-      setStatus("No segments to remove.");
+      setStatus("No ranges to remove.");
       return;
     }
     const startRaw = String(segStartInput?.value || "").trim();
@@ -346,7 +517,7 @@
     SEGMENTS = SEGMENTS.filter((seg) => (end < seg.start || start > seg.end));
     renderSegmentList();
     refreshDownloadBinding();
-    setStatus(before !== SEGMENTS.length ? `Removed ${before - SEGMENTS.length} segment(s).` : "No segment matched that selection.");
+    setStatus(before !== SEGMENTS.length ? `Removed ${before - SEGMENTS.length} range(s).` : "No range matched that selection.");
   }
 
   function buildSegmentCsvFiles() {
@@ -358,14 +529,31 @@
     const labelTotals = {};
     sorted.forEach((seg) => { labelTotals[seg.label] = (labelTotals[seg.label] || 0) + 1; });
     const labelSeen = {};
-    return sorted.map((seg, idx) => {
+    return sorted.map((seg) => {
       labelSeen[seg.label] = (labelSeen[seg.label] || 0) + 1;
-      const rows = ROWS.slice(seg.start, seg.end + 1).map((row) => ({ ...row, load_type: loadToken, session_id: `${safeFilenameSegment(sid || 'session', 'session')}__${seg.label}_${String(idx + 1).padStart(2, '0')}` }));
-      const labelTitle = segmentLabelTitle(seg.label);
-      const suffix = labelTotals[seg.label] > 1 ? `_${labelSeen[seg.label]}` : "";
-      const filename = safeCsvFilename(`${loadToken}_${trial}_${labelTitle}${suffix}.csv`);
-      const text = Papa.unparse({ fields: csvHeaders, data: rows.map((row) => csvHeaders.map((field) => row?.[field] ?? ((field === 'label_arc') ? 0 : ""))) });
-      return { filename, text };
+      const segmentIndex = labelTotals[seg.label] > 1 ? labelSeen[seg.label] : 0;
+      const canonicalFile = canonicalSourceFileName("", {
+        load_type: loadToken.toLowerCase(),
+        trial_number: trial,
+        division_tag: seg.label,
+        segment_index: segmentIndex,
+      }, "processed");
+      const trialId = `${loadToken.toLowerCase()}__trial${String(trial).padStart(3, "0")}`;
+      const sectionId = stripCsvExtension(canonicalFile);
+      const headers = Array.from(new Set([...csvHeaders, "trial_id", "section_id", "division_tag", "source_file", "trial_number", "segment_index"]));
+      const rows = ROWS.slice(seg.start, seg.end + 1).map((row) => ({
+        ...row,
+        load_type: loadToken.toLowerCase(),
+        session_id: sectionId,
+        trial_id: trialId,
+        section_id: sectionId,
+        division_tag: normalizeSegmentLabel(seg.label),
+        source_file: canonicalFile,
+        trial_number: trial,
+        segment_index: segmentIndex || "",
+      }));
+      const text = Papa.unparse({ fields: headers, data: rows.map((row) => headers.map((field) => row?.[field] ?? ((field === 'label_arc') ? 0 : ""))) });
+      return { filename: canonicalFile, text, meta: { load_type: loadToken.toLowerCase(), trial_number: trial, division_tag: normalizeSegmentLabel(seg.label), segment_index: segmentIndex, source_file: canonicalFile, source_session_id: sid, processed_csv: true, row_count: rows.length } };
     });
   }
 
@@ -416,9 +604,14 @@
         return;
       }
       const csv = buildCsvFromRows();
-      if (!csv) return;
+      if (!csv) {
+        setStatus("No CSV content available to download.");
+        return;
+      }
       currentCsv = csv;
-      downloadTextFile(currentDownloadName || safeCsvFilename(`TSP_ML_${sid || "session"}.csv`), csv);
+      const fileName = currentDownloadName || safeCsvFilename(`session_${formatTrialToken(1)}.csv`);
+      downloadTextFile(fileName, csv);
+      setStatus(`Downloaded ${fileName}.`);
     };
   }
 
@@ -646,15 +839,24 @@
   }
 
   function downloadTextFile(filename, text, mime = "text/csv;charset=utf-8") {
+    const safeName = safeCsvFilename(filename || "download.csv");
     const blob = new Blob([text], { type: mime });
+    if (navigator.msSaveOrOpenBlob) {
+      navigator.msSaveOrOpenBlob(blob, safeName);
+      return;
+    }
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
-    a.download = filename;
+    a.download = safeName;
+    a.rel = "noopener";
+    a.style.display = "none";
     document.body.appendChild(a);
     a.click();
-    a.remove();
-    URL.revokeObjectURL(url);
+    window.setTimeout(() => {
+      a.remove();
+      URL.revokeObjectURL(url);
+    }, 1200);
   }
 
   async function fetchSessionCsv(sessionId) {
@@ -667,31 +869,21 @@
     keys.sort((a, b) => {
       const ax = chunksObj[a] || {};
       const bx = chunksObj[b] || {};
-
       const aSessionSeq = Number(ax.session_chunk_seq);
       const bSessionSeq = Number(bx.session_chunk_seq);
       if (hasMonotonicSessionSeq && aSessionSeq !== bSessionSeq) return aSessionSeq - bSessionSeq;
-
-      const aFirstUp = Number(ax.first_uptime_ms);
-      const bFirstUp = Number(bx.first_uptime_ms);
-      if (Number.isFinite(aFirstUp) && Number.isFinite(bFirstUp) && aFirstUp !== bFirstUp) return aFirstUp - bFirstUp;
-
-      const aFirstEpoch = Number(ax.first_epoch_ms);
-      const bFirstEpoch = Number(bx.first_epoch_ms);
-      if (Number.isFinite(aFirstEpoch) && Number.isFinite(bFirstEpoch) && aFirstEpoch !== bFirstEpoch) return aFirstEpoch - bFirstEpoch;
-
-      const aCreated = Number(ax.created_at || 0);
-      const bCreated = Number(bx.created_at || 0);
-      if (Number.isFinite(aCreated) && Number.isFinite(bCreated) && aCreated !== bCreated) return aCreated - bCreated;
-
       const aSeq = Number(ax.chunk_seq);
       const bSeq = Number(bx.chunk_seq);
       if (Number.isFinite(aSeq) && Number.isFinite(bSeq) && aSeq !== bSeq) return aSeq - bSeq;
-
+      const aCreated = Number(ax.created_at || 0);
+      const bCreated = Number(bx.created_at || 0);
+      if (Number.isFinite(aCreated) && Number.isFinite(bCreated) && aCreated !== bCreated) return aCreated - bCreated;
+      const aFirstUp = Number(ax.first_uptime_ms);
+      const bFirstUp = Number(bx.first_uptime_ms);
+      if (Number.isFinite(aFirstUp) && Number.isFinite(bFirstUp) && aFirstUp !== bFirstUp) return aFirstUp - bFirstUp;
       const ai = Number(ax.chunk_index);
       const bi = Number(bx.chunk_index);
       if (Number.isFinite(ai) && Number.isFinite(bi) && ai !== bi) return ai - bi;
-
       return String(a).localeCompare(String(b));
     });
 
@@ -887,7 +1079,7 @@
     DATA_RAW = makeData(ROWS, X, KEYS);
 
     const win0 = Number(rngSmooth?.value) || 15;
-    if (smoothReadout) smoothReadout.textContent = `win=${win0}`;
+    if (smoothReadout) smoothReadout.textContent = String(win0);
     DATA_SMOOTH = makeSmoothedData(DATA_RAW, win0);
     DATA_NORM = normalizeData(DATA_RAW);
     DATA_SMOOTH_NORM = normalizeData(DATA_SMOOTH);
@@ -1018,7 +1210,7 @@
 
   let ARC_SERIES_INDEX = -1;
   let ARC_IDXS = [];
-  let statsVisible = true;
+  let statsVisible = false;
 
   const SERIES_META = {
     spectral_flux_midhf: { label: "Spectral Flux (Mid/HF)", unit: "%", decimals: 2 },
@@ -1050,8 +1242,8 @@
   const showPref = new Map();
   const axisPref = new Map();
 
-  const DEFAULT_ON = new Set(["i_rms", "current", "label_arc", "model_pred"]);
-  const DEFAULT_Y2 = new Set(["residual_crest_factor", "edge_spike_ratio", "midband_residual_ratio", "hf_energy_delta", "i_rms", "current", "v_rms", "voltage", "temp_c", "temp"]);
+  const DEFAULT_ON = new Set(["v_rms", "voltage", "i_rms", "current"]);
+  const DEFAULT_Y2 = new Set(["residual_crest_factor", "edge_spike_ratio", "midband_residual_ratio", "hf_energy_delta", "i_rms", "current", "temp_c", "temp"]);
 
   setViewerOpen(false);
   ensureArcEditorControls();
@@ -1079,10 +1271,11 @@
   }
 
   function preferredDefaultKeys(keys) {
-    const preferred = ["i_rms", "current", "label_arc", "model_pred"];
-    const picked = preferred.filter((k) => keys.includes(k));
+    const preferred = ["v_rms", "voltage", "i_rms", "current"];
+    const picked = [];
+    preferred.forEach((k) => { if (keys.includes(k) && !picked.includes(k)) picked.push(k); });
     if (picked.length) return picked;
-    return keys.filter((k) => k === "label_arc" || k === "model_pred" || k === "i_rms" || k === "current").slice(0, 4);
+    return keys.filter((k) => k === "v_rms" || k === "voltage" || k === "i_rms" || k === "current").slice(0, 2);
   }
 
   function resetState() {
@@ -1341,6 +1534,21 @@
     if (resume) play();
   }
 
+  function captureXWindow() {
+    if (!plot || !plot.scales?.x) return null;
+    const min = Number(plot.scales.x.min);
+    const max = Number(plot.scales.x.max);
+    if (!Number.isFinite(min) || !Number.isFinite(max)) return null;
+    return { min, max };
+  }
+
+  function restoreXWindow(windowScale) {
+    if (!plot || !windowScale) return;
+    const [min, max] = clampXWindow(windowScale.min, windowScale.max);
+    plot.setScale("x", { min, max });
+    syncZoomSlider();
+  }
+
   function zoomPanPlugin() {
     let isPanning = false;
     let panStartX = 0;
@@ -1535,10 +1743,10 @@
     const showY2 = !normalize && hasVisibleY2();
 
     const axes = [
-      { stroke: axisStroke, grid: { show: false } },
-      { stroke: axisStroke, grid: { show: false }, scale: "y" },
+      { stroke: axisStroke, grid: { show: false }, size: 52, gap: 12 },
+      { stroke: axisStroke, grid: { show: false }, scale: "y", size: 58, gap: 8 },
     ];
-    if (showY2) axes.push({ stroke: axisStroke, grid: { show: false }, scale: "y2", side: 1 });
+    if (showY2) axes.push({ stroke: axisStroke, grid: { show: false }, scale: "y2", side: 1, size: 58, gap: 8 });
 
     const scales = {
       x: { time: false },
@@ -1554,6 +1762,7 @@
       scales,
       axes,
       legend: { show: false },
+      padding: [10, 12, 28, 14],
       cursor: { show: true, lock: true, points: { show: false }, drag: { x: true, y: false, setScale: true } },
       select: { show: true },
       hooks: {
@@ -1567,11 +1776,12 @@
 
     if (plot) plot.destroy();
     plot = new uPlot(opts, data, $("chart"));
+    primeViewerLayout();
 
     FULL_X_MIN = X[0];
     FULL_X_MAX = X[X.length - 1];
 
-    btnResetZoom.onclick = () => resetZoom();
+    if (btnResetZoom) btnResetZoom.onclick = () => resetZoom();
 
     setPlayIdx(Math.min(playIdx, X.length - 1), true);
     syncZoomSlider();
@@ -1630,7 +1840,7 @@
     meta.innerHTML = `<span class="vdot" style="background:rgba(255,255,255,0.35)"></span><span class="vk">idx ${playIdx}/${X.length - 1}</span><span class="vv">t ${fmt(X[playIdx])}s</span>`;
     valueLine.appendChild(meta);
 
-    const maxChips = 12;
+    const maxChips = 40;
     let shown = 0;
 
     for (let i = 0; i < KEYS.length; i++) {
@@ -1830,10 +2040,27 @@
     setPlayIdx(Number(scrub.value) || 0, true);
   };
 
+  function primeViewerLayout() {
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => {
+        if (!plot) return;
+        const { w, h } = chartSize();
+        plot.setSize({ width: w, height: h });
+        if (plot.redraw) plot.redraw();
+        updateStats();
+      });
+    });
+  }
+
   function rebuildForDataMode() {
     const keep = playIdx;
+    const keepWindow = captureXWindow();
+    const resume = playing;
+    if (resume) pause();
     buildPlot();
     setPlayIdx(keep, true);
+    if (keepWindow) restoreXWindow(keepWindow);
+    if (resume) play();
   }
 
   chkNormalize.onchange = rebuildForDataMode;
@@ -1844,7 +2071,7 @@
 
   rngSmooth.oninput = () => {
     const win = Number(rngSmooth.value) || 1;
-    if (smoothReadout) smoothReadout.textContent = `win=${win}`;
+    if (smoothReadout) smoothReadout.textContent = String(win);
     DATA_SMOOTH = makeSmoothedData(DATA_RAW, win);
     DATA_SMOOTH_NORM = normalizeData(DATA_SMOOTH);
     rebuildForDataMode();
@@ -1909,6 +2136,45 @@
     } catch (err) {
       setStatus(err?.message || "Invalid arc index selection.");
     }
+  });
+
+
+  async function saveProcessedCopy() {
+    try {
+      if (SEGMENTS.length) {
+        const files = buildSegmentCsvFiles();
+        if (!files.length) throw new Error("No split files available.");
+        for (const file of files) {
+          await storeCsvSessionInCloud(file.filename, file.text, file.meta, "processed");
+        }
+        setStatus(`Saved ${files.length} processed split session(s) to cloud.`);
+        return;
+      }
+
+      const fileName = canonicalSourceFileName(currentMeta?.source_file || sid || "session", {
+        ...currentMeta,
+        source_session_id: sid,
+        division_tag: currentMeta?.division_tag || "",
+        trial_number: currentMeta?.trial_number || 1
+      }, "processed");
+      await storeCsvSessionInCloud(fileName, currentCsv || buildCsvFromRows(), {
+        ...currentMeta,
+        source_session_id: sid,
+        source_file: fileName,
+        trial_number: currentMeta?.trial_number || 1,
+        row_count: ROWS.length,
+        duration_s: viewerDurationSeconds(currentMeta),
+        processed_csv: true
+      }, "processed");
+      setStatus("Saved processed CSV to cloud.");
+    } catch (err) {
+      console.error(err);
+      setStatus(err?.message || "Failed to save processed CSV.");
+    }
+  }
+
+  btnSaveProcessed?.addEventListener("click", async () => {
+    await saveProcessedCopy();
   });
 
   let resizeQueued = false;
@@ -2009,20 +2275,20 @@
   function openSessionViewer(targetSid, metaOverride = null) {
     announceActiveSession(targetSid);
     setViewerOpen(true);
-    setTimeout(() => {
-      plotDrawer?.scrollIntoView?.({ behavior: "smooth", block: "start" });
-    }, 10);
-    loadSession(targetSid, metaOverride);
+    plotDrawer?.scrollIntoView?.({ behavior: "smooth", block: "start" });
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => {
+        loadSession(targetSid, metaOverride);
+      });
+    });
   }
 
   function openSessionViewerFromCsv(name, csvText, metaOverride = null) {
     announceActiveSession("");
     setViewerOpen(true);
-    setTimeout(() => {
-      plotDrawer?.scrollIntoView?.({ behavior: "smooth", block: "start" });
-    }, 10);
+    plotDrawer?.scrollIntoView?.({ behavior: "smooth", block: "start" });
 
-    sid = (name || "uploaded_csv").replace(/[^a-zA-Z0-9_.-]/g, "_");
+    sid = safeFilenameSegment(canonicalizeDatasetStem(name || "uploaded_csv", "uploaded_csv"), "uploaded_csv");
     resetState();
     const meta = metaOverride || {};
     currentMeta = meta || {};

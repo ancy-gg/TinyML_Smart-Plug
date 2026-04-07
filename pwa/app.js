@@ -71,7 +71,10 @@ const irmsZscoreVal = el("irmsZscoreVal");
 const alertEnable = el("alertEnable");
 const soundEnable = el("soundEnable");
 
-const historyBody = el("historyBody");
+const historyNormalBody = el("historyNormalBody");
+const historyFaultBody = el("historyFaultBody");
+const historyNormalCount = el("historyNormalCount");
+const historyFaultCount = el("historyFaultCount");
 const rangeSelect = el("rangeSelect");
 const historyHint = el("historyHint");
 const btnDownloadCSV = el("btnDownloadCSV");
@@ -89,7 +92,7 @@ const alertLabelLeft = el("alertLabelLeft");
 const alertLabelRight = el("alertLabelRight");
 
 const DISPLAY_TZ = "Asia/Manila";
-const STALE_MS = 30000;
+const STALE_MS = 15000;
 const HISTORY_LIMIT = 5000;
 const MAX_RENDER_ROWS = 180;
 
@@ -99,11 +102,11 @@ const OTA_DEFAULT_BIN  = "";
 
 const UI_OVERLOAD_WARN_A = 10;
 const UI_SHORT_CIRCUIT_A = 20;
-const UI_NORMAL_V_MIN = 207;
-const UI_NORMAL_V_MAX = 253;
-const UI_UNDERVOLTAGE_MIN_V = 170;
-const UI_UNDERVOLTAGE_V = 207;
-const UI_OVERVOLTAGE_V = 253;
+const UI_NORMAL_V_MIN = 200;
+const UI_NORMAL_V_MAX = 250;
+const UI_UNDERVOLTAGE_MIN_V = 100;
+const UI_UNDERVOLTAGE_V = 200;
+const UI_OVERVOLTAGE_V = 250;
 const UI_OVERVOLTAGE_DELAY_V = 250;
 const UI_OVERVOLTAGE_FAST_V = 265;
 const UI_MAINS_ABSENT_V = 50;
@@ -123,6 +126,9 @@ let lastLiveData = null;
 let lastAlertStatus = null;
 let lastNotifiedAt = 0;
 let previousPowerCondition = "UNKNOWN";
+let unpluggedUiSinceMs = 0;
+let pluggedUiSinceMs = 0;
+let latchedUiPowerCondition = "UNKNOWN";
 let previousFresh = false;
 let previousEffectiveStatus = "UNKNOWN";
 let latchedFaultUi = false;
@@ -137,6 +143,435 @@ const LS_INSTALL_DISMISS = "tsp_install_help_dismissed";
 const LS_DENSITY = "tsp_density";
 const LS_MODE = "tsp_mode";
 const NOTIFIABLE_STATUS_SET = new Set(["DEVICE_DISCONNECTED", "UNPLUGGED", "OVERLOAD", "SUSTAINED_OVERLOAD", "HEATING", "ARCING", "OVERVOLTAGE", "UNDERVOLTAGE"]);
+
+const HISTORY_FAULT_SET = new Set(["DEVICE_DISCONNECTED", "UNPLUGGED", "OVERLOAD", "SUSTAINED_OVERLOAD", "HEATING", "ARCING", "OVERVOLTAGE", "UNDERVOLTAGE", "SAFE_MODE"]);
+
+const STATUS_INFO = {
+  NORMAL: {
+    title: "Monitoring",
+    summary: "The plug is online and watching the load normally.",
+    details: [
+      "Live values are updating and no active trip is latched.",
+      "This is the expected state during stable operation."
+    ]
+  },
+  DEVICE_ON: {
+    title: "Device On",
+    summary: "The device booted and started running.",
+    details: ["This is a normal startup event before steady monitoring continues."]
+  },
+  DEVICE_ONLINE: {
+    title: "Device Online",
+    summary: "The dashboard is receiving live updates from the plug.",
+    details: ["Connection is healthy enough for monitoring and commands."]
+  },
+  DEVICE_PLUGGED_IN: {
+    title: "Device Plugged In",
+    summary: "Mains returned to the plug input.",
+    details: ["Voltage rose back above the unplugged region."]
+  },
+  FIRMWARE_UPDATED: {
+    title: "Firmware Updated",
+    summary: "A new firmware image was applied.",
+    details: ["Check live readings once the device reconnects to confirm the update is healthy."]
+  },
+  DEVICE_DISCONNECTED: {
+    title: "Device Disconnected",
+    summary: "The dashboard stopped receiving fresh packets.",
+    details: ["This can be Wi‑Fi loss, reboot, power loss, or a stalled network link."],
+    action: "Check power first, then Wi‑Fi and the device status." 
+  },
+  UNPLUGGED: {
+    title: "Unplugged / No Mains",
+    summary: "Measured voltage fell into the no-mains region.",
+    details: ["This usually means the plug was unplugged, the outlet lost supply, or the contact opened."],
+    action: "Restore mains safely, then confirm voltage has returned before re-enabling the load."
+  },
+  OVERLOAD: {
+    title: "Overload Alarm",
+    summary: "Current crossed the overload warning region.",
+    details: ["This is an alert state that signals the load is drawing heavy current."],
+    action: "Reduce load or verify the appliance current before continued use."
+  },
+  SUSTAINED_OVERLOAD: {
+    title: "Sustained Overload",
+    summary: "Heavy current stayed high long enough to trip protection.",
+    details: ["This is more serious than a short overload burst and normally forces a relay trip."],
+    action: "Disconnect or reduce the load and inspect for overheating before restoring power."
+  },
+  HEATING: {
+    title: "Heating",
+    summary: "Socket temperature reached the protection region.",
+    details: ["This often points to overloaded contacts, poor contact pressure, or localized heating."],
+    action: "Let the device cool, inspect the socket and plug contact, and do not immediately re-energize."
+  },
+  ARCING: {
+    title: "Arc Fault",
+    summary: "Waveform evidence matched arcing behavior.",
+    details: ["The decision is based on multiple waveform features and model evidence, not one value alone."],
+    action: "Disconnect the load and inspect plugs, cords, and contact points before reuse."
+  },
+  UNDERVOLTAGE: {
+    title: "Undervoltage",
+    summary: "Voltage dropped below the dashboard undervoltage threshold.",
+    details: ["In this PWA, values below 200 V are treated as undervoltage for interpretation."],
+    action: "Wait for supply to stabilize and check for loose or resistive contacts."
+  },
+  OVERVOLTAGE: {
+    title: "Overvoltage",
+    summary: "Voltage rose above the dashboard overvoltage threshold.",
+    details: ["In this PWA, values above 250 V are treated as overvoltage for interpretation."],
+    action: "Do not keep reconnecting the load until the supply is back in range."
+  },
+  SAFE_MODE: {
+    title: "Safe Mode",
+    summary: "The device fell back to a reduced-protection state.",
+    details: ["This usually follows a serious boot or update problem."],
+    action: "Review firmware and reboot behavior before using the plug for protection again."
+  },
+  WIFI_CONNECTING: {
+    title: "Wi‑Fi Connecting",
+    summary: "The plug is trying to reach the saved network.",
+    details: ["This is normal during startup or after a network change."]
+  },
+  CONFIG_PORTAL: {
+    title: "Wi‑Fi Portal",
+    summary: "The configuration portal is open.",
+    details: ["Use this to enter or change Wi‑Fi credentials."]
+  },
+  STARTUP_STABILIZING: {
+    title: "Startup Stabilizing",
+    summary: "The plug is in its startup settling period.",
+    details: ["Give the device a moment before treating the readings as fully stable."]
+  },
+  OTA_UPDATING: {
+    title: "OTA Updating",
+    summary: "Firmware download or installation is in progress.",
+    details: ["Avoid power interruption until the update completes."]
+  }
+};
+
+const METRIC_INFO = {
+  voltage: {
+    title: "Voltage",
+    summary: "This is the live RMS mains voltage reading.",
+    details: [
+      "It tracks the input supply seen by the plug.",
+      "Around 200–250 V is treated as the normal dashboard band.",
+      "Low readings can point to sag, bad contact, or mains loss. High readings point to overvoltage."
+    ]
+  },
+  current: {
+    title: "Current",
+    summary: "This is the live RMS current of the connected load.",
+    details: [
+      "It is the main indicator of whether the load is idle, light, or heavy.",
+      "Fast jumps, repeated dips, or unusually high sustained current can indicate abnormal load behavior."
+    ]
+  },
+  apparent_power: {
+    title: "Apparent Power",
+    summary: "This is the voltage-current product in VA.",
+    details: [
+      "It gives a quick sense of load activity even when current alone looks small.",
+      "Higher values mean the plug is supplying a more demanding load."
+    ]
+  },
+  temperature: {
+    title: "Temperature",
+    summary: "This is the socket temperature reading used for heating protection.",
+    details: [
+      "A steady low or moderate value is normal.",
+      "A rising trend under load can point to poor contact, overload, or hot ambient conditions."
+    ]
+  },
+  spectral_flux_midhf: {
+    title: "Spectral Flux (Mid/HF)",
+    summary: "Measures frame-to-frame change in the normalized square-root spectrum inside the configured mid/high-frequency band.",
+    details: [
+      "Low and steady values usually mean stable waveform content.",
+      "Spikes often appear when fast transients or arc-like bursts introduce changing HF content."
+    ]
+  },
+  residual_crest_factor: {
+    title: "Residual Crest Factor",
+    summary: "Converts the residual waveform crest ratio to dB after separating a faster cleaned waveform from a slower base envelope.",
+    details: [
+      "Lower values are usually calmer.",
+      "Higher values mean sharper impulsive peaks, which can happen with switching spikes or arcs."
+    ]
+  },
+  edge_spike_ratio: {
+    title: "Edge Spike Ratio",
+    summary: "Measures the strongest residual burst around the sharpest detected waveform edge and compares it against the rolling current baseline in dB.",
+    details: [
+      "Stable loads usually keep this modest.",
+      "Large rises suggest sharper, more abrupt events near waveform edges."
+    ]
+  },
+  midband_residual_ratio: {
+    title: "Midband Residual Ratio",
+    summary: "Measures residual midband spectral energy, compares it against the rolling current baseline, and expresses the ratio in dB.",
+    details: [
+      "A stable normal load tends to stay relatively consistent.",
+      "Raised values can mean added disturbance or rougher waveform structure."
+    ]
+  },
+  cycle_nmse: {
+    title: "Cycle NMSE",
+    summary: "Compares adjacent cycles and measures how different they are.",
+    details: [
+      "Low values mean one cycle looks much like the next.",
+      "Higher values mean poorer cycle-to-cycle repeatability, which can happen during unstable operation."
+    ]
+  },
+  peak_fluct_cv: {
+    title: "Peak Fluctuation CV",
+    summary: "Measures how much peak levels vary over time.",
+    details: [
+      "Stable loads keep peak variation tighter.",
+      "A large spread points to unstable peaks, pulsing behavior, or disturbance."
+    ]
+  },
+  thd_i: {
+    title: "Current THD",
+    summary: "This is current total harmonic distortion.",
+    details: [
+      "Some non-linear loads naturally have higher THD than simple resistive loads.",
+      "What matters most is sudden change or unusually high distortion relative to the same load."
+    ]
+  },
+  hf_energy_delta: {
+    title: "HF Energy Delta",
+    summary: "Tracks the change in high-frequency band share relative to the rolling baseline and expresses that change in dB.",
+    details: [
+      "Stable operation keeps this from swinging too sharply.",
+      "Large positive changes can happen when HF noise or bursty activity appears."
+    ]
+  },
+  zcv: {
+    title: "ZCV",
+    summary: "Measures the spread of zero-cross timing intervals derived from hysteresis-based zero-cross detection.",
+    details: [
+      "It is derived from the standard deviation of zero-cross interval timing, expressed in milliseconds.",
+      "Smaller values mean more consistent crossing timing. Larger values mean more timing irregularity."
+    ]
+  },
+  abs_irms_zscore_vs_baseline: {
+    title: "Absolute Z-Deviation",
+    summary: "Shows how far the present RMS current is from the rolling baseline current, in baseline standard-deviation units.",
+    details: [
+      "Near-zero means the load looks close to its recent baseline.",
+      "Large values mean the load has drifted far from its normal level for that session."
+    ]
+  },
+  connection: {
+    title: "Connection",
+    summary: "Shows whether the dashboard is still getting fresh packets.",
+    details: ["Offline or stale here means the page is no longer seeing current telemetry from the plug."]
+  },
+  protection: {
+    title: "Protection",
+    summary: "Summarizes the active protection state or current trip condition.",
+    details: ["Use this together with History to see whether the device is monitoring, alarming, or tripped."]
+  },
+  firmware: {
+    title: "Firmware",
+    summary: "Displays the currently reported device firmware build.",
+    details: ["Use it to confirm the plug is running the expected firmware after OTA or rollback."]
+  },
+  last_event: {
+    title: "Last Event",
+    summary: "Shows the newest history event captured by the dashboard.",
+    details: ["It is a quick way to see the last important state change without opening the full history pane."]
+  }
+};
+
+let infoPopoverEl = null;
+
+function escapeHtml(value) {
+  return String(value ?? "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+}
+
+function normalizeInfoEntry(entry) {
+  if (!entry) return null;
+  return {
+    title: String(entry.title || "Info"),
+    summary: String(entry.summary || ""),
+    details: Array.isArray(entry.details) ? entry.details.map((v) => String(v || "").trim()).filter(Boolean) : [],
+    action: String(entry.action || "").trim()
+  };
+}
+
+function ensureInfoPopover() {
+  if (infoPopoverEl) return infoPopoverEl;
+  infoPopoverEl = document.createElement("div");
+  infoPopoverEl.className = "info-popover";
+  infoPopoverEl.hidden = true;
+  document.body.appendChild(infoPopoverEl);
+
+  const closeMaybe = (ev) => {
+    if (!infoPopoverEl || infoPopoverEl.hidden) return;
+    if (ev && infoPopoverEl.contains(ev.target)) return;
+    if (ev && ev.target?.closest?.(".tsp-info-btn")) return;
+    hideInfoPopover();
+  };
+
+  document.addEventListener("click", closeMaybe);
+  window.addEventListener("resize", hideInfoPopover);
+  window.addEventListener("scroll", hideInfoPopover, true);
+  document.addEventListener("keydown", (ev) => {
+    if (ev.key === "Escape") hideInfoPopover();
+  });
+  return infoPopoverEl;
+}
+
+function hideInfoPopover() {
+  if (!infoPopoverEl) return;
+  infoPopoverEl.hidden = true;
+  infoPopoverEl.classList.remove("show");
+}
+
+function showInfoPopover(anchor, entry, tone = "") {
+  const box = ensureInfoPopover();
+  const item = normalizeInfoEntry(entry);
+  if (!anchor || !item) return;
+
+  const detailsHtml = item.details.length
+    ? `<ul>${item.details.map((line) => `<li>${escapeHtml(line)}</li>`).join("")}</ul>`
+    : "";
+  const actionHtml = item.action
+    ? `<div class="info-popover-action"><strong>What to do:</strong> ${escapeHtml(item.action)}</div>`
+    : "";
+
+  box.className = `info-popover${tone ? ` ${tone}` : ""}`;
+  box.innerHTML = `
+    <div class="info-popover-title">${escapeHtml(item.title)}</div>
+    ${item.summary ? `<div class="info-popover-summary">${escapeHtml(item.summary)}</div>` : ""}
+    ${detailsHtml}
+    ${actionHtml}
+  `;
+  box.hidden = false;
+  box.classList.add("show");
+
+  const rect = anchor.getBoundingClientRect();
+  const boxRect = box.getBoundingClientRect();
+  const pad = 12;
+  let left = rect.right - boxRect.width;
+  if (!Number.isFinite(left)) left = rect.left;
+  left = Math.max(pad, Math.min(window.innerWidth - boxRect.width - pad, left));
+
+  let top = rect.bottom + 10;
+  if ((top + boxRect.height) > (window.innerHeight - pad)) {
+    top = rect.top - boxRect.height - 10;
+  }
+  top = Math.max(pad, Math.min(window.innerHeight - boxRect.height - pad, top));
+
+  box.style.left = `${Math.round(left)}px`;
+  box.style.top = `${Math.round(top)}px`;
+}
+
+function statusInfoEntry(kind) {
+  return normalizeInfoEntry(STATUS_INFO[classifyStatus(kind)] || {
+    title: prettyStatus(kind) || "Status",
+    summary: "This is the current recorded status.",
+    details: ["No extra description was mapped for this status yet."]
+  });
+}
+
+function metricInfoEntry(key) {
+  return normalizeInfoEntry(METRIC_INFO[key]);
+}
+
+function bindHoldInfo(target, entry, tone = "") {
+  if (!target) return;
+  const normalized = normalizeInfoEntry(entry);
+  if (!normalized) return;
+  if (target.dataset.holdInfoBound === "1") return;
+  target.dataset.holdInfoBound = "1";
+  target.classList.add("has-hold-info");
+
+  const show = (ev) => {
+    if (ev?.pointerType === "mouse" && ev.button !== 0) return;
+    showInfoPopover(target, normalized, tone);
+  };
+  const hide = () => hideInfoPopover();
+
+  target.addEventListener("pointerdown", show);
+  target.addEventListener("pointerup", hide);
+  target.addEventListener("pointerleave", hide);
+  target.addEventListener("pointercancel", hide);
+  target.addEventListener("lostpointercapture", hide);
+  target.addEventListener("contextmenu", (ev) => ev.preventDefault());
+  target.addEventListener("keydown", (ev) => {
+    if (ev.key === "Enter" || ev.key === " ") {
+      ev.preventDefault();
+      showInfoPopover(target, normalized, tone);
+    }
+  });
+  target.addEventListener("keyup", (ev) => {
+    if (ev.key === "Enter" || ev.key === " ") hideInfoPopover();
+  });
+  target.addEventListener("blur", hide);
+}
+
+function initDashboardInfoButtons() {
+
+  const mappings = [
+    [vVal?.closest?.(".card"), metricInfoEntry("voltage")],
+    [iVal?.closest?.(".card"), metricInfoEntry("current")],
+    [pVal?.closest?.(".card"), metricInfoEntry("apparent_power")],
+    [tVal?.closest?.(".card"), metricInfoEntry("temperature")],
+    [spectralFluxVal?.closest?.(".card"), metricInfoEntry("spectral_flux_midhf")],
+    [residualCrestVal?.closest?.(".card"), metricInfoEntry("residual_crest_factor")],
+    [edgeSpikeVal?.closest?.(".card"), metricInfoEntry("edge_spike_ratio")],
+    [midbandRatioVal?.closest?.(".card"), metricInfoEntry("midband_residual_ratio")],
+    [cycleNmseVal?.closest?.(".card"), metricInfoEntry("cycle_nmse")],
+    [peakFluctVal?.closest?.(".card"), metricInfoEntry("peak_fluct_cv")],
+    [thdIVal?.closest?.(".card"), metricInfoEntry("thd_i")],
+    [hfEnergyDeltaVal?.closest?.(".card"), metricInfoEntry("hf_energy_delta")],
+    [zcvVal?.closest?.(".card"), metricInfoEntry("zcv")],
+    [irmsZscoreVal?.closest?.(".card"), metricInfoEntry("abs_irms_zscore_vs_baseline")],
+    [ovConnectivity?.closest?.(".summary-card"), metricInfoEntry("connection")],
+    [ovProtection?.closest?.(".summary-card"), metricInfoEntry("protection")],
+    [ovFirmware?.closest?.(".summary-card"), metricInfoEntry("firmware")],
+    [ovLastEvent?.closest?.(".summary-card"), metricInfoEntry("last_event")],
+  ];
+  mappings.forEach(([node, entry]) => bindHoldInfo(node, entry, ""));
+}
+
+function isFaultHistoryStatus(kind) {
+  return HISTORY_FAULT_SET.has(classifyStatus(kind));
+}
+
+function renderHistoryPane(container, items, isFaultPane = false) {
+  if (!container) return;
+  if (!items.length) {
+    container.innerHTML = `<div class="history-empty">No ${isFaultPane ? "fault" : "normal-operation"} history in this range.</div>`;
+    return;
+  }
+  container.innerHTML = items.map((record, idx) => {
+    const kind = classifyStatus(record?.status || "NORMAL");
+    const label = prettyStatus(kind);
+    const tone = isFaultPane ? "history-status-chip-fault" : "history-status-chip-normal";
+    return `
+      <div class="history-item row-in" style="animation-delay:${Math.min(idx, 10) * 25}ms">
+        <div class="history-item-time mono">${escapeHtml(formatDisplayTimestamp(getRecordEpochMs(record)))}</div>
+        <div class="history-item-status">
+          <span class="history-status-chip ${tone}" data-history-kind="${escapeHtml(kind)}" tabindex="0" role="button" aria-label="Explain ${escapeHtml(label)}">${escapeHtml(label)}</span>
+        </div>
+      </div>
+    `;
+  }).join("");
+  container.querySelectorAll("[data-history-kind]").forEach((chip) => {
+    bindHoldInfo(chip, statusInfoEntry(chip.getAttribute("data-history-kind") || "NORMAL"), isFaultPane ? "fault" : "");
+  });
+}
 
 let deferredInstallPrompt = null;
 
@@ -190,6 +625,56 @@ function safeFilenameSegment(v, fallback = "session") {
     .slice(0, 64) || fallback;
 }
 
+const FILENAME_DIVISION_ALIASES = {
+  startup: "start",
+  start: "start",
+  steady: "steady",
+  baseline: "steady",
+  arc: "arc",
+  close: "close",
+  closing: "close",
+  end: "close",
+  ending: "close",
+};
+const FILENAME_SUFFIX_TOKENS = new Set(["capture", "captured", "processed", "process", "labeled", "labelled", "edited", "edit", "review", "original", "raw"]);
+const FILENAME_PREFIX_TOKENS = new Set(["proc", "processed", "upload", "uploaded", "sess", "session", "logger", "log"]);
+
+function parseTrialToken(token) {
+  const raw = String(token || "").trim().toLowerCase();
+  if (!raw) return null;
+  if (/^\d+$/.test(raw)) return Math.max(1, Number(raw));
+  const tagged = raw.match(/^(?:t|trial)(\d{1,4})$/i);
+  if (tagged) return Math.max(1, Number(tagged[1]));
+  return null;
+}
+
+function formatTrialToken(trial) {
+  return `t${String(safePositiveInt(trial, 1)).padStart(2, "0")}`;
+}
+
+function normalizeDivisionToken(value) {
+  return FILENAME_DIVISION_ALIASES[String(value || "").trim().toLowerCase()] || "";
+}
+
+function divisionFileToken(division) {
+  const normalized = normalizeDivisionToken(division);
+  if (!normalized) return "";
+  return normalized === "close" ? "end" : normalized;
+}
+
+function divisionDisplayLabel(division, fallback = "") {
+  const normalized = normalizeDivisionToken(division);
+  if (!normalized) return fallback;
+  return ({ start: "Start", steady: "Steady", arc: "Arc", close: "End" })[normalized] || fallback || titleizeTokenText(normalized, fallback || "Section");
+}
+
+function trimFilenameLoadTokens(tokens) {
+  const out = Array.from(tokens || []).filter(Boolean);
+  while (out.length > 1 && (FILENAME_PREFIX_TOKENS.has(String(out[0] || "").toLowerCase()) || /^\d{6,}$/.test(String(out[0] || "")))) out.shift();
+  while (out.length && FILENAME_SUFFIX_TOKENS.has(String(out[out.length - 1] || "").toLowerCase())) out.pop();
+  return out;
+}
+
 function titleizeTokenText(v, fallback = "Unknown") {
   const base = String(v || "")
     .replace(/\.[a-z0-9]+$/i, "")
@@ -207,27 +692,39 @@ function formatSessionStamp(ms) {
 
 function sessionDisplayName(meta, sessionId) {
   const sourceFile = String(meta?.source_file || "").trim();
-  if (sourceFile) return titleizeTokenText(sourceFile, sourceFile);
-  const load = String(meta?.load_type || "").trim();
-  if (load && load.toLowerCase() !== "uploaded_csv" && load.toLowerCase() !== "unknown") return titleizeTokenText(load, load);
-  if (isUploadedCsvSession(meta)) return "Uploaded CSV";
+  const parsed = parseDatasetFilenameMeta(sourceFile || sessionId || "");
+  const load = safeFilenameSegment(meta?.load_type || parsed.loadType || "", "").toLowerCase();
+  const trial = safePositiveInt(meta?.trial_number || parsed.trial || 1, 1);
+  const division = normalizeDivisionToken(meta?.division_tag || parsed.division || "");
+  if (load && load !== "uploaded_csv" && load !== "unknown") {
+    const base = `${titleizeTokenText(load, load)} • ${formatTrialToken(trial).toUpperCase()}`;
+    return division ? `${base} • ${divisionDisplayLabel(division)}` : base;
+  }
+  if (isUploadedCsvSession(meta)) return sourceFile ? titleizeTokenText(sourceFile, "Uploaded CSV") : "Uploaded CSV";
   const start = Number(meta?.start_ms || 0);
   if (start) return `Session ${formatSessionStamp(start)}`;
   return titleizeTokenText(sessionId || "session", "Session");
 }
 
 function sessionSecondaryText(meta, sessionId) {
-  const load = String(meta?.load_type || "").trim();
-  if (isUploadedCsvSession(meta)) return sessionId || "uploaded_csv";
-  if (load && load.toLowerCase() !== "unknown") return `${sessionId || "session"} • ${titleizeTokenText(load, load)}`;
-  return sessionId || "session";
+  const sourceFile = String(meta?.source_file || "").trim();
+  const parsed = parseDatasetFilenameMeta(sourceFile || sessionId || "");
+  const division = normalizeDivisionToken(meta?.division_tag || parsed.division || "");
+  const category = loggerSessionCategory(meta);
+  const parts = [];
+  parts.push(category === "processed" ? "Processed" : "Original");
+  if (division) parts.push(divisionDisplayLabel(division));
+  if (sourceFile) parts.push(sourceFile);
+  else if (sessionId) parts.push(sessionId);
+  return parts.join(" • ");
 }
 
 function sessionLoadText(meta) {
   const sourceFile = String(meta?.source_file || "").trim();
-  const load = String(meta?.load_type || "").trim();
+  const parsed = parseDatasetFilenameMeta(sourceFile || "");
+  const load = safeFilenameSegment(meta?.load_type || parsed.loadType || "", "").toLowerCase();
+  if (load && load !== "uploaded_csv" && load !== "unknown") return titleizeTokenText(load, load);
   if (isUploadedCsvSession(meta)) return sourceFile ? titleizeTokenText(sourceFile, sourceFile) : "Uploaded CSV";
-  if (load && load.toLowerCase() !== "unknown") return titleizeTokenText(load, load);
   return "Unknown";
 }
 
@@ -642,7 +1139,9 @@ async function showFaultNotification(title, body){
     .replace(/[^a-z0-9]+/g, "-")
     .replace(/^-+|-+$/g, "") || "status";
 
-  if ("serviceWorker" in navigator) {
+  initDashboardInfoButtons();
+
+if ("serviceWorker" in navigator) {
     const reg = await navigator.serviceWorker.ready.catch(()=>null);
     if (reg) {
       reg.showNotification(title, {
@@ -789,14 +1288,10 @@ function derivePowerConditionFromLive(data) {
   const v = Number(data?.voltage ?? 0);
   const raw = classifyStatus(data?.power_condition || data?.status || "NORMAL");
   if (raw === "OVERVOLTAGE") return "OVERVOLTAGE";
-  if (raw === "UNPLUGGED") return "UNPLUGGED";
   if (raw === "UNDERVOLTAGE") return "UNDERVOLTAGE";
+  if (raw === "UNPLUGGED") return "UNPLUGGED";
 
-  // Fallback classification when the device-side power_condition is absent:
-  // - deep collapses are treated as mains loss / collapse, not undervoltage
-  // - staged undervoltage is only shown in the intended 170 V to 206 V band
-  // - overvoltage fallback follows the normal-band ceiling, while the hint text
-  //   still documents the delayed / fast trip regions used by protection logic
+  if (v <= UI_MAINS_ABSENT_V) return "UNPLUGGED";
   if (v >= UI_UNDERVOLTAGE_MIN_V && v < UI_UNDERVOLTAGE_V) return "UNDERVOLTAGE";
   if (v > UI_NORMAL_V_MAX) return "OVERVOLTAGE";
   if (v >= UI_NORMAL_V_MIN && v <= UI_NORMAL_V_MAX) return "NORMAL";
@@ -840,8 +1335,32 @@ function effectiveTimestamp() {
 }
 
 function effectivePowerCondition() {
-  if (liveIsFresh() && lastLiveData) return derivePowerConditionFromLive(lastLiveData);
-  return "DEVICE_DISCONNECTED";
+  if (!(liveIsFresh() && lastLiveData)) {
+    unpluggedUiSinceMs = 0;
+    pluggedUiSinceMs = 0;
+    latchedUiPowerCondition = "UNKNOWN";
+    return "DEVICE_DISCONNECTED";
+  }
+
+  const raw = derivePowerConditionFromLive(lastLiveData);
+  const now = Date.now();
+  if (raw === "UNPLUGGED") {
+    if (!unpluggedUiSinceMs) unpluggedUiSinceMs = now;
+    pluggedUiSinceMs = 0;
+    if ((now - unpluggedUiSinceMs) >= 5000) latchedUiPowerCondition = "UNPLUGGED";
+    return latchedUiPowerCondition === "UNPLUGGED" ? "UNPLUGGED" : (previousPowerCondition === "UNPLUGGED" ? "UNPLUGGED" : "UNKNOWN");
+  }
+
+  unpluggedUiSinceMs = 0;
+  if (raw === "NORMAL") {
+    if (!pluggedUiSinceMs) pluggedUiSinceMs = now;
+    if (previousPowerCondition === "UNPLUGGED" && (now - pluggedUiSinceMs) < 5000) return "UNPLUGGED";
+  } else {
+    pluggedUiSinceMs = 0;
+  }
+
+  latchedUiPowerCondition = raw;
+  return raw;
 }
 
 function formatElapsedClock(ms, includeAgo = true) {
@@ -1121,36 +1640,23 @@ function applyHistoryFilter() {
   const key = rangeSelect?.value || "7d";
   const { start, end } = getRangeBounds(key);
 
-  const filtered = historyCache.filter(r => {
+  const filtered = historyCache.filter((r) => {
     const epoch = getRecordEpochMs(r);
     return epoch && epoch >= start && epoch < end;
   });
 
-  currentFilteredHistory = filtered.slice();
-  if (historyHint) historyHint.textContent = `Showing: ${rangeLabel(key)} (${filtered.length})`;
-
-  if (!filtered.length) {
-    historyBody.innerHTML = `<tr><td colspan="6" class="muted">No history in this range.</td></tr>`;
-    return;
-  }
-
   filtered.sort((a, b) => getRecordEpochMs(b) - getRecordEpochMs(a));
-  const rows = filtered.slice(0, MAX_RENDER_ROWS).map((r, idx) => {
-    const epoch = getRecordEpochMs(r);
-    const timeStr = formatDisplayTimestamp(epoch);
-    const durStr = formatDurationMs(historyDurationMsDesc(filtered, idx));
-    return `
-      <tr class="row-in" style="animation-delay:${Math.min(idx, 10) * 25}ms">
-        <td class="mono">${timeStr}</td>
-        <td>${pillHTML(r.status)}</td>
-        <td class="mono">${toFixedOrDash(r.voltage, 1)}</td>
-        <td class="mono">${toFixedOrDash(r.current, 3)}</td>
-        <td class="mono">${toFixedOrDash(r.temp, 1)}</td>
-        <td class="mono">${durStr}</td>
-      </tr>
-    `;
-  }).join("");
-  historyBody.innerHTML = rows;
+  currentFilteredHistory = filtered.slice();
+
+  const normalRows = filtered.filter((r) => !isFaultHistoryStatus(r?.status || "NORMAL")).slice(0, MAX_RENDER_ROWS);
+  const faultRows = filtered.filter((r) => isFaultHistoryStatus(r?.status || "NORMAL")).slice(0, MAX_RENDER_ROWS);
+
+  if (historyHint) historyHint.textContent = `Showing: ${rangeLabel(key)} (${filtered.length})`;
+  if (historyNormalCount) historyNormalCount.textContent = String(normalRows.length);
+  if (historyFaultCount) historyFaultCount.textContent = String(faultRows.length);
+
+  renderHistoryPane(historyNormalBody, normalRows, false);
+  renderHistoryPane(historyFaultBody, faultRows, true);
 }
 rangeSelect?.addEventListener("change", applyHistoryFilter);
 
@@ -1520,8 +2026,13 @@ const btnUploadCsv = el("btnUploadCsv");
 const mlCsvUpload = el("mlCsvUpload");
 const mlLogStatus = el("mlLogStatus");
 const mlSessionBody = el("mlSessionBody");
+const btnMlTabOriginal = el("btnMlTabOriginal");
+const btnMlTabProcessed = el("btnMlTabProcessed");
 let currentSessionId = "";
 let lastMlLogEnabled = null;
+let activeMlLogTab = "original";
+let mlSessionsCache = {};
+const mlDurationCache = new Map();
 
 function applyActiveMlSessionRow() {
   if (!mlSessionBody) return;
@@ -1535,16 +2046,28 @@ document.addEventListener("tsp-active-session-changed", (ev) => {
   applyActiveMlSessionRow();
 });
 
-function downloadTextFileGeneric(filename, text, mime="text/csv;charset=utf-8") {
+btnMlTabOriginal?.addEventListener("click", () => setActiveMlLogTab("original"));
+btnMlTabProcessed?.addEventListener("click", () => setActiveMlLogTab("processed"));
+
+function downloadTextFileGeneric(filename, text, mime = "text/csv;charset=utf-8") {
+  const safeName = safeCsvFilename(filename || "download.csv");
   const blob = new Blob([text], { type: mime });
+  if (navigator.msSaveOrOpenBlob) {
+    navigator.msSaveOrOpenBlob(blob, safeName);
+    return;
+  }
   const url = URL.createObjectURL(blob);
   const a = document.createElement("a");
   a.href = url;
-  a.download = filename;
+  a.download = safeName;
+  a.rel = "noopener";
+  a.style.display = "none";
   document.body.appendChild(a);
   a.click();
-  a.remove();
-  URL.revokeObjectURL(url);
+  window.setTimeout(() => {
+    a.remove();
+    URL.revokeObjectURL(url);
+  }, 1200);
 }
 
 
@@ -1591,21 +2114,102 @@ function buildContinuousSecondsFromField(rows, field, scale = 0.001) {
 function parseDatasetFilenameMeta(name) {
   const stem = String(name || "").replace(/\.[a-z0-9]+$/i, "").trim();
   const parts = stem.split(/[_\s-]+/).filter(Boolean);
-  const aliases = { startup: "start", start: "start", steady: "steady", baseline: "steady", arc: "arc", close: "close", closing: "close" };
-  const last = String(parts[parts.length - 1] || "").toLowerCase();
-  const division = aliases[last] || "";
+  const normParts = parts.map((p) => String(p || "").toLowerCase());
+
+  let division = "";
   let trial = 1;
-  let endIdx = parts.length;
-  if (division) endIdx -= 1;
-  if (endIdx > 0) {
-    const maybeTrial = Number(parts[endIdx - 1]);
-    if (Number.isInteger(maybeTrial) && maybeTrial > 0) {
-      trial = maybeTrial;
-      endIdx -= 1;
+  let segmentIndex = 0;
+  let divisionIdx = -1;
+  let trialIdx = -1;
+
+  for (let idx = normParts.length - 1; idx >= 0; idx--) {
+    const maybeDivision = normalizeDivisionToken(normParts[idx]);
+    if (maybeDivision) {
+      division = maybeDivision;
+      divisionIdx = idx;
+      break;
     }
   }
-  const loadType = safeFilenameSegment(parts.slice(0, Math.max(0, endIdx)).join("_"), "uploaded_csv");
-  return { loadType, trial, division };
+
+  for (let idx = normParts.length - 1; idx >= 0; idx--) {
+    if (idx === divisionIdx) continue;
+    const maybeTrial = parseTrialToken(normParts[idx]);
+    if (maybeTrial) {
+      trial = maybeTrial;
+      trialIdx = idx;
+      break;
+    }
+  }
+
+  let keepTokens = parts.filter((_, idx) => idx !== divisionIdx && idx !== trialIdx);
+  const maybeSegment = String(keepTokens[keepTokens.length - 1] || "").match(/^(?:seg|part|slice)(\d{1,4})$/i);
+  if (maybeSegment) {
+    segmentIndex = Math.max(1, Number(maybeSegment[1] || 0));
+    keepTokens.pop();
+  }
+  keepTokens = trimFilenameLoadTokens(keepTokens);
+
+  const loadType = safeFilenameSegment(keepTokens.join("_"), "uploaded_csv").toLowerCase();
+  return { loadType, trial, division, segmentIndex };
+}
+
+function safePositiveInt(value, fallback = 1) {
+  const n = Number(value);
+  return Number.isInteger(n) && n > 0 ? n : fallback;
+}
+
+function stripCsvExtension(name) {
+  return String(name || "").replace(/\.csv$/i, "").trim();
+}
+
+function canonicalizeDatasetStem(name, fallback = "session") {
+  const parsed = parseDatasetFilenameMeta(name || fallback);
+  const stem = stripCsvExtension(canonicalSourceFileName(name || fallback, {
+    load_type: parsed.loadType || fallback,
+    trial_number: parsed.trial || 1,
+    division_tag: parsed.division || "",
+    segment_index: parsed.segmentIndex || 0,
+  }, parsed.division || parsed.segmentIndex ? "processed" : "original"));
+  return stem || fallback;
+}
+
+function loggerSessionCategory(meta) {
+  return String(meta?.session_category || (meta?.processed_csv ? "processed" : "original")).toLowerCase() === "processed" ? "processed" : "original";
+}
+
+function canonicalSourceFileName(name, meta = {}, category = "original") {
+  const parsed = parseDatasetFilenameMeta(name || meta?.source_file || "");
+  const load = safeFilenameSegment(meta?.load_type || parsed.loadType || "session", "session").toLowerCase();
+  const trial = safePositiveInt(meta?.trial_number || parsed.trial || 1, 1);
+  const division = normalizeDivisionToken(meta?.division_tag || parsed.division || "");
+  const segmentIndex = safePositiveInt(meta?.segment_index || parsed.segmentIndex || 0, 0);
+  const parts = [load, formatTrialToken(trial)];
+  if (segmentIndex > 1) parts.push(`seg${String(segmentIndex).padStart(2, "0")}`);
+  if (division) parts.push(divisionFileToken(division));
+  else if (category === "processed") parts.push("labeled");
+  return safeCsvFilename(`${parts.join("_")}.csv`);
+}
+
+function nextTrialNumberForLoad(loadType, category = "original") {
+  const token = safeFilenameSegment(loadType || "session", "session").toLowerCase();
+  let maxTrial = 0;
+  Object.values(mlSessionsCache || {}).forEach((meta) => {
+    if (loggerSessionCategory(meta) !== category) return;
+    const parsed = parseDatasetFilenameMeta(String(meta?.source_file || ""));
+    const load = safeFilenameSegment(meta?.load_type || parsed.loadType || "", "").toLowerCase();
+    if (load !== token) return;
+    const trial = safePositiveInt(meta?.trial_number || parsed.trial || 0, 0);
+    if (trial > maxTrial) maxTrial = trial;
+  });
+  return Math.max(1, maxTrial + 1);
+}
+
+function setActiveMlLogTab(tab) {
+  activeMlLogTab = tab === "processed" ? "processed" : "original";
+  btnMlTabOriginal?.classList.toggle("is-active", activeMlLogTab === "original");
+  btnMlTabProcessed?.classList.toggle("is-active", activeMlLogTab === "processed");
+  if (mlSessionBody) applyActiveMlSessionRow();
+  if (typeof renderMlSessions === "function") renderMlSessions();
 }
 
 function deriveUploadedCsvTimingMeta(csvText) {
@@ -1664,24 +2268,63 @@ function uploadedCsvDurationSeconds(meta) {
 function isUploadedCsvSession(meta) {
   return !!(meta?.uploaded_csv || String(meta?.load_type || "").trim().toLowerCase() === "uploaded_csv");
 }
-function durationText(meta) {
+function durationText(meta, sessionId = "") {
+  const cached = sessionId ? mlDurationCache.get(sessionId) : null;
+  if (Number.isFinite(cached) && cached >= 0) return formatDurationSeconds(cached);
+
   if (isUploadedCsvSession(meta)) {
     const uploadedDur = uploadedCsvDurationSeconds(meta);
     if (uploadedDur !== null) return formatDurationSeconds(uploadedDur);
   }
 
-  const configuredSec = Number(meta?.duration_s);
+  const configuredSec = Number(meta?.duration_s ?? meta?.source_duration_s);
   const st = Number(meta?.start_ms || 0);
   const en = Number(meta?.end_ms || 0);
   const wallSec = (st && en > st) ? ((en - st) / 1000) : null;
 
   if (Number.isFinite(configuredSec) && configuredSec > 0 && !!meta?.closed_by_device) return formatDurationSeconds(configuredSec);
-  if (Number.isFinite(configuredSec) && configuredSec > 0 && wallSec !== null && Math.abs(wallSec - configuredSec) > 1.5) return formatDurationSeconds(configuredSec);
-  if (wallSec !== null) return formatDurationSeconds(Math.max(0, wallSec));
   if (Number.isFinite(configuredSec) && configuredSec > 0 && !st) return formatDurationSeconds(configuredSec);
+  if (wallSec !== null && (!Number.isFinite(configuredSec) || Math.abs(wallSec - configuredSec) <= 2)) return formatDurationSeconds(Math.max(0, wallSec));
+  if (Number.isFinite(configuredSec) && configuredSec > 0) return formatDurationSeconds(configuredSec);
+  if (wallSec !== null) return formatDurationSeconds(Math.max(0, wallSec));
   if (!st) return "—";
   const durMs = Date.now() - st;
   return formatDurationSeconds(Math.max(0, durMs / 1000));
+}
+
+async function resolveSessionDurationSeconds(sessionId, meta = {}) {
+  if (!sessionId) return null;
+  if (mlDurationCache.has(sessionId)) return mlDurationCache.get(sessionId);
+
+  const direct = uploadedCsvDurationSeconds(meta);
+  if (Number.isFinite(direct) && direct > 0 && !!meta?.uploaded_csv) {
+    mlDurationCache.set(sessionId, direct);
+    return direct;
+  }
+
+  try {
+    const csv = await fetchSessionCsv(sessionId);
+    if (!csv) return null;
+    const timing = deriveUploadedCsvTimingMeta(csv);
+    if (Number.isFinite(timing?.durationS) && timing.durationS >= 0) {
+      mlDurationCache.set(sessionId, timing.durationS);
+      return timing.durationS;
+    }
+  } catch (err) {
+    console.warn("Failed to derive accurate logger duration", sessionId, err);
+  }
+  return null;
+}
+
+async function hydrateVisibleSessionDurations(ids, sessionsObj) {
+  const visibleIds = (ids || []).slice(0, 24);
+  await Promise.all(visibleIds.map(async (sessionId) => {
+    const meta = sessionsObj?.[sessionId] || {};
+    const duration = await resolveSessionDurationSeconds(sessionId, meta);
+    if (!Number.isFinite(duration)) return;
+    const cell = mlSessionBody?.querySelector?.(`[data-duration-for="${sessionId}"]`);
+    if (cell) cell.textContent = formatDurationSeconds(duration);
+  }));
 }
 
 async function fetchSessionCsv(sessionId) {
@@ -1693,31 +2336,24 @@ async function fetchSessionCsv(sessionId) {
   keys.sort((a, b) => {
     const ax = chunksObj[a] || {};
     const bx = chunksObj[b] || {};
-
     const aSessionSeq = Number(ax.session_chunk_seq);
     const bSessionSeq = Number(bx.session_chunk_seq);
     if (hasMonotonicSessionSeq && aSessionSeq !== bSessionSeq) return aSessionSeq - bSessionSeq;
-
     const aFirstUp = Number(ax.first_uptime_ms);
     const bFirstUp = Number(bx.first_uptime_ms);
     if (Number.isFinite(aFirstUp) && Number.isFinite(bFirstUp) && aFirstUp !== bFirstUp) return aFirstUp - bFirstUp;
-
     const aFirstEpoch = Number(ax.first_epoch_ms);
     const bFirstEpoch = Number(bx.first_epoch_ms);
     if (Number.isFinite(aFirstEpoch) && Number.isFinite(bFirstEpoch) && aFirstEpoch !== bFirstEpoch) return aFirstEpoch - bFirstEpoch;
-
     const aCreated = Number(ax.created_at || 0);
     const bCreated = Number(bx.created_at || 0);
     if (Number.isFinite(aCreated) && Number.isFinite(bCreated) && aCreated !== bCreated) return aCreated - bCreated;
-
     const aSeq = Number(ax.chunk_seq);
     const bSeq = Number(bx.chunk_seq);
     if (Number.isFinite(aSeq) && Number.isFinite(bSeq) && aSeq !== bSeq) return aSeq - bSeq;
-
     const ai = Number(ax.chunk_index);
     const bi = Number(bx.chunk_index);
     if (Number.isFinite(ai) && Number.isFinite(bi) && ai !== bi) return ai - bi;
-
     return String(a).localeCompare(String(b));
   });
   let header = "";
@@ -1728,7 +2364,7 @@ async function fetchSessionCsv(sessionId) {
     const lines = csv.split("\n").filter(x => x.trim().length);
     if (lines.length === 0) continue;
     if (!header) {
-      header = lines[0];
+      header = lines[0].trimEnd();
       rows.push(...lines.slice(1));
     } else {
       const startIdx = (lines[0].trim() === header.trim()) ? 1 : 0;
@@ -1740,14 +2376,10 @@ async function fetchSessionCsv(sessionId) {
 }
 
 function sessionFilename(meta, sessionId) {
-  const start = Number(meta?.start_ms || 0);
-  const label = safeFilenameSegment(labelText(meta?.label_override), "AUTO");
-  const stamp = start ? formatEpochMsTZ(start).replace(/[ :.]/g, "-") : "UNKNOWN_TIME";
   const sourceFile = String(meta?.source_file || "").trim();
-  const baseName = sourceFile
-    ? safeFilenameSegment(sourceFile, "uploaded_csv")
-    : safeFilenameSegment(sessionDisplayName(meta, sessionId), safeFilenameSegment(sessionId, "session"));
-  return `TSP_ML_${baseName}_${label}_${stamp}.csv`;
+  if (sourceFile) return safeCsvFilename(sourceFile);
+  const category = loggerSessionCategory(meta);
+  return safeCsvFilename(canonicalSourceFileName(sessionId, meta, category));
 }
 
 if (mlLogEnable) {
@@ -1757,7 +2389,6 @@ if (mlLogEnable) {
     mlLogEnable.checked = enabledNow;
     if (typeof v.duration_s === "number" && mlLogDur) mlLogDur.value = String(v.duration_s);
     if (mlLoadType && v.load_type) mlLoadType.value = v.load_type;
-    if (mlLabelOverride && (v.label_override !== undefined)) mlLabelOverride.value = String(v.label_override);
     if (v.session_id) currentSessionId = v.session_id;
 
     if (lastMlLogEnabled === true && !enabledNow) {
@@ -1772,10 +2403,12 @@ if (mlLogEnable) {
     const enabled = !!mlLogEnable.checked;
     const dur = Math.max(1, parseInt(mlLogDur?.value || "10", 10) || 10);
     const load = (mlLoadType?.value || "unknown").trim() || "unknown";
-    const labelOv = parseInt(mlLabelOverride?.value || "-1", 10);
+    const labelOv = -1;
 
     if (enabled) {
       const sid = makeSessionId();
+      const trialNumber = nextTrialNumberForLoad(load, "original");
+      const sourceFile = canonicalSourceFileName("", { load_type: load, trial_number: trialNumber }, "original");
       currentSessionId = sid;
       await db.ref("ml_log").update({ enabled: true, duration_s: dur, session_id: sid, load_type: load, label_override: labelOv });
       await db.ref(`ml_sessions/${sid}`).set({
@@ -1783,9 +2416,12 @@ if (mlLogEnable) {
         end_ms: null,
         load_type: load,
         duration_s: dur,
-        label_override: labelOv
+        label_override: labelOv,
+        session_category: "original",
+        trial_number: trialNumber,
+        source_file: sourceFile
       });
-      if (mlLogStatus) mlLogStatus.textContent = `Logging enabled. Session: ${sid} • Total ${dur}s • Uploads on finish or buffer pressure`;
+      if (mlLogStatus) mlLogStatus.textContent = `Logging enabled. Session: ${sourceFile} • Total ${dur}s • Uploads on finish or buffer pressure`;
       toast(`Logger enabled for ${dur}s.`, "ok");
     } else {
       const sid = currentSessionId;
@@ -1806,48 +2442,68 @@ mlLogDur?.addEventListener("change", async () => {
 mlLoadType?.addEventListener("change", async () => {
   await db.ref("ml_log").update({ load_type: (mlLoadType.value || "unknown").trim() || "unknown" });
 });
-mlLabelOverride?.addEventListener("change", async () => {
-  const v = parseInt(mlLabelOverride.value || "-1", 10);
-  await db.ref("ml_log").update({ label_override: v });
-});
 
-if (mlSessionBody) {
-  db.ref("ml_sessions").limitToLast(50).on("value", (s) => {
-    const obj = s.val() || {};
-    const ids = Object.keys(obj).sort((a,b) => (obj[b]?.start_ms||0) - (obj[a]?.start_ms||0));
-    mlSessionBody.innerHTML = ids.map((sid) => {
-      const meta = obj[sid] || {};
-      const st = meta.start_ms ? formatDisplayTimestamp(meta.start_ms) : "—";
-      const en = meta.end_ms ? formatDisplayTimestamp(meta.end_ms) : "—";
-      const load = sessionLoadText(meta);
-      const lab  = labelText(meta.label_override);
-      const isActiveView = sid === activeViewedSessionSid;
-      return `
-        <tr data-session-row="${sid}" class="${isActiveView ? "is-active-view" : ""}">
-          <td><div class="mono">${sessionDisplayName(meta, sid)}</div><div class="muted small mono">${sessionSecondaryText(meta, sid)}</div></td>
-          <td class="mono">${st}</td>
-          <td class="mono">${en}</td>
-          <td class="mono">${durationText(meta)}</td>
-          <td class="mono">${load}</td>
-          <td class="mono">${lab}</td>
-          <td class="session-actions">
-            <button type="button" class="btn btn-small" data-view-sid="${sid}">View</button>
-            <button type="button" class="btn btn-small" data-sid="${sid}">Download</button>
-            <button type="button" class="btn btn-small btn-danger" data-del-sid="${sid}">Delete</button>
-          </td>
-        </tr>
-      `;
-    }).join("");
+function renderMlSessions() {
+  if (!mlSessionBody) return;
+  const obj = mlSessionsCache || {};
+  const ids = Object.keys(obj)
+    .filter((sid) => loggerSessionCategory(obj[sid]) === activeMlLogTab)
+    .sort((a,b) => (obj[b]?.start_ms||0) - (obj[a]?.start_ms||0));
 
-    mlSessionBody.querySelectorAll("button[data-sid]").forEach(btn => {
-      btn.addEventListener("click", async () => {
+  if (!ids.length) {
+    mlSessionBody.innerHTML = `<tr><td colspan="7" class="muted">No ${activeMlLogTab} logs yet.</td></tr>`;
+    return;
+  }
+
+  mlSessionBody.innerHTML = ids.map((sid) => {
+    const meta = obj[sid] || {};
+    const st = meta.start_ms ? formatDisplayTimestamp(meta.start_ms) : "—";
+    const en = meta.end_ms ? formatDisplayTimestamp(meta.end_ms) : "—";
+    const load = sessionLoadText(meta);
+    const parsedMeta = parseDatasetFilenameMeta(String(meta?.source_file || sid || ""));
+    const divisionLabel = divisionDisplayLabel(meta?.division_tag || parsedMeta.division || "", "");
+    const kind = loggerSessionCategory(meta) === "processed" ? (divisionLabel ? `PROCESSED • ${divisionLabel.toUpperCase()}` : "PROCESSED") : "ORIGINAL";
+    const isActiveView = sid === activeViewedSessionSid;
+    return `
+      <tr data-session-row="${sid}" class="${isActiveView ? "is-active-view" : ""}">
+        <td><div class="mono">${sessionDisplayName(meta, sid)}</div><div class="muted small mono">${sessionSecondaryText(meta, sid)}</div></td>
+        <td class="mono">${st}</td>
+        <td class="mono">${en}</td>
+        <td class="mono" data-duration-for="${sid}">${durationText(meta, sid)}</td>
+        <td class="mono">${load}</td>
+        <td class="mono">${kind}</td>
+        <td class="session-actions">
+          <button type="button" class="btn btn-small" data-view-sid="${sid}">View</button>
+          <button type="button" class="btn btn-small" data-sid="${sid}">Download</button>
+          <button type="button" class="btn btn-small btn-danger" data-del-sid="${sid}">Delete</button>
+        </td>
+      </tr>
+    `;
+  }).join("");
+
+  mlSessionBody.querySelectorAll("button[data-sid]").forEach(btn => {
+      btn.addEventListener("click", async (ev) => {
+        ev.preventDefault();
+        ev.stopPropagation();
         const sid = btn.getAttribute("data-sid");
         const meta = obj[sid] || {};
-        const csv = await fetchSessionCsv(sid);
-        if (!csv) { toast("No data for this session yet.", "err"); return; }
-        downloadTextFileGeneric(sessionFilename(meta, sid), csv);
-        if (mlLogStatus) mlLogStatus.textContent = `Downloaded session: ${sid}`;
-        toast("Session CSV downloaded.", "ok");
+        const oldText = btn.textContent;
+        btn.disabled = true;
+        btn.textContent = "Preparing…";
+        try {
+          const csv = await fetchSessionCsv(sid);
+          if (!csv) { toast("No data for this session yet.", "err"); return; }
+          const fileName = sessionFilename(meta, sid);
+          downloadTextFileGeneric(fileName, csv);
+          if (mlLogStatus) mlLogStatus.textContent = `Downloaded session: ${fileName}`;
+          toast(`Downloaded ${fileName}`, "ok");
+        } catch (err) {
+          console.error(err);
+          toast("Failed to download this session.", "err");
+        } finally {
+          btn.disabled = false;
+          btn.textContent = oldText;
+        }
       });
     });
 
@@ -1868,35 +2524,31 @@ if (mlSessionBody) {
 
     applyActiveMlSessionRow();
 
-    mlSessionBody.querySelectorAll("button[data-del-sid]").forEach(btn => {
-      btn.addEventListener("click", async () => {
-        const sid = btn.getAttribute("data-del-sid");
-        if (!sid) return;
-        if (!confirm(`Delete session ${sid}? This will remove both metadata and CSV chunks.`)) return;
-        try {
-          await db.ref(`ml_logs/${sid}`).remove();
-          await db.ref(`ml_sessions/${sid}`).remove();
-          toast("Session deleted.", "ok");
-        } catch (e) {
-          console.error(e);
-          toast("Failed to delete this session.", "err");
-        }
-      });
+  hydrateVisibleSessionDurations(ids, obj);
+
+  mlSessionBody.querySelectorAll("button[data-del-sid]").forEach(btn => {
+    btn.addEventListener("click", async () => {
+      const sid = btn.getAttribute("data-del-sid");
+      if (!sid) return;
+      if (!confirm(`Delete session ${sid}? This will remove both metadata and CSV chunks.`)) return;
+      try {
+        await db.ref(`ml_logs/${sid}`).remove();
+        await db.ref(`ml_sessions/${sid}`).remove();
+        toast("Session deleted.", "ok");
+      } catch (e) {
+        console.error(e);
+        toast("Failed to delete this session.", "err");
+      }
     });
   });
 }
 
-btnDownloadSessionMl?.addEventListener("click", async () => {
-  const sid = currentSessionId;
-  if (!sid) { toast("No active session_id.", "err"); return; }
-  const metaSnap = await db.ref(`ml_sessions/${sid}`).get();
-  const meta = metaSnap.exists() ? metaSnap.val() : {};
-  const csv = await fetchSessionCsv(sid);
-  if (!csv) { toast("No session logs yet.", "err"); return; }
-  downloadTextFileGeneric(sessionFilename(meta, sid), csv);
-  if (mlLogStatus) mlLogStatus.textContent = `Downloaded session: ${sid}`;
-  toast("Session CSV downloaded.", "ok");
-});
+if (mlSessionBody) {
+  db.ref("ml_sessions").limitToLast(120).on("value", (s) => {
+    mlSessionsCache = s.val() || {};
+    renderMlSessions();
+  });
+}
 
 btnDownloadAllMl?.addEventListener("click", async () => {
   const metaSnap = await db.ref("ml_sessions").get();
@@ -1949,6 +2601,14 @@ function safeSessionToken(name) {
     .slice(0, 42) || "uploaded_csv";
 }
 
+function inferUploadSessionCategory(fileName, meta = {}) {
+  const parsed = parseDatasetFilenameMeta(fileName || meta?.source_file || "");
+  if (normalizeDivisionToken(meta?.division_tag || parsed.division || "")) return "processed";
+  const stem = stripCsvExtension(String(fileName || "")).toLowerCase();
+  if (/(?:^|[_\s-])(processed|labeled|labelled|edited|review)(?:$|[_\s-])/.test(stem)) return "processed";
+  return "original";
+}
+
 function waitForSessionViewerFns(timeoutMs = 1200) {
   return new Promise((resolve) => {
     const start = Date.now();
@@ -1962,16 +2622,18 @@ function waitForSessionViewerFns(timeoutMs = 1200) {
   });
 }
 
-async function storeUploadedCsvSession(fileName, csvText) {
-  const clean = String(csvText || "").replace(/^\uFEFF/, "").trim();
+async function storeUploadedCsvSession(fileName, csvText, options = {}) {
+  const clean = String(csvText || "").replace(/^﻿/, "").trim();
   const lines = clean.split(/\r?\n/).filter((line) => line.trim().length);
   if (lines.length < 2) throw new Error("CSV needs a header and at least one row.");
 
-  const sid = `upload_${Date.now()}_${safeSessionToken(fileName)}`;
+  const category = inferUploadSessionCategory(fileName, options.meta || {}) === "processed" || options.category === "processed" ? "processed" : "original";
+  const canonicalSourceFile = canonicalSourceFileName(fileName, options.meta || {}, category);
+  const sid = `${category === "processed" ? "proc" : "upload"}_${Date.now()}_${safeSessionToken(canonicalSourceFile)}`;
   const header = lines[0].trimEnd();
   const rows = lines.slice(1);
   const timing = deriveUploadedCsvTimingMeta(clean);
-  const fileMeta = parseDatasetFilenameMeta(fileName);
+  const fileMeta = parseDatasetFilenameMeta(canonicalSourceFile);
   const nowMs = Date.now();
   const durationS = timing.durationS;
   const durationMs = durationS != null ? Math.max(0, Math.round(durationS * 1000)) : 0;
@@ -1981,15 +2643,19 @@ async function storeUploadedCsvSession(fileName, csvText) {
   const meta = {
     start_ms: startMs,
     end_ms: endMs,
-    load_type: fileMeta.loadType || "uploaded_csv",
+    load_type: fileMeta.loadType || options.meta?.load_type || "uploaded_csv",
     duration_s: durationS,
     label_override: -1,
     uploaded_csv: true,
-    source_file: fileName || "uploaded_csv.csv",
+    processed_csv: category === "processed",
+    session_category: category,
+    source_file: canonicalSourceFile,
+    original_source_file: fileName || canonicalSourceFile,
     row_count: timing.rowCount || rows.length,
     source_sample_rate_hz: timing.sourceSampleRateHz,
-    trial_number: fileMeta.trial,
-    division_tag: fileMeta.division || ""
+    trial_number: safePositiveInt(options.meta?.trial_number || fileMeta.trial || 1, 1),
+    division_tag: options.meta?.division_tag || fileMeta.division || "",
+    source_session_id: options.meta?.source_session_id || ""
   };
 
   await db.ref(`ml_sessions/${sid}`).set(meta);
@@ -1999,13 +2665,16 @@ async function storeUploadedCsvSession(fileName, csvText) {
   const createdBase = Date.now();
   for (let i = 0; i < rows.length; i += CHUNK_ROWS) {
     const chunkRows = rows.slice(i, i + CHUNK_ROWS);
-    const key = `chunk_${String((i / CHUNK_ROWS) + 1).padStart(4, "0")}`;
+    const chunkSeq = (i / CHUNK_ROWS) + 1;
+    const key = `chunk_${String(chunkSeq).padStart(4, "0")}`;
     updates[`ml_logs/${sid}/${key}`] = {
       csv: `${header}\n${chunkRows.join("\n")}\n`,
       count: chunkRows.length,
       created_at: createdBase + (i / CHUNK_ROWS),
       uploaded_csv: true,
-      source_file: fileName || "uploaded_csv.csv"
+      processed_csv: category === "processed",
+      source_file: canonicalSourceFile,
+      session_chunk_seq: chunkSeq
     };
   }
   await db.ref().update(updates);
@@ -2022,7 +2691,9 @@ mlCsvUpload?.addEventListener("change", async (ev) => {
 
     let opened = false;
     try {
-      const stored = await storeUploadedCsvSession(file.name, text);
+      const uploadMeta = parseDatasetFilenameMeta(file.name);
+      const uploadCategory = inferUploadSessionCategory(file.name, uploadMeta);
+      const stored = await storeUploadedCsvSession(file.name, text, { category: uploadCategory, meta: { load_type: uploadMeta.loadType, trial_number: uploadMeta.trial, division_tag: uploadMeta.division || "", segment_index: uploadMeta.segmentIndex || 0 } });
       currentSessionId = stored.sid;
       if (mlLogStatus) mlLogStatus.textContent = `Uploaded CSV stored as session: ${stored.sid}`;
       if (typeof window.openSessionViewer !== "function") await waitForSessionViewerFns();
@@ -2036,6 +2707,7 @@ mlCsvUpload?.addEventListener("change", async (ev) => {
       const clean = String(text || "").replace(/^\uFEFF/, "").trim();
       const timing = deriveUploadedCsvTimingMeta(clean);
       const fileMeta = parseDatasetFilenameMeta(file.name);
+      const uploadCategory = inferUploadSessionCategory(file.name, fileMeta);
       const startMs = Number.isFinite(timing.startMs) && timing.startMs > 0 ? timing.startMs : Date.now();
       const endMs = Number.isFinite(timing.endMs) && timing.endMs > startMs ? timing.endMs : (timing.durationS != null ? startMs + Math.max(0, Math.round(timing.durationS * 1000)) : null);
       const meta = {
@@ -2045,7 +2717,9 @@ mlCsvUpload?.addEventListener("change", async (ev) => {
         duration_s: timing.durationS,
         start_ms: startMs,
         end_ms: endMs,
-        source_file: file.name,
+        source_file: canonicalSourceFileName(file.name, { load_type: fileMeta.loadType, trial_number: fileMeta.trial, division_tag: fileMeta.division || "", segment_index: fileMeta.segmentIndex || 0 }, uploadCategory),
+        session_category: uploadCategory,
+        processed_csv: uploadCategory === "processed",
         source_sample_rate_hz: timing.sourceSampleRateHz,
         trial_number: fileMeta.trial,
         division_tag: fileMeta.division || ""
@@ -2082,6 +2756,8 @@ window.addEventListener("appinstalled", () => {
   installHelp?.classList.add("hidden");
   toast("App installed.", "ok");
 });
+
+initDashboardInfoButtons();
 
 if ("serviceWorker" in navigator) {
   navigator.serviceWorker.register("./sw.js", { scope: "./" }).then((reg) => {
