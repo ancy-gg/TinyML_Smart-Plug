@@ -266,38 +266,108 @@
         </div>
       </div>
 
-      <div class="history-split">
-        <section class="history-pane">
-          <div class="history-pane-head">
-            <div>
-              <div class="history-pane-title">Normal Operation <span class="history-pane-count" id="historyNormalCount">0</span></div>
-                          </div>
+      <div class="history-split-grid">
+        <div class="history-panel">
+          <div class="history-panel-head">
+            <h3 class="history-subtitle">Faults and Alerts</h3>
           </div>
-          <div id="historyNormalBody" class="history-list" aria-live="polite">
-            <div class="history-empty">No normal-operation history in this range.</div>
+          <div class="history-table-wrap">
+            <table class="history-table">
+              <thead>
+                <tr>
+                  <th>Time</th>
+                  <th>Status</th>
+                  <th>Duration</th>
+                </tr>
+              </thead>
+              <tbody id="historyFaultBody">
+                <tr><td colspan="3" class="muted">No fault history yet.</td></tr>
+              </tbody>
+            </table>
           </div>
-        </section>
+        </div>
 
-        <section class="history-pane history-pane-fault">
-          <div class="history-pane-head">
-            <div>
-              <div class="history-pane-title">Fault Detection <span class="history-pane-count" id="historyFaultCount">0</span></div>
-                          </div>
+        <div class="history-panel">
+          <div class="history-panel-head">
+            <h3 class="history-subtitle">Normal and Device Events</h3>
           </div>
-          <div id="historyFaultBody" class="history-list" aria-live="polite">
-            <div class="history-empty">No fault history in this range.</div>
+          <div class="history-table-wrap">
+            <table class="history-table">
+              <thead>
+                <tr>
+                  <th>Time</th>
+                  <th>Status</th>
+                  <th>Duration</th>
+                </tr>
+              </thead>
+              <tbody id="historyNormalBody">
+                <tr><td colspan="3" class="muted">No normal history yet.</td></tr>
+              </tbody>
+            </table>
           </div>
-        </section>
+        </div>
+      </div>
+
+      <div class="history-table-wrap hidden">
+        <table class="history-table">
+          <tbody id="historyBody"></tbody>
+        </table>
       </div>
     </section>
 
-    <section class="history admin-only">
-      <div class="history-head">
+    <details class="history ota-panel admin-only ota-collapsible">
+      <summary class="ota-summary">
         <div>
-          <h2 class="history-title">Data Logger</h2>
+          <h2 class="history-title">Over-the-Air (OTA) Updates</h2>
+          <div class="history-hint">Admin firmware tools</div>
+        </div>
+        <div class="history-actions">
+          <button id="btnPublishOta" class="btn btn-info" type="button">Update</button>
+        </div>
+      </summary>
+
+      <div class="ota-grid">
+        <div class="ota-box">
+          <div class="ota-label">Current Published OTA</div>
+          <div class="ota-line"><span class="muted">Version:</span> <span class="mono" id="otaCurVer">—</span></div>
+          <div class="ota-line"><span class="muted">URL:</span> <span class="mono ota-url" id="otaCurUrl">—</span></div>
+          <div class="ota-row ota-download-row">
+            <a id="btnOtaDownload" class="ota-download-btn" href="#" target="_blank" rel="noopener noreferrer" aria-disabled="true" aria-label="Download OTA firmware" title="Download OTA firmware">
+              <img src="/icons/ota-download-green.png" alt="Download OTA firmware" class="ota-download-icon" />
+            </a>
+          </div>
         </div>
 
-        <div class="history-actions history-actions-logger">
+        <div class="ota-box">
+          <label class="ota-field">
+            <span class="muted">Version Name</span>
+            <input id="otaDesiredVer" class="ota-input" placeholder="TSP-v0.0.0" />
+          </label>
+
+          <div class="ota-row">
+            <button id="btnFillRepoUrl" class="btn btn-info" type="button">Apply</button>
+          </div>
+
+          <label class="ota-field">
+            <span class="muted">Link</span>
+            <input
+              id="otaFirmwareUrl"
+              class="ota-input mono"
+              placeholder="https://github.com/ancy-gg/TinyML_Smart-Plug/releases/download/updates/TSP-v4.3.1-p-mcp.bin"
+            />
+          </label>
+        </div>
+      </div>
+    </details>
+
+    <section class="history admin-only">
+      <div class="history-head history-head-logger">
+        <div>
+          <h2 class="history-title">Data Logger</h2>
+          <div class="history-hint muted">Original and processed cloud CSV sessions</div>
+        </div>
+
+        <div class="history-actions logger-actions-row">
           <label class="switchline" for="mlLogEnable">
             <span class="switch-caption">Collect Data</span>
             <span class="switch">
@@ -306,39 +376,60 @@
             </span>
           </label>
 
-          <input id="mlLogDur" class="ota-input mono logger-duration-input" inputmode="numeric" pattern="[0-9]*" value="10" placeholder="sec" />
-
-          <input id="mlLoadType" class="ota-input mono" placeholder="load type (drill, laptop_charger...)" />
-
-          <div class="logger-tabs logger-tabs-inline" role="tablist" aria-label="Logger session categories">
-            <button id="btnMlTabOriginal" class="btn btn-small logger-tab is-active" type="button" data-log-tab="original">Original Data</button>
-            <button id="btnMlTabProcessed" class="btn btn-small logger-tab" type="button" data-log-tab="processed">Processed Data</button>
+          <div class="logger-duration-group">
+            <input id="mlLogDur" class="ota-input mono logger-duration-input" inputmode="numeric" pattern="[0-9]*" value="10" placeholder="seconds" />
+            <span id="mlCountdown" class="logger-countdown mono">—</span>
           </div>
 
-          <button id="btnDownloadAllMl" class="btn btn-success" type="button">Compile</button>
+          <input id="mlLoadType" class="ota-input mono logger-load-input" placeholder="load type (fan_max, laptop_charger...)" />
+
+          <div class="logger-tabset" role="tablist" aria-label="Logger session type">
+            <button id="btnMlTabOriginal" class="btn btn-small is-active" type="button">Original</button>
+            <button id="btnMlTabProcessed" class="btn btn-small" type="button">Processed</button>
+          </div>
+
+          <button id="btnDownloadAllMl" class="btn btn-success" type="button">Download All</button>
           <button id="btnUploadCsv" class="btn btn-info" type="button">Upload CSV</button>
           <input id="mlCsvUpload" type="file" accept=".csv,text/csv" hidden />
-          <button id="btnClearMlLogs" class="btn btn-danger" type="button">Clear</button>
         </div>
       </div>
 
       <div class="muted small" id="mlLogStatus">—</div>
 
-      <div class="history-table-wrap" style="margin-top:12px;">
-        <table class="history-table">
-          <thead>
-            <tr>
-              <th>Name</th>
-              <th>Start</th>
-              <th>End</th>
-              <th>Duration</th>
-              <th>Load</th>
-              <th>Kind</th>
-              <th>Action</th>
-            </tr>
-          </thead>
-          <tbody id="mlSessionBody"></tbody>
-        </table>
+      <div id="mlOriginalPanel" class="logger-table-panel">
+        <div class="history-table-wrap" style="margin-top:12px;">
+          <table class="history-table">
+            <thead>
+              <tr>
+                <th>Name</th>
+                <th>Start</th>
+                <th>End</th>
+                <th>Duration</th>
+                <th>Load</th>
+                <th>Action</th>
+              </tr>
+            </thead>
+            <tbody id="mlSessionBody"></tbody>
+          </table>
+        </div>
+      </div>
+
+      <div id="mlProcessedPanel" class="logger-table-panel hidden">
+        <div class="history-table-wrap" style="margin-top:12px;">
+          <table class="history-table">
+            <thead>
+              <tr>
+                <th>Name</th>
+                <th>Saved</th>
+                <th>Source</th>
+                <th>Duration</th>
+                <th>Load</th>
+                <th>Action</th>
+              </tr>
+            </thead>
+            <tbody id="mlProcessedBody"></tbody>
+          </table>
+        </div>
       </div>
     </section>
 
@@ -348,16 +439,18 @@
           <h2 class="history-title" id="title">Plot Viewer</h2>
           <div class="viewer-meta mono" id="meta">View a session above</div>
         </div>
-        <div class="history-actions">
+        <div class="history-actions viewer-header-actions">
           <button class="btn" id="btnBack" type="button">Close</button>
           <button class="btn btn-info" id="btnSaveProcessed" type="button">Save Processed</button>
           <button class="btn btn-success" id="btnDownload" type="button">Download CSV</button>
+          <button class="btn btn-small" id="btnStats" type="button">Stats</button>
+          <button class="btn btn-small" id="btnSeries" type="button">Series</button>
         </div>
       </div>
       <div class="viewer-grid">
         <div class="panel rightPanel">
-          <div class="controlsbar controlsbar-top controlsbar-top-unified">
-            <div class="left viewer-control-row viewer-control-row-main">
+          <div class="controlsbar controlsbar-top">
+            <div class="left">
               <button class="btn" id="btnPlay">Play</button>
               <button class="btn" id="btnPause" disabled>Pause</button>
 
@@ -378,49 +471,14 @@
               <div class="chip chip-time">
                 <label class="mono" id="timeReadout">t=—</label>
               </div>
-
-              <button class="btn btn-small control-action" id="btnStats" type="button">Stats</button>
-              <button class="btn btn-small" id="btnSeries" type="button">Series</button>
             </div>
 
-            <div class="left viewer-control-row viewer-control-row-tools">
-              <div class="chip chip-normalize">
-                <label><input type="checkbox" id="chkNormalize"> Normalize</label>
-              </div>
-
-              <div class="chip chip-smooth-toggle">
-                <label><input type="checkbox" id="chkSmooth" checked> Smooth</label>
-              </div>
-
-              <div class="chip chip-smooth-range">
-                <label class="mono" for="rngSmooth">Smooth</label>
-                <input id="rngSmooth" type="range" min="1" max="50" step="1" value="15" style="width:132px;" />
-                <span class="mono viewer-inline-readout" id="smoothReadout">15</span>
-              </div>
-
-              <div class="chip chip-curves">
-                <label><input type="checkbox" id="chkCurves" checked> Curves</label>
-              </div>
-
-              <div class="chip chip-follow">
-                <label><input type="checkbox" id="chkFollow" checked> Follow</label>
-              </div>
-
-              <div class="chip chip-zoom-range">
-                <label class="mono" for="rngZoom">Zoom</label>
-                <input id="rngZoom" type="range" min="5" max="100" step="1" value="100" style="width:132px;" />
-              </div>
-            </div>
+            <div class="right"></div>
           </div>
 
-          <div class="plot-stage">
-            <div class="plot-canvas-wrap"><div id="chart"></div></div>
-            <aside class="plot-sideinfo">
-              <div class="plot-sideinfo-head mono">Cursor / Values</div>
-              <div id="statusLine" class="smallnote mono plot-status-side"></div>
-              <div id="valueLine" class="valueLineWrap mono plot-values-side"></div>
-            </aside>
-          </div>
+          <div id="chart"></div>
+          <div id="valueLine" class="valueLineWrap mono"></div>
+          <div id="statusLine" class="smallnote mono"></div>
 
           <div class="panel toggles toggles-inline" id="seriesPanel">
             <div class="seriesTop">
@@ -443,25 +501,51 @@
             <div id="toggleList"></div>
           </div>
 
-          <div class="panel panel-editor-tools">
-            <div class="editor-tools-head">
-              <div style="font-weight:900;">Log Editor</div>
-              <div class="smallnote mono" id="segmentHint">Edit arc markers and create non-overlapping Start / Steady / Arc / Close ranges for split CSV export.</div>
-            </div>
+          <div class="controlsbar controlsbar-bottom viewer-inline-controls">
+            <div class="control-cluster control-cluster-view control-cluster-singleline">
+              <div class="chip chip-normalize">
+                <label><input type="checkbox" id="chkNormalize"> Normalize</label>
+              </div>
 
-            <div class="editor-toolbar editor-toolbar-markers">
+              <div class="chip chip-smooth-toggle">
+                <label><input type="checkbox" id="chkSmooth" checked> Smooth</label>
+              </div>
+
+              <div class="chip chip-smooth-range">
+                <label class="mono" for="rngSmooth">Smooth</label>
+                <input id="rngSmooth" type="range" min="1" max="50" step="1" value="15" style="width:120px;" />
+              </div>
+
+              <div class="chip chip-curves">
+                <label><input type="checkbox" id="chkCurves" checked> Curves</label>
+              </div>
+
+              <div class="chip chip-follow">
+                <label><input type="checkbox" id="chkFollow" checked> Follow</label>
+              </div>
+
+              <div class="chip chip-zoom-range">
+                <label class="mono" for="rngZoom">Zoom</label>
+                <input id="rngZoom" type="range" min="5" max="100" step="1" value="100" style="width:120px;" />
+              </div>
+            </div>
+          </div>
+
+          <div class="segment-tools panel panel-segment-tools">
+            <div class="segment-tools-head">
+              <div style="font-weight:900;">Log Editor</div>
+              <div class="smallnote mono" id="segmentHint">Mark arc rows and create non-overlapping Start / Steady / Arc / Close ranges for training-ready split CSV export.</div>
+            </div>
+            <div class="segment-toolbar segment-toolbar-editor">
               <div class="chip chip-events">
-                <label><input type="checkbox" id="chkEvents"> View arc markers</label>
+                <label><input type="checkbox" id="chkEvents"> Arc markers</label>
               </div>
               <div class="chip chip-arc-index">
                 <input id="arcIndexInput" class="viewer-index-input mono" type="text" placeholder="idx or 10-14,25" />
               </div>
-              <button class="btn btn-small btn-info control-action" id="btnAddArc" type="button">Add Arc Marker</button>
-              <button class="btn btn-small btn-danger control-action" id="btnClearArc" type="button">Clear Arc Marker</button>
-            </div>
-
-            <div class="editor-toolbar editor-toolbar-segments">
-              <div class="chip"><label class="mono" for="segLabelSelect">Label</label><select id="segLabelSelect"><option value="start">Start</option><option value="steady" selected>Steady</option><option value="arc">Arc</option><option value="end">End</option></select></div>
+              <button class="btn btn-small btn-info" id="btnAddArc" type="button">Add Arc</button>
+              <button class="btn btn-small btn-danger" id="btnClearArc" type="button">Remove Arc</button>
+              <div class="chip"><label class="mono" for="segLabelSelect">Label</label><select id="segLabelSelect"><option value="start">Start</option><option value="steady" selected>Steady</option><option value="arc">Arc</option><option value="close">Close</option></select></div>
               <div class="chip"><input id="segStartInput" class="viewer-index-input mono" type="text" placeholder="start idx" /></div>
               <button class="btn btn-small" id="btnSegStartFromPlay" type="button">Set Start</button>
               <div class="chip"><input id="segEndInput" class="viewer-index-input mono" type="text" placeholder="end idx" /></div>
@@ -471,7 +555,6 @@
               <button class="btn btn-small btn-info" id="btnAddSegment" type="button">Add</button>
               <button class="btn btn-small btn-danger" id="btnClearSegment" type="button">Remove</button>
             </div>
-
             <div id="segmentList" class="segment-list mono"></div>
           </div>
 
@@ -499,54 +582,6 @@
         </div>
       </div>
     </section>
-
-    <details class="history ota-panel admin-only ota-details" id="otaDetails">
-      <summary class="ota-summary">
-        <div>
-          <h2 class="history-title">Over-the-Air (OTA) Updates</h2>
-        </div>
-        <span class="pill pill-FW">Admin</span>
-      </summary>
-
-      <div class="ota-details-body">
-        <div class="history-actions" style="margin-bottom:12px;">
-          <button id="btnPublishOta" class="btn btn-info" type="button">Update</button>
-        </div>
-
-        <div class="ota-grid">
-          <div class="ota-box">
-            <div class="ota-label">Current Published OTA</div>
-            <div class="ota-line"><span class="muted">Version:</span> <span class="mono" id="otaCurVer">—</span></div>
-            <div class="ota-line"><span class="muted">URL:</span> <span class="mono ota-url" id="otaCurUrl">—</span></div>
-            <div class="ota-row ota-download-row">
-              <a id="btnOtaDownload" class="ota-download-btn" href="#" target="_blank" rel="noopener noreferrer" aria-disabled="true" aria-label="Download OTA firmware" title="Download OTA firmware">
-                <img src="/icons/ota-download-green.png" alt="Download OTA firmware" class="ota-download-icon" />
-              </a>
-            </div>
-          </div>
-
-          <div class="ota-box">
-            <label class="ota-field">
-              <span class="muted">Version Name</span>
-              <input id="otaDesiredVer" class="ota-input" placeholder="TSP-v0.0.0" />
-            </label>
-
-            <div class="ota-row">
-              <button id="btnFillRepoUrl" class="btn btn-info" type="button">Apply</button>
-            </div>
-
-            <label class="ota-field">
-              <span class="muted">Link</span>
-              <input
-                id="otaFirmwareUrl"
-                class="ota-input mono"
-                placeholder="https://github.com/ancy-gg/TinyML_Smart-Plug/releases/download/updates/TSP-v4.3.1-p-mcp.bin"
-              />
-            </label>
-          </div>
-        </div>
-      </div>
-    </details>
 
     <footer class="footer">
       <div class="muted small">

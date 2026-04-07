@@ -64,6 +64,63 @@ void FirebaseNetwork::updateControlToken_(const String& tokenIn, bool& primed, S
   cache = token;
 }
 
+static inline int jsonKeyPos_(const String& raw, const char* key) {
+  if (!key || !*key) return -1;
+  const String pat = String("\"") + key + String("\"");
+  return raw.indexOf(pat);
+}
+
+static bool jsonStringField_(const String& raw, const char* key, String& out) {
+  const int kp = jsonKeyPos_(raw, key);
+  if (kp < 0) return false;
+  int p = raw.indexOf(':', kp);
+  if (p < 0) return false;
+  p++;
+  while (p < (int)raw.length() && (raw[p] == ' ' || raw[p] == '\t' || raw[p] == '\n' || raw[p] == '\r')) p++;
+  if (p >= (int)raw.length()) return false;
+  if (raw[p] == 'n') { out = ""; return true; }
+  if (raw[p] != '"') return false;
+  p++;
+  String v;
+  bool esc = false;
+  while (p < (int)raw.length()) {
+    const char ch = raw[p++];
+    if (esc) { v += ch; esc = false; continue; }
+    if (ch == '\\') { esc = true; continue; }
+    if (ch == '"') break;
+    v += ch;
+  }
+  out = v;
+  return true;
+}
+
+static bool jsonBoolField_(const String& raw, const char* key, bool& out) {
+  const int kp = jsonKeyPos_(raw, key);
+  if (kp < 0) return false;
+  int p = raw.indexOf(':', kp);
+  if (p < 0) return false;
+  p++;
+  while (p < (int)raw.length() && (raw[p] == ' ' || raw[p] == '\t' || raw[p] == '\n' || raw[p] == '\r')) p++;
+  if (raw.startsWith("true", p)) { out = true; return true; }
+  if (raw.startsWith("false", p)) { out = false; return true; }
+  return false;
+}
+
+static bool jsonIntField_(const String& raw, const char* key, int& out) {
+  const int kp = jsonKeyPos_(raw, key);
+  if (kp < 0) return false;
+  int p = raw.indexOf(':', kp);
+  if (p < 0) return false;
+  p++;
+  while (p < (int)raw.length() && (raw[p] == ' ' || raw[p] == '\t' || raw[p] == '\n' || raw[p] == '\r')) p++;
+  int s = p;
+  if (p < (int)raw.length() && raw[p] == '-') p++;
+  while (p < (int)raw.length() && isdigit((unsigned char)raw[p])) p++;
+  if (p <= s) return false;
+  out = raw.substring(s, p).toInt();
+  return true;
+}
+
 void FirebaseNetwork::ensureBuffersAllocated_() {
   if (_buf) return;
 
@@ -314,12 +371,13 @@ bool FirebaseNetwork::consumeOtaCheckRequest() {
   return v;
 }
 
-bool FirebaseNetwork::fetchMlControl(bool& enabled, int& dur, int& labelOv, String& sid, String& load) const {
+bool FirebaseNetwork::fetchMlControl(bool& enabled, int& dur, int& labelOv, String& sid, String& load, String& requestToken) const {
   enabled = _mlEnabledCache;
   dur = _mlDurationCache;
   labelOv = _mlLabelOverrideCache;
   sid = _mlSessionIdCache;
   load = _mlLoadTypeCache;
+  requestToken = _mlRequestTokenCache;
   return true;
 }
 
@@ -329,68 +387,29 @@ void FirebaseNetwork::pollControls(bool allowNet, bool portalActive) {
   if ((now - _lastControlPollMs) < CLOUD_CTRL_READ_GAP_MS) return;
   _lastControlPollMs = now;
 
-  switch (_controlPollSlot) {
-    case 0: {
-      String token;
-      if (Firebase.RTDB.getString(&fbRead, "/controls/open_portal_token")) {
-        token = fbRead.stringData();
-        updateControlToken_(token, _portalTokenPrimed, _portalToken, _portalTokenHandled, _portalRequestPending);
-      }
-    } break;
-    case 1: {
-      String token;
-      if (Firebase.RTDB.getString(&fbRead, "/controls/relay_on_token")) {
-        token = fbRead.stringData();
-        updateControlToken_(token, _relayOnTokenPrimed, _relayOnToken, _relayOnTokenHandled, _relayOnPending);
-      }
-    } break;
-    case 2: {
-      String token;
-      if (Firebase.RTDB.getString(&fbRead, "/controls/relay_off_token")) {
-        token = fbRead.stringData();
-        updateControlToken_(token, _relayOffTokenPrimed, _relayOffToken, _relayOffTokenHandled, _relayOffPending);
-      }
-    } break;
-    case 3: {
-      String token;
-      if (Firebase.RTDB.getString(&fbRead, "/controls/fault_clear_token")) {
-        token = fbRead.stringData();
-        updateControlToken_(token, _faultClearTokenPrimed, _faultClearToken, _faultClearTokenHandled, _faultClearPending);
-      }
-    } break;
-    case 4: {
-      String token;
-      if (Firebase.RTDB.getString(&fbRead, "/controls/revert_fw_token")) {
-        token = fbRead.stringData();
-        updateControlToken_(token, _revertFwTokenPrimed, _revertFwToken, _revertFwTokenHandled, _revertFwPending);
-      }
-    } break;
-    case 5: {
-      String token;
-      if (Firebase.RTDB.getString(&fbRead, "/controls/ota_check_token")) {
-        token = fbRead.stringData();
-        updateControlToken_(token, _otaCheckTokenPrimed, _otaCheckToken, _otaCheckTokenHandled, _otaCheckPending);
-      }
-    } break;
-    case 6:
-      if (Firebase.RTDB.getBool(&fbRead, "/ml_log/enabled")) _mlEnabledCache = fbRead.boolData();
-      break;
-    case 7:
-      if (Firebase.RTDB.getInt(&fbRead, "/ml_log/duration_s")) _mlDurationCache = fbRead.intData();
-      break;
-    case 8:
-      if (Firebase.RTDB.getInt(&fbRead, "/ml_log/label_override")) _mlLabelOverrideCache = fbRead.intData();
-      break;
-    case 9:
-      if (Firebase.RTDB.getString(&fbRead, "/ml_log/session_id")) { _mlSessionIdCache = fbRead.stringData(); _mlSessionIdCache.trim(); }
-      break;
-    case 10:
-      if (Firebase.RTDB.getString(&fbRead, "/ml_log/load_type")) { _mlLoadTypeCache = fbRead.stringData(); _mlLoadTypeCache.trim(); }
-      break;
-    default:
-      break;
+  if (Firebase.RTDB.getJSON(&fbRead, "/controls")) {
+    const String raw = fbRead.payload();
+    String token;
+    if (jsonStringField_(raw, "open_portal_token", token)) updateControlToken_(token, _portalTokenPrimed, _portalToken, _portalTokenHandled, _portalRequestPending);
+    if (jsonStringField_(raw, "relay_on_token", token)) updateControlToken_(token, _relayOnTokenPrimed, _relayOnToken, _relayOnTokenHandled, _relayOnPending);
+    if (jsonStringField_(raw, "relay_off_token", token)) updateControlToken_(token, _relayOffTokenPrimed, _relayOffToken, _relayOffTokenHandled, _relayOffPending);
+    if (jsonStringField_(raw, "fault_clear_token", token)) updateControlToken_(token, _faultClearTokenPrimed, _faultClearToken, _faultClearTokenHandled, _faultClearPending);
+    if (jsonStringField_(raw, "revert_fw_token", token)) updateControlToken_(token, _revertFwTokenPrimed, _revertFwToken, _revertFwTokenHandled, _revertFwPending);
+    if (jsonStringField_(raw, "ota_check_token", token)) updateControlToken_(token, _otaCheckTokenPrimed, _otaCheckToken, _otaCheckTokenHandled, _otaCheckPending);
   }
-  _controlPollSlot = (uint8_t)((_controlPollSlot + 1U) % 11U);
+
+  if (Firebase.RTDB.getJSON(&fbRead, "/ml_log")) {
+    const String raw = fbRead.payload();
+    bool b = false;
+    int v = 0;
+    String s;
+    if (jsonBoolField_(raw, "enabled", b)) _mlEnabledCache = b;
+    if (jsonIntField_(raw, "duration_s", v)) _mlDurationCache = v;
+    if (jsonIntField_(raw, "label_override", v)) _mlLabelOverrideCache = v;
+    if (jsonStringField_(raw, "session_id", s)) { _mlSessionIdCache = s; _mlSessionIdCache.trim(); }
+    if (jsonStringField_(raw, "load_type", s)) { _mlLoadTypeCache = s; _mlLoadTypeCache.trim(); }
+    if (jsonStringField_(raw, "request_token", s)) { _mlRequestTokenCache = s; _mlRequestTokenCache.trim(); }
+  }
 }
 
 void FirebaseNetwork::requestLiveUpdate(float v, float c, float apparentPower, float t,
@@ -573,6 +592,8 @@ bool FirebaseNetwork::serviceLive_() {
   json.set("fault_latched", _live.faultLatched);
   json.set("web_controls_locked", _live.webControlsLocked);
   json.set("relay_latched_on", _live.relayLatchedOn);
+  json.set("ml_log_enabled", _manualEnabled);
+  json.set("ml_log_session_id", _manual.sessionId);
   json.set("last_transition", _lastTransitionEvent);
   json.set("last_transition_epoch_ms", (double)_lastTransitionEpochMs);
   json.set("ts_epoch_ms", (double)epochMs);

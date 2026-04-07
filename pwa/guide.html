@@ -156,7 +156,7 @@
         <img class="hero-logo" src="icons/icon-512.png" alt="TinyML Smart Plug icon" />
         <div class="hero-copy">
           <h1>TinyML Smart Plug Guide</h1>
-          <div class="hero-sub">A compact guide to the dashboard, controls, protections, and admin tools.</div>
+          <div class="hero-sub">A compact user guide for the current dashboard, controls, protections, and admin tools.</div>
         </div>
       </div>
       <div class="chip-row">
@@ -251,22 +251,22 @@
         </div>
         <div class="card accent-blue">
           <h3>Status</h3>
-          <p>This block summarizes connection state, protection state, firmware version, and the latest event. Press and hold a card to see its explanation, then release to dismiss it.</p>
+          <p>This block summarizes connection state, protection state, firmware version, and the latest event. It is the best place to confirm whether the page is seeing fresh data from the device.</p>
         </div>
         <div class="card accent-teal">
           <h3>Live Electrical</h3>
-          <p>This shows voltage, current, apparent power, and temperature from the latest live packet. Press and hold any live-reading card to see what it means without adding extra text to the layout.</p>
+          <p>This shows voltage, current, apparent power, and temperature from the latest live packet. The small hints under each value are quick interpretations, not full diagnostics.</p>
         </div>
         <div class="card accent-purple">
           <h3>Primary and Secondary Features</h3>
-          <p>The dashboard shows 10 live waveform features grouped into Primary Features and Secondary Features. Press and hold any feature card to see what it measures, what stable behavior looks like, and what larger values can suggest.</p>
+          <p>The dashboard now shows 10 live waveform features grouped into Primary Features and Secondary Features. These are the same feature cards used by the current UI, so the guide now matches the active dashboard instead of the older experimental feature list.</p>
         </div>
         <div class="card accent-amber">
           <h3>History</h3>
-          <p>History is split into two side-by-side lists: Normal Operation and Fault Detection. Press and hold a status chip to see a short explanation.</p>
+          <p>The history area is split into two live tables: faults and alerts on one side, and normal or device events on the other. Both support the same date-range filter and CSV download from the active range.</p>
         </div>
       </div>
-      <div class="note" style="margin-top:10px;">The dashboard also includes admin-only maintenance sections: OTA Updates, Data Logger, and Plot Viewer.</div>
+      <div class="note" style="margin-top:10px;">The current dashboard also includes admin-only maintenance sections: OTA Updates, Data Logger, and Plot Viewer.</div>
     </section>
 
     <section class="section" id="protections">
@@ -281,7 +281,7 @@
         <div class="kpi"><strong>Sustained overload trip</strong><span>14.5 A for 60 s</span></div>
         <div class="kpi"><strong>Warm socket</strong><span>60 °C hint level</span></div>
         <div class="kpi"><strong>Heating trip</strong><span>70 °C and above</span></div>
-        <div class="kpi"><strong>Normal mains</strong><span>207 V to 253 V</span></div>
+        <div class="kpi"><strong>Normal mains</strong><span>200 V to 250 V</span></div>
       </div>
       <div class="grid-2" style="margin-top:10px;">
         <div class="card accent-red">
@@ -298,11 +298,11 @@
         </div>
         <div class="card accent-purple">
           <h3>Undervoltage</h3>
-          <p>In the dashboard, values below 200 V are treated as undervoltage. Values collapsing toward 0 V are handled separately as unplugged or mains-loss behavior.</p>
+          <p>Undervoltage now uses staged timing. Around 200 V to 207 V it must persist much longer, around 170 V to 200 V it trips after several seconds, and below about 170 V it is treated as a fast trip. Values collapsing toward 0 V are treated as unplugged or mains-loss behavior, not as undervoltage.</p>
         </div>
         <div class="card accent-red">
           <h3>Overvoltage</h3>
-          <p>In the dashboard, values above 250 V are treated as overvoltage.</p>
+          <p>High mains voltage now uses staged timing too. Around 250 V to 265 V it must persist for several seconds, while above about 265 V it is treated as a fast trip.</p>
         </div>
         <div class="card accent-blue">
           <h3>Unplugged or no mains</h3>
@@ -311,100 +311,27 @@
       </div>
     </section>
 
-    
-<section class="section" id="features">
-  <div class="section-head">
-    <div>
-      <div class="eyebrow teal"><span class="dot"></span>Feature Guide</div>
-      <h2>Implemented feature computations</h2>
-    </div>
-    <div class="pill-row">
-      <span class="pill pill-teal">From ArcDetection.cpp</span>
-      <span class="pill pill-blue">Live dashboard units</span>
-    </div>
-  </div>
-
-  <div class="note">
-    These descriptions follow the current implementation in <code>ArcDetection.cpp</code>. The dashboard mixes percentage features, dB-based ratio features, and time-domain variability features. Values are not normalized to a single shared unit.
-  </div>
-
-  <div class="grid-2" style="margin-top:10px">
-    <div class="card accent-teal">
-      <h3>Spectral Flux (Mid/HF)</h3>
-      <p>Measures frame-to-frame change in the normalized square-root spectrum inside the configured spectral-flux band, while skipping bins near harmonics of the mains fundamental.</p>
-      <p class="mini"><strong>Displayed unit:</strong> %</p>
-      <p class="mini"><strong>Implemented form:</strong> <code>0.5 × Σ|cur[k] − prev[k]| × 100</code></p>
-    </div>
-
-    <div class="card accent-purple">
-      <h3>Residual Crest Factor</h3>
-      <p>Uses the residual waveform after subtracting a slower base envelope from a faster cleaned waveform, then converts the crest ratio to dB.</p>
-      <p class="mini"><strong>Displayed unit:</strong> dB</p>
-      <p class="mini"><strong>Implemented form:</strong> <code>20·log10(residual_peak / residual_rms)</code></p>
-    </div>
-
-    <div class="card accent-orange">
-      <h3>Edge Spike Ratio</h3>
-      <p>Finds the strongest local edge in the cleaned waveform, measures the residual burst around that edge, compares it against the rolling current baseline, then converts the ratio to dB.</p>
-      <p class="mini"><strong>Displayed unit:</strong> dB</p>
-      <p class="mini"><strong>Implemented form:</strong> <code>20·log10(edge_burst / baseline_irms)</code></p>
-    </div>
-
-    <div class="card accent-blue">
-      <h3>Midband Residual Ratio</h3>
-      <p>Measures residual spectral energy inside the configured midband, skips harmonic bins, converts that band energy to RMS-like magnitude, compares it against the rolling current baseline, then converts the ratio to dB.</p>
-      <p class="mini"><strong>Displayed unit:</strong> dB</p>
-      <p class="mini"><strong>Implemented form:</strong> <code>20·log10(midband_residual_rms / baseline_irms)</code></p>
-    </div>
-
-    <div class="card accent-green">
-      <h3>Cycle NMSE</h3>
-      <p>Resamples adjacent cycle windows to a fixed size, compares cycle pairs, and reports normalized mean-squared error.</p>
-      <p class="mini"><strong>Displayed unit:</strong> %</p>
-      <p class="mini"><strong>Implemented form:</strong> <code>(MSE / reference_energy) × 100</code></p>
-    </div>
-
-    <div class="card accent-amber">
-      <h3>Peak Fluctuation CV</h3>
-      <p>Computes cycle peaks across detected cycles, then reports the coefficient of variation of those peaks.</p>
-      <p class="mini"><strong>Displayed unit:</strong> %</p>
-      <p class="mini"><strong>Implemented form:</strong> <code>(σ(peaks) / μ(peaks)) × 100</code></p>
-    </div>
-
-    <div class="card accent-red">
-      <h3>Current THD</h3>
-      <p>Uses the detected fundamental and harmonic peak-excess values, then reports the current THD ratio in percent.</p>
-      <p class="mini"><strong>Displayed unit:</strong> %</p>
-      <p class="mini"><strong>Implemented form:</strong> <code>sqrt((P₂ + P₃ + … + P₁₀) / P₁) × 100</code></p>
-    </div>
-
-    <div class="card accent-teal">
-      <h3>HF Energy Delta</h3>
-      <p>Compares the present high-frequency band share against the rolling baseline high-frequency share, then converts the power-ratio difference to dB.</p>
-      <p class="mini"><strong>Displayed unit:</strong> dB</p>
-      <p class="mini"><strong>Implemented form:</strong> <code>10·log10((hf_now + ε) / (hf_baseline + ε))</code></p>
-    </div>
-
-    <div class="card accent-purple">
-      <h3>ZCV</h3>
-      <p>Tracks zero-cross timing spread from hysteresis-based zero-cross detections and reports the standard deviation of crossing intervals in time.</p>
-      <p class="mini"><strong>Displayed unit:</strong> ms</p>
-      <p class="mini"><strong>Implemented form:</strong> <code>σ(Δzero-cross interval) × 1000 / f<sub>s</sub></code></p>
-    </div>
-
-    <div class="card accent-blue">
-      <h3>Absolute Z-Deviation</h3>
-      <p>Measures how far the present RMS current is from the rolling baseline current, in baseline standard-deviation units.</p>
-      <p class="mini"><strong>Displayed unit:</strong> σ</p>
-      <p class="mini"><strong>Implemented form:</strong> <code>|I<sub>rms</sub> − μ<sub>baseline</sub>| / σ<sub>baseline</sub></code></p>
-    </div>
-  </div>
-
-  <div class="note" style="margin-top:10px">
-    The runtime arc decision uses these ten features directly. In the current firmware, spectral flux, cycle NMSE, peak fluctuation CV, and THD are percentage-style values; residual crest factor, edge spike ratio, midband residual ratio, and HF energy delta are dB values; ZCV is a time-variability feature; and Absolute Z-Deviation is a baseline sigma distance.
-  </div>
-</section>
-
+    <section class="section" id="features">
+      <div class="section-head">
+        <div>
+          <div class="eyebrow teal"><span class="dot"></span>Waveform Feature Guide</div>
+          <h2>What the current feature cards mean</h2>
+        </div>
+      </div>
+      <div class="note" style="margin-bottom:10px;">Most waveform features in the current dashboard are derived, dimensionless statistics. In practice, that means most cards are unitless. The two clearest exceptions in the current UI are <strong>Current THD</strong>, which is shown in <strong>%</strong>, and <strong>Absolute Z-Deviation</strong>, which is shown in <strong>standard deviations (σ)</strong>.</div>
+      <div class="metric-list">
+        <div class="metric-item"><span class="metric-badge badge-time">PRIMARY</span><div><h3>Spectral Flux (Mid/HF)</h3><p>Measures how quickly the mid- to high-frequency spectrum changes from one frame to the next. Higher values mean the spectral content is changing more abruptly. <strong>Unit:</strong> unitless score.</p></div></div>
+        <div class="metric-item"><span class="metric-badge badge-time">PRIMARY</span><div><h3>Residual Crest Factor</h3><p>Shows how peaky the residual waveform is after the dominant waveform content is removed. Sharper residual spikes push this value upward. <strong>Unit:</strong> crest factor (×), dimensionless.</p></div></div>
+        <div class="metric-item"><span class="metric-badge badge-time">PRIMARY</span><div><h3>Edge Spike Ratio</h3><p>Tracks how much of the frame is dominated by short spike-like behavior around fast conduction changes. Higher values suggest stronger spike activity. <strong>Unit:</strong> unitless ratio.</p></div></div>
+        <div class="metric-item"><span class="metric-badge badge-time">PRIMARY</span><div><h3>Midband Residual Ratio</h3><p>Measures how much residual energy remains in the midband after the expected low-frequency waveform shape is removed. <strong>Unit:</strong> unitless ratio.</p></div></div>
+        <div class="metric-item"><span class="metric-badge badge-time">PRIMARY</span><div><h3>Cycle NMSE</h3><p>Shows how different one cycle is from the next using normalized mean-squared error. Higher values mean the waveform is less repeatable. <strong>Unit:</strong> unitless error.</p></div></div>
+        <div class="metric-item"><span class="metric-badge badge-freq">SECONDARY</span><div><h3>Peak Fluctuation CV</h3><p>Describes how much the cycle peaks vary from each other. Larger variation usually means the waveform amplitude is less stable. <strong>Unit:</strong> unitless coefficient of variation.</p></div></div>
+        <div class="metric-item"><span class="metric-badge badge-freq">SECONDARY</span><div><h3>Current THD</h3><p>Total harmonic distortion of the current waveform. Larger values mean more harmonic distortion relative to the fundamental current component. <strong>Unit:</strong> %.</p></div></div>
+        <div class="metric-item"><span class="metric-badge badge-freq">SECONDARY</span><div><h3>HF Energy Delta</h3><p>Shows the relative change in the high-frequency energy portion of the waveform. It is useful for spotting frames where high-frequency activity shifts sharply. <strong>Unit:</strong> unitless delta.</p></div></div>
+        <div class="metric-item"><span class="metric-badge badge-time">SECONDARY</span><div><h3>ZC Variance</h3><p>Measures how irregular the zero-cross timing is. Arcs and unstable conduction can disturb the normal crossing pattern. <strong>Unit:</strong> unitless variance.</p></div></div>
+        <div class="metric-item"><span class="metric-badge badge-time">SECONDARY</span><div><h3>Absolute Z-Deviation</h3><p>Shows how far the current RMS is from its baseline in absolute z-score form. Larger values mean the current is further away from its recent normal level. <strong>Unit:</strong> standard deviations (σ).</p></div></div>
+      </div>
+    </section>
 
     <section class="section">
       <div class="section-head">
@@ -449,14 +376,13 @@
             <span class="summary-copy">Admin mode only</span>
           </summary>
           <div class="details-body">
-            <p>The Data Logger is used for waveform collection and model-training workflows. Uploaded labeled CSV files can also be stored there as persistent cloud sessions.</p>
+            <p>The Data Logger is used for waveform collection and model-training workflows. The current workflow keeps Original sessions separate from Processed sessions so you can revisit edits without overwriting raw captures.</p>
             <ul>
               <li>Set collection duration in seconds.</li>
               <li>Set load type text for the session.</li>
-              <li>Choose a label override or leave it in auto mode.</li>
-              <li>Download the current session or compile all sessions.</li>
+                            <li>Download all original sessions or all processed sessions from the active tab.</li>
               <li>Upload an external CSV into the cloud logger so it stays in the session list and can be reopened later.</li>
-              <li>Clear all ML logs and sessions when needed.</li>
+              <li>Upload an external CSV into the cloud logger, reopen it later, edit arc markers or segments, then save a processed copy without replacing the original.</li>
             </ul>
           </div>
         </details>
@@ -471,7 +397,7 @@
               <li>Play or pause time playback.</li>
               <li>Change speed and scrub through the session.</li>
               <li>Choose which series to show.</li>
-              <li>Enable smoothing, normalization, statistics, follow mode, arc-marker visibility, and zoom control.</li><li>Use the Zoom slider or wheel zoom to move between full-session context and detailed inspection.</li><li>The default viewer opens with Voltage on Y1 and Current on Y2 so the electrical waveform is visible immediately. Smooth and Normalize preserve the active window when they rebuild the plot. Use the Log Editor to mark arc indices and define non-overlapping Start, Steady, Arc, and Close ranges for split CSV export.</li>
+              <li>Enable smoothing, normalization, statistics, event markers, and zoom reset.</li><li>Use the Zoom slider to zoom out on mobile and desktop when gesture zoom is limited.</li><li>Default viewer selection now starts with Current, Arc Label, and Model Prediction only so the viewer opens less crowded. Use the Segment Divider to mark non-overlapping Start, Steady, Arc, and Close ranges for split CSV export.</li>
             </ul>
           </div>
         </details>

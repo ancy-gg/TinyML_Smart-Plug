@@ -524,8 +524,8 @@ body.ios .ota-input{ font-size:16px; }
 }
 .toast-err{ background:rgba(231,76,60,0.96); }
 .toast-ok{ background:rgba(40,40,42,0.98); }
-.toast-info{ background:rgba(244,221,136,0.96); color:#231c08; border-color:rgba(255,232,168,0.40); }
-.toast-warn{ background:rgba(244,221,136,0.96); color:#231c08; border-color:rgba(255,232,168,0.40); }
+.toast-info{ background:rgba(52,152,219,0.96); }
+.toast-warn{ background:rgba(142,68,173,0.96); }
 
 .ota-grid{
   display:grid;
@@ -4707,420 +4707,169 @@ select option:disabled,
   .segment-row{ flex-direction:column; align-items:flex-start; }
 }
 
-
-/* ===== Logger tabs, OTA dropdown, and improved plot editor ===== */
-.history-actions-logger{ align-items:center; }
-.logger-duration-input{ width:88px; min-width:88px; max-width:88px; text-align:center; }
-.logger-tabs{ display:flex; gap:8px; margin-top:12px; flex-wrap:wrap; }
-.logger-tab{ min-width:150px; }
-.logger-tab.is-active{ background:linear-gradient(180deg, rgba(46,204,113,0.22), rgba(46,204,113,0.12)); border-color:rgba(46,204,113,0.34); color:#d8ffe6; }
-.ota-details{ overflow:hidden; }
-.ota-summary{ list-style:none; cursor:pointer; display:flex; align-items:center; justify-content:space-between; gap:12px; padding:4px 0; }
-.ota-summary::-webkit-details-marker{ display:none; }
-.ota-details-body{ padding-top:12px; }
-.plot-stage{ display:grid; grid-template-columns:minmax(0,1fr) 320px; gap:14px; align-items:start; }
-.plot-canvas-wrap{ min-width:0; }
-.plot-sideinfo{ min-height:460px; max-height:460px; overflow:auto; border:1px solid rgba(255,255,255,0.10); border-radius:16px; background:rgba(255,255,255,0.03); padding:12px; }
-.plot-sideinfo-head{ font-size:12px; color:rgba(255,255,255,0.62); text-transform:uppercase; letter-spacing:0.08em; margin-bottom:8px; }
-.plot-status-side{ margin-top:0; margin-bottom:10px; }
-.plot-values-side{ display:flex; flex-direction:column; gap:8px; overflow:visible; max-height:none; margin-top:0; }
-.plot-values-side .vchip{ width:100%; border-radius:14px; }
-#seriesPanel{ resize:vertical; overflow:auto; min-height:220px; max-height:70vh; }
-#toggleList{ display:grid; grid-template-columns:repeat(auto-fit, minmax(240px, 1fr)); gap:8px 10px; max-height:none; overflow:visible; }
-#toggleList .row{ margin:0; padding:6px 8px; border-radius:12px; background:rgba(255,255,255,0.025); border:1px solid rgba(255,255,255,0.08); }
-.controlsbar-top-unified .left{ width:100%; }
-.panel-editor-tools{ margin-top:12px; }
-.editor-tools-head{ display:flex; align-items:flex-end; justify-content:space-between; gap:12px; margin-bottom:10px; flex-wrap:wrap; }
-.editor-toolbar{ display:flex; gap:8px; flex-wrap:wrap; align-items:center; margin-bottom:10px; }
-.editor-toolbar .chip{ min-height:38px; }
-.segment-list{ display:grid; gap:8px; }
-.segment-row{ display:flex; align-items:center; justify-content:space-between; gap:10px; padding:10px 12px; border-radius:12px; border:1px solid rgba(255,255,255,0.10); background:rgba(255,255,255,0.04); }
-.segment-row-main{ display:flex; gap:10px; flex-wrap:wrap; align-items:center; }
-.segment-pill{ display:inline-flex; min-width:66px; justify-content:center; padding:4px 10px; border-radius:999px; font-size:12px; font-weight:900; border:1px solid rgba(255,255,255,0.12); }
-.segment-pill-start{ background:rgba(77,163,255,0.18); color:#d9ebff; }
-.segment-pill-steady{ background:rgba(46,204,113,0.18); color:#cbffd8; }
-.segment-pill-arc{ background:rgba(255,140,26,0.18); color:#ffd8b0; }
-.segment-pill-close{ background:rgba(232,91,83,0.18); color:#ffd7d3; }
-.segment-empty{ padding:12px; border-radius:12px; border:1px dashed rgba(255,255,255,0.12); color:rgba(255,255,255,0.62); }
-@media (max-width: 1180px){
-  .plot-stage{ grid-template-columns:1fr; }
-  .plot-sideinfo{ min-height:0; max-height:none; }
-}
-@media (max-width: 760px){
-  .logger-tab{ flex:1 1 auto; }
-  .logger-duration-input{ width:72px; min-width:72px; max-width:72px; }
-  #toggleList{ grid-template-columns:1fr; }
-}
-
-
-/* ===== v8.2 viewer dark theme, inline logger tabs, split history, info popovers ===== */
-.live-card .metric-note{ display:none; }
-.summary-card,
-.card{ position:relative; }
-.has-info{ padding-right:42px !important; }
-.tsp-info-btn{
-  position:absolute;
-  top:10px;
-  right:10px;
-  width:22px;
-  height:22px;
-  border-radius:999px;
-  border:1px solid rgba(255,255,255,0.14);
-  background:rgba(255,255,255,0.06);
-  color:rgba(255,255,255,0.78);
-  font-size:12px;
-  font-weight:900;
-  display:inline-flex;
-  align-items:center;
-  justify-content:center;
-  cursor:pointer;
-  box-shadow:none;
-}
-.tsp-info-btn:hover,
-.tsp-info-btn:focus-visible{
-  background:rgba(255,255,255,0.12);
-  color:#fff;
-  border-color:rgba(255,255,255,0.22);
-  outline:none;
-}
-.tsp-info-btn-inline{
-  position:static;
-  width:20px;
-  height:20px;
-  flex:0 0 auto;
-}
-.tsp-info-btn-fault{
-  background:rgba(255,214,128,0.16);
-  border-color:rgba(255,214,128,0.34);
-  color:#ffe7a6;
-}
-.info-popover{
-  position:fixed;
-  z-index:1200;
-  width:min(320px, calc(100vw - 24px));
-  padding:12px 13px;
-  border-radius:14px;
-  border:1px solid rgba(255,255,255,0.14);
-  background:linear-gradient(180deg, rgba(20,20,22,0.98), rgba(8,8,10,0.98));
-  box-shadow:0 24px 44px rgba(0,0,0,0.42);
-  color:#f4f4f4;
-}
-.info-popover.fault{
-  border-color:rgba(255,214,128,0.34);
-}
-.info-popover-title{
-  font-size:14px;
-  font-weight:900;
-  margin-bottom:6px;
-}
-.info-popover-summary{
-  font-size:12px;
-  color:rgba(255,255,255,0.84);
-  line-height:1.45;
-}
-.info-popover ul{
-  margin:8px 0 0;
-  padding-left:18px;
+/* ===== v9.9 stability patch: logger, history split, viewer cleanup ===== */
+.history-split-grid{
   display:grid;
-  gap:4px;
-  color:rgba(255,255,255,0.68);
-  font-size:12px;
-  line-height:1.42;
-}
-.info-popover-action{
-  margin-top:10px;
-  padding-top:8px;
-  border-top:1px solid rgba(255,255,255,0.10);
-  color:#ffe9ad;
-  font-size:12px;
-  line-height:1.45;
-}
-.history-split{
-  display:grid;
-  grid-template-columns:repeat(2, minmax(0, 1fr));
+  grid-template-columns:repeat(2,minmax(0,1fr));
   gap:12px;
 }
-.history-pane{
+.history-panel{
   min-width:0;
-  border:1px solid rgba(255,255,255,0.10);
-  border-radius:16px;
-  background:linear-gradient(180deg, rgba(26,26,28,0.92), rgba(14,14,16,0.92));
-  padding:12px;
 }
-.history-pane-fault{
-  border-color:rgba(255,214,128,0.18);
-}
-.history-pane-head{
+.history-panel-head{
   display:flex;
-  align-items:flex-start;
+  align-items:flex-end;
   justify-content:space-between;
   gap:10px;
-  margin-bottom:10px;
+  margin-bottom:8px;
+  flex-wrap:wrap;
 }
-.history-pane-title{
+.history-subtitle{
+  margin:0;
   font-size:14px;
-  font-weight:900;
+  font-weight:950;
+}
+.ota-collapsible > summary{
+  list-style:none;
+  cursor:pointer;
+}
+.ota-collapsible > summary::-webkit-details-marker{display:none;}
+.ota-collapsible .ota-summary{
   display:flex;
-  align-items:center;
+  align-items:flex-end;
+  justify-content:space-between;
+  gap:12px;
+  margin-bottom:12px;
+  flex-wrap:wrap;
+}
+.logger-actions-row{
   gap:8px;
-}
-.history-pane-count{
-  display:inline-flex;
-  min-width:24px;
-  min-height:24px;
   align-items:center;
-  justify-content:center;
-  padding:0 8px;
-  border-radius:999px;
-  background:rgba(255,255,255,0.07);
-  color:rgba(255,255,255,0.82);
-  font-size:12px;
-  font-weight:900;
 }
-.history-pane-sub{
-  font-size:11px;
-  color:rgba(255,255,255,0.52);
-  line-height:1.4;
-}
-.history-list{
-  display:grid;
-  gap:8px;
-  max-height:340px;
-  overflow:auto;
-}
-.history-item{
-  display:grid;
-  grid-template-columns:minmax(0, 1fr) auto;
-  gap:10px;
-  align-items:center;
-  padding:10px 11px;
-  border-radius:12px;
-  border:1px solid rgba(255,255,255,0.08);
-  background:rgba(255,255,255,0.03);
-}
-.history-item-time{
-  font-size:12px;
-  color:rgba(255,255,255,0.80);
-  line-height:1.35;
-}
-.history-item-status{
-  display:flex;
-  align-items:center;
-  justify-content:flex-end;
-  gap:8px;
-}
-.history-status-chip{
+.logger-duration-group,
+.logger-tabset{
   display:inline-flex;
   align-items:center;
-  justify-content:center;
-  min-height:30px;
-  padding:0 10px;
-  border-radius:999px;
+  gap:8px;
+}
+.logger-duration-input{
+  min-width:84px;
+  width:84px;
+}
+.logger-countdown{
+  min-width:60px;
+  padding:8px 10px;
+  border-radius:10px;
   border:1px solid rgba(255,255,255,0.10);
-  font-size:11px;
-  font-weight:900;
-  text-transform:uppercase;
-  letter-spacing:0.04em;
+  background:rgba(255,255,255,0.05);
+  color:rgba(255,255,255,0.80);
   text-align:center;
 }
-.history-status-chip-normal{
-  background:rgba(46,204,113,0.12);
-  color:#d9ffe7;
+.logger-load-input{
+  min-width:190px;
 }
-.history-status-chip-fault{
-  background:rgba(255,214,128,0.14);
-  color:#ffe8ab;
+.logger-tabset .btn.is-active{
+  background:var(--glass-blue);
+  border-color:rgba(123,190,255,0.28);
+  color:#e2f1ff;
 }
-.history-empty{
-  padding:12px;
-  border-radius:12px;
-  border:1px dashed rgba(255,255,255,0.12);
-  color:rgba(255,255,255,0.50);
-  font-size:12px;
-}
-.logger-tabs-inline{
-  margin-top:0;
-  margin-left:auto;
-}
-.history-actions-logger{
-  align-items:center;
-}
-.plot-drawer,
-.plot-drawer .panel,
-.plot-drawer .plot-sideinfo,
-.plot-drawer .history-table-wrap,
-.plot-drawer .segment-row,
-.plot-drawer .segment-empty,
-.plot-drawer #toggleList .row{
-  background:linear-gradient(180deg, rgba(20,20,22,0.96), rgba(8,8,10,0.96));
-}
-.plot-drawer{
-  border-color:rgba(255,255,255,0.08);
-}
-.plot-drawer .chip,
-.plot-drawer .btn,
-.plot-drawer .select,
-.plot-drawer .axisSel,
-.plot-drawer select,
-.plot-drawer input[type="text"]{
-  background:rgba(255,255,255,0.05);
-  border-color:rgba(255,255,255,0.12);
-}
-.plot-drawer .chip{
-  background:rgba(255,255,255,0.045);
-}
-.plot-drawer select,
-.plot-drawer .axisSel{
-  color:#f3f3f3;
-}
-.plot-drawer .controlsbar-top-unified{
-  overflow-x:auto;
-  overflow-y:hidden;
-  padding-bottom:4px;
-}
-.plot-drawer .controlsbar-top-unified .left{
-  width:max-content;
-  min-width:100%;
-  flex-wrap:nowrap;
+.viewer-header-actions{
   gap:8px;
-  align-items:center;
 }
-.plot-drawer .controlsbar-top-unified .left > *{
-  flex:0 0 auto;
-}
-.plot-drawer .controlsbar-top-unified .scrub{
-  flex:1 0 260px;
-  width:clamp(260px, 28vw, 440px);
-  min-width:260px;
-}
-#chart{
+.plot-drawer .rightPanel{
   overflow:visible;
-  border-radius:18px;
-  border:1px solid rgba(255,255,255,0.08);
-  background:linear-gradient(180deg, rgba(10,10,12,0.98), rgba(3,3,4,0.98));
 }
-#chart .uplot,
-#chart .u-wrap{
-  background:transparent !important;
+.plot-drawer #chart{
+  height:500px !important;
+  min-height:500px !important;
+  max-height:500px !important;
+  border-radius:14px;
+  background:linear-gradient(180deg, rgba(24,24,27,0.96), rgba(15,15,18,0.96));
+  padding-bottom:10px;
 }
-.plot-sideinfo{
-  border-color:rgba(255,255,255,0.08);
-}
-@media (max-width: 980px){
-  .history-split{ grid-template-columns:1fr; }
-  .logger-tabs-inline{
-    margin-left:0;
-    width:100%;
-    order:4;
-  }
-  .plot-drawer .controlsbar-top-unified{ overflow:visible; }
-  .plot-drawer .controlsbar-top-unified .left{
-    width:100%;
-    min-width:0;
-    flex-wrap:wrap;
-  }
-  .plot-drawer .controlsbar-top-unified .scrub{
-    width:100%;
-    min-width:0;
-    flex:1 1 100%;
-  }
-}
-@media (max-width: 640px){
-  .history-item{ grid-template-columns:1fr; }
-  .history-item-status{ justify-content:space-between; }
-}
-
-
-/* ===== v8.3 viewer layout + hold help + blended colors ===== */
-.has-info,
-.has-hold-info{ padding-right:14px !important; }
-.tsp-info-btn,
-.tsp-info-btn-inline,
-.tsp-info-btn-fault{ display:none !important; }
-.has-hold-info{ cursor:help; -webkit-touch-callout:none; user-select:none; }
-.history-status-chip[data-history-kind]{ cursor:help; }
-
-.plot-drawer,
+.plot-drawer .viewer-grid,
+.plot-drawer .rightPanel,
 .plot-drawer .panel,
-.plot-drawer .plot-sideinfo,
-.plot-drawer .history-table-wrap,
-.plot-drawer .segment-row,
-.plot-drawer .segment-empty,
-.plot-drawer #toggleList .row{
-  background:var(--panel-strong) !important;
-}
-.plot-drawer .chip,
-.plot-drawer .select,
-.plot-drawer .axisSel,
-.plot-drawer select,
-.plot-drawer input[type="text"],
-.plot-drawer input[type="number"]{
-  background:rgba(255,255,255,0.06) !important;
-  border-color:rgba(255,255,255,0.12) !important;
-}
-.plot-drawer .btn:not(.btn-success):not(.btn-info):not(.btn-danger):not(.btn-primary){
-  background:var(--glass) !important;
-  border-color:rgba(255,255,255,0.12) !important;
-  color:var(--text) !important;
-}
-.plot-drawer .btn-success{ background:var(--glass-green) !important; border-color:rgba(110,236,176,0.28) !important; color:#dbffec !important; }
-.plot-drawer .btn-info,
-.plot-drawer .btn-primary{ background:var(--glass-blue) !important; border-color:rgba(123,190,255,0.28) !important; color:#e2f1ff !important; }
-.plot-drawer .btn-danger{ background:var(--glass-red) !important; border-color:rgba(255,138,150,0.28) !important; color:#ffe5e8 !important; }
-.plot-drawer .segment-row,
-.plot-drawer .segment-empty{ border-color:rgba(255,255,255,0.10) !important; }
-.plot-drawer .segment-pill-start{ background:rgba(77,163,255,0.14) !important; }
-.plot-drawer .segment-pill-steady{ background:rgba(46,204,113,0.14) !important; }
-.plot-drawer .segment-pill-arc{ background:rgba(255,140,26,0.14) !important; }
-.plot-drawer .segment-pill-close{ background:rgba(232,91,83,0.14) !important; }
-.plot-drawer .controlsbar-top-unified{
+.plot-drawer .segment-tools,
+.plot-drawer #seriesPanel{
   overflow:visible !important;
-  display:flex !important;
-  flex-direction:column !important;
-  gap:8px !important;
-  padding-bottom:0 !important;
 }
-.plot-drawer .viewer-control-row{
-  width:100%;
+.plot-drawer #seriesPanel{
+  max-height:none !important;
+  background:rgba(255,255,255,0.045) !important;
+}
+.plot-drawer #toggleList{
+  max-height:none !important;
+  overflow:visible !important;
+}
+.plot-drawer .controlsbar-top,
+.plot-drawer .viewer-inline-controls{
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap:10px;
+  flex-wrap:wrap;
+}
+.plot-drawer .control-cluster-singleline{
   display:flex;
   align-items:center;
   gap:8px;
   flex-wrap:wrap;
+  width:100%;
 }
-.plot-drawer .viewer-control-row-main{ flex-wrap:nowrap; }
-.plot-drawer .viewer-control-row-tools{ padding-top:2px; }
-.plot-drawer .viewer-control-row-main > *{ flex:0 0 auto; }
-.plot-drawer .viewer-control-row-tools > *{ flex:0 0 auto; }
-.plot-drawer .viewer-control-row-main .scrub{
-  flex:1 1 auto;
-  width:auto;
-  min-width:280px;
+.plot-drawer .control-cluster-singleline > *{
+  flex:0 0 auto;
 }
-.plot-drawer .viewer-inline-readout{
-  min-width:2ch;
-  text-align:right;
-  color:rgba(255,255,255,0.78);
-  font-size:12px;
-  font-weight:800;
+.plot-drawer .chip,
+.plot-drawer .segment-row,
+.plot-drawer .panel-segment-tools{
+  background:rgba(255,255,255,0.05);
 }
-.plot-drawer #chart{
-  overflow:hidden;
-  border-radius:18px;
-  border:1px solid rgba(255,255,255,0.08);
-  background:linear-gradient(180deg, rgba(14,14,16,0.96), rgba(7,7,9,0.96));
+.plot-drawer .segment-toolbar-editor{
+  gap:8px;
 }
-.plot-sideinfo{
-  min-height:0 !important;
-  max-height:none !important;
-  overflow:visible !important;
+.plot-drawer .segment-toolbar-editor > *{
+  flex:0 0 auto;
 }
-.valueLineWrap{ overflow:visible !important; max-height:none !important; }
+.plot-drawer #valueLine{
+  margin-top:10px;
+  margin-bottom:0;
+  max-height:none;
+}
+.plot-drawer #statusLine{
+  margin-top:8px;
+  color:rgba(255,255,255,0.70);
+}
+.plot-drawer .statsWrap{
+  display:none;
+}
+.toast-warn{
+  background:rgba(241,196,15,0.96);
+  color:#1a1607;
+}
+@media (max-width: 1100px){
+  .history-split-grid{grid-template-columns:1fr;}
+}
 @media (max-width: 980px){
-  .plot-drawer .viewer-control-row-main{ flex-wrap:wrap; }
-  .plot-drawer .viewer-control-row-main .scrub{ min-width:0; width:100%; flex:1 1 100%; }
+  .plot-drawer #chart{
+    height:400px !important;
+    min-height:400px !important;
+    max-height:400px !important;
+  }
+  .logger-actions-row > *{
+    flex:1 1 auto;
+  }
 }
-@media (max-width: 640px){
-  .plot-drawer .viewer-control-row > *{ flex:1 1 auto; }
-  .plot-drawer .viewer-control-row .chip{ justify-content:center; }
-  .plot-drawer .viewer-control-row .scrub{ width:100%; min-width:0; }
+@media (max-width: 760px){
+  .plot-drawer .control-cluster-singleline > *,
+  .plot-drawer .segment-toolbar-editor > *{
+    flex:1 1 calc(50% - 8px);
+    min-width:0;
+  }
+  .logger-duration-group,
+  .logger-tabset{
+    width:100%;
+    justify-content:flex-start;
+    flex-wrap:wrap;
+  }
 }

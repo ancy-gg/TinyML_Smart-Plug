@@ -549,20 +549,21 @@ static void pollMlControl(FirebaseNetwork& network, Notification& notifyUi) {
   int labelOv = ML_UNKNOWN_LABEL;
   String sid = "";
   String load = "unknown";
-  (void)network.fetchMlControl(enabled, dur, labelOv, sid, load);
+  String requestToken = "";
+  (void)network.fetchMlControl(enabled, dur, labelOv, sid, load, requestToken);
 
   if (dur < ML_LOG_MIN_DURATION_S) dur = ML_LOG_MIN_DURATION_S;
   if (dur > ML_LOG_MAX_DURATION_S) dur = ML_LOG_MAX_DURATION_S;
-  if (enabled && sid.length() < 3) {
-    network.setLogEnabled(false);
-    lastEnabled = false;
-    return;
-  }
+  if (enabled && sid.length() < 3) enabled = false;
 
   network.setLogDurationSeconds((uint16_t)dur);
   network.setLogSession(sid, load, labelOv);
   network.setLogEnabled(enabled);
-  if (enabled && !lastEnabled) { notification.notify(SND_LOGGER_ON); notifyUi.triggerCollecting(1000); }
+  if (enabled && !lastEnabled) {
+    notification.notify(SND_LOGGER_ON);
+    notifyUi.triggerCollecting(1000);
+    if (requestToken.length()) (void)network.publishControlAck("ml_log_enable", requestToken);
+  }
   lastEnabled = enabled;
 }
 

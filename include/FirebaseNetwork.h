@@ -37,7 +37,7 @@ public:
   bool consumeFaultClearRequest();
   bool consumeRevertFirmwareRequest();
   bool consumeOtaCheckRequest();
-  bool fetchMlControl(bool& enabled, int& dur, int& labelOv, String& sid, String& load) const;
+  bool fetchMlControl(bool& enabled, int& dur, int& labelOv, String& sid, String& load, String& requestToken) const;
 
   void requestLiveUpdate(float v, float c, float apparentPower, float t,
                          float spectral_flux_midhf, float residual_crest_factor,
@@ -113,7 +113,7 @@ private:
   static constexpr uint8_t HISTORY_QUEUE_MAX = 12;
   static constexpr uint32_t CLOUD_TX_MIN_GAP_MS = 140UL;
   static constexpr uint32_t CLOUD_TX_RETRY_MS = 1800UL;
-  static constexpr uint32_t CLOUD_CTRL_READ_GAP_MS = 350UL;
+  static constexpr uint32_t CLOUD_CTRL_READ_GAP_MS = 500UL;
   static constexpr uint16_t ROWS_PER_CHUNK = 12;
 
   FirebaseData fbLive;
@@ -180,6 +180,7 @@ private:
   int  _mlLabelOverrideCache = ML_UNKNOWN_LABEL;
   String _mlSessionIdCache = "";
   String _mlLoadTypeCache = "unknown";
+  String _mlRequestTokenCache = "";
   uint8_t _controlPollSlot = 0;
   uint32_t _lastControlPollMs = 0;
 
