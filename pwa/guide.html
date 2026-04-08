@@ -9,470 +9,790 @@
   <style>
     :root{
       color-scheme:dark;
-      --bg:#0d0d0f;
+      --bg:#090a0c;
+      --bg-2:#0f1115;
       --panel:rgba(255,255,255,0.045);
-      --panel-strong:linear-gradient(180deg, rgba(44,44,47,0.95), rgba(22,22,24,0.95));
+      --panel-2:linear-gradient(180deg, rgba(33,35,40,0.92), rgba(18,19,23,0.94));
+      --panel-3:linear-gradient(180deg, rgba(255,255,255,0.06), rgba(255,255,255,0.025));
       --border:rgba(255,255,255,0.10);
-      --text:#f5f5f5;
-      --muted:rgba(255,255,255,0.70);
-      --soft:rgba(255,255,255,0.54);
-      --shadow:0 16px 40px rgba(0,0,0,0.42);
-      --green:#2ecc71;
-      --blue:#4da3ff;
-      --amber:#f1c40f;
-      --orange:#ff9b42;
-      --red:#e85b53;
-      --purple:#9b6dff;
-      --teal:#19c6b3;
-      --radius:20px;
+      --border-strong:rgba(255,255,255,0.16);
+      --text:#f3f1ea;
+      --muted:rgba(243,241,234,0.72);
+      --soft:rgba(243,241,234,0.48);
+      --shadow:0 22px 54px rgba(0,0,0,0.42);
+      --amber:#d8b253;
+      --amber-2:#f0cf77;
+      --mint:#63caa3;
+      --blue:#6f9cf2;
+      --violet:#9e8ef4;
+      --rose:#d97873;
+      --teal:#3dbcb1;
+      --radius-xl:28px;
+      --radius-lg:20px;
+      --radius-md:16px;
+      --header-h:140px;
+      --tabs-h:58px;
+      --content-max:1540px;
     }
+
     *{box-sizing:border-box}
-    html,body{margin:0;min-height:100%}
+    html,body{height:100%;margin:0}
     body{
+      overflow:hidden;
       font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif;
       color:var(--text);
-      background:radial-gradient(1200px 700px at 50% -240px,#2a2a2d 0%,#121214 60%,#0b0b0c 100%);
-      padding:18px;
-      line-height:1.55;
+      background:
+        radial-gradient(900px 520px at 50% -200px, rgba(216,178,83,0.12), transparent 55%),
+        radial-gradient(700px 480px at 100% 0%, rgba(111,156,242,0.10), transparent 52%),
+        radial-gradient(760px 460px at 0% 10%, rgba(99,202,163,0.08), transparent 52%),
+        linear-gradient(180deg, #0c0d10 0%, #090a0c 100%);
       -webkit-text-size-adjust:100%;
     }
-    .wrap{width:min(1180px,100%);margin:0 auto}
-    .hero,.section{
+
+    button,input,select,textarea{font:inherit}
+    a{color:inherit}
+
+    .guide-shell{
+      width:min(var(--content-max), calc(100vw - 32px));
+      height:calc(100vh - 32px);
+      margin:16px auto;
+      display:grid;
+      grid-template-rows:auto auto minmax(0,1fr);
+      gap:14px;
+      animation:shellIn .42s ease-out both;
+    }
+    @keyframes shellIn{
+      from{opacity:0;transform:translateY(10px) scale(.992)}
+      to{opacity:1;transform:translateY(0) scale(1)}
+    }
+
+    .glass{
       border:1px solid var(--border);
-      border-radius:24px;
       background:var(--panel);
       box-shadow:var(--shadow);
-      backdrop-filter:blur(8px);
+      backdrop-filter:blur(14px);
+      -webkit-backdrop-filter:blur(14px);
     }
-    .hero{padding:22px;margin-bottom:14px}
-    .section{padding:18px;margin-bottom:12px}
-    h1,h2,h3,p,ul,ol,li{margin:0}
-    h1{font-size:clamp(28px,4vw,42px);font-weight:950;line-height:1.05;letter-spacing:-0.03em}
-    h2{font-size:clamp(18px,2vw,24px);font-weight:950;line-height:1.1;margin-bottom:12px}
-    h3{font-size:15px;font-weight:900;line-height:1.2}
-    p,li{color:var(--muted)}
-    .hero-top{display:flex;align-items:center;gap:14px;flex-wrap:wrap}
-    .hero-logo{width:56px;height:56px;border-radius:16px;border:1px solid rgba(255,255,255,0.12);box-shadow:var(--shadow);object-fit:cover}
-    .hero-copy{flex:1 1 520px;min-width:0}
-    .hero-sub{margin-top:8px;font-size:14px;color:var(--muted);max-width:760px}
-    .chip-row{display:flex;gap:8px;flex-wrap:wrap;margin-top:14px}
-    .btn,.chip-link{
+
+    .hero{
+      min-height:var(--header-h);
+      border-radius:var(--radius-xl);
+      padding:20px 22px;
+      display:flex;
+      align-items:center;
+      justify-content:space-between;
+      gap:18px;
+      background:
+        radial-gradient(800px 260px at 20% -10%, rgba(216,178,83,0.12), transparent 58%),
+        linear-gradient(180deg, rgba(255,255,255,0.05), rgba(255,255,255,0.03));
+    }
+
+    .hero-main{
+      min-width:0;
+      display:flex;
+      align-items:center;
+      gap:16px;
+      flex:1 1 auto;
+    }
+    .hero-logo{
+      width:64px;height:64px;border-radius:18px;object-fit:cover;
+      border:1px solid rgba(255,255,255,0.14);
+      box-shadow:0 14px 30px rgba(0,0,0,0.32);
+      flex:0 0 auto;
+      background:rgba(255,255,255,0.04);
+    }
+    .hero-copy{min-width:0}
+    .hero-title{
+      margin:0;
+      font-size:clamp(28px,3.2vw,48px);
+      line-height:1.02;
+      letter-spacing:-0.04em;
+      font-weight:950;
+    }
+    .hero-sub{
+      margin-top:10px;
+      max-width:820px;
+      color:var(--muted);
+      font-size:14px;
+      line-height:1.45;
+    }
+    .hero-badges{display:flex;gap:10px;flex-wrap:wrap;margin-top:12px}
+    .hero-badge{
+      min-height:34px;padding:0 12px;border-radius:999px;
       display:inline-flex;align-items:center;justify-content:center;
-      min-height:40px;padding:0 12px;border-radius:12px;text-decoration:none;
-      font-size:13px;font-weight:900;color:var(--text);
-      border:1px solid rgba(255,255,255,0.12);background:rgba(255,255,255,0.06)
+      font-size:12px;font-weight:850;
+      border:1px solid rgba(255,255,255,0.10);
+      background:rgba(255,255,255,0.055);
+      color:rgba(243,241,234,0.88);
     }
-    .btn-primary{background:linear-gradient(180deg, rgba(46,204,113,0.24), rgba(46,204,113,0.12));border-color:rgba(46,204,113,0.34);color:#d8ffe6}
-    .chip-link{background:rgba(255,255,255,0.05)}
-    .section-head{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:12px;flex-wrap:wrap}
-    .eyebrow{display:inline-flex;align-items:center;gap:8px;font-size:11px;font-weight:900;letter-spacing:.08em;text-transform:uppercase;color:var(--soft)}
-    .eyebrow .dot{width:8px;height:8px;border-radius:999px;background:var(--green);box-shadow:0 0 0 4px rgba(46,204,113,0.12)}
-    .eyebrow.blue .dot{background:var(--blue);box-shadow:0 0 0 4px rgba(77,163,255,0.12)}
-    .eyebrow.amber .dot{background:var(--amber);box-shadow:0 0 0 4px rgba(241,196,15,0.12)}
-    .eyebrow.red .dot{background:var(--red);box-shadow:0 0 0 4px rgba(232,91,83,0.12)}
-    .eyebrow.purple .dot{background:var(--purple);box-shadow:0 0 0 4px rgba(155,109,255,0.12)}
-    .eyebrow.teal .dot{background:var(--teal);box-shadow:0 0 0 4px rgba(25,198,179,0.12)}
-    .grid-2,.grid-3,.grid-4{display:grid;gap:10px}
+    .hero-badge-amber{background:rgba(216,178,83,0.15);color:#f4ddb0;border-color:rgba(216,178,83,0.26)}
+    .hero-badge-mint{background:rgba(99,202,163,0.14);color:#d7ffef;border-color:rgba(99,202,163,0.26)}
+    .hero-badge-blue{background:rgba(111,156,242,0.14);color:#dce7ff;border-color:rgba(111,156,242,0.24)}
+
+    .hero-actions{
+      flex:0 0 auto;
+      display:flex;
+      align-items:center;
+      gap:10px;
+      flex-wrap:wrap;
+      justify-content:flex-end;
+    }
+    .btn{
+      min-height:44px;
+      padding:0 14px;
+      border-radius:14px;
+      border:1px solid rgba(255,255,255,0.12);
+      background:var(--panel-3);
+      color:var(--text);
+      text-decoration:none;
+      display:inline-flex;
+      align-items:center;
+      justify-content:center;
+      gap:8px;
+      font-size:13px;
+      font-weight:900;
+      cursor:pointer;
+      transition:transform .16s ease, border-color .16s ease, background .16s ease, filter .16s ease;
+      user-select:none;
+    }
+    .btn:hover,.btn:focus-visible{transform:translateY(-1px);filter:brightness(1.06);border-color:var(--border-strong);outline:none}
+    .btn-primary{background:linear-gradient(180deg, rgba(99,202,163,0.22), rgba(99,202,163,0.10));border-color:rgba(99,202,163,0.26);color:#e1fff3}
+    .btn-soft{background:linear-gradient(180deg, rgba(255,255,255,0.07), rgba(255,255,255,0.04))}
+
+    .tabbar{
+      min-height:var(--tabs-h);
+      border-radius:22px;
+      padding:8px;
+      display:flex;
+      gap:8px;
+      align-items:center;
+      overflow:auto hidden;
+      scrollbar-width:none;
+      background:linear-gradient(180deg, rgba(255,255,255,0.04), rgba(255,255,255,0.025));
+    }
+    .tabbar::-webkit-scrollbar{display:none}
+    .tab{
+      flex:0 0 auto;
+      min-height:42px;
+      padding:0 14px;
+      border-radius:14px;
+      border:1px solid transparent;
+      background:transparent;
+      color:rgba(243,241,234,0.72);
+      font-weight:850;
+      font-size:13px;
+      display:inline-flex;
+      align-items:center;
+      justify-content:center;
+      gap:8px;
+      cursor:pointer;
+      transition:transform .16s ease, background .16s ease, color .16s ease, border-color .16s ease, box-shadow .16s ease;
+      white-space:nowrap;
+    }
+    .tab:hover,.tab:focus-visible{
+      color:#fff;
+      background:rgba(255,255,255,0.05);
+      border-color:rgba(255,255,255,0.10);
+      outline:none;
+    }
+    .tab.is-active{
+      color:#151618;
+      background:linear-gradient(180deg, rgba(240,207,119,0.96), rgba(216,178,83,0.92));
+      border-color:rgba(240,207,119,0.34);
+      box-shadow:0 10px 22px rgba(0,0,0,0.20), inset 0 1px 0 rgba(255,255,255,0.42);
+    }
+    .tab-index{
+      width:22px;height:22px;border-radius:999px;
+      display:inline-flex;align-items:center;justify-content:center;
+      background:rgba(255,255,255,0.12);
+      font-size:11px;font-weight:900;
+    }
+    .tab.is-active .tab-index{background:rgba(0,0,0,0.10)}
+
+    .stage{
+      min-height:0;
+      border-radius:var(--radius-xl);
+      padding:18px;
+      display:grid;
+      grid-template-rows:minmax(0,1fr);
+      overflow:hidden;
+      background:
+        radial-gradient(680px 220px at 100% -10%, rgba(111,156,242,0.10), transparent 54%),
+        radial-gradient(580px 200px at 0% 0%, rgba(216,178,83,0.08), transparent 52%),
+        linear-gradient(180deg, rgba(255,255,255,0.045), rgba(255,255,255,0.03));
+    }
+
+    .panels{
+      position:relative;
+      min-height:0;
+      height:100%;
+    }
+    .panel{
+      position:absolute;
+      inset:0;
+      opacity:0;
+      pointer-events:none;
+      transform:translateY(12px);
+      transition:opacity .24s ease, transform .24s ease;
+      display:grid;
+      grid-template-rows:auto minmax(0,1fr);
+      gap:16px;
+    }
+    .panel.is-active{
+      opacity:1;
+      pointer-events:auto;
+      transform:translateY(0);
+    }
+
+    .panel-head{
+      display:flex;
+      align-items:flex-end;
+      justify-content:space-between;
+      gap:16px;
+      flex-wrap:wrap;
+    }
+    .eyebrow{
+      display:inline-flex;align-items:center;gap:8px;
+      font-size:11px;font-weight:900;letter-spacing:.08em;
+      text-transform:uppercase;color:var(--soft);
+    }
+    .eyebrow-dot{
+      width:8px;height:8px;border-radius:999px;
+      background:var(--amber);
+      box-shadow:0 0 0 4px rgba(216,178,83,0.10);
+      flex:0 0 auto;
+    }
+    .eyebrow-mint .eyebrow-dot{background:var(--mint);box-shadow:0 0 0 4px rgba(99,202,163,0.10)}
+    .eyebrow-blue .eyebrow-dot{background:var(--blue);box-shadow:0 0 0 4px rgba(111,156,242,0.10)}
+    .eyebrow-violet .eyebrow-dot{background:var(--violet);box-shadow:0 0 0 4px rgba(158,142,244,0.10)}
+    .eyebrow-rose .eyebrow-dot{background:var(--rose);box-shadow:0 0 0 4px rgba(217,120,115,0.10)}
+    .eyebrow-teal .eyebrow-dot{background:var(--teal);box-shadow:0 0 0 4px rgba(61,188,177,0.10)}
+
+    .panel-title{
+      margin:6px 0 0;
+      font-size:clamp(26px,2.2vw,38px);
+      line-height:1.04;
+      letter-spacing:-0.03em;
+      font-weight:950;
+    }
+    .panel-sub{
+      max-width:780px;
+      color:var(--muted);
+      margin-top:10px;
+      font-size:14px;
+      line-height:1.5;
+    }
+    .mini-pills{display:flex;gap:8px;flex-wrap:wrap}
+    .mini-pill{
+      min-height:34px;padding:0 12px;border-radius:999px;
+      display:inline-flex;align-items:center;justify-content:center;
+      font-size:12px;font-weight:850;
+      border:1px solid rgba(255,255,255,0.10);
+      background:rgba(255,255,255,0.05);
+      color:rgba(243,241,234,0.84);
+    }
+
+    .panel-body{
+      min-height:0;
+      display:grid;
+      gap:14px;
+      grid-auto-rows:min-content;
+      align-content:start;
+      overflow:auto;
+      padding-right:4px;
+      scrollbar-width:thin;
+      scrollbar-color:rgba(255,255,255,0.14) transparent;
+    }
+    .panel-body::-webkit-scrollbar{width:8px}
+    .panel-body::-webkit-scrollbar-thumb{background:rgba(255,255,255,0.12);border-radius:999px}
+    .panel-body::-webkit-scrollbar-track{background:transparent}
+
+    .grid{display:grid;gap:14px}
     .grid-2{grid-template-columns:repeat(2,minmax(0,1fr))}
     .grid-3{grid-template-columns:repeat(3,minmax(0,1fr))}
     .grid-4{grid-template-columns:repeat(4,minmax(0,1fr))}
-    .card,details{
-      background:var(--panel-strong);
-      border:1px solid rgba(255,255,255,0.10);
-      border-radius:18px;
-      padding:14px;
+
+    .card{
       min-width:0;
-    }
-    .card p + p{margin-top:8px}
-    .mini{margin-top:8px;font-size:12px;color:var(--soft)}
-    .pill-row{display:flex;gap:8px;flex-wrap:wrap}
-    .pill{
-      display:inline-flex;align-items:center;justify-content:center;
-      min-height:32px;padding:0 10px;border-radius:999px;
+      border-radius:22px;
       border:1px solid rgba(255,255,255,0.10);
-      font-size:12px;font-weight:900
+      background:var(--panel-2);
+      box-shadow:var(--shadow);
+      padding:18px;
+      position:relative;
+      overflow:hidden;
+      transform:translateZ(0);
+      transition:transform .18s ease, border-color .18s ease, background .18s ease;
     }
-    .pill-green{background:rgba(46,204,113,0.14);color:#bff5d4}
-    .pill-blue{background:rgba(77,163,255,0.14);color:#d9ebff}
-    .pill-amber{background:rgba(241,196,15,0.16);color:#fff0ae}
-    .pill-red{background:rgba(232,91,83,0.16);color:#ffd7d3}
-    .pill-purple{background:rgba(155,109,255,0.16);color:#ecdfff}
-    .pill-teal{background:rgba(25,198,179,0.16);color:#d5fffa}
-    .quick-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px}
-    .quick-card{padding:14px;border-radius:18px;border:1px solid rgba(255,255,255,0.10);background:var(--panel-strong)}
-    .quick-num{font-size:12px;font-weight:900;color:var(--soft);text-transform:uppercase;letter-spacing:.08em;margin-bottom:8px}
-    .quick-title{font-size:15px;font-weight:900;margin-bottom:6px}
-    .accent-green{box-shadow:inset 0 2px 0 rgba(46,204,113,0.65)}
-    .accent-blue{box-shadow:inset 0 2px 0 rgba(77,163,255,0.65)}
-    .accent-amber{box-shadow:inset 0 2px 0 rgba(241,196,15,0.65)}
-    .accent-orange{box-shadow:inset 0 2px 0 rgba(255,155,66,0.65)}
-    .accent-red{box-shadow:inset 0 2px 0 rgba(232,91,83,0.65)}
-    .accent-purple{box-shadow:inset 0 2px 0 rgba(155,109,255,0.65)}
-    .accent-teal{box-shadow:inset 0 2px 0 rgba(25,198,179,0.65)}
-    .metric-list{display:grid;gap:8px}
-    .metric-item{display:flex;gap:10px;align-items:flex-start;padding:10px 12px;border-radius:14px;background:rgba(255,255,255,0.04);border:1px solid rgba(255,255,255,0.08)}
-    .metric-badge{flex:0 0 auto;min-width:64px;height:28px;display:inline-flex;align-items:center;justify-content:center;border-radius:999px;font-size:11px;font-weight:900;border:1px solid rgba(255,255,255,0.10)}
-    .badge-time{background:rgba(77,163,255,0.14);color:#d9ebff}
-    .badge-freq{background:rgba(25,198,179,0.14);color:#d5fffa}
-    .badge-ui{background:rgba(241,196,15,0.14);color:#fff0ae}
-    .note{padding:12px 14px;border-radius:16px;border:1px solid rgba(255,255,255,0.10);background:rgba(255,255,255,0.05);font-size:13px;color:var(--muted)}
-    details{padding:0;overflow:hidden}
-    summary{list-style:none;cursor:pointer;padding:14px 16px;font-weight:900;display:flex;align-items:center;justify-content:space-between;gap:10px}
-    summary::-webkit-details-marker{display:none}
-    .summary-copy{font-size:13px;color:var(--soft);font-weight:700}
-    .details-body{padding:0 16px 16px;display:grid;gap:10px}
-    .details-body p,.details-body li{font-size:14px}
-    .details-body ul,.details-body ol{padding-left:20px;display:grid;gap:6px}
-    .kpi-grid{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:8px}
-    .kpi{padding:12px;border-radius:16px;background:rgba(255,255,255,0.04);border:1px solid rgba(255,255,255,0.08)}
-    .kpi strong{display:block;font-size:13px;margin-bottom:4px}
-    .kpi span{font-size:12px;color:var(--soft)}
-    .footer-space{height:8px}
-    @media (max-width:980px){
-      body{padding:14px}
-      .grid-4,.quick-grid,.kpi-grid{grid-template-columns:repeat(2,minmax(0,1fr))}
-      .grid-3{grid-template-columns:1fr}
+    .card:hover{transform:translateY(-2px);border-color:rgba(255,255,255,0.16)}
+    .card::after{
+      content:"";
+      position:absolute;left:0;top:0;right:0;height:2px;
+      background:linear-gradient(90deg, rgba(255,255,255,0), var(--card-accent, rgba(216,178,83,0.84)), rgba(255,255,255,0));
+      opacity:.95;
     }
-    @media (max-width:760px){
-      .hero{padding:18px}
-      .section{padding:14px}
-      .hero-logo{width:50px;height:50px;border-radius:14px}
+    .card-amber{--card-accent:rgba(216,178,83,0.84)}
+    .card-mint{--card-accent:rgba(99,202,163,0.84)}
+    .card-blue{--card-accent:rgba(111,156,242,0.84)}
+    .card-violet{--card-accent:rgba(158,142,244,0.84)}
+    .card-rose{--card-accent:rgba(217,120,115,0.84)}
+    .card-teal{--card-accent:rgba(61,188,177,0.84)}
+
+    .card-kicker{font-size:11px;font-weight:900;letter-spacing:.08em;text-transform:uppercase;color:var(--soft);margin-bottom:10px}
+    .card-title{font-size:20px;font-weight:900;line-height:1.15;margin:0 0 10px}
+    .card p{margin:0;color:var(--muted);line-height:1.55}
+    .card ul{margin:12px 0 0;padding-left:18px;color:var(--muted);display:grid;gap:8px}
+    .card li{line-height:1.48}
+
+    .hero-panel{
+      display:grid;
+      grid-template-columns:minmax(0,1.35fr) minmax(360px, .9fr);
+      gap:14px;
+    }
+    .purpose-card{
+      padding:22px;
+      border-radius:24px;
+      background:
+        radial-gradient(520px 200px at 0% 0%, rgba(216,178,83,0.11), transparent 58%),
+        linear-gradient(180deg, rgba(255,255,255,0.055), rgba(255,255,255,0.025));
+    }
+    .purpose-title{
+      margin:0;
+      font-size:clamp(28px,2.7vw,42px);
+      line-height:1.02;
+      letter-spacing:-0.04em;
+      font-weight:950;
+    }
+    .purpose-copy{
+      margin-top:14px;
+      color:var(--muted);
+      font-size:15px;
+      line-height:1.6;
+      max-width:760px;
+    }
+    .purpose-points{margin-top:16px;display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px}
+    .purpose-point{
+      min-width:0;
+      min-height:104px;
+      padding:14px;
+      border-radius:18px;
+      border:1px solid rgba(255,255,255,0.10);
+      background:rgba(255,255,255,0.04);
+    }
+    .purpose-point strong{display:block;font-size:14px;font-weight:900;margin-bottom:8px}
+    .purpose-point span{display:block;color:var(--muted);font-size:13px;line-height:1.45}
+
+    .metric-stack{display:grid;gap:10px}
+    .metric{
+      min-height:78px;
+      padding:14px 16px;
+      border-radius:18px;
+      border:1px solid rgba(255,255,255,0.10);
+      background:rgba(255,255,255,0.035);
+      display:flex;
+      flex-direction:column;
+      justify-content:center;
+      gap:4px;
+    }
+    .metric-label{font-size:12px;color:var(--soft);text-transform:uppercase;letter-spacing:.08em;font-weight:850}
+    .metric-value{font-size:22px;font-weight:950;line-height:1.1}
+    .metric-note{font-size:12px;color:var(--muted);line-height:1.35}
+
+    .feature-list{display:grid;gap:10px}
+    .feature-row{
+      display:grid;
+      grid-template-columns:auto minmax(0,1fr);
+      gap:12px;
+      align-items:start;
+      padding:14px 16px;
+      border-radius:18px;
+      border:1px solid rgba(255,255,255,0.10);
+      background:rgba(255,255,255,0.035);
+    }
+    .feature-tag{
+      min-width:94px;height:30px;padding:0 12px;border-radius:999px;
+      display:inline-flex;align-items:center;justify-content:center;
+      font-size:11px;font-weight:900;text-transform:uppercase;
+      border:1px solid rgba(255,255,255,0.10);
+      background:rgba(111,156,242,0.12);color:#dfe8ff;
+      flex:0 0 auto;
+    }
+    .feature-tag.secondary{background:rgba(61,188,177,0.12);color:#d7fffa}
+    .feature-row strong{display:block;font-size:15px;font-weight:900;margin-bottom:4px}
+    .feature-row span{color:var(--muted);line-height:1.48;font-size:13px}
+
+    .note-strip{
+      min-height:54px;
+      padding:0 16px;
+      border-radius:18px;
+      border:1px solid rgba(255,255,255,0.10);
+      background:rgba(255,255,255,0.04);
+      color:var(--muted);
+      display:flex;
+      align-items:center;
+      font-size:13px;
+      line-height:1.45;
+    }
+
+    .callout{
+      border-radius:20px;
+      padding:16px 18px;
+      border:1px solid rgba(255,255,255,0.10);
+      background:linear-gradient(180deg, rgba(255,255,255,0.06), rgba(255,255,255,0.03));
+    }
+    .callout strong{display:block;font-size:14px;font-weight:900;margin-bottom:8px}
+    .callout p{margin:0;color:var(--muted);line-height:1.55}
+
+    .home-grid{grid-template-columns:minmax(0,1fr) minmax(0,1fr)}
+
+    .is-hidden{display:none!important}
+
+    @media (max-width: 1180px){
+      .hero-panel,.home-grid,.grid-4{grid-template-columns:repeat(2,minmax(0,1fr))}
+      .purpose-points{grid-template-columns:1fr}
+    }
+    @media (max-width: 920px){
+      body{overflow:auto}
+      .guide-shell{height:auto;min-height:calc(100vh - 24px);width:min(var(--content-max), calc(100vw - 24px));margin:12px auto;}
+      .stage{min-height:780px}
+      .panel{position:relative;inset:auto;display:none;opacity:1;transform:none}
+      .panel.is-active{display:grid}
+      .panel-body{overflow:visible;padding-right:0}
+      .hero{padding:18px;flex-direction:column;align-items:flex-start}
+      .hero-actions{width:100%;justify-content:flex-start}
+      .hero-panel,.home-grid,.grid-2,.grid-3,.grid-4{grid-template-columns:1fr}
+      .tabbar{padding:6px}
+    }
+    @media (max-width: 640px){
+      .guide-shell{width:calc(100vw - 18px);margin:9px auto;gap:10px}
+      .hero{border-radius:22px;padding:16px}
+      .hero-main{align-items:flex-start}
+      .hero-logo{width:54px;height:54px;border-radius:16px}
       .hero-sub{font-size:13px}
-      .chip-row{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}
-      .btn,.chip-link{width:100%;padding:0 10px;font-size:12px;min-height:38px}
-      .grid-2,.grid-4,.quick-grid,.kpi-grid{grid-template-columns:1fr}
-      .card,details{padding:12px}
-      summary{padding:12px 14px}
-      .details-body{padding:0 14px 14px}
-      p,li{font-size:14px;line-height:1.5}
-      .metric-item{padding:10px}
+      .hero-badges{gap:8px}
+      .hero-badge,.mini-pill{min-height:32px;font-size:11px;padding:0 10px}
+      .tab{min-height:40px;padding:0 12px;font-size:12px}
+      .stage{padding:14px;border-radius:22px}
+      .panel-head{gap:12px}
+      .panel-title{font-size:26px}
+      .purpose-title{font-size:28px}
+      .purpose-copy{font-size:14px}
+      .card,.purpose-card,.callout{padding:16px}
+      .feature-row{grid-template-columns:1fr}
+      .feature-tag{min-width:0;width:max-content}
+      .btn{min-height:42px;padding:0 12px;font-size:12px}
+    }
+    @media (prefers-reduced-motion: reduce){
+      *,*::before,*::after{animation:none!important;transition:none!important;scroll-behavior:auto!important}
     }
   </style>
 </head>
 <body>
-  <div class="wrap">
-    <section class="hero">
-      <div class="hero-top">
+  <div class="guide-shell">
+    <header class="hero glass">
+      <div class="hero-main">
         <img class="hero-logo" src="icons/icon-512.png" alt="TinyML Smart Plug icon" />
         <div class="hero-copy">
-          <h1>TinyML Smart Plug Guide</h1>
-          <div class="hero-sub">A compact user guide for the current dashboard, controls, protections, and admin tools.</div>
+          <h1 class="hero-title">TinyML Smart Plug Guide</h1>
         </div>
       </div>
-      <div class="chip-row">
+      <div class="hero-actions">
         <a class="btn btn-primary" href="index.html">Go Back</a>
-        <a class="chip-link" href="#quickstart">Quick Start</a>
-        <a class="chip-link" href="#dashboard">Dashboard</a>
-        <a class="chip-link" href="#protections">Protections</a>
-        <a class="chip-link" href="#features">Feature Guide</a>
-        <a class="chip-link" href="#fault-actions">After a Fault</a>
+        <button class="btn btn-soft" type="button" id="guideQuickHome">Home</button>
       </div>
-    </section>
+    </header>
 
-    <section class="section" id="quickstart">
-      <div class="section-head">
-        <div>
-          <div class="eyebrow"><span class="dot"></span>Quick Start</div>
-          <h2>How to use the dashboard</h2>
-        </div>
-        <div class="pill-row">
-          <span class="pill pill-green">User friendly</span>
-          <span class="pill pill-blue">Compact layout</span>
-          <span class="pill pill-amber">Protection aware</span>
-        </div>
-      </div>
-      <div class="quick-grid">
-        <div class="quick-card accent-green">
-          <div class="quick-num">Step 1</div>
-          <div class="quick-title">Read the top banner first</div>
-          <p>The large banner is the fastest summary. When live packets stop updating for about 30 seconds, the page treats the device as stale or disconnected so old values are not mistaken as current.</p>
-        </div>
-        <div class="quick-card accent-blue">
-          <div class="quick-num">Step 2</div>
-          <div class="quick-title">Check System Overview</div>
-          <p>Use this area for overall health, relay control, refresh, and clear-fault actions. It is the main place to confirm whether the device is healthy, idle, active, or offline.</p>
-        </div>
-        <div class="quick-card accent-amber">
-          <div class="quick-num">Step 3</div>
-          <div class="quick-title">Review the live cards</div>
-          <p>Voltage, current, apparent power, temperature, and the 10 current waveform features help you understand both electrical load behavior and arc-related signal behavior.</p>
-        </div>
-        <div class="quick-card accent-red">
-          <div class="quick-num">Step 4</div>
-          <div class="quick-title">Treat trips seriously</div>
-          <p>If the device trips on heat, voltage, overload, or arc-related behavior, remove the cause first. Do not use the dashboard as a way to ignore a real fault.</p>
-        </div>
-      </div>
-    </section>
+    <nav class="tabbar glass" id="guideTabs" aria-label="Guide sections">
+      <button class="tab is-active" type="button" role="tab" aria-selected="true" aria-controls="panel-home" data-tab="home"><span class="tab-index">1</span>Home</button>
+      <button class="tab" type="button" role="tab" aria-selected="false" aria-controls="panel-dashboard" data-tab="dashboard"><span class="tab-index">2</span>Dashboard</button>
+      <button class="tab" type="button" role="tab" aria-selected="false" aria-controls="panel-protection" data-tab="protection"><span class="tab-index">3</span>Protection</button>
+      <button class="tab" type="button" role="tab" aria-selected="false" aria-controls="panel-features" data-tab="features"><span class="tab-index">4</span>Features</button>
+      <button class="tab" type="button" role="tab" aria-selected="false" aria-controls="panel-controls" data-tab="controls"><span class="tab-index">5</span>Controls</button>
+      <button class="tab" type="button" role="tab" aria-selected="false" aria-controls="panel-faults" data-tab="faults"><span class="tab-index">6</span>After a Fault</button>
+    </nav>
 
-    <section class="section">
-      <div class="section-head">
-        <div>
-          <div class="eyebrow blue"><span class="dot"></span>Header Menu</div>
-          <h2>What is inside the menu</h2>
-        </div>
-      </div>
-      <div class="grid-2">
-        <div class="card accent-blue">
-          <h3>Notifications</h3>
-          <p>The menu lets the user enable alert notifications. When notifications are allowed by the browser, important status changes can create push-style alerts.</p>
-        </div>
-        <div class="card accent-purple">
-          <h3>User and Admin mode</h3>
-          <p>User mode keeps the dashboard cleaner. Admin mode reveals maintenance tools such as OTA publishing, Data Logger, and Plot Viewer.</p>
-        </div>
-        <div class="card accent-teal">
-          <h3>Change WiFi</h3>
-          <p>This sends a request to open the WiFi portal. The current page logic shows a success message that the hotspot request was sent and the access point should open for about 15 seconds.</p>
-        </div>
-        <div class="card accent-green">
-          <h3>Guide</h3>
-          <p>This page is intended to explain the dashboard in plain language, not just list labels from the UI.</p>
-        </div>
-      </div>
-    </section>
-
-    <section class="section" id="dashboard">
-      <div class="section-head">
-        <div>
-          <div class="eyebrow amber"><span class="dot"></span>Dashboard Overview</div>
-          <h2>What each section means</h2>
-        </div>
-      </div>
-      <div class="grid-3">
-        <div class="card accent-red">
-          <h3>Status Banner</h3>
-          <p>The top banner shows the effective operating state, such as monitoring, unplugged, disconnected, overvoltage, undervoltage, heating, overload, or arcing.</p>
-          <div class="mini">Use this first before reading the smaller cards.</div>
-        </div>
-        <div class="card accent-green">
-          <h3>System Overview</h3>
-          <p>This combines the current health summary with the main control actions. It helps you confirm if the device is healthy, active, idle, or offline, and it gives fast access to refresh, relay, and fault-clear actions.</p>
-        </div>
-        <div class="card accent-blue">
-          <h3>Status</h3>
-          <p>This block summarizes connection state, protection state, firmware version, and the latest event. It is the best place to confirm whether the page is seeing fresh data from the device.</p>
-        </div>
-        <div class="card accent-teal">
-          <h3>Live Electrical</h3>
-          <p>This shows voltage, current, apparent power, and temperature from the latest live packet. The small hints under each value are quick interpretations, not full diagnostics.</p>
-        </div>
-        <div class="card accent-purple">
-          <h3>Primary and Secondary Features</h3>
-          <p>The dashboard now shows 10 live waveform features grouped into Primary Features and Secondary Features. These are the same feature cards used by the current UI, so the guide now matches the active dashboard instead of the older experimental feature list.</p>
-        </div>
-        <div class="card accent-amber">
-          <h3>History</h3>
-          <p>The history area is split into two live tables: faults and alerts on one side, and normal or device events on the other. Both support the same date-range filter and CSV download from the active range.</p>
-        </div>
-      </div>
-      <div class="note" style="margin-top:10px;">The current dashboard also includes admin-only maintenance sections: OTA Updates, Data Logger, and Plot Viewer.</div>
-    </section>
-
-    <section class="section" id="protections">
-      <div class="section-head">
-        <div>
-          <div class="eyebrow red"><span class="dot"></span>Protection Rules</div>
-          <h2>What can alarm or trip the device</h2>
-        </div>
-      </div>
-      <div class="kpi-grid">
-        <div class="kpi"><strong>Overload alarm</strong><span>10 A and above</span></div>
-        <div class="kpi"><strong>Sustained overload trip</strong><span>14.5 A for 60 s</span></div>
-        <div class="kpi"><strong>Warm socket</strong><span>60 °C hint level</span></div>
-        <div class="kpi"><strong>Heating trip</strong><span>70 °C and above</span></div>
-        <div class="kpi"><strong>Normal mains</strong><span>200 V to 250 V</span></div>
-      </div>
-      <div class="grid-2" style="margin-top:10px;">
-        <div class="card accent-red">
-          <h3>Arc Fault</h3>
-          <p>Arc-related detection is based on waveform features and model logic rather than on one simple threshold alone. The current firmware now uses a lower arc counter trip threshold of 6 so short valid bursts can trip earlier.</p>
-        </div>
-        <div class="card accent-amber">
-          <h3>Overload</h3>
-          <p>The dashboard warns at high current. The earlier guide logic also documents a sustained-overload trip condition after extended heavy current.</p>
-        </div>
-        <div class="card accent-orange">
-          <h3>Socket Heating</h3>
-          <p>Temperature is tracked continuously. Warm values deserve attention, and higher values trigger protective action.</p>
-        </div>
-        <div class="card accent-purple">
-          <h3>Undervoltage</h3>
-          <p>Undervoltage now uses staged timing. Around 200 V to 207 V it must persist much longer, around 170 V to 200 V it trips after several seconds, and below about 170 V it is treated as a fast trip. Values collapsing toward 0 V are treated as unplugged or mains-loss behavior, not as undervoltage.</p>
-        </div>
-        <div class="card accent-red">
-          <h3>Overvoltage</h3>
-          <p>High mains voltage now uses staged timing too. Around 250 V to 265 V it must persist for several seconds, while above about 265 V it is treated as a fast trip.</p>
-        </div>
-        <div class="card accent-blue">
-          <h3>Unplugged or no mains</h3>
-          <p>Very low measured voltage is treated separately from normal voltage faults so the UI can distinguish absent mains from unhealthy mains. Sub-50 V style collapses are snapped toward 0 V quickly, while recovery above about 200 V is allowed to rise quickly without waiting for the slower display averaging.</p>
-        </div>
-      </div>
-    </section>
-
-    <section class="section" id="features">
-      <div class="section-head">
-        <div>
-          <div class="eyebrow teal"><span class="dot"></span>Waveform Feature Guide</div>
-          <h2>What the current feature cards mean</h2>
-        </div>
-      </div>
-      <div class="note" style="margin-bottom:10px;">Most waveform features in the current dashboard are derived, dimensionless statistics. In practice, that means most cards are unitless. The two clearest exceptions in the current UI are <strong>Current THD</strong>, which is shown in <strong>%</strong>, and <strong>Absolute Z-Deviation</strong>, which is shown in <strong>standard deviations (σ)</strong>.</div>
-      <div class="metric-list">
-        <div class="metric-item"><span class="metric-badge badge-time">PRIMARY</span><div><h3>Spectral Flux (Mid/HF)</h3><p>Measures how quickly the mid- to high-frequency spectrum changes from one frame to the next. Higher values mean the spectral content is changing more abruptly. <strong>Unit:</strong> unitless score.</p></div></div>
-        <div class="metric-item"><span class="metric-badge badge-time">PRIMARY</span><div><h3>Residual Crest Factor</h3><p>Shows how peaky the residual waveform is after the dominant waveform content is removed. Sharper residual spikes push this value upward. <strong>Unit:</strong> crest factor (×), dimensionless.</p></div></div>
-        <div class="metric-item"><span class="metric-badge badge-time">PRIMARY</span><div><h3>Edge Spike Ratio</h3><p>Tracks how much of the frame is dominated by short spike-like behavior around fast conduction changes. Higher values suggest stronger spike activity. <strong>Unit:</strong> unitless ratio.</p></div></div>
-        <div class="metric-item"><span class="metric-badge badge-time">PRIMARY</span><div><h3>Midband Residual Ratio</h3><p>Measures how much residual energy remains in the midband after the expected low-frequency waveform shape is removed. <strong>Unit:</strong> unitless ratio.</p></div></div>
-        <div class="metric-item"><span class="metric-badge badge-time">PRIMARY</span><div><h3>Cycle NMSE</h3><p>Shows how different one cycle is from the next using normalized mean-squared error. Higher values mean the waveform is less repeatable. <strong>Unit:</strong> unitless error.</p></div></div>
-        <div class="metric-item"><span class="metric-badge badge-freq">SECONDARY</span><div><h3>Peak Fluctuation CV</h3><p>Describes how much the cycle peaks vary from each other. Larger variation usually means the waveform amplitude is less stable. <strong>Unit:</strong> unitless coefficient of variation.</p></div></div>
-        <div class="metric-item"><span class="metric-badge badge-freq">SECONDARY</span><div><h3>Current THD</h3><p>Total harmonic distortion of the current waveform. Larger values mean more harmonic distortion relative to the fundamental current component. <strong>Unit:</strong> %.</p></div></div>
-        <div class="metric-item"><span class="metric-badge badge-freq">SECONDARY</span><div><h3>HF Energy Delta</h3><p>Shows the relative change in the high-frequency energy portion of the waveform. It is useful for spotting frames where high-frequency activity shifts sharply. <strong>Unit:</strong> unitless delta.</p></div></div>
-        <div class="metric-item"><span class="metric-badge badge-time">SECONDARY</span><div><h3>ZC Variance</h3><p>Measures how irregular the zero-cross timing is. Arcs and unstable conduction can disturb the normal crossing pattern. <strong>Unit:</strong> unitless variance.</p></div></div>
-        <div class="metric-item"><span class="metric-badge badge-time">SECONDARY</span><div><h3>Absolute Z-Deviation</h3><p>Shows how far the current RMS is from its baseline in absolute z-score form. Larger values mean the current is further away from its recent normal level. <strong>Unit:</strong> standard deviations (σ).</p></div></div>
-      </div>
-    </section>
-
-    <section class="section">
-      <div class="section-head">
-        <div>
-          <div class="eyebrow purple"><span class="dot"></span>Controls and Admin Tools</div>
-          <h2>What the buttons and extra tools do</h2>
-        </div>
-      </div>
-      <div class="grid-2">
-        <details open>
-          <summary>
-            <span>Relay and fault controls</span>
-            <span class="summary-copy">Everyday controls</span>
-          </summary>
-          <div class="details-body">
-            <p>The relay uses pulse-based control. The page sends short ON and OFF requests instead of continuously holding the relay state.</p>
-            <ul>
-              <li><strong>Relay ON</strong> sends a pulse request to close or re-enable the load path.</li>
-              <li><strong>Relay OFF</strong> sends a pulse request to open or disable the load path.</li>
-              <li><strong>Clear Fault</strong> sends a fault-clear request. This does not mean the electrical cause is already safe.</li>
-              <li>During critical or offline states, the page disables relay control buttons.</li>
-            </ul>
+    <main class="stage glass">
+      <div class="panels">
+        <section class="panel is-active" id="panel-home" role="tabpanel" aria-labelledby="tab-home" data-panel="home">
+          <div class="panel-head">
+            <div>
+              <div class="eyebrow"><span class="eyebrow-dot"></span>Purpose</div>
+              <h2 class="panel-title">What this device is for</h2>
+              <div class="panel-sub">The TinyML Smart Plug is a complementary protection device designed to help catch fire-inducing electrical faults earlier by combining sensing, deterministic protection logic, and TinyML inference.</div>
+            </div>
           </div>
-        </details>
-        <details open>
-          <summary>
-            <span>OTA Updates</span>
-            <span class="summary-copy">Admin mode only</span>
-          </summary>
-          <div class="details-body">
-            <p>OTA lets the admin publish a target firmware version and firmware URL so the device can pull the update.</p>
-            <ul>
-              <li>View the currently published OTA version and link.</li>
-              <li>Set a version string and firmware bin name.</li>
-              <li>Apply a repo-based raw firmware link, then publish the update.</li>
-            </ul>
-          </div>
-        </details>
-        <details>
-          <summary>
-            <span>Data Logger</span>
-            <span class="summary-copy">Admin mode only</span>
-          </summary>
-          <div class="details-body">
-            <p>The Data Logger is used for waveform collection and model-training workflows. The current workflow keeps Original sessions separate from Processed sessions so you can revisit edits without overwriting raw captures.</p>
-            <ul>
-              <li>Set collection duration in seconds.</li>
-              <li>Set load type text for the session.</li>
-                            <li>Download all original sessions or all processed sessions from the active tab.</li>
-              <li>Upload an external CSV into the cloud logger so it stays in the session list and can be reopened later.</li>
-              <li>Upload an external CSV into the cloud logger, reopen it later, edit arc markers or segments, then save a processed copy without replacing the original.</li>
-            </ul>
-          </div>
-        </details>
-        <details>
-          <summary>
-            <span>Plot Viewer</span>
-            <span class="summary-copy">Admin mode only</span>
-          </summary>
-          <div class="details-body">
-            <p>The Plot Viewer is used to inspect logged sessions visually.</p>
-            <ul>
-              <li>Play or pause time playback.</li>
-              <li>Change speed and scrub through the session.</li>
-              <li>Choose which series to show.</li>
-              <li>Enable smoothing, normalization, statistics, event markers, and zoom reset.</li><li>Use the Zoom slider to zoom out on mobile and desktop when gesture zoom is limited.</li><li>Default viewer selection now starts with Current, Arc Label, and Model Prediction only so the viewer opens less crowded. Use the Segment Divider to mark non-overlapping Start, Steady, Arc, and Close ranges for split CSV export.</li>
-            </ul>
-          </div>
-        </details>
-      </div>
-    </section>
+          <div class="panel-body">
+            <div class="hero-panel">
+              <article class="purpose-card card-amber">
+                <h3 class="purpose-title">Sensor-driven fault awareness with load context</h3>
+                <div class="purpose-copy">It monitors voltage, current, and temperature, then uses TinyML Tree Ensemble models together with a Load Family classifier to distinguish normal appliance behavior from patterns that can point to hazardous arc-like or abnormal operating conditions.</div>
+                <div class="purpose-points">
+                  <div class="purpose-point">
+                    <strong>Complementary protection</strong>
+                    <span>It adds another protective layer. It is meant to assist, not replace, safe wiring, breakers, proper outlets, and careful appliance use.</span>
+                  </div>
+                  <div class="purpose-point">
+                    <strong>Context-aware logic</strong>
+                    <span>The load family classifier helps the system interpret the same waveform differently across resistive, motor, SMPS, and other load behaviors.</span>
+                  </div>
+                  <div class="purpose-point">
+                    <strong>Action-oriented dashboard</strong>
+                    <span>The website exists to show live state, explain the current condition, and let you respond safely when a trip or warning occurs.</span>
+                  </div>
+                </div>
+              </article>
 
-    <section class="section" id="fault-actions">
-      <div class="section-head">
-        <div>
-          <div class="eyebrow red"><span class="dot"></span>What To Do After a Fault</div>
-          <h2>Safe response guide</h2>
-        </div>
-      </div>
-      <div class="grid-2">
-        <details open>
-          <summary><span>Arc Fault</span><span class="summary-copy">Stop using the appliance</span></summary>
-          <div class="details-body">
-            <p>Unplug the load and inspect the plug, cord, socket, and appliance for burning smell, carbonization, looseness, or intermittent contact.</p>
-            <ul><li>Avoid repeated reconnection tests.</li><li>Replace suspicious cords, plugs, or outlets before reuse.</li></ul>
-          </div>
-        </details>
-        <details>
-          <summary><span>Overload or sustained overload</span><span class="summary-copy">Reduce the load</span></summary>
-          <div class="details-body">
-            <p>Separate high-draw appliances and verify that current returns to a safer level before continuing use.</p>
-            <ul><li>Avoid stacking heaters, irons, kettles, or similar heavy loads on the same outlet path.</li><li>Avoid undersized extension cords.</li></ul>
-          </div>
-        </details>
-        <details>
-          <summary><span>Socket heating</span><span class="summary-copy">Check the outlet physically</span></summary>
-          <div class="details-body">
-            <p>Allow the outlet and plug to cool. Inspect for loose grip, discoloration, melted plastic, corrosion, or blade wear.</p>
-            <ul><li>Do not keep using a warm outlet just because the appliance still powers on.</li><li>Replace worn sockets and plugs.</li></ul>
-          </div>
-        </details>
-        <details>
-          <summary><span>Undervoltage or overvoltage</span><span class="summary-copy">Wait for mains to stabilize</span></summary>
-          <div class="details-body">
-            <p>Low or high mains can stress motors, compressors, adapters, and appliance electronics.</p>
-            <ul><li>Avoid repeated restarts during unstable supply conditions.</li><li>For recurring overvoltage, inspect the power source or use proper surge protection.</li></ul>
-          </div>
-        </details>
-      </div>
-      <div class="note" style="margin-top:10px;">General rule: never treat a protection trip as something to bypass. Remove the cause first, then reset only after you have confirmed the appliance and outlet are safe.</div>
-    </section>
+              <div class="metric-stack">
+                <div class="metric">
+                  <div class="metric-label">Detection stack</div>
+                  <div class="metric-value">Sensors + rules + TinyML</div>
+                  <div class="metric-note">Fast protection logic and model inference work together.</div>
+                </div>
+                <div class="metric">
+                  <div class="metric-label">Main job</div>
+                  <div class="metric-value">Catch unsafe behavior early</div>
+                  <div class="metric-note">Especially faults that can heat, overload, destabilize mains, or resemble arc-related events.</div>
+                </div>
+                <div class="metric">
+                  <div class="metric-label">Best use</div>
+                  <div class="metric-value">Monitor, verify, respond</div>
+                  <div class="metric-note">Read the state, remove the cause, then reset only after the setup is safe again.</div>
+                </div>
+              </div>
+            </div>
 
-    <section class="section">
-      <div class="section-head">
-        <div>
-          <div class="eyebrow green"><span class="dot"></span>Reset Guidance</div>
-          <h2>How to reset after a trip</h2>
-        </div>
-      </div>
-      <div class="grid-2">
-        <div class="card accent-green">
-          <h3>Before resetting</h3>
-          <ol style="padding-left:20px;display:grid;gap:6px;margin-top:10px;">
-            <li>Read the fault shown on the dashboard.</li>
-            <li>Inspect the appliance, plug, socket, and nearby area.</li>
-            <li>Remove or correct the suspected cause first.</li>
-          </ol>
-        </div>
-        <div class="card accent-blue">
-          <h3>After resetting</h3>
-          <ol style="padding-left:20px;display:grid;gap:6px;margin-top:10px;">
-            <li>Reconnect only when you believe the condition is safe.</li>
-            <li>Watch the banner and overview again.</li>
-            <li>If the same fault returns, stop using the appliance and inspect more thoroughly.</li>
-          </ol>
-        </div>
-      </div>
-      <div class="note" style="margin-top:10px;">The current dashboard logic disables remote relay controls during critical states, and the existing guide logic documents that voltage faults may auto-reclose only after stable mains has returned for several minutes.</div>
-    </section>
+            <div class="grid grid-3">
+              <article class="card card-mint">
+                <div class="card-kicker">What the dashboard tells you</div>
+                <h3 class="card-title">Current operating state</h3>
+                <p>Whether the device is healthy, unplugged, stale, disconnected, warning, or tripped by a protective event.</p>
+              </article>
+              <article class="card card-blue">
+                <div class="card-kicker">Why the models matter</div>
+                <h3 class="card-title">Tree ensembles can stay lightweight</h3>
+                <p>The design uses TinyML Tree Ensemble models because they are practical for embedded inference while still handling nonlinear feature thresholds.</p>
+              </article>
+              <article class="card card-violet">
+                <div class="card-kicker">What the guide is for</div>
+                <h3 class="card-title">Quick answers, not a long manual</h3>
+                <p>This guide is intentionally tabbed and concise so you can jump to the section you need instead of scrolling through dense text blocks.</p>
+              </article>
+            </div>
+          </div>
+        </section>
 
-    <div class="footer-space"></div>
+        <section class="panel" id="panel-dashboard" role="tabpanel" aria-labelledby="tab-dashboard" data-panel="dashboard">
+          <div class="panel-head">
+            <div>
+              <div class="eyebrow eyebrow-blue"><span class="eyebrow-dot"></span>Dashboard</div>
+              <h2 class="panel-title">How to read the main dashboard</h2>
+              <div class="panel-sub">Use this tab when you want a quick explanation of each dashboard block.</div>
+            </div>
+          </div>
+          <div class="panel-body">
+            <div class="grid grid-3">
+              <article class="card card-rose">
+                <div class="card-kicker">Top banner</div>
+                <h3 class="card-title">State banner</h3>
+                <p>This is the fastest summary. Use it first to see whether the unit is monitoring normally, stale, disconnected, unplugged, or actively tripped.</p>
+              </article>
+              <article class="card card-mint">
+                <div class="card-kicker">Center control block</div>
+                <h3 class="card-title">System Overview</h3>
+                <p>This combines health, Wi-Fi quality, command latency, and relay actions. It is the main place for refresh, relay pulses, and fault-clear requests.</p>
+              </article>
+              <article class="card card-blue">
+                <div class="card-kicker">Summary cards</div>
+                <h3 class="card-title">Status</h3>
+                <p>Use this block to confirm connection, protection state, firmware version, and the latest logged event without opening history.</p>
+              </article>
+              <article class="card card-teal">
+                <div class="card-kicker">Electrical data</div>
+                <h3 class="card-title">Main Readings</h3>
+                <p>Voltage, current, apparent power, and temperature are the quickest live indicators of what the connected load is doing right now.</p>
+              </article>
+              <article class="card card-violet">
+                <div class="card-kicker">Model input area</div>
+                <h3 class="card-title">Primary + Secondary Features</h3>
+                <p>These waveform features are the compact signal signature seen by the detection logic. They are for interpretation, not direct electrical ratings.</p>
+              </article>
+              <article class="card card-amber">
+                <div class="card-kicker">What happened</div>
+                <h3 class="card-title">History</h3>
+                <p>Use history to see recent faults, warnings, normal events, and operational changes. It is your trace of what the device believed happened over time.</p>
+              </article>
+            </div>
+            <div class="note-strip">Rule of thumb: banner tells you the present state, status cards summarize the device, readings show the electrical condition, and history explains what recently changed.</div>
+          </div>
+        </section>
+
+        <section class="panel" id="panel-protection" role="tabpanel" aria-labelledby="tab-protection" data-panel="protection">
+          <div class="panel-head">
+            <div>
+              <div class="eyebrow eyebrow-rose"><span class="eyebrow-dot"></span>Protection</div>
+              <h2 class="panel-title">What can warn or trip the device</h2>
+              <div class="panel-sub">The exact firmware logic can evolve, but these are the protection classes the guide should communicate clearly and cleanly.</div>
+            </div>
+          </div>
+          <div class="panel-body">
+            <div class="grid grid-2">
+              <article class="card card-rose">
+                <div class="card-kicker">Arc-related abnormality</div>
+                <h3 class="card-title">Arc Fault</h3>
+                <p>Detected from waveform features, context, and model behavior rather than from a single simple threshold. This is one of the main reasons the device exists.</p>
+              </article>
+              <article class="card card-amber">
+                <div class="card-kicker">High current</div>
+                <h3 class="card-title">Overload</h3>
+                <p>Used for warning or protective action when the connected load draws more current than the intended operating envelope.</p>
+              </article>
+              <article class="card card-teal">
+                <div class="card-kicker">Thermal safety</div>
+                <h3 class="card-title">Socket Heating</h3>
+                <p>Temperature is tracked continuously. Rising heat can indicate loose contacts, outlet stress, or overload conditions even when current alone looks acceptable.</p>
+              </article>
+              <article class="card card-blue">
+                <div class="card-kicker">Mains quality</div>
+                <h3 class="card-title">Under/Overvoltage</h3>
+                <p>The dashboard separates unhealthy mains from full mains loss so the UI can distinguish poor supply conditions from a truly unplugged or absent-voltage state.</p>
+              </article>
+            </div>
+            <div class="grid grid-2">
+              <div class="callout">
+                <strong>Unplugged is not the same as undervoltage</strong>
+                <p>Very low measured voltage is treated separately so the device can clearly show when mains are effectively absent instead of just weak.</p>
+              </div>
+              <div class="callout">
+                <strong>Warnings still matter</strong>
+                <p>Even when the unit has not latched into a full trip, repeated warnings are valuable because they may show a problem that is growing worse over time.</p>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <section class="panel" id="panel-features" role="tabpanel" aria-labelledby="tab-features" data-panel="features">
+          <div class="panel-head">
+            <div>
+              <div class="eyebrow eyebrow-teal"><span class="eyebrow-dot"></span>Features</div>
+              <h2 class="panel-title">What the live feature cards mean</h2>
+              <div class="panel-sub">These are the feature cards shown in the dashboard, with short plain-language meanings.</div>
+            </div>
+          </div>
+          <div class="panel-body">
+            <div class="feature-list">
+              <div class="feature-row"><span class="feature-tag">Primary</span><div><strong>Spectral Flux (Mid/HF)</strong><span>Shows how abruptly the mid-to-high frequency spectrum changes from one frame to the next.</span></div></div>
+              <div class="feature-row"><span class="feature-tag">Primary</span><div><strong>Residual Crest Factor</strong><span>Measures how peaky the residual waveform becomes after dominant low-frequency content is removed.</span></div></div>
+              <div class="feature-row"><span class="feature-tag">Primary</span><div><strong>Edge Spike Ratio</strong><span>Tracks short spike-like behavior around fast conduction changes and sharp transient activity.</span></div></div>
+              <div class="feature-row"><span class="feature-tag">Primary</span><div><strong>Midband Residual Ratio</strong><span>Represents how much midband residual energy remains relative to expected baseline behavior.</span></div></div>
+              <div class="feature-row"><span class="feature-tag">Primary</span><div><strong>Cycle NMSE</strong><span>Compares one waveform cycle against the next. Higher values usually mean poorer repeatability.</span></div></div>
+              <div class="feature-row"><span class="feature-tag secondary">Secondary</span><div><strong>Peak Fluctuation CV</strong><span>Shows how unstable the cycle peaks are over time.</span></div></div>
+              <div class="feature-row"><span class="feature-tag secondary">Secondary</span><div><strong>Current THD</strong><span>Reports total harmonic distortion in the measured current waveform.</span></div></div>
+              <div class="feature-row"><span class="feature-tag secondary">Secondary</span><div><strong>HF Energy Delta</strong><span>Measures how the high-frequency energy shifts relative to recent baseline behavior.</span></div></div>
+              <div class="feature-row"><span class="feature-tag secondary">Secondary</span><div><strong>ZC Variance</strong><span>Tracks zero-cross timing instability, which can rise when conduction becomes irregular.</span></div></div>
+              <div class="feature-row"><span class="feature-tag secondary">Secondary</span><div><strong>Absolute Z-Deviation</strong><span>Shows how far current RMS is from its baseline in z-score form.</span></div></div>
+            </div>
+            <div class="note-strip">Treat feature cards as detection clues, not household measurement labels. They are best used together, not one-by-one in isolation.</div>
+          </div>
+        </section>
+
+        <section class="panel" id="panel-controls" role="tabpanel" aria-labelledby="tab-controls" data-panel="controls">
+          <div class="panel-head">
+            <div>
+              <div class="eyebrow eyebrow-violet"><span class="eyebrow-dot"></span>Controls</div>
+              <h2 class="panel-title">What the buttons and tools do</h2>
+              <div class="panel-sub">This tab shows what each dashboard action does.</div>
+            </div>
+          </div>
+          <div class="panel-body">
+            <div class="grid grid-2">
+              <article class="card card-mint">
+                <div class="card-kicker">Everyday actions</div>
+                <h3 class="card-title">Relay and fault actions</h3>
+                <ul>
+                  <li><strong>Refresh</strong> asks the page to re-read the current state.</li>
+                  <li><strong>Relay ON</strong> sends a pulse request to close or re-enable the load path.</li>
+                  <li><strong>Relay OFF</strong> sends a pulse request to open or disable the load path.</li>
+                  <li><strong>Clear Fault</strong> requests a fault-clear action after you have already removed the cause.</li>
+                </ul>
+              </article>
+              <article class="card card-blue">
+                <div class="card-kicker">Header menu</div>
+                <h3 class="card-title">Menu actions</h3>
+                <ul>
+                  <li><strong>Notifications</strong> controls silent vs alert behavior.</li>
+                  <li><strong>User/Admin</strong> changes how much of the maintenance UI is visible.</li>
+                  <li><strong>Change WiFi</strong> requests the hotspot or configuration portal.</li>
+                  <li><strong>Guide</strong> opens this tabbed reference page.</li>
+                </ul>
+              </article>
+              <article class="card card-amber">
+                <div class="card-kicker">Admin only</div>
+                <h3 class="card-title">OTA + Data tools</h3>
+                <p>Admin mode reveals firmware publishing, the data logger, and the plot viewer so you can collect, inspect, and manage sessions without bloating the default user view.</p>
+              </article>
+              <article class="card card-violet">
+                <div class="card-kicker">Good operator habit</div>
+                <h3 class="card-title">Use the controls conservatively</h3>
+                <p>The dashboard is for controlled response, not for repeatedly forcing the relay or clearing trips without understanding the cause.</p>
+              </article>
+            </div>
+          </div>
+        </section>
+
+        <section class="panel" id="panel-faults" role="tabpanel" aria-labelledby="tab-faults" data-panel="faults">
+          <div class="panel-head">
+            <div>
+              <div class="eyebrow eyebrow-rose"><span class="eyebrow-dot"></span>Safe response</div>
+              <h2 class="panel-title">What to do after a fault</h2>
+              <div class="panel-sub">Remove the cause first, then reset only when the setup looks safe again.</div>
+            </div>
+          </div>
+          <div class="panel-body">
+            <div class="grid grid-2 home-grid">
+              <article class="card card-rose">
+                <div class="card-kicker">Before resetting</div>
+                <h3 class="card-title">Immediate response</h3>
+                <ul>
+                  <li>Read the fault shown on the dashboard.</li>
+                  <li>Inspect the appliance, plug, cord, socket, and nearby area.</li>
+                  <li>Remove or correct the likely cause first.</li>
+                </ul>
+              </article>
+              <article class="card card-blue">
+                <div class="card-kicker">After resetting</div>
+                <h3 class="card-title">What to watch next</h3>
+                <ul>
+                  <li>Reconnect only when the condition seems safe.</li>
+                  <li>Watch the banner and overview again.</li>
+                  <li>If the same fault returns, stop using the appliance and inspect more deeply.</li>
+                </ul>
+              </article>
+            </div>
+            <div class="grid grid-2">
+              <div class="callout">
+                <strong>Arc fault</strong>
+                <p>Stop using the appliance, inspect for looseness, burning smell, carbonization, damaged cords, or intermittent contact. Do not keep re-testing by repeated reconnects.</p>
+              </div>
+              <div class="callout">
+                <strong>Overload or sustained overload</strong>
+                <p>Reduce the connected load, check whether the appliance demand is appropriate for the plug and outlet, then retry only after the load is brought down.</p>
+              </div>
+              <div class="callout">
+                <strong>Socket heating</strong>
+                <p>Check the outlet physically. Heat can point to poor contact, outlet wear, or excessive sustained stress even before obvious burning is visible.</p>
+              </div>
+              <div class="callout">
+                <strong>Undervoltage or overvoltage</strong>
+                <p>Wait for mains to stabilize. Do not treat abnormal supply as a device bug until the incoming voltage has clearly recovered.</p>
+              </div>
+            </div>
+            <div class="note-strip">General rule: never treat a protection trip as something to bypass. Remove the cause first, then reset only after you have confirmed the appliance and outlet are safe.</div>
+          </div>
+        </section>
+      </div>
+    </main>
   </div>
+
+  <script src="guide.js"></script>
 </body>
 </html>

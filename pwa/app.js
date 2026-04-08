@@ -109,6 +109,10 @@ const OTA_RELEASE_BASE = "https://github.com/ancy-gg/TinyML_Smart-Plug/releases/
 const OTA_RELEASE_TAG  = "updates";
 const OTA_DEFAULT_BIN  = "";
 
+const DEVICE_FAMILY_OPTIONS = ["unknown", "resistive_linear", "inductive_motor", "rectifier_smps", "phase_angle_controlled", "brush_universal_motor", "other_mixed"];
+const DEVICE_FAMILY_CODE_MAP = { unknown: -1, resistive_linear: 0, inductive_motor: 1, rectifier_smps: 2, phase_angle_controlled: 3, brush_universal_motor: 4, other_mixed: 5 };
+const DIVISION_TAG_OPTIONS = ["start", "steady", "arc"];
+
 const UI_OVERLOAD_WARN_A = 10;
 const UI_SHORT_CIRCUIT_A = 20;
 const UI_NORMAL_V_MIN = 200;
@@ -202,6 +206,97 @@ function safeFilenameSegment(v, fallback = "session") {
     .slice(0, 64) || fallback;
 }
 
+function normalizeDeviceFamilyToken(v, fallback = "unknown") {
+  const raw = String(v || "").trim().toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_+|_+$/g, "");
+  const alias = {
+    resistive: "resistive_linear", resistive_linear: "resistive_linear", heater: "resistive_linear", heating: "resistive_linear",
+    inductive: "inductive_motor", motor: "inductive_motor", fan: "inductive_motor", inductive_motor: "inductive_motor",
+    smps: "rectifier_smps", rectifier: "rectifier_smps", rectifier_smps: "rectifier_smps", charger: "rectifier_smps", adapter: "rectifier_smps",
+    dimmer: "phase_angle_controlled", phase: "phase_angle_controlled", dimmer_phase: "phase_angle_controlled", phase_angle: "phase_angle_controlled", phase_angle_controlled: "phase_angle_controlled",
+    universal: "brush_universal_motor", universal_motor: "brush_universal_motor", brush: "brush_universal_motor", brush_universal_motor: "brush_universal_motor", vacuum: "brush_universal_motor",
+    mixed: "other_mixed", mixed_unknown: "other_mixed", other: "other_mixed", other_mixed: "other_mixed", unknown: "unknown"
+  };
+  return alias[raw] || (DEVICE_FAMILY_OPTIONS.includes(raw) ? raw : fallback);
+}
+
+function deviceFamilyCodeFromToken(v) {
+  const token = normalizeDeviceFamilyToken(v, "unknown");
+  return Object.prototype.hasOwnProperty.call(DEVICE_FAMILY_CODE_MAP, token) ? DEVICE_FAMILY_CODE_MAP[token] : -1;
+}
+
+function normalizeDeviceNameToken(v, fallback = "unknown_device") {
+  const raw = String(v || "").trim().replace(/\.[a-z0-9]+$/i, "");
+  const token = raw.toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_+|_+$/g, "").slice(0, 64);
+  return token || fallback;
+}
+
+function normalizeDivisionTagToken(v, fallback = "steady") {
+  const raw = String(v || "").trim().toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_+|_+$/g, "");
+  const alias = { startup: "start", start: "start", steady: "steady", baseline: "steady", arc: "arc", close: "steady", closing: "steady", end: "steady", ending: "steady" };
+  return alias[raw] || fallback;
+}
+
+function normalizeNotesText(v) {
+  return String(v || "").replace(/\s+/g, " ").trim().slice(0, 160);
+}
+
+function pickSessionFamily(meta) {
+  return normalizeDeviceFamilyToken(meta?.device_family || meta?.family || meta?.parsed_load_family || meta?.load_family || "unknown");
+}
+
+function pickSessionDevice(meta, fallback = "unknown_device") {
+  const fromMeta = String(meta?.device_name || meta?.load_type || "").trim();
+  if (fromMeta && fromMeta.toLowerCase() !== "uploaded_csv" && fromMeta.toLowerCase() !== "unknown") return normalizeDeviceNameToken(fromMeta, fallback);
+  const sourceFile = String(meta?.source_file || "").trim();
+  if (sourceFile) return normalizeDeviceNameToken(canonicalDatasetStem(sourceFile, sourceFile), fallback);
+  return normalizeDeviceNameToken(fallback, fallback);
+}
+
+function structuredDatasetBase(meta, fallback = "session") {
+  const family = normalizeDeviceFamilyToken(meta?.device_family || meta?.load_family || meta?.parsed_load_family || "unknown");
+  const device = normalizeDeviceNameToken(meta?.device_name || meta?.load_type || canonicalDatasetStem(meta?.source_file || fallback, fallback), fallback);
+  const trial = Math.max(1, parseInt(meta?.trial_number || meta?.trial || 1, 10) || 1);
+  const division = normalizeDivisionTagToken(meta?.division_tag || meta?.division || "steady");
+  return `${family}__${device}__trial_${trial}__${division}`;
+}
+
+function buildStructuredDatasetFilename(meta, fallback = "session") {
+  return `${structuredDatasetBase(meta, fallback)}.csv`;
+}
+
+function familyTitle(v) {
+  return titleizeTokenText(String(v || "").replace(/_/g, " "), "Mixed Unknown");
+}
+
+function deviceTitle(v) {
+  return titleizeTokenText(v, "Unknown Device");
+}
+
+function contextDisplayText(meta) {
+  return `${familyTitle(pickSessionFamily(meta))} • ${deviceTitle(pickSessionDevice(meta))}`;
+}
+
+function deriveRowTimingWindow(rows) {
+  const numericSeries = (field) => rows.map((row) => Number(row?.[field])).filter((v) => Number.isFinite(v));
+  const epochStart = numericSeries("epoch_ms");
+  const frameStart = numericSeries("frame_start_uptime_ms");
+  const frameEnd = numericSeries("frame_end_uptime_ms");
+  const uptime = numericSeries("uptime_ms");
+
+  if (epochStart.length >= 2) {
+    const startMs = epochStart[0];
+    const endMs = epochStart[epochStart.length - 1];
+    if (endMs > startMs) return { durationS: (endMs - startMs) / 1000, startMs, endMs, sourceSampleRateHz: null };
+  }
+
+  const frameSpan = buildContinuousSecondsFromField(rows, "frame_start_uptime_ms", 0.001) || buildContinuousSecondsFromField(rows, "frame_end_uptime_ms", 0.001) || buildContinuousSecondsFromField(rows, "uptime_ms", 0.001);
+  const sourceFs = rows.map((row) => Number(row?.source_sample_rate_hz ?? row?.feature_frame_rate_hz ?? row?.adc_fs_hz)).find((v) => Number.isFinite(v) && v > 0) || null;
+  if (frameSpan != null) return { durationS: frameSpan, startMs: null, endMs: null, sourceSampleRateHz: sourceFs };
+  if (sourceFs && rows.length > 1) return { durationS: Math.max(0, (rows.length - 1) / sourceFs), startMs: null, endMs: null, sourceSampleRateHz: sourceFs };
+  if (sourceFs && rows.length > 0) return { durationS: rows.length / sourceFs, startMs: null, endMs: null, sourceSampleRateHz: sourceFs };
+  return { durationS: null, startMs: null, endMs: null, sourceSampleRateHz: sourceFs };
+}
+
 function titleizeTokenText(v, fallback = "Unknown") {
   const base = String(v || "")
     .replace(/\.[a-z0-9]+$/i, "")
@@ -218,29 +313,45 @@ function formatSessionStamp(ms) {
 }
 
 function sessionDisplayName(meta, sessionId) {
-  const sourceFile = String(meta?.source_file || "").trim();
-  if (sourceFile) return titleizeTokenText(canonicalDatasetStem(sourceFile, sourceFile), sourceFile);
-  const load = String(meta?.load_type || "").trim();
-  if (load && load.toLowerCase() !== "uploaded_csv" && load.toLowerCase() !== "unknown") return titleizeTokenText(load, load);
-  if (isUploadedCsvSession(meta)) return "Uploaded CSV";
-  const start = Number(meta?.start_ms || 0);
-  if (start) return `Session ${formatSessionStamp(start)}`;
-  return titleizeTokenText(sessionId || "session", "Session");
+  const trial = Math.max(1, parseInt(meta?.trial_number || 1, 10) || 1);
+  const division = titleizeTokenText(normalizeDivisionTagToken(meta?.division_tag || "steady"), "Steady");
+  return `Trial ${trial} • ${division}`;
 }
 
 function sessionSecondaryText(meta, sessionId) {
-  const load = String(meta?.load_type || "").trim();
-  if (isUploadedCsvSession(meta)) return sessionId || "uploaded_csv";
-  if (load && load.toLowerCase() !== "unknown") return `${sessionId || "session"} • ${titleizeTokenText(load, load)}`;
-  return sessionId || "session";
+  return contextDisplayText(meta);
 }
 
 function sessionLoadText(meta) {
-  const sourceFile = String(meta?.source_file || "").trim();
-  const load = String(meta?.load_type || "").trim();
-  if (isUploadedCsvSession(meta)) return sourceFile ? titleizeTokenText(canonicalDatasetStem(sourceFile, sourceFile), sourceFile) : "Uploaded CSV";
-  if (load && load.toLowerCase() !== "unknown") return titleizeTokenText(load, load);
-  return "Unknown";
+  return contextDisplayText(meta);
+}
+
+function formatDisplayDateOnly(ms, tz = DISPLAY_TZ) {
+  if (!ms || ms <= 0) return "—";
+  return new Intl.DateTimeFormat("en-US", {
+    timeZone: tz,
+    month: "short",
+    day: "2-digit",
+    year: "numeric"
+  }).format(new Date(ms));
+}
+
+function formatDisplayTimeOnly(ms, tz = DISPLAY_TZ) {
+  if (!ms || ms <= 0) return "—";
+  return new Intl.DateTimeFormat("en-US", {
+    timeZone: tz,
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+    hour12: true
+  }).format(new Date(ms));
+}
+
+function formatDisplayTimeRange(startMs, endMs, fallback = "—") {
+  const startText = startMs ? formatDisplayTimeOnly(startMs) : "—";
+  if (endMs && endMs > 0) return `${startText} - ${formatDisplayTimeOnly(endMs)}`;
+  if (startMs) return `${startText} - Running`;
+  return fallback;
 }
 
 function wifiBarsForRssi(rssi, fresh) {
@@ -1504,7 +1615,7 @@ document.addEventListener("visibilitychange", () => {
     const assetName = normalizeOtaAssetName(desired, OTA_DEFAULT_BIN);
     const url = buildRepoFirmwareUrl(desired, assetName);
     if (otaFirmwareUrl) otaFirmwareUrl.value = url;
-    toast("Release firmware URL filled.", "ok");
+    toast("OTA version prepared.", "ok");
   });
 
   btnPublishOta.addEventListener("click", async () => {
@@ -1566,6 +1677,12 @@ document.addEventListener("visibilitychange", () => {
 const mlLogEnable = el("mlLogEnable");
 const mlLogDur = el("mlLogDur");
 const mlLoadType = el("mlLoadType");
+const mlDeviceFamily = el("mlDeviceFamily");
+const mlDeviceName = el("mlDeviceName");
+const mlTrialNumber = el("mlTrialNumber");
+const mlDivisionTag = el("mlDivisionTag");
+const mlSessionNotes = el("mlSessionNotes");
+const mlTrustedNormal = el("mlTrustedNormal");
 const mlLabelOverride = el("mlLabelOverride");
 const btnDownloadSessionMl = el("btnDownloadSessionMl");
 const btnDownloadAllMl = el("btnDownloadAllMl");
@@ -1627,14 +1744,8 @@ function canonicalDatasetStem(name, fallback = "session") {
 }
 
 function loggerFilename(meta, sessionId, fallback = "session") {
-  const sourceFile = String(meta?.source_file || "").trim();
-  const load = safeFilenameSegment(meta?.load_type || "", "");
-  const start = Number(meta?.start_ms_device_ack || meta?.start_ms || meta?.saved_at_ms || meta?.requested_ms || 0);
-  const base = safeFilenameSegment(canonicalDatasetStem(sourceFile || load || sessionDisplayName(meta, sessionId), fallback), fallback);
-  const hasStructuredSource = !!sourceFile;
-  if (!start || hasStructuredSource) return `${base}.csv`;
-  const stamp = formatEpochMsTZ(start).replace(/[^0-9]+/g, "-").replace(/^-+|-+$/g, "");
-  return `${base}_${stamp}.csv`;
+  const base = safeFilenameSegment(structuredDatasetBase(meta || {}, fallback), fallback);
+  return `${base}.csv`;
 }
 
 function updateLoggerCountdownText() {
@@ -1723,22 +1834,33 @@ function buildContinuousSecondsFromField(rows, field, scale = 0.001) {
 
 function parseDatasetFilenameMeta(name) {
   const stem = canonicalDatasetStem(name, "uploaded_csv");
+  const structured = stem.split("__").filter(Boolean);
+  if (structured.length >= 4 && /^trial_?\d+$/i.test(structured[2])) {
+    const trial = Math.max(1, parseInt(String(structured[2]).replace(/[^0-9]+/g, ""), 10) || 1);
+    return {
+      deviceFamily: normalizeDeviceFamilyToken(structured[0]),
+      deviceName: normalizeDeviceNameToken(structured[1], structured[1]),
+      loadType: normalizeDeviceNameToken(structured[1], structured[1]),
+      trial,
+      division: normalizeDivisionTagToken(structured[3]),
+    };
+  }
   const parts = stem.split(/[_\s-]+/).filter(Boolean);
-  const aliases = { startup: "start", start: "start", steady: "steady", baseline: "steady", arc: "arc", close: "close", closing: "close" };
+  const aliases = { startup: "start", start: "start", steady: "steady", baseline: "steady", arc: "arc", close: "steady", closing: "steady", end: "steady", ending: "steady" };
   const last = String(parts[parts.length - 1] || "").toLowerCase();
   const division = aliases[last] || "";
   let trial = 1;
   let endIdx = parts.length;
   if (division) endIdx -= 1;
   if (endIdx > 0) {
-    const maybeTrial = Number(parts[endIdx - 1]);
+    const maybeTrial = Number(String(parts[endIdx - 1]).replace(/[^0-9]+/g, ""));
     if (Number.isInteger(maybeTrial) && maybeTrial > 0) {
       trial = maybeTrial;
       endIdx -= 1;
     }
   }
-  const loadType = safeFilenameSegment(parts.slice(0, Math.max(0, endIdx)).join("_"), "uploaded_csv");
-  return { loadType, trial, division };
+  const device = safeFilenameSegment(parts.slice(0, Math.max(0, endIdx)).join("_"), "uploaded_csv");
+  return { deviceFamily: "unknown", deviceName: device, loadType: device, trial, division };
 }
 
 function deriveUploadedCsvTimingMeta(csvText) {
@@ -1748,26 +1870,8 @@ function deriveUploadedCsvTimingMeta(csvText) {
   const rows = (parsed?.data || []).filter((row) => row && Object.keys(row).length);
   const rowCount = rows.length;
   if (!rowCount) return { rowCount: 0, durationS: null, startMs: null, endMs: null, sourceSampleRateHz: null };
-
-  const epochVals = rows.map((row) => Number(row?.epoch_ms)).filter((v) => Number.isFinite(v) && v > 0);
-  if (epochVals.length >= 2) {
-    const startMs = epochVals[0];
-    const endMs = epochVals[epochVals.length - 1];
-    return { rowCount, durationS: endMs > startMs ? ((endMs - startMs) / 1000) : null, startMs, endMs, sourceSampleRateHz: null };
-  }
-
-  const uptimeDuration = buildContinuousSecondsFromField(rows, "uptime_ms", 0.001);
-  if (uptimeDuration != null) {
-    const nowMs = Date.now();
-    return { rowCount, durationS: uptimeDuration, startMs: nowMs, endMs: nowMs + Math.round(uptimeDuration * 1000), sourceSampleRateHz: null };
-  }
-
-  const sourceFs = rows.map((row) => Number(row?.source_sample_rate_hz ?? row?.adc_fs_hz)).find((v) => Number.isFinite(v) && v > 0);
-  if (Number.isFinite(sourceFs) && sourceFs > 0) {
-    return { rowCount, durationS: rowCount / sourceFs, startMs: null, endMs: null, sourceSampleRateHz: sourceFs };
-  }
-
-  return { rowCount, durationS: null, startMs: null, endMs: null, sourceSampleRateHz: null };
+  const timing = deriveRowTimingWindow(rows);
+  return { rowCount, durationS: timing.durationS, startMs: timing.startMs, endMs: timing.endMs, sourceSampleRateHz: timing.sourceSampleRateHz };
 }
 
 function makeSessionId() { return "sess_" + Date.now(); }
@@ -1798,18 +1902,20 @@ function isUploadedCsvSession(meta) {
   return !!(meta?.uploaded_csv || String(meta?.load_type || "").trim().toLowerCase() === "uploaded_csv");
 }
 function durationText(meta) {
+  const st = Number(meta?.start_ms_device_ack || meta?.start_ms || 0);
+  const en = Number(meta?.end_ms || 0);
+  const wallSec = (st && en > st) ? ((en - st) / 1000) : null;
+  if (wallSec !== null) return formatDurationSeconds(Math.max(0, wallSec));
+
   const measuredSec = Number(meta?.source_duration_s);
   if (Number.isFinite(measuredSec) && measuredSec > 0) return formatDurationSeconds(measuredSec);
+
   if (isUploadedCsvSession(meta) || meta?.processed_csv) {
     const uploadedDur = uploadedCsvDurationSeconds(meta);
     if (uploadedDur !== null) return formatDurationSeconds(uploadedDur);
   }
 
   const configuredSec = Number(meta?.duration_s);
-  const st = Number(meta?.start_ms_device_ack || meta?.start_ms || 0);
-  const en = Number(meta?.end_ms || 0);
-  const wallSec = (st && en > st) ? ((en - st) / 1000) : null;
-  if (wallSec !== null) return formatDurationSeconds(Math.max(0, wallSec));
   if (!st && Number.isFinite(configuredSec) && configuredSec > 0) return formatDurationSeconds(configuredSec);
   if (!st) return "—";
   return formatDurationSeconds(Math.max(0, (Date.now() - st) / 1000));
@@ -1881,6 +1987,12 @@ if (mlLogEnable) {
     mlLogEnable.checked = enabledNow;
     if (typeof v.duration_s === "number" && mlLogDur) mlLogDur.value = String(v.duration_s);
     if (mlLoadType && v.load_type) mlLoadType.value = v.load_type;
+    if (mlDeviceFamily && v.device_family) mlDeviceFamily.value = normalizeDeviceFamilyToken(v.device_family);
+    if (mlDeviceName && v.device_name) mlDeviceName.value = v.device_name;
+    if (mlTrialNumber && Number(v.trial_number || 0) > 0) mlTrialNumber.value = String(v.trial_number);
+    if (mlDivisionTag && v.division_tag) mlDivisionTag.value = normalizeDivisionTagToken(v.division_tag);
+    if (mlSessionNotes && v.notes !== undefined) mlSessionNotes.value = String(v.notes || "");
+    if (mlTrustedNormal) mlTrustedNormal.checked = !!v.trusted_normal_session;
     if (v.session_id) currentSessionId = v.session_id;
 
     if (enabledNow && Number(v.start_ms_device_ack || 0) > 0 && Number(v.duration_s || 0) > 0) {
@@ -1900,7 +2012,13 @@ if (mlLogEnable) {
   mlLogEnable.addEventListener("change", async () => {
     const enabled = !!mlLogEnable.checked;
     const dur = Math.max(1, parseInt(mlLogDur?.value || "10", 10) || 10);
-    const load = (mlLoadType?.value || "unknown").trim() || "unknown";
+    const family = normalizeDeviceFamilyToken(mlDeviceFamily?.value || "unknown");
+    const device = normalizeDeviceNameToken(mlDeviceName?.value || mlLoadType?.value || `session_${Date.now()}`, "unknown_device");
+    const load = device;
+    const trial = Math.max(1, parseInt(mlTrialNumber?.value || "1", 10) || 1);
+    const division = normalizeDivisionTagToken(mlDivisionTag?.value || "steady");
+    const notes = normalizeNotesText(mlSessionNotes?.value || "");
+    const trustedNormal = !!(mlTrustedNormal?.checked);
 
     if (enabled) {
       const sid = makeSessionId();
@@ -1908,14 +2026,23 @@ if (mlLogEnable) {
       currentSessionId = sid;
       pendingLoggerStart = { token, sid, durationS: dur };
       stopLoggerCountdown();
-      await db.ref("ml_log").update({ enabled: true, duration_s: dur, session_id: sid, load_type: load, request_token: token, requested_at: firebase.database.ServerValue.TIMESTAMP, start_ms_device_ack: null });
+      await db.ref("ml_log").update({ enabled: true, duration_s: dur, session_id: sid, load_type: load, device_family: family, device_name: device, trial_number: trial, division_tag: division, notes, trusted_normal_session: trustedNormal ? 1 : 0, request_token: token, requested_at: firebase.database.ServerValue.TIMESTAMP, start_ms_device_ack: null });
       await db.ref(`ml_sessions/${sid}`).set({
         requested_ms: Date.now(),
         start_ms: null,
         start_ms_device_ack: null,
         end_ms: null,
         load_type: load,
+        device_family: family,
+        device_family_code: deviceFamilyCodeFromToken(family),
+        device_name: device,
+        trial_number: trial,
+        division_tag: division,
+        notes,
+        trusted_normal_session: trustedNormal ? 1 : 0,
         duration_s: dur,
+        source_duration_s: dur,
+        source_file: buildStructuredDatasetFilename({ device_family: family, device_name: device, trial_number: trial, division_tag: division }, sid),
         request_token: token,
         label_override: -1
       });
@@ -1936,7 +2063,31 @@ mlLogDur?.addEventListener("change", async () => {
   toast(`Duration updated to ${dur}s.`, "ok");
 });
 mlLoadType?.addEventListener("change", async () => {
-  await db.ref("ml_log").update({ load_type: (mlLoadType.value || "unknown").trim() || "unknown" });
+  const next = normalizeDeviceNameToken(mlLoadType.value || "unknown", "unknown_device");
+  await db.ref("ml_log").update({ load_type: next, device_name: next });
+});
+mlDeviceFamily?.addEventListener("change", async () => {
+  const nextFamily = normalizeDeviceFamilyToken(mlDeviceFamily.value || "unknown");
+  await db.ref("ml_log").update({ device_family: nextFamily, device_family_code: deviceFamilyCodeFromToken(nextFamily) });
+});
+mlDeviceName?.addEventListener("change", async () => {
+  const next = normalizeDeviceNameToken(mlDeviceName.value || mlLoadType?.value || "unknown", "unknown_device");
+  if (mlLoadType) mlLoadType.value = next;
+  await db.ref("ml_log").update({ device_name: next, load_type: next });
+});
+mlTrialNumber?.addEventListener("change", async () => {
+  const next = Math.max(1, parseInt(mlTrialNumber.value || "1", 10) || 1);
+  mlTrialNumber.value = String(next);
+  await db.ref("ml_log").update({ trial_number: next });
+});
+mlDivisionTag?.addEventListener("change", async () => {
+  await db.ref("ml_log").update({ division_tag: normalizeDivisionTagToken(mlDivisionTag.value || "steady") });
+});
+mlSessionNotes?.addEventListener("change", async () => {
+  await db.ref("ml_log").update({ notes: normalizeNotesText(mlSessionNotes.value || "") });
+});
+mlTrustedNormal?.addEventListener("change", async () => {
+  await db.ref("ml_log").update({ trusted_normal_session: mlTrustedNormal.checked ? 1 : 0 });
 });
 
 async function fetchStoredCsv(path) {
@@ -1979,13 +2130,17 @@ function renderSessionRows(bodyEl, obj, kind = "original") {
     const meta = obj[sid] || {};
     const itemNo = idx + 1;
     const activeCls = sid === activeViewedSessionSid ? "is-active-view" : "";
+
     if (kind === "processed") {
-      const saved = Number(meta.saved_at_ms || meta.start_ms || 0);
-      return `<tr data-session-row="${sid}" class="${activeCls}"><td class="mono">#${itemNo}</td><td><div class="mono">${sessionDisplayName(meta, sid)}</div><div class="muted small mono">${sessionSecondaryText(meta, sid)}</div></td><td class="mono">${saved ? formatDisplayTimestamp(saved) : "—"}</td><td class="mono">${titleizeTokenText(meta.source_session_id || canonicalDatasetStem(meta.source_file || sid, sid) || "—", "—")}</td><td class="mono">${durationText(meta)}</td><td class="mono">${sessionLoadText(meta)}</td><td class="session-actions"><button type="button" class="btn btn-small" data-processed-view-sid="${sid}">View</button><button type="button" class="btn btn-small" data-processed-sid="${sid}">Download</button><button type="button" class="btn btn-small btn-danger" data-del-processed-sid="${sid}">Delete</button></td></tr>`;
+      const savedMs = Number(meta.saved_at_ms || meta.start_ms || 0);
+      const sourceText = titleizeTokenText(meta.source_session_id || canonicalDatasetStem(meta.source_file || sid, sid) || "Processed", "Processed");
+      return `<tr data-session-row="${sid}" class="${activeCls}"><td class="mono">#${itemNo}</td><td><div class="mono session-name-primary">${sessionDisplayName(meta, sid)}</div><div class="muted small mono session-name-secondary">${sessionSecondaryText(meta, sid)}</div></td><td class="mono">${savedMs ? formatDisplayDateOnly(savedMs) : "—"}</td><td class="mono">${savedMs ? formatDisplayTimeOnly(savedMs) : "—"}<div class="muted small mono">${sourceText}</div></td><td class="mono">${durationText(meta)}</td><td class="mono">${sessionLoadText(meta)}</td><td class="session-actions"><button type="button" class="btn btn-small" data-processed-view-sid="${sid}">View</button><button type="button" class="btn btn-small" data-processed-sid="${sid}">Download</button><button type="button" class="btn btn-small btn-danger" data-del-processed-sid="${sid}">Delete</button></td></tr>`;
     }
+
     const stMs = Number(meta.start_ms_device_ack || meta.start_ms || meta.requested_ms || 0);
     const enMs = Number(meta.end_ms || 0);
-    return `<tr data-session-row="${sid}" class="${activeCls}"><td class="mono">#${itemNo}</td><td><div class="mono">${sessionDisplayName(meta, sid)}</div><div class="muted small mono">${sessionSecondaryText(meta, sid)}</div></td><td class="mono">${stMs ? formatDisplayTimestamp(stMs) : "Pending"}</td><td class="mono">${enMs ? formatDisplayTimestamp(enMs) : (Number(meta.requested_ms || 0) ? "Running" : "—")}</td><td class="mono">${durationText(meta)}</td><td class="mono">${sessionLoadText(meta)}</td><td class="session-actions"><button type="button" class="btn btn-small" data-view-sid="${sid}">View</button><button type="button" class="btn btn-small" data-sid="${sid}">Download</button><button type="button" class="btn btn-small btn-danger" data-del-sid="${sid}">Delete</button></td></tr>`;
+    const dateMs = stMs || enMs || Number(meta.requested_ms || 0);
+    return `<tr data-session-row="${sid}" class="${activeCls}"><td class="mono">#${itemNo}</td><td><div class="mono session-name-primary">${sessionDisplayName(meta, sid)}</div><div class="muted small mono session-name-secondary">${sessionSecondaryText(meta, sid)}</div></td><td class="mono">${dateMs ? formatDisplayDateOnly(dateMs) : "—"}</td><td class="mono">${stMs ? formatDisplayTimeRange(stMs, enMs, "Pending") : (Number(meta.requested_ms || 0) ? "Pending" : "—")}</td><td class="mono">${durationText(meta)}</td><td class="mono">${sessionLoadText(meta)}</td><td class="session-actions"><button type="button" class="btn btn-small" data-view-sid="${sid}">View</button><button type="button" class="btn btn-small" data-sid="${sid}">Download</button><button type="button" class="btn btn-small btn-danger" data-del-sid="${sid}">Delete</button></td></tr>`;
   }).join("");
 
   bodyEl.querySelectorAll("button[data-sid]").forEach(btn => btn.addEventListener("click", async () => {
@@ -2132,15 +2287,32 @@ async function storeCsvSession(fileName, csvText, kind = "original", metaPatch =
   const fileMeta = parseDatasetFilenameMeta(fileName);
   const nowMs = Date.now();
   const durationS = timing.durationS;
+  const deviceFamily = normalizeDeviceFamilyToken(metaPatch?.device_family || fileMeta.deviceFamily || "unknown");
+  const deviceName = normalizeDeviceNameToken(metaPatch?.device_name || fileMeta.deviceName || fileMeta.loadType || cleanStem, cleanStem);
+  const trialNumber = Math.max(1, parseInt(metaPatch?.trial_number || fileMeta.trial || 1, 10) || 1);
+  const divisionTag = normalizeDivisionTagToken(metaPatch?.division_tag || fileMeta.division || "steady");
   const durationMs = durationS != null ? Math.max(0, Math.round(durationS * 1000)) : 0;
   const startMs = Number.isFinite(timing.startMs) && timing.startMs > 0 ? timing.startMs : nowMs;
   const endMs = Number.isFinite(timing.endMs) && timing.endMs > startMs ? timing.endMs : (durationMs > 0 ? startMs + durationMs : null);
-  const sourceFile = `${canonicalDatasetStem(fileName, cleanStem)}.csv`;
+  const sourceFile = buildStructuredDatasetFilename({
+    device_family: deviceFamily,
+    device_family_code: deviceFamilyCodeFromToken(deviceFamily),
+    device_name: deviceName,
+    trial_number: trialNumber,
+    division_tag: divisionTag,
+  }, cleanStem);
 
   const baseMeta = {
     start_ms: startMs,
     end_ms: endMs,
-    load_type: fileMeta.loadType || (kind === "processed" ? "processed_csv" : "uploaded_csv"),
+    load_type: deviceName,
+    device_family: deviceFamily,
+    device_family_code: deviceFamilyCodeFromToken(deviceFamily),
+    device_name: deviceName,
+    trial_number: trialNumber,
+    division_tag: divisionTag,
+    notes: normalizeNotesText(metaPatch?.notes || ""),
+    trusted_normal_session: metaPatch?.trusted_normal_session ? 1 : 0,
     duration_s: durationS,
     source_duration_s: durationS,
     label_override: -1,
@@ -2149,8 +2321,6 @@ async function storeCsvSession(fileName, csvText, kind = "original", metaPatch =
     source_file: sourceFile,
     row_count: timing.rowCount || rows.length,
     source_sample_rate_hz: timing.sourceSampleRateHz,
-    trial_number: fileMeta.trial,
-    division_tag: fileMeta.division || "",
     saved_at_ms: nowMs,
   };
   const meta = { ...baseMeta, ...metaPatch };
@@ -2172,6 +2342,13 @@ async function storeCsvSession(fileName, csvText, kind = "original", metaPatch =
       uploaded_csv: kind !== "processed",
       processed_csv: kind === "processed",
       source_file: sourceFile,
+      device_family: deviceFamily,
+      device_family_code: deviceFamilyCodeFromToken(deviceFamily),
+      device_name: deviceName,
+      trial_number: trialNumber,
+      division_tag: divisionTag,
+      notes: normalizeNotesText(metaPatch?.notes || ""),
+      trusted_normal_session: metaPatch?.trusted_normal_session ? 1 : 0,
     };
   }
   await db.ref().update(updates);
@@ -2211,13 +2388,17 @@ mlCsvUpload?.addEventListener("change", async (ev) => {
       const startMs = Number.isFinite(timing.startMs) && timing.startMs > 0 ? timing.startMs : Date.now();
       const endMs = Number.isFinite(timing.endMs) && timing.endMs > startMs ? timing.endMs : (timing.durationS != null ? startMs + Math.max(0, Math.round(timing.durationS * 1000)) : null);
       const meta = {
-        load_type: fileMeta.loadType || "uploaded_csv",
+        load_type: fileMeta.deviceName || fileMeta.loadType || "uploaded_csv",
+        device_family: fileMeta.deviceFamily || "unknown",
+        device_family_code: deviceFamilyCodeFromToken(fileMeta.deviceFamily || "unknown"),
+        device_name: fileMeta.deviceName || fileMeta.loadType || canonicalDatasetStem(file.name, file.name),
         uploaded_csv: true,
         row_count: timing.rowCount,
         duration_s: timing.durationS,
+        source_duration_s: timing.durationS,
         start_ms: startMs,
         end_ms: endMs,
-        source_file: file.name,
+        source_file: buildStructuredDatasetFilename({ device_family: fileMeta.deviceFamily || "unknown", device_name: fileMeta.deviceName || fileMeta.loadType || canonicalDatasetStem(file.name, file.name), trial_number: fileMeta.trial || 1, division_tag: fileMeta.division || "steady" }, file.name),
         source_sample_rate_hz: timing.sourceSampleRateHz,
         trial_number: fileMeta.trial,
         division_tag: fileMeta.division || ""

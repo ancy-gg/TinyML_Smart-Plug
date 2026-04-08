@@ -409,6 +409,9 @@ body.ios .ota-input{ font-size:16px; }
 .ota-url{ display:inline-block; max-width:100%; overflow-wrap:anywhere; }
 
 .btn{
+  display:inline-flex;
+  align-items:center;
+  justify-content:center;
   text-decoration:none;
   border:1px solid rgba(255,255,255,0.10);
   background:rgba(255,255,255,0.06);
@@ -693,9 +696,9 @@ body.ios .ota-input{ font-size:16px; }
 }
 #chart{
   width:100%;
-  height:460px;
-  min-height:460px;
-  max-height:460px;
+  height:620px;
+  min-height:620px;
+  max-height:620px;
   overflow:hidden;
   position:relative;
 }
@@ -800,7 +803,7 @@ body.ios .ota-input{ font-size:16px; }
   .install-help{ padding:14px; }
   .card-value{ font-size:26px; }
   .scrub{ width:100%; min-width:0; }
-  #chart{ height:360px; min-height:360px; max-height:360px; }
+  #chart{ height:460px; min-height:460px; max-height:460px; }
   .valueLineWrap{ max-height:140px; }
   #btnSeries{ display:inline-flex !important; }
   #btnCloseSeries{ display:inline-flex !important; }
@@ -4698,7 +4701,6 @@ select option:disabled,
 .segment-pill-start{ background:rgba(77,163,255,0.16); color:#d9ebff; }
 .segment-pill-steady{ background:rgba(46,204,113,0.16); color:#d8ffe6; }
 .segment-pill-arc{ background:rgba(255,140,26,0.18); color:#ffd0a1; }
-.segment-pill-close{ background:rgba(232,91,83,0.18); color:#ffd7d3; }
 .segment-empty{ padding:10px 12px; border-radius:12px; border:1px dashed rgba(255,255,255,0.12); color:rgba(255,255,255,0.52); }
 .viewer-index-input{ min-width:96px; background:transparent; border:none; color:var(--text); outline:none; font:inherit; }
 .panel-segment-tools{ background:rgba(255,255,255,0.03); }
@@ -4991,5 +4993,1156 @@ select option:disabled,
   }
   .plot-drawer #valueLine.valueLineSide .vchip{
     width:auto;
+  }
+}
+
+
+.logger-meta-grid{
+  display:flex;
+  gap:8px;
+  flex-wrap:wrap;
+  align-items:center;
+}
+.logger-meta-input{
+  min-width:150px;
+}
+.logger-trial-input{
+  min-width:88px;
+  max-width:110px;
+}
+.logger-notes-input{
+  min-width:220px;
+}
+.switchline-compact{
+  min-height:40px;
+  padding:0 8px;
+  border-radius:10px;
+  border:1px solid rgba(255,255,255,0.10);
+  background:rgba(255,255,255,0.04);
+}
+.plot-main-grid{
+  display:grid;
+  grid-template-columns:minmax(0,1fr) minmax(260px, 320px);
+  gap:12px;
+  align-items:start;
+}
+.plot-stage{
+  min-width:0;
+}
+.valueLineSide{
+  max-height:620px;
+  align-content:flex-start;
+}
+@media (max-width: 1180px){
+  .plot-main-grid{ grid-template-columns:1fr; }
+  .valueLineSide{ max-height:160px; }
+}
+@media (max-width: 640px){
+  .logger-meta-grid{ width:100%; }
+  .logger-meta-grid > *{ flex:1 1 100%; }
+  .logger-meta-input, .logger-notes-input{ min-width:0; }
+}
+
+
+/* patched: session viewer 4-column series list on wide screens */
+.plot-drawer #toggleList{
+  grid-template-columns:repeat(4, minmax(0,1fr)) !important;
+}
+@media (max-width: 1280px){
+  .plot-drawer #toggleList{ grid-template-columns:repeat(3, minmax(0,1fr)) !important; }
+}
+@media (max-width: 980px){
+  .plot-drawer #toggleList{ grid-template-columns:repeat(2, minmax(0,1fr)) !important; }
+}
+@media (max-width: 640px){
+  .plot-drawer #toggleList{ grid-template-columns:1fr !important; }
+}
+
+
+/* ===== v11.0 premium graphite + muted amber refresh ===== */
+:root{
+  --bg:#0c0d10;
+  --bg-soft:#121419;
+  --bg-elev:#171a20;
+  --panel:rgba(255,255,255,0.028);
+  --panel-strong:linear-gradient(180deg, rgba(34,37,43,0.94) 0%, rgba(19,21,26,0.97) 100%);
+  --panel-soft:rgba(255,255,255,0.04);
+  --border:rgba(255,255,255,0.075);
+  --border-soft:rgba(255,255,255,0.05);
+  --border-accent:rgba(212,177,89,0.22);
+  --text:#f3efe6;
+  --muted:rgba(243,239,230,0.58);
+  --muted-2:rgba(243,239,230,0.42);
+  --shadow:0 18px 42px rgba(0,0,0,0.36);
+  --shadow-soft:0 10px 26px rgba(0,0,0,0.22);
+  --radius:18px;
+  --accent:#d4b159;
+  --accent-2:#ecd18a;
+  --accent-soft:rgba(212,177,89,0.13);
+  --accent-line:rgba(212,177,89,0.18);
+  --green:#68c4a0;
+  --blue:#7f9fda;
+  --red:#d97770;
+  --orange:#d69960;
+  --purple:#9e8bd5;
+}
+
+html,body{
+  background:
+    radial-gradient(1200px 720px at 50% -240px, rgba(212,177,89,0.09) 0%, rgba(18,20,25,0) 58%),
+    radial-gradient(860px 540px at 100% 0%, rgba(127,159,218,0.06) 0%, rgba(127,159,218,0) 52%),
+    linear-gradient(180deg, #0d0f13 0%, #090a0d 100%);
+}
+body{
+  position:relative;
+  color:var(--text);
+  scrollbar-color:rgba(212,177,89,0.34) rgba(255,255,255,0.04);
+}
+body::before,
+body::after{
+  content:"";
+  position:fixed;
+  inset:auto;
+  pointer-events:none;
+  z-index:0;
+  filter:blur(50px);
+  opacity:0.35;
+}
+body::before{
+  width:260px;
+  height:260px;
+  top:82px;
+  left:4vw;
+  background:radial-gradient(circle, rgba(212,177,89,0.18) 0%, rgba(212,177,89,0) 70%);
+}
+body::after{
+  width:260px;
+  height:260px;
+  right:3vw;
+  bottom:8vh;
+  background:radial-gradient(circle, rgba(127,159,218,0.10) 0%, rgba(127,159,218,0) 70%);
+}
+
+::selection{ background:rgba(212,177,89,0.28); color:#fff9eb; }
+*::-webkit-scrollbar{ width:10px; height:10px; }
+*::-webkit-scrollbar-track{ background:rgba(255,255,255,0.035); border-radius:999px; }
+*::-webkit-scrollbar-thumb{ background:rgba(212,177,89,0.28); border-radius:999px; border:2px solid transparent; background-clip:padding-box; }
+*::-webkit-scrollbar-thumb:hover{ background:rgba(212,177,89,0.42); border:2px solid transparent; background-clip:padding-box; }
+
+.app{
+  position:relative;
+  z-index:1;
+  width:min(1500px,95vw);
+  margin:20px auto 52px;
+}
+.top{ margin-bottom:14px; }
+.topbar{ min-height:54px; }
+.logo{
+  width:48px;
+  height:48px;
+  border-radius:15px;
+  border-color:rgba(255,255,255,0.12);
+  box-shadow:0 14px 28px rgba(0,0,0,0.26);
+}
+.title{
+  font-size:clamp(28px,3vw,46px);
+  font-weight:950;
+  letter-spacing:-0.035em;
+  text-shadow:0 1px 0 rgba(255,255,255,0.03);
+}
+.menu-trigger{
+  width:42px;
+  height:42px;
+  background:linear-gradient(180deg, rgba(255,255,255,0.10), rgba(255,255,255,0.03));
+  border:1px solid rgba(255,255,255,0.10);
+  box-shadow:0 14px 28px rgba(0,0,0,0.24);
+}
+.menu-trigger:hover,
+.menu-trigger:focus-visible{
+  background:linear-gradient(180deg, rgba(212,177,89,0.16), rgba(255,255,255,0.05));
+  border-color:var(--border-accent);
+}
+.header-menu{
+  width:min(292px, calc(100vw - 24px));
+  padding:14px;
+  border-radius:22px;
+  border:1px solid rgba(255,255,255,0.09);
+  background:linear-gradient(180deg, rgba(29,31,37,0.97), rgba(13,14,18,0.97));
+  box-shadow:0 28px 48px rgba(0,0,0,0.40);
+}
+.header-menu::before{
+  content:"";
+  position:absolute;
+  inset:0 0 auto 0;
+  height:1px;
+  background:linear-gradient(90deg, rgba(212,177,89,0), rgba(212,177,89,0.36), rgba(212,177,89,0));
+}
+.menu-section + .menu-section{ margin-top:14px; }
+.menu-label{
+  margin-bottom:10px;
+  color:var(--muted-2);
+  letter-spacing:.1em;
+}
+.header-menu .menu-switch-row{
+  min-height:42px;
+  gap:12px;
+}
+.header-menu .menu-side-label{
+  color:var(--muted);
+  font-size:12px;
+}
+.header-menu .menu-side-label.is-active{ color:var(--text); }
+.menu-link,
+.menu-chip{
+  min-height:42px;
+  border-radius:14px;
+  background:linear-gradient(180deg, rgba(255,255,255,0.07), rgba(255,255,255,0.035));
+  border:1px solid rgba(255,255,255,0.08);
+}
+.menu-link:hover,
+.menu-chip:hover,
+.menu-link:focus-visible,
+.menu-chip:focus-visible{
+  background:linear-gradient(180deg, rgba(212,177,89,0.14), rgba(255,255,255,0.05));
+  border-color:var(--border-accent);
+}
+
+.status-wrap{ margin-top:14px; }
+.status{
+  position:relative;
+  max-width:900px;
+  min-height:64px;
+  padding:18px 26px;
+  border-radius:20px;
+  font-size:clamp(20px,2.2vw,28px);
+  letter-spacing:0.08em;
+  border:1px solid rgba(255,255,255,0.08);
+  box-shadow:0 18px 40px rgba(0,0,0,0.26);
+  overflow:hidden;
+}
+.status::after{
+  content:"";
+  position:absolute;
+  inset:0;
+  background:linear-gradient(110deg, rgba(255,255,255,0.10), transparent 30%, transparent 70%, rgba(255,255,255,0.05));
+  pointer-events:none;
+}
+.status-DISCONNECTED{ background:linear-gradient(180deg, rgba(196,92,84,0.95), rgba(133,53,48,0.95)); color:#fff6f4; }
+.status-OVERLOAD,
+.status-WARN{ background:linear-gradient(180deg, rgba(214,177,89,0.95), rgba(171,128,46,0.94)); color:#17120a; }
+.status-HEATING{ background:linear-gradient(90deg, rgba(209,126,89,0.94), rgba(184,96,65,0.94)); color:#fff8f2; }
+.status-ARCING{ background:linear-gradient(90deg, rgba(117,149,212,0.92), rgba(212,177,89,0.94)); color:#15110a; }
+.status-UNPLUGGED{ background:linear-gradient(180deg, rgba(184,103,88,0.34), rgba(86,44,38,0.34)); color:#f5d2ca; border-color:rgba(216,126,110,0.22); }
+.status-FW{ background:linear-gradient(180deg, rgba(128,111,186,0.38), rgba(66,54,107,0.38)); color:#eee6ff; border-color:rgba(158,139,213,0.24); }
+.status-OVERVOLTAGE{ background:linear-gradient(180deg, rgba(197,88,79,0.95), rgba(126,48,44,0.95)); color:#fff7f6; }
+.status-UNDERVOLTAGE{ background:linear-gradient(180deg, rgba(116,94,182,0.96), rgba(71,55,118,0.96)); color:#f7f2ff; }
+.status-OK{ background:linear-gradient(180deg, rgba(32,35,41,0.96), rgba(17,19,24,0.98)); color:var(--accent-2); border-color:var(--border-accent); }
+
+.install-help,
+.overview-block,
+.metrics-block,
+.features-block,
+.history,
+.plot-drawer{
+  position:relative;
+  padding:18px;
+  border-radius:22px;
+  background:linear-gradient(180deg, rgba(21,23,28,0.90), rgba(12,14,18,0.94));
+  border:1px solid var(--border);
+  box-shadow:var(--shadow);
+  backdrop-filter:blur(12px);
+}
+.install-help::before,
+.overview-block::before,
+.metrics-block::before,
+.features-block::before,
+.history::before,
+.plot-drawer::before{
+  content:"";
+  position:absolute;
+  inset:0 0 auto 0;
+  height:1px;
+  background:linear-gradient(90deg, rgba(212,177,89,0), rgba(212,177,89,0.28), rgba(127,159,218,0.10), rgba(212,177,89,0));
+  pointer-events:none;
+}
+.install-help{
+  padding:14px 16px;
+  background:linear-gradient(180deg, rgba(32,34,40,0.84), rgba(15,17,21,0.92));
+}
+.install-title{ font-size:14px; }
+.install-copy{ font-size:12px; color:var(--muted); }
+
+.section-head,
+.history-head,
+.ota-collapsible .ota-summary{
+  align-items:center;
+  margin-bottom:14px;
+}
+.section-title,
+.history-title{
+  font-size:15px;
+  font-weight:900;
+  letter-spacing:-0.01em;
+}
+.history-hint,
+.viewer-meta,
+.section-hint,
+.summary-copy,
+.metric-note,
+.small,
+.muted,
+.ota-label,
+.smallnote{
+  color:var(--muted);
+}
+.section-hint[data-live-state-hint]{
+  display:inline-flex;
+  align-items:center;
+  gap:8px;
+  min-height:30px;
+  padding:0 10px;
+  border-radius:999px;
+  border:1px solid var(--border-soft);
+  background:rgba(255,255,255,0.035);
+  font-size:11px;
+  letter-spacing:.1em;
+  text-transform:uppercase;
+}
+.section-hint[data-live-state-hint]::before{
+  content:"";
+  width:7px;
+  height:7px;
+  border-radius:999px;
+  background:var(--accent);
+  box-shadow:0 0 0 4px rgba(212,177,89,0.10);
+}
+.dashboard-live .metric-note,
+.dashboard-time .metric-note,
+.dashboard-freq .metric-note{
+  display:none;
+}
+
+.summary-card,
+.card,
+.ota-box,
+.history-panel,
+.plot-drawer .panel,
+.segment-tools{
+  border-radius:18px;
+  background:linear-gradient(180deg, rgba(34,37,43,0.92), rgba(19,21,26,0.94));
+  border:1px solid rgba(255,255,255,0.075);
+  box-shadow:var(--shadow-soft);
+}
+.summary-card,
+.ota-box,
+.history-panel{ padding:16px; }
+.summary-kicker,
+.card-label{
+  color:var(--muted-2);
+  font-size:11px;
+  letter-spacing:.1em;
+  text-transform:uppercase;
+}
+.summary-title{ font-size:clamp(22px,2.1vw,28px); letter-spacing:-0.02em; }
+.summary-value{ font-size:clamp(18px,1.6vw,22px); }
+.summary-copy{ margin-top:6px; line-height:1.35; }
+.summary-meta{
+  margin-top:10px;
+  font-size:12px;
+  color:var(--muted);
+}
+.health-main-row{ gap:16px; }
+.health-copy-block{ min-width:0; }
+.mini-badge,
+.health-chip,
+.pill,
+.rule-pill,
+.segment-pill,
+.logger-countdown{
+  min-height:32px;
+  padding:0 12px;
+  border-radius:999px;
+}
+.mini-badge{
+  border:1px solid rgba(255,255,255,0.08);
+  box-shadow:none;
+}
+.mini-badge-OK{ background:rgba(104,196,160,0.14); color:#c7f1df; }
+.mini-badge-WARN{ background:rgba(212,177,89,0.16); color:#fae6b1; }
+.mini-badge-FAULT{ background:rgba(217,119,112,0.16); color:#ffd9d5; }
+.dashboard-overview .health-chip{
+  min-height:34px;
+  padding:0 12px;
+  border-radius:999px;
+  background:rgba(255,255,255,0.04);
+  border:1px solid rgba(255,255,255,0.07);
+  box-shadow:none;
+}
+.dashboard-overview .health-chip.signal-excellent,
+.dashboard-overview .health-chip.signal-strong{
+  border-color:rgba(104,196,160,0.22);
+}
+.dashboard-overview .health-chip.signal-weak,
+.dashboard-overview .health-chip.signal-poor{
+  border-color:rgba(212,177,89,0.22);
+}
+.dashboard-overview .health-chip.signal-offline,
+.dashboard-overview .health-chip.is-offline{
+  border-color:rgba(217,119,112,0.22);
+}
+
+.meta-card,
+.live-card,
+.feature-card{
+  overflow:hidden;
+}
+.card{
+  min-height:88px;
+  padding:15px 15px 13px;
+  transition:transform 180ms ease, border-color 180ms ease, background 180ms ease, box-shadow 180ms ease;
+}
+.card::before{
+  inset:-25% -20%;
+  background:radial-gradient(circle at 14% 8%, rgba(212,177,89,0.10), transparent 58%);
+  opacity:0.55;
+}
+.card:hover{
+  transform:translateY(-2px);
+  border-color:var(--border-accent);
+  background:linear-gradient(180deg, rgba(37,40,47,0.94), rgba(19,21,27,0.96));
+  box-shadow:0 18px 30px rgba(0,0,0,0.28);
+}
+.card-value{
+  letter-spacing:-0.03em;
+}
+.live-card .card-value{ font-size:clamp(28px,2.8vw,38px); }
+.feature-card .card-value{ font-size:clamp(24px,2vw,31px); }
+.unit{ color:rgba(243,239,230,0.48); }
+
+.relay-rocker{
+  min-height:44px;
+  padding:3px;
+  border-radius:16px;
+  background:rgba(255,255,255,0.04);
+  border:1px solid rgba(255,255,255,0.08);
+  box-shadow:none;
+}
+.rocker-btn{
+  min-width:88px;
+  min-height:38px;
+  border-radius:12px;
+  font-size:13px;
+  font-weight:900;
+}
+.rocker-btn:hover:not(:disabled){ background:rgba(255,255,255,0.10); }
+
+.btn,
+.select,
+.axisSel,
+.ota-input,
+.seriesSearch{
+  min-height:42px;
+  border-radius:14px;
+  border:1px solid rgba(255,255,255,0.09);
+  background:linear-gradient(180deg, rgba(255,255,255,0.07), rgba(255,255,255,0.035));
+  color:var(--text);
+  box-shadow:0 8px 18px rgba(0,0,0,0.14);
+}
+.btn,
+.select,
+.axisSel,
+.ota-input{ padding:0 14px; }
+.select,
+.axisSel,
+.ota-input,
+.seriesSearch,
+.viewer-index-input{
+  outline:none;
+  transition:border-color 140ms ease, box-shadow 140ms ease, background 140ms ease;
+}
+.select:focus,
+.axisSel:focus,
+.ota-input:focus,
+.seriesSearch:focus,
+.plot-drawer .viewer-index-input:focus{
+  border-color:var(--border-accent);
+  box-shadow:0 0 0 4px rgba(212,177,89,0.10);
+  background:linear-gradient(180deg, rgba(255,255,255,0.08), rgba(255,255,255,0.045));
+}
+.select,
+.axisSel{
+  appearance:none;
+  background-image:linear-gradient(45deg, transparent 50%, rgba(243,239,230,0.5) 50%), linear-gradient(135deg, rgba(243,239,230,0.5) 50%, transparent 50%);
+  background-position:calc(100% - 18px) calc(50% - 3px), calc(100% - 12px) calc(50% - 3px);
+  background-size:6px 6px, 6px 6px;
+  background-repeat:no-repeat;
+  padding-right:34px;
+}
+.btn{
+  font-weight:900;
+  transition:transform 140ms ease, filter 140ms ease, border-color 140ms ease, background 140ms ease;
+}
+.btn:hover,
+.btn:focus-visible{
+  transform:translateY(-1px);
+  border-color:rgba(255,255,255,0.14);
+  filter:brightness(1.06);
+}
+.btn-small{ min-height:36px; padding:0 12px; border-radius:12px; font-size:12px; }
+.btn-success{
+  background:linear-gradient(180deg, rgba(104,196,160,0.20), rgba(49,112,92,0.16));
+  border-color:rgba(104,196,160,0.22);
+  color:#dcfff0;
+}
+.btn-info,
+.btn-primary{
+  background:linear-gradient(180deg, rgba(127,159,218,0.22), rgba(55,79,123,0.16));
+  border-color:rgba(127,159,218,0.24);
+  color:#e6eeff;
+}
+.btn-danger{
+  background:linear-gradient(180deg, rgba(217,119,112,0.22), rgba(113,47,44,0.18));
+  border-color:rgba(217,119,112,0.24);
+  color:#ffe8e4;
+}
+.switchline,
+.switchline-compact,
+.chip,
+.logger-countdown{
+  min-height:42px;
+  border-radius:14px;
+  background:rgba(255,255,255,0.04);
+  border:1px solid rgba(255,255,255,0.08);
+}
+.switchline,
+.switchline-compact{ padding:0 12px; }
+.chip{ padding:0 12px; gap:10px; }
+.switch-caption{ font-size:12px; letter-spacing:.05em; text-transform:uppercase; color:var(--muted); }
+.switch-slider{
+  background:rgba(255,255,255,0.12);
+  border:1px solid rgba(255,255,255,0.08);
+}
+.switch-slider::before{
+  background:#fff3d1;
+  box-shadow:0 6px 12px rgba(0,0,0,0.16);
+}
+.switch input:checked + .switch-slider{
+  background:linear-gradient(90deg, rgba(212,177,89,0.70), rgba(148,122,58,0.70));
+}
+.switch input:checked + .switch-slider::before{
+  background:#fff8ea;
+}
+
+.history-panel{
+  padding:12px;
+}
+.history-panel-head{ margin-bottom:10px; }
+.history-subtitle{
+  font-size:13px;
+  font-weight:900;
+  letter-spacing:.02em;
+}
+.history-table-wrap,
+.statsTableWrap{
+  border-radius:16px;
+  border:1px solid rgba(255,255,255,0.07);
+  background:rgba(11,12,16,0.56);
+}
+.history-table,
+.statsTable{
+  background:transparent;
+}
+.history-table thead th,
+.statsTable th{
+  padding:12px 14px;
+  background:rgba(22,24,29,0.96);
+  color:var(--muted);
+  letter-spacing:.02em;
+}
+.history-table tbody td,
+.statsTable td{
+  padding:14px;
+  border-bottom:1px solid rgba(255,255,255,0.06);
+}
+.history-table tbody tr:hover td,
+.statsTable tbody tr:hover td{
+  background:rgba(255,255,255,0.018);
+}
+.history-table .btn,
+.logger-table-panel .btn,
+.statsWrap .btn{
+  min-height:34px;
+  padding:0 12px;
+  border-radius:12px;
+}
+.pill{
+  min-height:30px;
+  padding:0 10px;
+  border-radius:999px;
+  border-color:rgba(255,255,255,0.08);
+  box-shadow:none;
+}
+.pill-OK{ background:rgba(104,196,160,0.14); color:#cff7e6; }
+.pill-DIS{ background:rgba(217,119,112,0.14); color:#ffe1dd; }
+.pill-OVERLOAD{ background:rgba(212,177,89,0.16); color:#fae7b7; }
+.pill-HEATING{ background:rgba(214,153,96,0.16); color:#ffe0bf; }
+.pill-ARCING{ background:rgba(127,159,218,0.16); color:#e3ecff; }
+.pill-UNPLUG{ background:rgba(192,114,97,0.14); color:#ffd9d2; }
+.pill-FW{ background:rgba(158,139,213,0.16); color:#f0e8ff; }
+.pill-OVERVOLTAGE{ background:rgba(217,119,112,0.16); color:#ffe0dc; }
+.pill-UNDERVOLTAGE{ background:rgba(139,123,194,0.16); color:#eee5ff; }
+.pill-ONLINE{ background:rgba(127,159,218,0.14); color:#e3ecff; }
+
+.ota-collapsible .ota-summary{
+  margin-bottom:10px;
+}
+.ota-box{
+  padding:18px;
+}
+.ota-label{
+  font-size:12px;
+  letter-spacing:.08em;
+  text-transform:uppercase;
+}
+.ota-line{ line-height:1.65; }
+.ota-row{ gap:10px; }
+.ota-download-btn{
+  width:42px;
+  height:42px;
+  border-radius:14px;
+  background:rgba(255,255,255,0.04);
+  border:1px solid rgba(255,255,255,0.08);
+}
+.ota-download-btn:hover,
+.ota-download-btn:focus-visible{
+  background:rgba(212,177,89,0.10);
+  border-color:var(--border-accent);
+}
+
+.logger-actions-row{
+  display:grid;
+  grid-template-columns:auto auto 1fr auto auto;
+  gap:12px;
+  align-items:center;
+}
+.logger-actions-row > *{ min-width:0; }
+.logger-actions-row .switchline{ order:1; }
+.logger-duration-group{ order:2; }
+.logger-tabset{ order:3; justify-self:start; }
+#btnDownloadAllMl{ order:4; }
+#btnUploadCsv{ order:5; }
+.logger-meta-grid{
+  order:6;
+  grid-column:1 / -1;
+  display:grid;
+  grid-template-columns:180px minmax(180px, 1.1fr) 96px 140px minmax(180px, 1fr) auto;
+  gap:10px;
+  align-items:center;
+}
+.logger-meta-grid > *{ min-width:0; width:100%; }
+.logger-duration-group,
+.logger-tabset{ gap:10px; }
+.logger-duration-input{
+  min-width:92px;
+  width:92px;
+  text-align:center;
+}
+.logger-countdown{
+  min-width:74px;
+  justify-content:center;
+  display:inline-flex;
+  align-items:center;
+  color:var(--text);
+}
+.logger-meta-input,
+.logger-notes-input,
+.logger-load-input{
+  min-height:42px;
+}
+.logger-trial-input{
+  min-width:96px;
+  max-width:none;
+}
+.logger-tabset .btn.is-active{
+  border-color:var(--border-accent);
+  background:linear-gradient(180deg, rgba(212,177,89,0.18), rgba(255,255,255,0.04));
+}
+#mlLogStatus{
+  margin-top:6px;
+  font-size:12px;
+  color:var(--muted);
+}
+
+.plot-drawer .viewer-header-actions{
+  gap:10px;
+}
+.plot-main-grid{
+  grid-template-columns:minmax(0,1fr) minmax(280px, 320px);
+  gap:16px;
+}
+.plot-stage{
+  padding:12px;
+  border-radius:20px;
+  background:linear-gradient(180deg, rgba(24,26,31,0.96), rgba(11,13,17,0.96));
+  border:1px solid rgba(255,255,255,0.07);
+  box-shadow:var(--shadow-soft);
+}
+.plot-drawer #chart{
+  border-radius:16px;
+  overflow:hidden;
+}
+.plot-drawer #valueLine.valueLineSide{
+  gap:10px;
+  padding-right:0;
+}
+.plot-drawer #valueLine.valueLineSide .vchip{
+  min-height:40px;
+  padding:8px 12px;
+  border-radius:14px;
+  background:linear-gradient(180deg, rgba(255,255,255,0.06), rgba(255,255,255,0.035));
+  border:1px solid rgba(255,255,255,0.07);
+}
+.plot-drawer .panel.toggles{
+  padding:14px;
+}
+.plot-drawer .seriesTop{
+  margin-bottom:10px;
+}
+.plot-drawer .smallnote.viewer-axis-note{ display:none; }
+.plot-drawer #toggleList .row{
+  min-height:42px;
+  padding:10px 12px;
+  border-radius:14px;
+  border:1px solid rgba(255,255,255,0.07);
+  background:rgba(255,255,255,0.03);
+}
+.plot-drawer #toggleList .row:hover{
+  border-color:var(--border-accent);
+  background:rgba(255,255,255,0.05);
+}
+.plot-drawer .controlsbar{
+  gap:12px;
+}
+.plot-drawer .viewer-inline-controls{
+  padding-top:2px;
+}
+.plot-drawer .segment-tools{
+  margin-top:14px;
+  padding:12px;
+}
+.plot-drawer .segment-tools-head{
+  margin-bottom:12px;
+}
+.plot-drawer .segment-toolbar-editor{
+  gap:8px;
+}
+.plot-drawer .segment-toolbar-editor .chip,
+.plot-drawer .segment-toolbar-editor .btn,
+.plot-drawer .viewer-inline-controls .chip,
+.plot-drawer .viewer-inline-controls .btn{
+  min-height:36px;
+  border-radius:12px;
+}
+.segment-empty{
+  min-height:48px;
+  display:flex;
+  align-items:center;
+}
+.segment-row{
+  padding:10px 12px;
+  border-radius:14px;
+  border:1px solid rgba(255,255,255,0.07);
+}
+.segment-pill{
+  min-height:28px;
+  padding:0 10px;
+}
+
+.footer{
+  opacity:0.66;
+  padding:14px 10px 4px;
+}
+.footer .muted.small{
+  font-size:11px;
+  letter-spacing:.04em;
+}
+
+.toast{
+  right:20px;
+  bottom:calc(20px + var(--safe-bottom));
+  padding:14px 16px 14px 18px;
+  border-radius:16px;
+  border:1px solid rgba(255,255,255,0.08);
+  background:linear-gradient(180deg, rgba(35,38,45,0.98), rgba(16,18,23,0.98));
+  box-shadow:0 18px 44px rgba(0,0,0,0.38);
+}
+.toast::before{
+  content:"";
+  position:absolute;
+  inset:10px auto 10px 8px;
+  width:3px;
+  border-radius:999px;
+  background:var(--accent);
+}
+.toast-err{ background:linear-gradient(180deg, rgba(136,56,52,0.98), rgba(74,29,27,0.98)); }
+.toast-ok{ background:linear-gradient(180deg, rgba(35,38,45,0.98), rgba(16,18,23,0.98)); }
+.toast-info{ background:linear-gradient(180deg, rgba(58,82,126,0.98), rgba(33,47,73,0.98)); }
+.toast-warn{ background:linear-gradient(180deg, rgba(122,96,44,0.98), rgba(72,56,24,0.98)); color:#fff8eb; }
+
+.dashboard-grid > section,
+.history,
+.ota-panel,
+.plot-drawer,
+.install-help{
+  animation:sectionRise 480ms cubic-bezier(.2,.8,.2,1) both;
+}
+.dashboard-grid > section:nth-child(2){ animation-delay:40ms; }
+.dashboard-grid > section:nth-child(3){ animation-delay:70ms; }
+.dashboard-grid > section:nth-child(4){ animation-delay:100ms; }
+.dashboard-grid > section:nth-child(5){ animation-delay:130ms; }
+.dashboard-grid > section:nth-child(6){ animation-delay:160ms; }
+.history{ animation-delay:180ms; }
+@keyframes sectionRise{
+  from{ opacity:0; transform:translateY(10px); }
+  to{ opacity:1; transform:translateY(0); }
+}
+
+@media (max-width: 1280px){
+  .logger-meta-grid{
+    grid-template-columns:repeat(3, minmax(0,1fr));
+  }
+}
+@media (max-width: 980px){
+  .app{ width:min(100vw, 96vw); margin:14px auto 36px; }
+  .status{ min-height:58px; padding:16px 18px; }
+  .logger-actions-row{
+    grid-template-columns:1fr 1fr;
+  }
+  .logger-tabset,
+  #btnDownloadAllMl,
+  #btnUploadCsv,
+  .logger-duration-group,
+  .logger-actions-row .switchline{
+    width:100%;
+  }
+  .logger-meta-grid{
+    grid-template-columns:repeat(2, minmax(0,1fr));
+  }
+  .plot-main-grid{ grid-template-columns:1fr; }
+}
+@media (max-width: 640px){
+  body::before,
+  body::after{ opacity:0.18; }
+  .title{ font-size:clamp(22px,7vw,30px); }
+  .status{ font-size:18px; letter-spacing:.05em; }
+  .overview-block,
+  .metrics-block,
+  .features-block,
+  .history,
+  .plot-drawer,
+  .install-help{ padding:14px; border-radius:20px; }
+  .header-menu{ width:min(300px, calc(100vw - 18px)); right:-2px; }
+  .logger-actions-row{ grid-template-columns:1fr; }
+  .logger-meta-grid{ grid-template-columns:1fr; }
+  .history-actions,
+  .section-actions,
+  .install-help-actions{ width:100%; }
+  .history-actions > *,
+  .section-actions > *,
+  .install-help-actions > *{ width:100%; }
+  .btn,
+  .select,
+  .ota-input,
+  .seriesSearch{ width:100%; }
+  .plot-stage{ padding:8px; }
+  .toast{ left:12px; right:12px; max-width:none; }
+}
+@media (prefers-reduced-motion: reduce){
+  *, *::before, *::after{
+    animation:none !important;
+    transition:none !important;
+    scroll-behavior:auto !important;
+  }
+}
+
+
+/* ===== v8.2 session viewer cleanup + OTA menu move ===== */
+.header-menu{
+  width:min(320px, calc(100vw - 24px));
+}
+.menu-section-ota{
+  border-top:1px solid rgba(255,255,255,0.08);
+  padding-top:12px;
+}
+.menu-ota-current{
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap:12px;
+  min-height:44px;
+  padding:10px 12px;
+  border-radius:12px;
+  border:1px solid rgba(255,255,255,0.08);
+  background:linear-gradient(180deg, rgba(255,255,255,0.05), rgba(255,255,255,0.03));
+}
+.menu-ota-meta{
+  font-size:11px;
+  letter-spacing:.08em;
+  text-transform:uppercase;
+  color:rgba(255,255,255,0.56);
+}
+.menu-ota-version{
+  margin-top:4px;
+  font-size:13px;
+  font-weight:900;
+  color:#f3f3f3;
+}
+.menu-field{
+  display:grid;
+  gap:6px;
+  margin-top:10px;
+}
+.menu-field-label{
+  font-size:11px;
+  letter-spacing:.08em;
+  text-transform:uppercase;
+  color:rgba(255,255,255,0.56);
+}
+.menu-input{
+  width:100%;
+  min-height:40px;
+  background:linear-gradient(180deg, rgba(255,255,255,0.06), rgba(255,255,255,0.035)) !important;
+  border-color:rgba(255,255,255,0.10) !important;
+}
+.menu-ota-actions{
+  margin-top:10px;
+}
+.menu-ota-download{
+  display:inline-flex;
+  align-items:center;
+  justify-content:center;
+  width:42px;
+  height:42px;
+  border-radius:12px;
+  border:1px solid rgba(255,255,255,0.08);
+  background:rgba(255,255,255,0.04);
+}
+.menu-ota-download.is-disabled,
+.menu-ota-download[aria-disabled="true"]{
+  opacity:.45;
+  pointer-events:none;
+}
+
+.select,
+.axisSel,
+.ota-input,
+.seriesSearch,
+.viewer-index-input,
+#selSpeed,
+#segLabelSelect,
+#segFamilyInput,
+#segTrialInput,
+#segDeviceInput,
+#segNotesInput{
+  background:linear-gradient(180deg, rgba(38,41,47,0.96), rgba(24,27,32,0.96)) !important;
+  border:1px solid rgba(255,255,255,0.10) !important;
+  color:#f3f3f3 !important;
+}
+select option{
+  background:#1d2026;
+  color:#f3f3f3;
+}
+
+.plot-drawer .viewer-header-actions{
+  gap:8px;
+}
+.plot-drawer .controlsbar-top .left{
+  gap:8px;
+}
+.plot-drawer .chip{
+  background:linear-gradient(180deg, rgba(255,255,255,0.055), rgba(255,255,255,0.03)) !important;
+  border:1px solid rgba(255,255,255,0.08) !important;
+}
+.plot-drawer #seriesPanel{
+  padding:12px !important;
+  border:1px solid rgba(255,255,255,0.08) !important;
+  background:linear-gradient(180deg, rgba(30,33,39,0.96), rgba(20,22,27,0.98)) !important;
+}
+.plot-drawer .seriesTop{
+  align-items:center;
+}
+.plot-drawer .seriesActions{
+  display:flex;
+  gap:8px;
+  flex-wrap:wrap;
+}
+.plot-drawer .seriesMetaBar{
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap:10px;
+  margin:10px 0 12px;
+  flex-wrap:wrap;
+}
+.plot-drawer .chip-series-filter{
+  min-height:36px;
+  padding:0 12px;
+}
+.plot-drawer .seriesCount{
+  font-size:11px;
+  letter-spacing:.06em;
+  text-transform:uppercase;
+  color:rgba(255,255,255,0.56);
+}
+.plot-drawer #toggleList{
+  display:grid !important;
+  grid-template-columns:repeat(2, minmax(0,1fr)) !important;
+  gap:10px !important;
+}
+.plot-drawer #toggleList .row{
+  margin:0;
+  min-height:54px;
+  padding:10px 12px;
+  border-radius:14px;
+  border:1px solid rgba(255,255,255,0.08);
+  background:linear-gradient(180deg, rgba(255,255,255,0.04), rgba(255,255,255,0.025));
+  grid-template-columns:18px minmax(0,1fr) 58px;
+  gap:10px;
+}
+.plot-drawer #toggleList .row.is-selected{
+  border-color:rgba(212,177,89,0.20);
+  background:linear-gradient(180deg, rgba(212,177,89,0.10), rgba(255,255,255,0.03));
+}
+.plot-drawer #toggleList .row.is-dim{
+  opacity:.72;
+}
+.plot-drawer .seriesNameWrap{
+  min-width:0;
+}
+.plot-drawer .seriesName{
+  font-size:12px;
+  font-weight:800;
+  line-height:1.25;
+  color:#f3f3f3;
+}
+.plot-drawer .seriesKey{
+  margin-top:2px;
+  font-size:10px;
+  color:rgba(255,255,255,0.45);
+  white-space:nowrap;
+  overflow:hidden;
+  text-overflow:ellipsis;
+}
+.plot-drawer .axisSel{
+  width:58px;
+  min-width:58px;
+  padding-inline:10px 26px;
+}
+.plot-drawer .viewer-inline-controls .control-cluster-singleline{
+  gap:8px;
+}
+.plot-drawer .viewer-inline-controls .chip,
+.plot-drawer .viewer-inline-controls .btn{
+  min-height:36px;
+}
+.plot-drawer .smallnote{
+  color:rgba(255,255,255,0.60);
+}
+
+.guide-shell .hero-sub,
+.guide-shell .hero-badges,
+.guide-shell .mini-pills{
+  display:none !important;
+}
+.guide-shell .hero{
+  min-height:112px;
+}
+
+@media (max-width: 980px){
+  .plot-drawer #toggleList{
+    grid-template-columns:1fr !important;
+  }
+}
+
+
+/* ===== v8.3 logger/session viewer coherence + focus ===== */
+.history-head-logger{
+  display:grid;
+  grid-template-columns:minmax(180px, 240px) minmax(0,1fr);
+  align-items:stretch;
+  gap:14px;
+}
+.history-head-logger > div:first-child{
+  padding:4px 2px;
+  border:none;
+  background:transparent;
+}
+.logger-actions-row{
+  padding:12px;
+  border-radius:18px;
+  border:1px solid rgba(255,255,255,0.08);
+  background:linear-gradient(180deg, rgba(18,22,31,0.92), rgba(12,15,22,0.96));
+  box-shadow:inset 0 1px 0 rgba(255,255,255,0.03);
+}
+.session-name-primary{
+  font-weight:900;
+  color:#f3f3f3;
+}
+.session-name-secondary{
+  margin-top:4px;
+  color:rgba(255,255,255,0.56);
+}
+.plot-drawer .viewer-header-actions{
+  align-items:center;
+}
+.plot-drawer .viewer-header-actions .btn{
+  min-height:40px;
+}
+.plot-drawer #btnSeries,
+.plot-drawer #btnStats{
+  align-self:center;
+}
+.plot-drawer .segment-tools{
+  border:1px solid rgba(255,255,255,0.08);
+  background:linear-gradient(180deg, rgba(20,23,31,0.94), rgba(12,15,21,0.98));
+}
+.plot-drawer .segment-tools-head{
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap:10px;
+  padding-bottom:10px;
+  border-bottom:1px solid rgba(255,255,255,0.07);
+}
+.plot-drawer .segment-toolbar-editor{
+  margin-top:12px;
+  padding:10px;
+  border-radius:16px;
+  border:1px solid rgba(255,255,255,0.07);
+  background:linear-gradient(180deg, rgba(255,255,255,0.035), rgba(255,255,255,0.02));
+}
+.plot-drawer #toggleList .row{
+  cursor:pointer;
+}
+.plot-drawer #toggleList .row.is-focused{
+  border-color:rgba(111,156,242,0.38) !important;
+  background:linear-gradient(180deg, rgba(111,156,242,0.16), rgba(255,255,255,0.04)) !important;
+  box-shadow:0 0 0 1px rgba(111,156,242,0.18) inset;
+}
+.plot-drawer #valueLine.valueLineSide .vchip-series{
+  cursor:pointer;
+  transition:transform 140ms ease, border-color 140ms ease, background 140ms ease;
+}
+.plot-drawer #valueLine.valueLineSide .vchip-series:hover{
+  transform:translateY(-1px);
+  border-color:rgba(111,156,242,0.22);
+}
+.plot-drawer #valueLine.valueLineSide .vchip-series.is-focused{
+  border-color:rgba(111,156,242,0.34);
+  background:linear-gradient(180deg, rgba(111,156,242,0.16), rgba(255,255,255,0.04));
+}
+@media (max-width: 980px){
+  .history-head-logger{
+    grid-template-columns:1fr;
   }
 }

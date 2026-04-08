@@ -55,8 +55,11 @@
   const segLabelSelect = $("segLabelSelect");
   const segStartInput = $("segStartInput");
   const segEndInput = $("segEndInput");
-  const segLoadInput = $("segLoadInput");
+  const segFamilyInput = $("segFamilyInput");
+  const segDeviceInput = $("segDeviceInput");
   const segTrialInput = $("segTrialInput");
+  const segNotesInput = $("segNotesInput");
+  const segTrustedNormal = $("segTrustedNormal");
   const btnSegStartFromPlay = $("btnSegStartFromPlay");
   const btnSegEndFromPlay = $("btnSegEndFromPlay");
   const btnAddSegment = $("btnAddSegment");
@@ -69,6 +72,8 @@
   const btnSelDefault = $("btnSelDefault");
   const btnSelAll = $("btnSelAll");
   const btnSelNone = $("btnSelNone");
+  const chkSelectedOnly = $("chkSelectedOnly");
+  const seriesCountText = $("seriesCountText");
   const btnPrevArc = $("btnPrevArc");
   const btnNextArc = $("btnNextArc");
   const arcReadout = $("arcReadout");
@@ -137,6 +142,89 @@
       .slice(0, 64) || fallback;
   }
 
+
+  function normalizeDeviceFamilyToken(v, fallback = "unknown") {
+    const raw = String(v || "").trim().toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_+|_+$/g, "");
+    const alias = { resistive: "resistive_linear", resistive_linear: "resistive_linear", heater: "resistive_linear", heating: "resistive_linear", inductive: "inductive_motor", motor: "inductive_motor", fan: "inductive_motor", inductive_motor: "inductive_motor", smps: "rectifier_smps", rectifier: "rectifier_smps", rectifier_smps: "rectifier_smps", charger: "rectifier_smps", adapter: "rectifier_smps", dimmer: "phase_angle_controlled", phase: "phase_angle_controlled", dimmer_phase: "phase_angle_controlled", phase_angle: "phase_angle_controlled", phase_angle_controlled: "phase_angle_controlled", universal: "brush_universal_motor", universal_motor: "brush_universal_motor", brush: "brush_universal_motor", brush_universal_motor: "brush_universal_motor", vacuum: "brush_universal_motor", mixed: "other_mixed", mixed_unknown: "other_mixed", other: "other_mixed", other_mixed: "other_mixed", unknown: "unknown" };
+    return alias[raw] || fallback;
+  }
+
+  function normalizeDeviceNameToken(v, fallback = "unknown_device") {
+    const raw = String(v || "").trim().replace(/\.[a-z0-9]+$/i, "");
+    const token = raw.toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_+|_+$/g, "").slice(0, 64);
+    return token || fallback;
+  }
+
+  function normalizeDivisionTagToken(v, fallback = "steady") {
+    const raw = String(v || "").trim().toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_+|_+$/g, "");
+    const alias = { startup: "start", start: "start", steady: "steady", baseline: "steady", arc: "arc", close: "steady", closing: "steady", end: "steady", ending: "steady" };
+    return alias[raw] || fallback;
+  }
+
+  function normalizeNotesText(v) {
+    return String(v || "").replace(/\s+/g, " ").trim().slice(0, 160);
+  }
+
+  function deviceFamilyCodeFromToken(v) {
+    const token = normalizeDeviceFamilyToken(v, "unknown");
+    return ({ unknown: -1, resistive_linear: 0, inductive_motor: 1, rectifier_smps: 2, phase_angle_controlled: 3, brush_universal_motor: 4, other_mixed: 5 })[token] ?? -1;
+  }
+
+  function familyTitle(v) { return titleizeTokenText(String(v || "").replace(/_/g, " "), "Mixed Unknown"); }
+  function deviceTitle(v) { return titleizeTokenText(v, "Unknown Device"); }
+
+  function pickViewerFamily(meta) {
+    return normalizeDeviceFamilyToken(meta?.device_family || meta?.load_family || meta?.parsed_load_family || "unknown");
+  }
+
+  function pickViewerDevice(meta, fallback = "unknown_device") {
+    const fromMeta = String(meta?.device_name || meta?.load_type || "").trim();
+    if (fromMeta && fromMeta.toLowerCase() !== "uploaded_csv" && fromMeta.toLowerCase() !== "unknown") return normalizeDeviceNameToken(fromMeta, fallback);
+    const sourceFile = String(meta?.source_file || "").trim();
+    if (sourceFile) return normalizeDeviceNameToken(canonicalDatasetStem(sourceFile, sourceFile), fallback);
+    return normalizeDeviceNameToken(fallback, fallback);
+  }
+
+  function structuredDatasetBase(meta, fallback = "session") {
+    const family = normalizeDeviceFamilyToken(meta?.device_family || meta?.load_family || meta?.parsed_load_family || "unknown");
+    const device = normalizeDeviceNameToken(meta?.device_name || meta?.load_type || canonicalDatasetStem(meta?.source_file || fallback, fallback), fallback);
+    const trial = Math.max(1, parseInt(meta?.trial_number || meta?.trial || 1, 10) || 1);
+    const division = normalizeDivisionTagToken(meta?.division_tag || meta?.division || "steady");
+    return `${family}__${device}__trial_${trial}__${division}`;
+  }
+
+  function buildStructuredDatasetFilename(meta, fallback = "session") {
+    return `${structuredDatasetBase(meta, fallback)}.csv`;
+  }
+
+  function mergeRowMetadata(row, meta) {
+    row.device_family = normalizeDeviceFamilyToken(meta?.device_family || row?.device_family || "unknown");
+    row.device_family_code = deviceFamilyCodeFromToken(row.device_family);
+    row.device_name = normalizeDeviceNameToken(meta?.device_name || row?.device_name || row?.load_type || "unknown_device", "unknown_device");
+    row.trial_number = Math.max(1, parseInt(meta?.trial_number || row?.trial_number || 1, 10) || 1);
+    row.division_tag = normalizeDivisionTagToken(meta?.division_tag || row?.division_tag || "steady");
+    row.notes = normalizeNotesText(meta?.notes || row?.notes || "");
+    row.trusted_normal_session = meta?.trusted_normal_session ? 1 : (Number(row?.trusted_normal_session || 0) > 0 ? 1 : 0);
+    row.load_type = row.device_name;
+    return row;
+  }
+
+  function deriveRowTimingWindow(rows) {
+    const numericSeries = (field) => rows.map((row) => Number(row?.[field])).filter((v) => Number.isFinite(v));
+    const epochVals = numericSeries("epoch_ms");
+    if (epochVals.length >= 2) {
+      const startMs = epochVals[0];
+      const endMs = epochVals[epochVals.length - 1];
+      if (endMs > startMs) return { durationS: (endMs - startMs) / 1000, startMs, endMs, sourceSampleRateHz: null };
+    }
+    const frameSpan = buildContinuousSecondsFromField(rows, "frame_start_uptime_ms", 0.001) || buildContinuousSecondsFromField(rows, "frame_end_uptime_ms", 0.001) || buildContinuousSecondsFromField(rows, "uptime_ms", 0.001);
+    const sourceFs = rows.map((row) => Number(row?.source_sample_rate_hz ?? row?.feature_frame_rate_hz ?? row?.adc_fs_hz)).find((v) => Number.isFinite(v) && v > 0) || null;
+    if (frameSpan != null) return { durationS: frameSpan, startMs: null, endMs: null, sourceSampleRateHz: sourceFs };
+    if (sourceFs && rows.length > 1) return { durationS: Math.max(0, (rows.length - 1) / sourceFs), startMs: null, endMs: null, sourceSampleRateHz: sourceFs };
+    if (sourceFs && rows.length > 0) return { durationS: rows.length / sourceFs, startMs: null, endMs: null, sourceSampleRateHz: sourceFs };
+    return { durationS: null, startMs: null, endMs: null, sourceSampleRateHz: sourceFs };
+  }
+
   function canonicalDatasetStem(name, fallback = "session") {
     let stem = String(name || "").replace(/\.[a-z0-9]+$/i, "").trim();
     if (!stem) return fallback;
@@ -156,19 +244,18 @@
   }
 
   function viewerDisplayName(meta, sessionId) {
+    const deviceName = String(meta?.device_name || "").trim();
+    if (deviceName) return deviceTitle(deviceName);
     const sourceFile = String(meta?.source_file || "").trim();
-    if (sourceFile) return titleizeTokenText(parseDatasetFilenameMeta(sourceFile).loadType ? canonicalDatasetStem(sourceFile, sourceFile) : sourceFile, sourceFile);
-    const load = String(meta?.load_type || "").trim();
-    if (load && load.toLowerCase() !== "uploaded_csv" && load.toLowerCase() !== "unknown") return titleizeTokenText(load, load);
+    if (sourceFile) return deviceTitle(canonicalDatasetStem(sourceFile, sourceFile));
     if (isUploadedCsvSession(meta)) return "Uploaded CSV";
     const start = Number(meta?.start_ms || 0);
     if (start) return `Session ${formatDisplayTimestamp(start)}`;
-    return titleizeTokenText(sessionId || "session", "Session");
+    return deviceTitle(sessionId || "session");
   }
 
   function viewerDownloadName(meta, sessionId) {
-    const base = canonicalDatasetStem(String(meta?.source_file || "").trim() || viewerDisplayName(meta, sessionId), safeFilenameSegment(sessionId || 'session', 'session'));
-    return `${safeFilenameSegment(base, safeFilenameSegment(sessionId || 'session', 'session'))}.csv`;
+    return buildStructuredDatasetFilename(meta || {}, safeFilenameSegment(sessionId || 'session', 'session'));
   }
 
   function announceActiveSession(sessionId) {
@@ -190,79 +277,68 @@
   }
 
   function viewerDurationSeconds(meta) {
-    const explicit = Number(meta?.source_duration_s ?? meta?.duration_s);
-    if (Number.isFinite(explicit) && explicit > 0) return explicit;
     const st = Number(meta?.start_ms || 0);
     const en = Number(meta?.end_ms || 0);
     if (st > 0 && en > st) return (en - st) / 1000;
+    const explicit = Number(meta?.source_duration_s ?? meta?.duration_s);
+    if (Number.isFinite(explicit) && explicit > 0) return explicit;
     const rows = Number(meta?.row_count || 0);
     const sourceFs = Number(meta?.source_sample_rate_hz || 0);
+    if (rows > 1 && Number.isFinite(sourceFs) && sourceFs > 0) return (rows - 1) / sourceFs;
     if (rows > 0 && Number.isFinite(sourceFs) && sourceFs > 0) return rows / sourceFs;
     return null;
   }
 
   function deriveCsvTimingMetaLocal(csvText) {
     const clean = String(csvText || "").replace(/^﻿/, "").trim();
-    if (!clean) return { durationS: null, rowCount: 0, sourceSampleRateHz: null };
+    if (!clean) return { durationS: null, rowCount: 0, sourceSampleRateHz: null, startMs: null, endMs: null };
     const parsed = Papa.parse(clean, { header: true, dynamicTyping: true, skipEmptyLines: true, transformHeader: normalizeHeaderName });
     const rows = (parsed?.data || []).filter((row) => row && Object.keys(row).length);
-    if (!rows.length) return { durationS: null, rowCount: 0, sourceSampleRateHz: null };
-    const rawEpoch = rows.map((r) => Number(r?.epoch_ms)).filter((v) => Number.isFinite(v) && v > 0);
-    if (rawEpoch.length >= 2) {
-      return { durationS: Math.max(0, (rawEpoch[rawEpoch.length - 1] - rawEpoch[0]) / 1000), rowCount: rows.length, sourceSampleRateHz: null };
-    }
-    const rawUp = rows.map((r) => Number(r?.uptime_ms)).filter((v) => Number.isFinite(v) && v >= 0);
-    if (rawUp.length >= 2) {
-      const positive = [];
-      for (let i = 1; i < rawUp.length; i++) {
-        const d = rawUp[i] - rawUp[i - 1];
-        if (Number.isFinite(d) && d > 0) positive.push(d);
-      }
-      if (positive.length) {
-        positive.sort((a, b) => a - b);
-        const med = positive[Math.floor(positive.length / 2)] / 1000;
-        let total = 0;
-        for (let i = 1; i < rawUp.length; i++) {
-          let d = (rawUp[i] - rawUp[i - 1]) / 1000;
-          if (!Number.isFinite(d) || d <= 0 || d > Math.max(med * 4, 0.75)) d = med;
-          total += d;
-        }
-        return { durationS: total > 0 ? total : null, rowCount: rows.length, sourceSampleRateHz: null };
-      }
-    }
-    const sourceFs = rows.map((r) => Number(r?.source_sample_rate_hz ?? r?.adc_fs_hz)).find((v) => Number.isFinite(v) && v > 0) || null;
-    if (sourceFs && rows.length) return { durationS: rows.length / sourceFs, rowCount: rows.length, sourceSampleRateHz: sourceFs };
-    return { durationS: null, rowCount: rows.length, sourceSampleRateHz: sourceFs };
+    if (!rows.length) return { durationS: null, rowCount: 0, sourceSampleRateHz: null, startMs: null, endMs: null };
+    const timing = deriveRowTimingWindow(rows);
+    return { durationS: timing.durationS, rowCount: rows.length, sourceSampleRateHz: timing.sourceSampleRateHz, startMs: timing.startMs, endMs: timing.endMs };
   }
 
   function viewerMetaText(meta) {
-    const load = String(meta?.load_type || meta?.source_file || "—").trim();
     const dur = viewerDurationSeconds(meta);
-    const durText = (dur === null)
-      ? "—"
-      : (Math.abs(dur - Math.round(dur)) < 0.05 ? `${Math.round(dur)}s` : `${dur.toFixed(1)}s`);
+    const durText = (dur === null) ? "—" : (Math.abs(dur - Math.round(dur)) < 0.05 ? `${Math.round(dur)}s` : `${dur.toFixed(1)}s`);
     const startText = Number(meta?.start_ms || 0) > 0 ? formatDisplayTimestamp(Number(meta.start_ms)) : "—";
-    return `${titleizeTokenText(load, "Unknown")} • ${durText} • ${startText}`;
+    const family = familyTitle(pickViewerFamily(meta));
+    const device = deviceTitle(pickViewerDevice(meta));
+    const trial = Math.max(1, parseInt(meta?.trial_number || 1, 10) || 1);
+    const division = normalizeDivisionTagToken(meta?.division_tag || "steady");
+    return `${family} • ${device} • Trial ${trial} • ${division} • ${durText} • ${startText}`;
   }
 
   function parseDatasetFilenameMeta(name) {
     const stem = String(name || "").replace(/\.[a-z0-9]+$/i, "").trim();
+    const structured = stem.split("__").filter(Boolean);
+    if (structured.length >= 4 && /^trial_?\d+$/i.test(structured[2])) {
+      const trial = Math.max(1, parseInt(String(structured[2]).replace(/[^0-9]+/g, ""), 10) || 1);
+      return {
+        deviceFamily: normalizeDeviceFamilyToken(structured[0]),
+        deviceName: normalizeDeviceNameToken(structured[1], structured[1]),
+        loadType: normalizeDeviceNameToken(structured[1], structured[1]),
+        trial,
+        division: normalizeDivisionTagToken(structured[3]),
+      };
+    }
     const parts = stem.split(/[_\s-]+/).filter(Boolean);
-    const aliases = { startup: "start", start: "start", steady: "steady", baseline: "steady", arc: "arc", close: "close", closing: "close" };
+    const aliases = { startup: "start", start: "start", steady: "steady", baseline: "steady", arc: "arc", close: "steady", closing: "steady", end: "steady", ending: "steady" };
     const last = String(parts[parts.length - 1] || "").toLowerCase();
     const division = aliases[last] || "";
     let trial = 1;
     let endIdx = parts.length;
     if (division) endIdx -= 1;
     if (endIdx > 0) {
-      const maybeTrial = Number(parts[endIdx - 1]);
+      const maybeTrial = Number(String(parts[endIdx - 1]).replace(/[^0-9]+/g, ""));
       if (Number.isInteger(maybeTrial) && maybeTrial > 0) {
         trial = maybeTrial;
         endIdx -= 1;
       }
     }
-    const loadType = safeFilenameSegment(parts.slice(0, Math.max(0, endIdx)).join("_"), "session");
-    return { loadType, trial, division };
+    const device = safeFilenameSegment(parts.slice(0, Math.max(0, endIdx)).join("_"), "session");
+    return { deviceFamily: "unknown", deviceName: device, loadType: device, trial, division };
   }
 
   function safePositiveInt(value, fallback = 1) {
@@ -281,19 +357,22 @@
       start: `rgba(77,163,255,${a})`,
       steady: `rgba(46,204,113,${a})`,
       arc: `rgba(255,140,26,${a})`,
-      close: `rgba(232,91,83,${a})`,
     };
     return colors[label] || `rgba(255,255,255,${a})`;
   }
 
   function normalizeSegmentLabel(label) {
     const raw = String(label || "").trim().toLowerCase();
-    const aliases = { startup: "start", start: "start", steady: "steady", baseline: "steady", arc: "arc", close: "close", closing: "close" };
+    const aliases = { startup: "start", start: "start", steady: "steady", baseline: "steady", arc: "arc", close: "steady", closing: "steady", end: "steady", ending: "steady" };
     return aliases[raw] || "steady";
   }
 
-  function getSegmentLoadValue() {
-    return safeFilenameSegment((segLoadInput?.value || currentMeta?.load_type || parseDatasetFilenameMeta(currentMeta?.source_file || sid).loadType || "session").trim(), "session");
+  function getSegmentFamilyValue() {
+    return normalizeDeviceFamilyToken(segFamilyInput?.value || currentMeta?.device_family || parseDatasetFilenameMeta(currentMeta?.source_file || sid).deviceFamily || "unknown");
+  }
+
+  function getSegmentDeviceValue() {
+    return normalizeDeviceNameToken(segDeviceInput?.value || currentMeta?.device_name || currentMeta?.load_type || parseDatasetFilenameMeta(currentMeta?.source_file || sid).deviceName || "session", "session");
   }
 
   function getSegmentTrialValue() {
@@ -302,12 +381,12 @@
 
   function applySegmentDefaults(meta = {}) {
     const parsed = parseDatasetFilenameMeta(meta?.source_file || sid || "session");
-    if (segLoadInput) {
-      const preferredLoad = String(meta?.load_type || "").trim();
-      segLoadInput.value = safeFilenameSegment(preferredLoad && preferredLoad.toLowerCase() !== "uploaded_csv" ? preferredLoad : parsed.loadType, "session");
-    }
+    if (segFamilyInput) segFamilyInput.value = normalizeDeviceFamilyToken(meta?.device_family || parsed.deviceFamily || "unknown");
+    if (segDeviceInput) segDeviceInput.value = normalizeDeviceNameToken(meta?.device_name || meta?.load_type || parsed.deviceName || "session", "session");
     if (segTrialInput) segTrialInput.value = String(safePositiveInt(meta?.trial_number || parsed.trial || 1, 1));
     if (segLabelSelect) segLabelSelect.value = normalizeSegmentLabel(meta?.division_tag || parsed.division || "steady");
+    if (segNotesInput) segNotesInput.value = normalizeNotesText(meta?.notes || "");
+    if (segTrustedNormal) segTrustedNormal.checked = Number(meta?.trusted_normal_session || 0) > 0;
     if (segStartInput) segStartInput.value = "";
     if (segEndInput) segEndInput.value = "";
   }
@@ -331,14 +410,14 @@
     const hint = $("segmentHint");
     if (!hint) return;
     hint.textContent = !ROWS.length
-      ? "Create non-overlapping Start / Steady / Arc / Close ranges for split CSV export."
-      : `Rows 0-${Math.max(0, ROWS.length - 1)} • Segments=${SEGMENTS.length} • Download splits by load/trial/label.`;
+      ? "Create Start / Steady / Arc / Close ranges."
+      : `Rows 0-${Math.max(0, ROWS.length - 1)} • Segments ${SEGMENTS.length} • Split export ready.`;
   }
 
   function renderSegmentList() {
     if (!segmentList) return;
     if (!SEGMENTS.length) {
-      segmentList.innerHTML = '<div class="segment-empty">No divider ranges yet. Add a non-overlapping Start / Steady / Arc / Close segment.</div>';
+      segmentList.innerHTML = '<div class="segment-empty">No ranges yet. Add a Start / Steady / Arc / Close segment.</div>';
       updateSegmentHint();
       if (plot) plot.redraw();
       return;
@@ -401,18 +480,21 @@
   function buildSegmentCsvFiles() {
     if (!SEGMENTS.length) return [];
     csvHeaders = ensureCsvHeadersAndLabelArc(ROWS, csvHeaders);
-    const loadToken = getSegmentLoadValue();
+    const familyToken = getSegmentFamilyValue();
+    const deviceToken = getSegmentDeviceValue();
     const trial = getSegmentTrialValue();
+    const notes = normalizeNotesText(segNotesInput?.value || currentMeta?.notes || "");
+    const trustedNormal = !!(segTrustedNormal?.checked || Number(currentMeta?.trusted_normal_session || 0) > 0);
     const sorted = sortedSegments();
     const labelTotals = {};
     sorted.forEach((seg) => { labelTotals[seg.label] = (labelTotals[seg.label] || 0) + 1; });
     const labelSeen = {};
     return sorted.map((seg, idx) => {
       labelSeen[seg.label] = (labelSeen[seg.label] || 0) + 1;
-      const rows = ROWS.slice(seg.start, seg.end + 1).map((row) => ({ ...row, load_type: loadToken, session_id: `${safeFilenameSegment(sid || 'session', 'session')}__${seg.label}_${String(idx + 1).padStart(2, '0')}` }));
+      const rows = ROWS.slice(seg.start, seg.end + 1).map((row) => mergeRowMetadata({ ...row, session_id: `${safeFilenameSegment(sid || 'session', 'session')}__${seg.label}_${String(idx + 1).padStart(2, '0')}` }, { device_family: familyToken, device_name: deviceToken, trial_number: trial, division_tag: seg.label, notes, trusted_normal_session: trustedNormal ? 1 : 0 }));
       const labelTitle = segmentLabelTitle(seg.label);
       const suffix = labelTotals[seg.label] > 1 ? `_${labelSeen[seg.label]}` : "";
-      const filename = safeCsvFilename(`${loadToken}_${trial}_${labelTitle}${suffix}.csv`);
+      const filename = safeCsvFilename(buildStructuredDatasetFilename({ device_family: familyToken, device_name: deviceToken, trial_number: trial, division_tag: seg.label }, `${deviceToken}_${suffix || (idx + 1)}`));
       const text = Papa.unparse({ fields: csvHeaders, data: rows.map((row) => csvHeaders.map((field) => row?.[field] ?? ((field === 'label_arc') ? 0 : ""))) });
       return { filename, text };
     });
@@ -433,11 +515,18 @@
       ? parsedFields.map(normalizeHeaderName).filter(Boolean)
       : [];
     const headers = normalizedFields.length ? normalizedFields.slice() : Object.keys(rows[0] || {});
-    if (!headers.includes("label_arc")) headers.push("label_arc");
+    ["label_arc", "device_family", "device_family_code", "device_name", "trial_number", "division_tag", "notes", "trusted_normal_session", "load_type", "context_family_code_runtime", "context_family_code_provisional", "context_family_confidence", "context_family_confidence_provisional", "context_acquiring", "context_latched"].forEach((name) => { if (!headers.includes(name)) headers.push(name); });
 
     rows.forEach((row) => {
       if (!row || typeof row !== "object") return;
       row.label_arc = normalizeBinaryLabel(row.label_arc);
+      mergeRowMetadata(row, currentMeta || {});
+      if (!("context_family_code_runtime" in row)) row.context_family_code_runtime = row.device_family_code;
+      if (!("context_family_code_provisional" in row)) row.context_family_code_provisional = row.context_family_code_runtime;
+      if (!("context_family_confidence" in row)) row.context_family_confidence = row.device_family_code >= 0 ? 1 : 0;
+      if (!("context_family_confidence_provisional" in row)) row.context_family_confidence_provisional = row.context_family_confidence;
+      if (!("context_acquiring" in row)) row.context_acquiring = 0;
+      if (!("context_latched" in row)) row.context_latched = 0;
       headers.forEach((key) => {
         if (!(key in row)) row[key] = (key === "label_arc") ? 0 : "";
       });
@@ -491,7 +580,7 @@
 
     if (btnAddArc) {
       btnAddArc.disabled = !hasRows || isArc;
-      btnAddArc.textContent = isArc ? "Arc Marker Added" : "Add Arc Marker";
+      btnAddArc.textContent = isArc ? "Added" : "Add";
     }
 
     if (btnClearArc) {
@@ -514,7 +603,7 @@
           btnAddArc.type = "button";
           btnAddArc.id = "btnAddArc";
           btnAddArc.className = "btn btn-small btn-info";
-          btnAddArc.textContent = "Add Arc Marker";
+          btnAddArc.textContent = "Add";
           host.appendChild(btnAddArc);
         }
         if (!btnClearArc) {
@@ -522,7 +611,7 @@
           btnClearArc.type = "button";
           btnClearArc.id = "btnClearArc";
           btnClearArc.className = "btn btn-small btn-danger";
-          btnClearArc.textContent = "Clear Arc Marker";
+          btnClearArc.textContent = "Remove";
           host.appendChild(btnClearArc);
         }
       }
@@ -619,20 +708,15 @@
 
     currentCsv = buildCsvFromRows();
 
-    const keepIdx = Math.max(0, Math.min(X.length - 1, indices[0]));
-    const keepScale = plot ? { min: plot.scales.x.min, max: plot.scales.x.max } : null;
+    const viewState = {
+      playIdx: Math.max(0, Math.min(X.length - 1, indices[0])),
+      xWindow: plot ? { min: plot.scales.x.min, max: plot.scales.x.max } : null,
+    };
 
     if (!refreshDerivedData(false)) return;
 
     buildPlot();
-    if (X.length) {
-      setPlayIdx(keepIdx, true);
-      if (plot && keepScale && Number.isFinite(keepScale.min) && Number.isFinite(keepScale.max)) {
-        const [min, max] = clampXWindow(keepScale.min, keepScale.max);
-        plot.setScale("x", { min, max });
-        syncZoomSlider();
-      }
-    }
+    if (X.length) restoreViewerState(viewState);
 
     updateStats();
     updateArcEditButtons();
@@ -889,6 +973,36 @@
     });
   }
 
+  function updateSeriesListMeta() {
+    if (!seriesCountText) return;
+    const total = KEYS.length;
+    const selected = KEYS.filter((k) => !!showPref.get(k)).length;
+    const mode = chkSelectedOnly?.checked ? "shown" : "all";
+    seriesCountText.textContent = `${selected}/${total} ${mode}`;
+  }
+
+
+  function setActiveSeriesKey(nextKey = "") {
+    const normalized = String(nextKey || "").trim();
+    activeSeriesKey = KEYS.includes(normalized) ? normalized : "";
+    if (activeSeriesKey && !showPref.get(activeSeriesKey)) showPref.set(activeSeriesKey, true);
+    const row = activeSeriesKey ? toggleList?.querySelector?.(`.row[data-key="${activeSeriesKey}"]`) : null;
+    const cb = row?.querySelector?.('input[type="checkbox"]');
+    if (cb && activeSeriesKey) cb.checked = true;
+    row?.classList?.add("is-selected");
+    const viewState = captureViewerState();
+    if (plot) {
+      buildPlot();
+      restoreViewerState(viewState);
+    }
+    toggleList?.querySelectorAll?.(".row")?.forEach?.((node) => {
+      node.classList.toggle("is-focused", !!activeSeriesKey && node.dataset.key === activeSeriesKey);
+    });
+    applySeriesFilter();
+    updateValueReadout();
+    updateStats();
+  }
+
   function renderToggleList() {
     if (!toggleList) return;
     toggleList.innerHTML = "";
@@ -897,25 +1011,40 @@
       const wrap = document.createElement("div");
       wrap.className = "row";
       wrap.dataset.key = k;
+      wrap.dataset.search = `${k} ${displaySeriesName(k)}`.toLowerCase();
+      wrap.classList.toggle("is-selected", !!showPref.get(k));
+      wrap.classList.toggle("is-focused", activeSeriesKey === k);
 
       const cb = document.createElement("input");
       cb.type = "checkbox";
       cb.checked = !!showPref.get(k);
       cb.onchange = () => {
         const on = !!cb.checked;
-        const xWindow = captureXWindow();
+        const viewState = captureViewerState();
         showPref.set(k, on);
+        wrap.classList.toggle("is-selected", on);
+        if (activeSeriesKey === k && !on) activeSeriesKey = "";
         if (plot) {
           plot.setSeries(i + 1, { show: on });
           plot.setData(plot.data, false);
-          restoreXWindow(xWindow);
+          restoreViewerState(viewState);
         }
+        applySeriesFilter();
+        updateSeriesListMeta();
         updateValueReadout();
         updateStats();
       };
 
+      const nameWrap = document.createElement("div");
+      nameWrap.className = "seriesNameWrap";
       const nameEl = document.createElement("div");
+      nameEl.className = "seriesName";
       nameEl.textContent = displaySeriesName(k);
+      const keyEl = document.createElement("div");
+      keyEl.className = "seriesKey mono";
+      keyEl.textContent = k;
+      nameWrap.appendChild(nameEl);
+      nameWrap.appendChild(keyEl);
 
       const sel = document.createElement("select");
       sel.className = "axisSel";
@@ -926,13 +1055,19 @@
         rebuildForDataMode();
       };
 
+      wrap.addEventListener("click", (ev) => {
+        if (ev.target === cb || ev.target === sel || ev.target.closest("select") || ev.target.closest("input")) return;
+        setActiveSeriesKey(activeSeriesKey === k ? "" : k);
+      });
+
       wrap.appendChild(cb);
-      wrap.appendChild(nameEl);
+      wrap.appendChild(nameWrap);
       wrap.appendChild(sel);
       toggleList.appendChild(wrap);
     });
 
     applySeriesFilter();
+    updateSeriesListMeta();
   }
 
   function refreshDerivedData(resetPrefs = false) {
@@ -1060,6 +1195,7 @@
   let playIdx = 0;
   let lastRAF = 0;
   let speed = 1.0;
+  let activeSeriesKey = "";
 
   let ROWS = [];
   let X = [];
@@ -1124,6 +1260,13 @@
     restrike_count_short: { label: "Restrikes Short", unit: "", decimals: 0 },
     halfcycle_asymmetry: { label: "Half-cycle Asym", unit: "%", decimals: 3 },
     auto_capture: { label: "Auto Capture", unit: "", decimals: 0 },
+    device_family_code: { label: "Device Family Code", unit: "", decimals: 0 },
+    context_family_code_runtime: { label: "Context Family Runtime", unit: "", decimals: 0 },
+    context_family_code_provisional: { label: "Context Family Provisional", unit: "", decimals: 0 },
+    context_family_confidence: { label: "Context Confidence", unit: "", decimals: 3 },
+    context_family_confidence_provisional: { label: "Provisional Context Confidence", unit: "", decimals: 3 },
+    context_acquiring: { label: "Context Acquiring", unit: "", decimals: 0 },
+    context_latched: { label: "Context Latched", unit: "", decimals: 0 },
   };
 
   const showPref = new Map();
@@ -1185,6 +1328,7 @@
     playIdx = 0;
     playIdxF = 0;
     lastRAF = 0;
+    activeSeriesKey = "";
     showPref.clear();
     axisPref.clear();
     currentCsv = "";
@@ -1399,16 +1543,47 @@
     rngZoom.value = String(pct);
   }
 
+  let LAST_X_WINDOW = null;
+
   function captureXWindow() {
     const min = plot?.scales?.x?.min;
     const max = plot?.scales?.x?.max;
-    return Number.isFinite(min) && Number.isFinite(max) && max > min ? { min, max } : null;
+    const out = Number.isFinite(min) && Number.isFinite(max) && max > min ? { min, max } : (LAST_X_WINDOW && Number.isFinite(LAST_X_WINDOW.min) && Number.isFinite(LAST_X_WINDOW.max) && LAST_X_WINDOW.max > LAST_X_WINDOW.min ? { ...LAST_X_WINDOW } : null);
+    if (out) LAST_X_WINDOW = { ...out };
+    return out;
   }
 
   function restoreXWindow(windowState) {
     if (!plot || !windowState) return;
     const [min, max] = clampXWindow(windowState.min, windowState.max);
+    LAST_X_WINDOW = { min, max };
     plot.setScale("x", { min, max });
+  }
+
+  function captureViewerState() {
+    const xWindow = captureXWindow();
+    return {
+      playIdx: Math.max(0, Math.min(X.length ? X.length - 1 : 0, playIdx | 0)),
+      xWindow,
+      zoomPct: Number(rngZoom?.value || 100) || 100,
+      centerX: xWindow ? (xWindow.min + xWindow.max) * 0.5 : (X.length ? X[Math.max(0, Math.min(X.length - 1, playIdx | 0))] : null),
+      activeSeriesKey,
+    };
+  }
+
+  function restoreViewerState(state) {
+    if (!X.length) return;
+    const nextPlayIdx = Math.max(0, Math.min(X.length ? X.length - 1 : 0, (state?.playIdx ?? 0) | 0));
+    if (state?.xWindow && Number.isFinite(state.xWindow.min) && Number.isFinite(state.xWindow.max) && state.xWindow.max > state.xWindow.min) {
+      restoreXWindow(state.xWindow);
+    } else if (plot) {
+      const pct = Number(state?.zoomPct || 100) || 100;
+      if (pct >= 99.5) plot.setScale("x", { min: FULL_X_MIN, max: FULL_X_MAX });
+      else applyZoomPercent(pct, Number.isFinite(state?.centerX) ? state.centerX : X[nextPlayIdx]);
+    }
+    activeSeriesKey = KEYS.includes(String(state?.activeSeriesKey || "")) ? String(state.activeSeriesKey) : activeSeriesKey;
+    setPlayIdx(nextPlayIdx, true, true);
+    syncZoomSlider();
   }
 
   function applyZoomPercent(pct, centerX = null) {
@@ -1425,12 +1600,10 @@
   function resetZoom() {
     if (!plot || !X.length) return;
     const keepIdx = playIdx;
-    const resume = playing;
-    pause();
-    buildPlot();
-    setPlayIdx(keepIdx, true);
-    applyZoomPercent(100, X[keepIdx]);
-    if (resume) play();
+    plot.setScale("x", { min: FULL_X_MIN, max: FULL_X_MAX });
+    if (rngZoom) rngZoom.value = "100";
+    setPlayIdx(keepIdx, true, true);
+    syncZoomSlider();
   }
 
   function zoomPanPlugin() {
@@ -1613,11 +1786,16 @@
     KEYS.forEach((k, i) => {
       const show = showPref.get(k) ?? false;
       const scale = normalize ? "y" : (axisPref.get(k) ?? "y");
+      const isFocused = !!activeSeriesKey && activeSeriesKey === k;
+      const isDimmed = !!activeSeriesKey && activeSeriesKey !== k;
+      const strokeBase = palette[i % palette.length];
       series.push({
         label: k,
         show,
-        stroke: palette[i % palette.length],
-        width: 2,
+        stroke: strokeBase,
+        alpha: isDimmed ? 0.20 : 1,
+        width: isFocused ? 4 : (activeSeriesKey ? 1.35 : 2),
+        dash: isDimmed ? [5, 4] : [],
         scale,
         ...(splinePaths ? { paths: splinePaths } : {}),
       });
@@ -1657,22 +1835,25 @@
       plugins: [zoomPanPlugin(), eventsPlugin(), statsPlugin(), playheadPlugin()],
     };
 
+    const preservedWindow = captureXWindow();
     if (plot) plot.destroy();
     plot = new uPlot(opts, data, $("chart"));
 
     FULL_X_MIN = X[0];
     FULL_X_MAX = X[X.length - 1];
+    if (preservedWindow) restoreXWindow(preservedWindow);
+    else plot.setScale("x", { min: FULL_X_MIN, max: FULL_X_MAX });
 
     if (btnResetZoom) btnResetZoom.onclick = () => resetZoom();
 
-    setPlayIdx(Math.min(playIdx, X.length - 1), true);
+    setPlayIdx(Math.min(playIdx, X.length - 1), true, true);
     syncZoomSlider();
     updateValueReadout();
     updateArcReadout();
     updateStats();
   }
 
-  function setPlayIdx(idx, updateCursor = false) {
+  function setPlayIdx(idx, updateCursor = false, preserveWindow = false) {
     if (!X.length) return;
     playIdx = Math.max(0, Math.min(X.length - 1, idx | 0));
     playIdxF = playIdx;
@@ -1693,7 +1874,7 @@
     updateArcEditButtons();
     if (plot) plot.redraw();
 
-    if (plot && (chkFollow?.checked || playing)) {
+    if (plot && !preserveWindow && (chkFollow?.checked || playing)) {
       const sc = plot.scales.x;
       const x = X[playIdx];
       const min = sc.min, max = sc.max;
@@ -1732,9 +1913,12 @@
       if (shown >= maxChips) break;
 
       const v = source[i + 1]?.[playIdx];
-      const chip = document.createElement("div");
-      chip.className = "vchip";
+      const chip = document.createElement("button");
+      chip.type = "button";
+      chip.className = `vchip vchip-series${activeSeriesKey === k ? " is-focused" : ""}`;
+      chip.dataset.key = k;
       chip.innerHTML = `<span class="vdot" style="background:${palette[i % palette.length]}"></span><span class="vk">${displaySeriesName(k)}</span><span class="vv">${formatSeriesValue(k, v)}</span>`;
+      chip.addEventListener("click", () => setActiveSeriesKey(activeSeriesKey === k ? "" : k));
       valueLine.appendChild(chip);
       shown++;
     }
@@ -1924,12 +2108,9 @@
   };
 
   function rebuildForDataMode() {
-    const keep = playIdx;
-    const xWindow = captureXWindow();
+    const viewState = captureViewerState();
     buildPlot();
-    restoreXWindow(xWindow);
-    setPlayIdx(keep, true);
-    syncZoomSlider();
+    restoreViewerState(viewState);
     updateValueReadout();
     updateStats();
   }
@@ -1949,23 +2130,38 @@
 
   function applySeriesFilter() {
     const q = (seriesSearch?.value || "").trim().toLowerCase();
+    const selectedOnly = !!chkSelectedOnly?.checked;
     const rows = toggleList?.querySelectorAll?.(".row") || [];
     rows.forEach((r) => {
-      const key = r.dataset.key || "";
-      const ok = !q || key.toLowerCase().includes(q);
+      const haystack = r.dataset.search || r.dataset.key || "";
+      const selected = !!showPref.get(r.dataset.key || "");
+      const matchesQuery = !q || haystack.includes(q);
+      const matchesSelected = !selectedOnly || selected;
+      const ok = matchesQuery && matchesSelected;
       r.style.display = ok ? "" : "none";
+      r.classList.toggle("is-dim", !selected);
     });
+    updateSeriesListMeta();
   }
   seriesSearch?.addEventListener("input", applySeriesFilter);
+  chkSelectedOnly?.addEventListener("change", applySeriesFilter);
 
   function setAllSeries(on) {
+    const viewState = captureViewerState();
     KEYS.forEach((k, i) => {
       showPref.set(k, !!on);
-      const cb = toggleList?.querySelector?.(`.row[data-key="${k}"] input[type="checkbox"]`);
+      const row = toggleList?.querySelector?.(`.row[data-key="${k}"]`);
+      const cb = row?.querySelector?.('input[type="checkbox"]');
       if (cb) cb.checked = !!on;
+      row?.classList.toggle("is-selected", !!on);
       if (plot) plot.setSeries(i + 1, { show: !!on });
     });
-    if (plot) plot.setData(plot.data, false);
+    if (plot) {
+      plot.setData(plot.data, false);
+      restoreViewerState(viewState);
+    }
+    applySeriesFilter();
+    updateSeriesListMeta();
     updateValueReadout();
     updateStats();
   }
@@ -1983,6 +2179,7 @@
         const sel = row.querySelector('select');
         if (cb) cb.checked = on;
         if (sel) sel.value = axisPref.get(k);
+        row.classList.toggle("is-selected", on);
       }
 
       if (plot) plot.setSeries(i + 1, { show: on });
@@ -2174,6 +2371,13 @@
       start_ms: Number(currentMeta?.start_ms || 0) || Date.now(),
       end_ms: Number(currentMeta?.end_ms || 0) || null,
       source_sample_rate_hz: Number(currentMeta?.source_sample_rate_hz || 0) || null,
+      device_family: normalizeDeviceFamilyToken(segFamilyInput?.value || currentMeta?.device_family || "unknown"),
+      device_family_code: deviceFamilyCodeFromToken(segFamilyInput?.value || currentMeta?.device_family || "unknown"),
+      device_name: normalizeDeviceNameToken(segDeviceInput?.value || currentMeta?.device_name || currentMeta?.load_type || "processed_csv", "processed_csv"),
+      trial_number: Math.max(1, parseInt(segTrialInput?.value || currentMeta?.trial_number || 1, 10) || 1),
+      division_tag: normalizeDivisionTagToken(segLabelSelect?.value || currentMeta?.division_tag || "steady"),
+      notes: normalizeNotesText(segNotesInput?.value || currentMeta?.notes || ""),
+      trusted_normal_session: segTrustedNormal?.checked ? 1 : (Number(currentMeta?.trusted_normal_session || 0) > 0 ? 1 : 0),
     };
 
     const button = btnSaveProcessed;
@@ -2195,20 +2399,28 @@
           const segMeta = {
             ...baseMeta,
             source_file: file.filename,
-            load_type: parsedName.loadType || String(currentMeta?.load_type || "processed_csv").trim() || "processed_csv",
+            load_type: parsedName.deviceName || parsedName.loadType || String(currentMeta?.device_name || currentMeta?.load_type || "processed_csv").trim() || "processed_csv",
+            device_family: parsedName.deviceFamily || baseMeta.device_family,
+            device_family_code: deviceFamilyCodeFromToken(parsedName.deviceFamily || baseMeta.device_family),
+            device_name: parsedName.deviceName || baseMeta.device_name,
             duration_s: viewerDurationSeconds({
               row_count: segRows.length,
               source_sample_rate_hz: Number(currentMeta?.source_sample_rate_hz || 0) || null
             }),
             row_count: segRows.length,
-            trial_number: parsedName.trial || null,
-            division_tag: String(parsedName.division || "").trim(),
+            trial_number: parsedName.trial || baseMeta.trial_number,
+            division_tag: String(parsedName.division || baseMeta.division_tag || "").trim(),
+            notes: baseMeta.notes,
+            trusted_normal_session: baseMeta.trusted_normal_session,
           };
           const timing = (deriveCsvTimingMetaLocal(file.text));
           if (timing && Number.isFinite(timing.durationS) && timing.durationS > 0) {
             segMeta.duration_s = timing.durationS;
             segMeta.source_duration_s = timing.durationS;
           }
+          if (timing && Number.isFinite(timing.startMs) && timing.startMs > 0) segMeta.start_ms = timing.startMs;
+          if (timing && Number.isFinite(timing.endMs) && timing.endMs > Number(segMeta.start_ms || 0)) segMeta.end_ms = timing.endMs;
+          if (timing && Number.isFinite(timing.sourceSampleRateHz) && timing.sourceSampleRateHz > 0) segMeta.source_sample_rate_hz = timing.sourceSampleRateHz;
           const stored = await window.storeCsvSession(file.filename, file.text, "processed", segMeta);
           savedItems.push(stored);
         }
@@ -2224,12 +2436,17 @@
         const metaPatch = {
           ...baseMeta,
           source_file: sourceFile,
-          load_type: String(currentMeta?.load_type || "processed_csv").trim() || "processed_csv",
+          load_type: normalizeDeviceNameToken(segDeviceInput?.value || currentMeta?.device_name || currentMeta?.load_type || "processed_csv", "processed_csv"),
+          device_family: normalizeDeviceFamilyToken(segFamilyInput?.value || currentMeta?.device_family || "unknown"),
+      device_family_code: deviceFamilyCodeFromToken(segFamilyInput?.value || currentMeta?.device_family || "unknown"),
+          device_name: normalizeDeviceNameToken(segDeviceInput?.value || currentMeta?.device_name || currentMeta?.load_type || "processed_csv", "processed_csv"),
           duration_s: timing?.durationS ?? viewerDurationSeconds(currentMeta),
           source_duration_s: timing?.durationS ?? viewerDurationSeconds(currentMeta),
           row_count: ROWS.length,
-          trial_number: Number(currentMeta?.trial_number || 0) || null,
-          division_tag: String(currentMeta?.division_tag || "").trim(),
+          trial_number: Math.max(1, parseInt(segTrialInput?.value || currentMeta?.trial_number || 1, 10) || 1),
+          division_tag: normalizeDivisionTagToken(segLabelSelect?.value || currentMeta?.division_tag || "steady"),
+          notes: normalizeNotesText(segNotesInput?.value || currentMeta?.notes || ""),
+          trusted_normal_session: segTrustedNormal?.checked ? 1 : (Number(currentMeta?.trusted_normal_session || 0) > 0 ? 1 : 0),
         };
         const stored = await window.storeCsvSession(sourceFile, csv, "processed", metaPatch);
         setStatus(`Processed CSV saved as ${stored.sid}.`);
