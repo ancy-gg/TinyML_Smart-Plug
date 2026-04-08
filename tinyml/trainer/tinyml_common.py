@@ -318,6 +318,27 @@ def normalize_feature_names(df: pd.DataFrame) -> pd.DataFrame:
         "hf_energy_delta": "hf_energy_delta",
         "zcv": "zcv",
         "abs_irms_zscore_vs_baseline": "abs_irms_zscore_vs_baseline",
+        "frame_start_uptime_ms": "frame_start_uptime_ms",
+        "frame_end_uptime_ms": "frame_end_uptime_ms",
+        "frame_dt_ms": "frame_dt_ms",
+        "compute_time_ms": "compute_time_ms",
+        "queue_drop_count": "queue_drop_count",
+        "fs_err_hz": "fs_err_hz",
+        "sampling_quality_bad": "sampling_quality_bad",
+        "invalid_loaded_flag": "invalid_loaded_flag",
+        "invalid_off_flag": "invalid_off_flag",
+        "relay_blank_active": "relay_blank_active",
+        "turnon_blank_active": "turnon_blank_active",
+        "transient_blank_active": "transient_blank_active",
+        "suspicious_run_len": "suspicious_run_len",
+        "suspicious_run_energy": "suspicious_run_energy",
+        "invalid_loaded_run_len": "invalid_loaded_run_len",
+        "delta_irms_abs": "delta_irms_abs",
+        "delta_hf_energy": "delta_hf_energy",
+        "delta_flux": "delta_flux",
+        "v_sag_pct": "v_sag_pct",
+        "restrike_count_short": "restrike_count_short",
+        "halfcycle_asymmetry": "halfcycle_asymmetry",
         "rolling_baseline_irms": "rolling_baseline_irms",
         "rolling_baseline_irms_mean": "rolling_baseline_irms_mean",
         "rolling_baseline_irms_std": "rolling_baseline_irms_std",
@@ -1794,6 +1815,103 @@ def train_one_model(
         "estimator": best,
     }
     return result
+
+
+def _preferred_meta_col(df: pd.DataFrame, candidates: list[str]) -> str | None:
+    for col in candidates:
+        if col in df.columns:
+            return col
+    return None
+
+
+def build_subset_metrics_report(meta_df: pd.DataFrame, y_true, y_score, thr: float, group_col: str, min_rows: int = 6) -> list[dict]:
+    if meta_df is None or group_col not in meta_df.columns:
+        return []
+    frame = meta_df.copy()
+    frame["_y_true"] = np.asarray(y_true).astype(int)
+    frame["_y_score"] = np.asarray(y_score).astype(float)
+    rows = []
+    for value, group in frame.groupby(group_col, dropna=False, sort=True):
+        if len(group) < min_rows:
+            continue
+        metrics = evaluate_binary_scores(group["_y_true"].to_numpy(), group["_y_score"].to_numpy(), thr)
+        rows.append({
+            "group": "<blank>" if pd.isna(value) else str(value),
+            "rows": int(len(group)),
+            "positive_rows": int(group["_y_true"].sum()),
+            "average_precision": float(metrics.get("average_precision", 0.0)),
+            "precision": float(metrics.get("precision", 0.0)),
+            "recall": float(metrics.get("recall", 0.0)),
+            "fpr": float(metrics.get("fpr", 0.0)),
+            "confusion_matrix": metrics.get("confusion_matrix", {}),
+        })
+    rows.sort(key=lambda r: (-r["positive_rows"], -r["rows"], r["group"]))
+    return rows
+
+
+def build_group_inventory_report(df: pd.DataFrame, group_col: str) -> list[dict]:
+    if df is None or group_col not in df.columns or TARGET not in df.columns:
+        return []
+    inv = (
+        df.groupby(group_col, dropna=False)[TARGET]
+        .agg(rows="size", positive_rows="sum")
+        .reset_index()
+        .rename(columns={group_col: "group"})
+    )
+    inv["negative_rows"] = inv["rows"] - inv["positive_rows"]
+    inv["eligible_loto"] = ((inv["positive_rows"] > 0) & (inv["negative_rows"] > 0)).astype(int)
+    inv["group"] = inv["group"].astype(str)
+    return inv.sort_values(["eligible_loto", "positive_rows", "rows", "group"], ascending=[False, False, False, True]).to_dict("records")
+
+
+def build_short_burst_report(meta_df: pd.DataFrame, y_true, y_score, thr: float, max_positive_run_rows: int = 3) -> dict:
+    if meta_df is None or len(meta_df) == 0:
+        return {}
+    frame = meta_df.copy().reset_index(drop=True)
+    frame["_y_true"] = np.asarray(y_true).astype(int)
+    frame["_y_score"] = np.asarray(y_score).astype(float)
+    session_col = _preferred_meta_col(frame, ["session_id", "section_id", "trial_id"])
+    time_col = _preferred_meta_col(frame, ["epoch_ms", "frame_start_uptime_ms", "uptime_ms"])
+    if session_col is None:
+        return {}
+    if time_col is not None:
+        frame = frame.sort_values([session_col, time_col]).reset_index(drop=True)
+    short_mask = np.zeros(len(frame), dtype=bool)
+    for _, group in frame.groupby(session_col, sort=False):
+        labels = group["_y_true"].astype(int).to_numpy()
+        if labels.size == 0:
+            continue
+        start = None
+        idxs = group.index.to_numpy()
+        for i, lab in enumerate(labels):
+            if lab == 1 and start is None:
+                start = i
+            end_run = (lab == 0 and start is not None)
+            final_row = (i == len(labels) - 1 and start is not None and lab == 1)
+            if end_run or final_row:
+                end = i if final_row else i - 1
+                run_len = end - start + 1
+                if run_len <= max_positive_run_rows:
+                    short_mask[idxs[start:end + 1]] = True
+                start = None
+    if not short_mask.any():
+        return {
+            "positive_rows": 0,
+            "row_count": 0,
+            "max_positive_run_rows": int(max_positive_run_rows),
+        }
+    subset = frame.loc[short_mask]
+    metrics = evaluate_binary_scores(subset["_y_true"].to_numpy(), subset["_y_score"].to_numpy(), thr)
+    return {
+        "row_count": int(len(subset)),
+        "positive_rows": int(subset["_y_true"].sum()),
+        "max_positive_run_rows": int(max_positive_run_rows),
+        "average_precision": float(metrics.get("average_precision", 0.0)),
+        "precision": float(metrics.get("precision", 0.0)),
+        "recall": float(metrics.get("recall", 0.0)),
+        "fpr": float(metrics.get("fpr", 0.0)),
+        "confusion_matrix": metrics.get("confusion_matrix", {}),
+    }
 
 
 def strip_estimator(result: dict) -> dict:

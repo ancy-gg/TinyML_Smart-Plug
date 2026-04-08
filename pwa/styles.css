@@ -4873,3 +4873,123 @@ select option:disabled,
     flex-wrap:wrap;
   }
 }
+
+
+/* ===== v10.0 logger ordering, compact editor, series grid, right-side legend ===== */
+.logger-table-panel .history-table th:first-child,
+.logger-table-panel .history-table td:first-child{
+  width:56px;
+  text-align:center;
+}
+
+.plot-main-grid{
+  display:grid;
+  grid-template-columns:minmax(0, 1fr) 320px;
+  gap:12px;
+  align-items:start;
+}
+.plot-stage{
+  min-width:0;
+}
+.plot-drawer #chart{
+  height:520px !important;
+  min-height:520px !important;
+  max-height:520px !important;
+}
+.plot-drawer #valueLine.valueLineSide{
+  display:flex;
+  flex-direction:column;
+  gap:8px;
+  max-height:520px;
+  overflow:auto;
+  margin-top:0;
+  padding-right:4px;
+}
+.plot-drawer #valueLine.valueLineSide .vchip{
+  width:100%;
+  justify-content:space-between;
+  border-radius:14px;
+}
+.plot-drawer #valueLine.valueLineSide .vk{
+  flex:1 1 auto;
+}
+.plot-drawer #valueLine.valueLineSide .vv{
+  flex:0 0 auto;
+  text-align:right;
+}
+.plot-drawer #toggleList{
+  display:grid !important;
+  grid-template-columns:repeat(3, minmax(0,1fr));
+  gap:8px;
+}
+.plot-drawer #toggleList .row{
+  margin:0;
+  padding:8px 10px;
+  border-radius:12px;
+  border:1px solid rgba(255,255,255,0.08);
+  background:rgba(255,255,255,0.035);
+  grid-template-columns:16px minmax(0,1fr) 64px;
+  gap:8px;
+}
+.plot-drawer #toggleList .axisSel{
+  width:64px;
+  min-width:64px;
+}
+.plot-drawer .segment-tools{
+  padding:10px;
+}
+.plot-drawer .segment-tools .chip,
+.plot-drawer .segment-tools .btn,
+.plot-drawer .viewer-inline-controls .chip,
+.plot-drawer .viewer-inline-controls .btn{
+  min-height:34px;
+  padding:6px 8px;
+  font-size:12px;
+}
+.plot-drawer .segment-toolbar-editor{
+  gap:6px;
+}
+.plot-drawer .segment-toolbar-editor .viewer-index-input{
+  min-width:82px;
+}
+.plot-drawer .chip-zoom-range input,
+.plot-drawer .chip-smooth-range input{
+  width:96px !important;
+}
+.plot-drawer .smallnote{
+  font-size:11px;
+}
+.plot-drawer .vchip{
+  background:rgba(255,255,255,0.045);
+}
+@media (max-width: 1120px){
+  .plot-main-grid{
+    grid-template-columns:1fr;
+  }
+  .plot-drawer #valueLine.valueLineSide{
+    max-height:none;
+  }
+}
+@media (max-width: 980px){
+  .plot-drawer #chart{
+    height:400px !important;
+    min-height:400px !important;
+    max-height:400px !important;
+  }
+  .plot-drawer #toggleList{
+    grid-template-columns:repeat(2, minmax(0,1fr));
+  }
+}
+@media (max-width: 640px){
+  .plot-drawer #toggleList{
+    grid-template-columns:1fr;
+  }
+  .plot-drawer #valueLine.valueLineSide{
+    display:flex;
+    flex-direction:row;
+    flex-wrap:wrap;
+  }
+  .plot-drawer #valueLine.valueLineSide .vchip{
+    width:auto;
+  }
+}

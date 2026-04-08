@@ -7,6 +7,8 @@
 #include <esp_log.h>
 #include <math.h>
 #include <esp_heap_caps.h>
+#include <esp_timer.h>
+#include <string.h>
 
 #include "MainConfiguration.h"
 #include "WifiHandler.h"
@@ -38,6 +40,7 @@ static volatile bool gPauseByOta = false;
 static volatile bool gStopSenseTask = false;
 static volatile bool gSenseTaskRunning = false;
 static volatile uint32_t gRelayArtifactBlankUntilMs = 0;
+static volatile uint32_t gFeatureQueueDropCount = 0;
 static bool gManualRelayAssumedOn = false;
 static uint32_t gManualRelayCandidateSinceMs = 0;
 static uint32_t gManualRelayReleaseSinceMs = 0;
@@ -85,6 +88,7 @@ static bool stopSensePipeline_(bool freeBuffer = true) {
 static bool startSensePipeline_() {
   if (gCore0SenseTask) return true;
   if (!allocSampleBuffer_()) return false;
+  gFeatureQueueDropCount = 0;
   if (!curSensor.begin()) return false;
   if (!qFeat) qFeat = xQueueCreate(1, sizeof(FeatureFrame));
   if (!qFeat) return false;
@@ -433,6 +437,14 @@ static void handleCueEvents(float vRaw, float vProtect, float irms, bool mainsPr
   }
 }
 
+static bool pushFeatureFrame_(const FeatureFrame& frame) {
+  if (!qFeat) return false;
+  const UBaseType_t hadQueued = uxQueueMessagesWaiting(qFeat);
+  const BaseType_t ok = xQueueOverwrite(qFeat, &frame);
+  if (hadQueued > 0) gFeatureQueueDropCount++;
+  return ok == pdPASS;
+}
+
 static void onOtaEvent(OtaEvent ev, int progress) {
   static int s_lastDbProgress = -100;
   if (ev == OtaEvent::START) {
@@ -469,8 +481,7 @@ static void Core0Task(void* pv) {
   (void)pv;
   gSenseTaskRunning = true;
   ArcDetectionResult out;
-  FeatureFrame lastGood = {};
-  bool hasGood = false;
+  uint32_t prevFrameStartMs = 0;
 
   while (millis() < SENSOR_BOOT_SETTLE_MS) {
     if (gStopSenseTask) {
@@ -490,8 +501,15 @@ static void Core0Task(void* pv) {
     }
 
     FeatureFrame f = {};
-    f.uptime_ms = millis();
-    float fs_hz = FS_TARGET_HZ;
+    const uint32_t frameStartMs = millis();
+    f.uptime_ms = frameStartMs;
+    f.frame_start_uptime_ms = frameStartMs;
+    if (prevFrameStartMs != 0 && frameStartMs >= prevFrameStartMs) {
+      f.frame_dt_ms = float(frameStartMs - prevFrameStartMs);
+    }
+    prevFrameStartMs = frameStartMs;
+
+    float fs_hz = 0.0f;
     size_t got = curSensor.capture(s_raw, N_SAMP, &fs_hz);
 
     if (gPauseByOta || gSafeMode) {
@@ -500,35 +518,66 @@ static void Core0Task(void* pv) {
       continue;
     }
 
-    if (got != N_SAMP || fs_hz < CURRENT_FRAME_MIN_FS_HZ) {
+    bool sampleRateHardBad = (!isfinite(fs_hz)) || (fs_hz < MCP3204_FS_HARD_LOW_HZ) || (fs_hz > MCP3204_FS_HARD_HIGH_HZ);
+    bool sampleRateWarnBad = (!isfinite(fs_hz)) || (fs_hz < MCP3204_FS_WARN_LOW_HZ) || (fs_hz > MCP3204_FS_WARN_HIGH_HZ);
+
+    if (got != N_SAMP || sampleRateHardBad) {
       vTaskDelay(1);
+      fs_hz = 0.0f;
       got = curSensor.capture(s_raw, N_SAMP, &fs_hz);
-    }
 
-    if (gPauseByOta || gSafeMode) {
-      if (gStopSenseTask) break;
-      vTaskDelay(20 / portTICK_PERIOD_MS);
-      continue;
-    }
-
-    bool ok = false;
-    if (got == N_SAMP && fs_hz >= CURRENT_FRAME_MIN_FS_HZ) ok = arcDetect.compute(s_raw, N_SAMP, fs_hz, curCalib, MAINS_F0_HZ, out);
-    if (ok && out.current_valid) {
-      f.adc_fs_hz = out.fs_hz; f.irms = out.irms_a; f.current_valid = 1; f.feat_valid = out.feat_valid ? 1 : 0;
-      if (out.feat_valid) {
-        f.spectral_flux_midhf = out.spectral_flux_midhf; f.residual_crest_factor = out.residual_crest_factor;
-        f.edge_spike_ratio = out.edge_spike_ratio; f.midband_residual_ratio = out.midband_residual_ratio;
-        f.cycle_nmse = out.cycle_nmse; f.peak_fluct_cv = out.peak_fluct_cv;
-        f.thd_i = out.thd_i; f.hf_energy_delta = out.hf_energy_delta;
-        f.zcv = out.zcv; f.abs_irms_zscore_vs_baseline = out.abs_irms_zscore_vs_baseline;
+      if (gPauseByOta || gSafeMode) {
+        if (gStopSenseTask) break;
+        vTaskDelay(20 / portTICK_PERIOD_MS);
+        continue;
       }
-      lastGood = f; hasGood = true; if (qFeat) xQueueOverwrite(qFeat, &f);
-    } else {
-      FeatureFrame invalid = {};
-      invalid.uptime_ms = millis();
-      hasGood = false;
-      if (qFeat) xQueueOverwrite(qFeat, &invalid);
+
+      sampleRateHardBad = (!isfinite(fs_hz)) || (fs_hz < MCP3204_FS_HARD_LOW_HZ) || (fs_hz > MCP3204_FS_HARD_HIGH_HZ);
+      sampleRateWarnBad = (!isfinite(fs_hz)) || (fs_hz < MCP3204_FS_WARN_LOW_HZ) || (fs_hz > MCP3204_FS_WARN_HIGH_HZ);
     }
+
+    f.adc_fs_hz = fs_hz;
+    f.fs_err_hz = (fs_hz > 0.0f) ? fabsf(fs_hz - FS_INTENDED_HZ) : fabsf(FS_INTENDED_HZ);
+
+    const int64_t tComp0 = esp_timer_get_time();
+    bool ok = false;
+    if (got == N_SAMP && !sampleRateHardBad) {
+      ok = arcDetect.compute(s_raw, N_SAMP, fs_hz, curCalib, MAINS_F0_HZ, out);
+    }
+    const int64_t tComp1 = esp_timer_get_time();
+    f.compute_time_ms = (tComp1 > tComp0) ? float(tComp1 - tComp0) * 0.001f : 0.0f;
+
+    if (ok && out.current_valid) {
+      f.adc_fs_hz = out.fs_hz;
+      f.fs_err_hz = fabsf(f.adc_fs_hz - FS_INTENDED_HZ);
+      f.irms = out.irms_a;
+      f.current_valid = 1;
+      f.feat_valid = out.feat_valid ? 1 : 0;
+      f.spectral_flux_midhf = out.spectral_flux_midhf;
+      f.residual_crest_factor = out.residual_crest_factor;
+      f.edge_spike_ratio = out.edge_spike_ratio;
+      f.midband_residual_ratio = out.midband_residual_ratio;
+      f.cycle_nmse = out.cycle_nmse;
+      f.peak_fluct_cv = out.peak_fluct_cv;
+      f.thd_i = out.thd_i;
+      f.hf_energy_delta = out.hf_energy_delta;
+      f.zcv = out.zcv;
+      f.abs_irms_zscore_vs_baseline = out.abs_irms_zscore_vs_baseline;
+      f.halfcycle_asymmetry = out.halfcycle_asymmetry;
+    } else {
+      f.current_valid = 0;
+      f.feat_valid = 0;
+      f.irms = 0.0f;
+    }
+
+    f.sampling_quality_bad =
+        (got != N_SAMP) ||
+        sampleRateWarnBad ||
+        (f.frame_dt_ms > FRAME_DT_BAD_MS) ||
+        (f.compute_time_ms > FRAME_COMPUTE_BAD_MS);
+    f.queue_drop_count = gFeatureQueueDropCount;
+    f.frame_end_uptime_ms = millis();
+    (void)pushFeatureFrame_(f);
     vTaskDelay(1);
   }
 
@@ -575,9 +624,9 @@ void setup() {
   notification.notify(SND_BOOT);
 
   voltSensor.begin();
-  voltSensor.setWindowMs(500);
+  voltSensor.setWindowMs(650);
   voltSensor.setClampHysteresis(12.0f, 24.0f);
-  voltSensor.setLongAverage(2.6f, 18.0f);
+  voltSensor.setLongAverage(4.6f, 12.0f);
   voltSensor.setCubicCalib(VOLTAGE_CAL_C3, VOLTAGE_CAL_C2, VOLTAGE_CAL_C1, VOLTAGE_CAL_C0);
 
   curCalib.cubic3 = CURRENT_CAL_C3; curCalib.cubic2 = CURRENT_CAL_C2; curCalib.cubic1 = CURRENT_CAL_C1; curCalib.cubic0 = CURRENT_CAL_C0;
@@ -660,9 +709,14 @@ void loop() {
     f = lastF;
     if ((millis() - lastFeatRxMs) > FEAT_STALE_MS) {
       f.irms = 0.0f; f.current_valid = 0; f.feat_valid = 0; f.model_pred = 0; f.adc_fs_hz = 0.0f;
+      f.fs_err_hz = fabsf(FS_INTENDED_HZ); f.sampling_quality_bad = 1;
       f.spectral_flux_midhf = f.residual_crest_factor = f.edge_spike_ratio = 0.0f;
       f.midband_residual_ratio = f.cycle_nmse = f.peak_fluct_cv = 0.0f;
       f.thd_i = f.hf_energy_delta = f.zcv = f.abs_irms_zscore_vs_baseline = 0.0f;
+      f.delta_irms_abs = f.delta_hf_energy = f.delta_flux = f.v_sag_pct = 0.0f;
+      f.halfcycle_asymmetry = 0.0f;
+      f.invalid_loaded_flag = 0; f.invalid_off_flag = 1;
+      f.relay_blank_active = 0; f.turnon_blank_active = 0; f.transient_blank_active = 0;
       lastF = f;
     }
   } else { memset(&f, 0, sizeof(f)); f.uptime_ms = millis(); }
@@ -784,10 +838,19 @@ void loop() {
   static float loadRefA = 0.0f;
   static float prevIrmsLogic = 0.0f;
   static float prevVFast = 0.0f;
+  static float prevFlux = 0.0f;
+  static float prevHfDelta = 0.0f;
+  static float healthyVoltageBaseline = 0.0f;
   static uint32_t invalidBurstSinceMs = 0;
   static uint32_t collapseSinceMs = 0;
   static uint32_t voltDipSinceMs = 0;
   static uint32_t faultClearSuppressUntilMs = 0;
+  static uint16_t suspiciousRunLen = 0;
+  static uint16_t invalidLoadedRunLen = 0;
+  static float suspiciousRunEnergy = 0.0f;
+  static bool prevSuspiciousFrame = false;
+  static uint32_t restrikeTimes[6] = {0,0,0,0,0,0};
+  static uint8_t restrikeHead = 0;
 
   if (effectiveRelayLatchedOn && vFast >= MAINS_PRESENT_ON_V && irmsRawForLogic >= 0.50f) {
     loadRefA += 0.10f * (irmsRawForLogic - loadRefA);
@@ -797,27 +860,41 @@ void loop() {
 
   const bool hadSteadyLoad = (loadRefA >= 0.80f);
   const bool energizedArcWindow = (vFast >= 170.0f);
-
-  const bool invalidWhileLoaded =
-      energizedArcWindow &&
-      hadSteadyLoad &&
-      (f.feat_valid == 0);
-
+  const bool invalidWhileLoaded = energizedArcWindow && hadSteadyLoad && (f.feat_valid == 0);
+  const bool invalidOff = (!energizedArcWindow) && (f.feat_valid == 0) && (f.current_valid == 0);
   const bool irmsCollapse =
       energizedArcWindow &&
       hadSteadyLoad &&
       (prevIrmsLogic >= 0.80f) &&
       (irmsRawForLogic <= 0.05f);
-
   const bool fastVoltDip =
       hadSteadyLoad &&
       (prevVFast >= VOLT_NORMAL_MIN_V) &&
       ((prevVFast - vFast) >= 20.0f);
 
+  if (voltageNormal && effectiveRelayLatchedOn && !arcBlankActive) {
+    if (healthyVoltageBaseline <= 1.0f) healthyVoltageBaseline = vFast;
+    else healthyVoltageBaseline += 0.03f * (vFast - healthyVoltageBaseline);
+  } else if (vFast <= MAINS_PRESENT_OFF_V) {
+    healthyVoltageBaseline = 0.0f;
+  }
+
+  f.delta_irms_abs = fabsf(irmsRawForLogic - prevIrmsLogic);
+  f.delta_hf_energy = fabsf(f.hf_energy_delta - prevHfDelta);
+  f.delta_flux = fabsf(f.spectral_flux_midhf - prevFlux);
+  f.v_sag_pct = (healthyVoltageBaseline > 10.0f) ? fmaxf(0.0f, ((healthyVoltageBaseline - vFast) / healthyVoltageBaseline) * 100.0f) : 0.0f;
+  f.invalid_loaded_flag = invalidWhileLoaded ? 1 : 0;
+  f.invalid_off_flag = invalidOff ? 1 : 0;
+  f.relay_blank_active = relayArtifactBlankActive ? 1 : 0;
+  f.turnon_blank_active = arcTurnOnBlankActive ? 1 : 0;
+  f.transient_blank_active = arcTransientBlankActive ? 1 : 0;
+
   if (invalidWhileLoaded) {
     if (invalidBurstSinceMs == 0) invalidBurstSinceMs = millis();
+    if (invalidLoadedRunLen < 65535U) invalidLoadedRunLen++;
   } else {
     invalidBurstSinceMs = 0;
+    invalidLoadedRunLen = 0;
   }
 
   if (irmsCollapse) {
@@ -882,6 +959,15 @@ void loop() {
     invalidBurstSinceMs = 0;
     collapseSinceMs = 0;
     voltDipSinceMs = 0;
+    suspiciousRunLen = 0;
+    invalidLoadedRunLen = 0;
+    suspiciousRunEnergy = 0.0f;
+    prevSuspiciousFrame = false;
+    memset(restrikeTimes, 0, sizeof(restrikeTimes));
+    restrikeHead = 0;
+    healthyVoltageBaseline = 0.0f;
+    prevFlux = f.spectral_flux_midhf;
+    prevHfDelta = f.hf_energy_delta;
     prevIrmsLogic = irmsRawForLogic;
     prevVFast = vFast;
     (void)stabilizeFeatureValidity(f, vFast, irmsRawForLogic, true);
@@ -897,29 +983,67 @@ void loop() {
 
   const bool faultClearSuppressActive = ((int32_t)(faultClearSuppressUntilMs - millis()) > 0);
 
-  int pred = 0;
+  int rawPred = 0;
   if (!faultClearSuppressActive && mlArcEligible) {
-    pred = arcDetect.predict(f.spectral_flux_midhf,
-                             f.residual_crest_factor,
-                             f.edge_spike_ratio,
-                             f.midband_residual_ratio,
-                             f.cycle_nmse,
-                             f.peak_fluct_cv,
-                             f.thd_i,
-                             f.hf_energy_delta,
-                             f.zcv,
-                             f.abs_irms_zscore_vs_baseline,
-                             f.vrms,
-                             irmsRawForLogic,
-                             f.temp_c);
+    rawPred = arcDetect.predict(f.spectral_flux_midhf,
+                                f.residual_crest_factor,
+                                f.edge_spike_ratio,
+                                f.midband_residual_ratio,
+                                f.cycle_nmse,
+                                f.peak_fluct_cv,
+                                f.thd_i,
+                                f.hf_energy_delta,
+                                f.zcv,
+                                f.abs_irms_zscore_vs_baseline,
+                                f.vrms,
+                                irmsRawForLogic,
+                                f.temp_c);
+    if (rawPred == 1 && !mlEventLike) rawPred = 0;
+  }
 
-    if (pred == 1 && !mlEventLike) {
-      pred = 0;
-    }
+  const bool temporalKick =
+      !arcBlankActive &&
+      effectiveRelayLatchedOn &&
+      hadSteadyLoad &&
+      ((f.invalid_loaded_flag != 0 && invalidLoadedRunLen >= 2U) ||
+       (f.delta_flux >= 4.0f && f.delta_hf_energy >= 0.70f) ||
+       (f.v_sag_pct >= 3.0f && f.delta_flux >= 3.0f) ||
+       (f.halfcycle_asymmetry >= 10.0f && f.delta_irms_abs >= 0.12f));
+
+  bool suspiciousFrame = (rawPred == 1) || fallbackArcEvent || softFallbackArcEvent || temporalKick;
+  if (arcBlankActive || relayArtifactBlankActive || invalidOff) suspiciousFrame = false;
+
+  if (suspiciousFrame) {
+    if (suspiciousRunLen < 65535U) suspiciousRunLen++;
+    suspiciousRunEnergy = fminf(12.0f, suspiciousRunEnergy * 0.82f + 1.10f + (temporalKick ? 0.25f : 0.0f));
+  } else {
+    if (suspiciousRunLen > 0) suspiciousRunLen--;
+    suspiciousRunEnergy *= invalidOff ? 0.45f : 0.72f;
   }
-  if (!faultClearSuppressActive && !arcBlankActive && (fallbackArcEvent || softFallbackArcEvent)) {
-    pred = 1;
+
+  if (suspiciousFrame && !prevSuspiciousFrame) {
+    restrikeTimes[restrikeHead % 6U] = millis();
+    restrikeHead = (uint8_t)((restrikeHead + 1U) % 6U);
   }
+  prevSuspiciousFrame = suspiciousFrame;
+
+  uint8_t restrikeCountShort = 0;
+  for (uint8_t i = 0; i < 6U; ++i) {
+    if (restrikeTimes[i] != 0 && (millis() - restrikeTimes[i]) <= 1200UL) restrikeCountShort++;
+  }
+
+  int pred = 0;
+  if (!faultClearSuppressActive && !arcBlankActive) {
+    const bool sustainedSuspicion = (suspiciousRunLen >= 2U) || (suspiciousRunEnergy >= 1.70f);
+    const bool hardContextBurst = fallbackArcEvent || (softFallbackArcEvent && suspiciousRunEnergy >= 1.20f);
+    const bool temporalBurst = temporalKick && ((suspiciousRunEnergy >= 2.40f) || (invalidLoadedRunLen >= 3U) || (restrikeCountShort >= 2U));
+    if (hardContextBurst || temporalBurst || (rawPred == 1 && sustainedSuspicion)) pred = 1;
+  }
+
+  f.suspicious_run_len = suspiciousRunLen;
+  f.invalid_loaded_run_len = invalidLoadedRunLen;
+  f.suspicious_run_energy = suspiciousRunEnergy;
+  f.restrike_count_short = restrikeCountShort;
   f.model_pred = (uint8_t)pred;
 
   FaultState st = STATE_NORMAL;
@@ -930,12 +1054,14 @@ void loop() {
                            irmsRawForLogic,
                            f.model_pred,
                            (!arcBlankActive &&
-                            (mlArcEligible || fallbackArcEvent)));
+                            (mlArcEligible || fallbackArcEvent || softFallbackArcEvent || temporalKick)));
   }
   if (gSafeMode) st = STATE_NORMAL;
 
   prevIrmsLogic = irmsRawForLogic;
   prevVFast = vFast;
+  prevFlux = f.spectral_flux_midhf;
+  prevHfDelta = f.hf_energy_delta;
 
   static uint32_t noPowerSinceMsCtl = 0;
   const bool unpluggedLiveCtl = classifyUnpluggedSocket(vRaw, vFast, irmsRawForLogic, f.current_valid != 0, st, &noPowerSinceMsCtl);
@@ -1123,5 +1249,5 @@ void loop() {
   }
 
   if (!paused && ((int32_t)(relayNetQuietUntilMs - millis()) <= 0)) network.loop();
-  delay(2);
+  delay(1);
 }

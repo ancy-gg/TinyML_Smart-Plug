@@ -12,6 +12,16 @@ const firebaseConfig = {
 firebase.initializeApp(firebaseConfig);
 const db = firebase.database();
 
+let firebaseServerOffsetMs = 0;
+db.ref("/.info/serverTimeOffset").on("value", (snap) => {
+  const next = Number(snap.val());
+  firebaseServerOffsetMs = Number.isFinite(next) ? next : 0;
+});
+
+function nowWithServerOffsetMs() {
+  return Date.now() + firebaseServerOffsetMs;
+}
+
 const el = (id) => document.getElementById(id);
 
 const statusBadge = el("statusBadge");
@@ -209,7 +219,7 @@ function formatSessionStamp(ms) {
 
 function sessionDisplayName(meta, sessionId) {
   const sourceFile = String(meta?.source_file || "").trim();
-  if (sourceFile) return titleizeTokenText(sourceFile, sourceFile);
+  if (sourceFile) return titleizeTokenText(canonicalDatasetStem(sourceFile, sourceFile), sourceFile);
   const load = String(meta?.load_type || "").trim();
   if (load && load.toLowerCase() !== "uploaded_csv" && load.toLowerCase() !== "unknown") return titleizeTokenText(load, load);
   if (isUploadedCsvSession(meta)) return "Uploaded CSV";
@@ -228,7 +238,7 @@ function sessionSecondaryText(meta, sessionId) {
 function sessionLoadText(meta) {
   const sourceFile = String(meta?.source_file || "").trim();
   const load = String(meta?.load_type || "").trim();
-  if (isUploadedCsvSession(meta)) return sourceFile ? titleizeTokenText(sourceFile, sourceFile) : "Uploaded CSV";
+  if (isUploadedCsvSession(meta)) return sourceFile ? titleizeTokenText(canonicalDatasetStem(sourceFile, sourceFile), sourceFile) : "Uploaded CSV";
   if (load && load.toLowerCase() !== "unknown") return titleizeTokenText(load, load);
   return "Unknown";
 }
@@ -286,6 +296,38 @@ function toast(msg, kind = "ok") {
     toastEl.className = `toast toast-${kind}`;
   }, 2600);
 }
+
+let holdHintTimer = null;
+let holdHintAnchor = null;
+function showHoldHint(target) {
+  const msg = String(target?.getAttribute?.("data-hold-hint") || target?.getAttribute?.("title") || "").trim();
+  if (!msg || !toastEl) return;
+  holdHintAnchor = target;
+  toast(msg, "info");
+}
+function clearHoldHint() {
+  if (holdHintTimer) {
+    clearTimeout(holdHintTimer);
+    holdHintTimer = null;
+  }
+  holdHintAnchor = null;
+}
+document.addEventListener("pointerdown", (ev) => {
+  const target = ev.target?.closest?.("[data-hold-hint]");
+  if (!target) { clearHoldHint(); return; }
+  clearHoldHint();
+  holdHintTimer = setTimeout(() => {
+    showHoldHint(target);
+    holdHintTimer = null;
+  }, 380);
+});
+document.addEventListener("pointerup", clearHoldHint);
+document.addEventListener("pointercancel", clearHoldHint);
+document.addEventListener("pointermove", (ev) => {
+  if (!holdHintAnchor) return;
+  const current = ev.target?.closest?.("[data-hold-hint]");
+  if (current !== holdHintAnchor) clearHoldHint();
+});
 
 function toFixedOrDash(x, digits = 2) {
   if (x === null || x === undefined || x === "" || Number.isNaN(Number(x))) return "—";
@@ -424,7 +466,7 @@ const CONTROL_PULSE_DEBOUNCE_MS = 1500;
 
 async function sendControlPulse(buttonEl, busyText, okText, errText, payload, ackInfo = null) {
   setHeaderMenuOpen(false);
-  const now = Date.now();
+  const now = nowWithServerOffsetMs();
   if (buttonEl && buttonEl._tspBusyUntil && now < buttonEl._tspBusyUntil) return;
   const oldText = buttonEl?.textContent || "";
   if (buttonEl) {
@@ -447,7 +489,7 @@ async function sendControlPulse(buttonEl, busyText, okText, errText, payload, ac
         kind: ackInfo.kind,
         token: ackInfo.token,
         requestMs,
-        localSentMs: Date.now()
+        localSentMs: nowWithServerOffsetMs()
       };
     }
     toast(okText, "ok");
@@ -1577,6 +1619,9 @@ function canonicalDatasetStem(name, fallback = "session") {
   stem = stem.replace(/^processed_\d+_/i, "");
   stem = stem.replace(/_(AUTO|ARC|NORMAL)_[0-9]{4}-[0-9]{2}-[0-9]{2}[-_0-9]*$/i, "");
   stem = stem.replace(/__[a-z]+_\d+$/i, "");
+  stem = stem.replace(/(?:_|-)(?:19|20)\d{2}(?:[_-]?\d{2}){2}(?:[_-]?\d{2}){1,3}$/i, "");
+  stem = stem.replace(/(?:_|-)(?:19|20)\d{2}(?:[_-]?\d{2}){1,5}$/i, "");
+  stem = stem.replace(/(?:_|-)processed$/i, "");
   stem = stem.replace(/_+/g, "_").replace(/^_+|_+$/g, "");
   return stem || fallback;
 }
@@ -1586,18 +1631,20 @@ function loggerFilename(meta, sessionId, fallback = "session") {
   const load = safeFilenameSegment(meta?.load_type || "", "");
   const start = Number(meta?.start_ms_device_ack || meta?.start_ms || meta?.saved_at_ms || meta?.requested_ms || 0);
   const base = safeFilenameSegment(canonicalDatasetStem(sourceFile || load || sessionDisplayName(meta, sessionId), fallback), fallback);
-  if (!start) return `${base}.csv`;
+  const hasStructuredSource = !!sourceFile;
+  if (!start || hasStructuredSource) return `${base}.csv`;
   const stamp = formatEpochMsTZ(start).replace(/[^0-9]+/g, "-").replace(/^-+|-+$/g, "");
   return `${base}_${stamp}.csv`;
 }
 
 function updateLoggerCountdownText() {
   if (!mlCountdown) return;
-  if (!loggerCountdownEndsAtMs || loggerCountdownEndsAtMs <= Date.now()) {
+  const nowMs = nowWithServerOffsetMs();
+  if (!loggerCountdownEndsAtMs || loggerCountdownEndsAtMs <= nowMs) {
     mlCountdown.textContent = "—";
     return;
   }
-  mlCountdown.textContent = `${Math.max(0, Math.ceil((loggerCountdownEndsAtMs - Date.now()) / 1000))}s`;
+  mlCountdown.textContent = `${Math.max(0, Math.ceil((loggerCountdownEndsAtMs - nowMs) / 1000))}s`;
 }
 
 function startLoggerCountdown(startMs, durationS) {
@@ -1606,7 +1653,7 @@ function startLoggerCountdown(startMs, durationS) {
   clearInterval(loggerCountdownTimer);
   loggerCountdownTimer = setInterval(() => {
     updateLoggerCountdownText();
-    if (!loggerCountdownEndsAtMs || loggerCountdownEndsAtMs <= Date.now()) {
+    if (!loggerCountdownEndsAtMs || loggerCountdownEndsAtMs <= nowWithServerOffsetMs()) {
       clearInterval(loggerCountdownTimer);
       loggerCountdownTimer = null;
     }
@@ -1737,7 +1784,7 @@ function formatDurationSeconds(seconds) {
   return `${sec.toFixed(1)}s`;
 }
 function uploadedCsvDurationSeconds(meta) {
-  const explicit = Number(meta?.duration_s ?? meta?.source_duration_s);
+  const explicit = Number(meta?.source_duration_s ?? meta?.duration_s);
   if (Number.isFinite(explicit) && explicit > 0) return explicit;
   const st = Number(meta?.start_ms || 0);
   const en = Number(meta?.end_ms || 0);
@@ -1751,6 +1798,8 @@ function isUploadedCsvSession(meta) {
   return !!(meta?.uploaded_csv || String(meta?.load_type || "").trim().toLowerCase() === "uploaded_csv");
 }
 function durationText(meta) {
+  const measuredSec = Number(meta?.source_duration_s);
+  if (Number.isFinite(measuredSec) && measuredSec > 0) return formatDurationSeconds(measuredSec);
   if (isUploadedCsvSession(meta) || meta?.processed_csv) {
     const uploadedDur = uploadedCsvDurationSeconds(meta);
     if (uploadedDur !== null) return formatDurationSeconds(uploadedDur);
@@ -1822,7 +1871,7 @@ async function fetchSessionCsv(sessionId) {
 }
 
 function sessionFilename(meta, sessionId) {
-  return `TSP_ML_${loggerFilename(meta, sessionId, "session").replace(/\.csv$/i, "")}.csv`;
+  return loggerFilename(meta, sessionId, "session");
 }
 
 if (mlLogEnable) {
@@ -1920,22 +1969,23 @@ function renderSessionRows(bodyEl, obj, kind = "original") {
     const bv = obj[b] || {};
     const at = Number(av.start_ms_device_ack || av.start_ms || av.saved_at_ms || av.requested_ms || 0);
     const bt = Number(bv.start_ms_device_ack || bv.start_ms || bv.saved_at_ms || bv.requested_ms || 0);
-    return bt - at;
+    return at - bt;
   });
   if (!ids.length) {
-    bodyEl.innerHTML = `<tr><td colspan="6" class="muted">No ${kind} sessions yet.</td></tr>`;
+    bodyEl.innerHTML = `<tr><td colspan="7" class="muted">No ${kind} sessions yet.</td></tr>`;
     return;
   }
-  bodyEl.innerHTML = ids.map((sid) => {
+  bodyEl.innerHTML = ids.map((sid, idx) => {
     const meta = obj[sid] || {};
+    const itemNo = idx + 1;
     const activeCls = sid === activeViewedSessionSid ? "is-active-view" : "";
     if (kind === "processed") {
       const saved = Number(meta.saved_at_ms || meta.start_ms || 0);
-      return `<tr data-session-row="${sid}" class="${activeCls}"><td><div class="mono">${sessionDisplayName(meta, sid)}</div><div class="muted small mono">${sessionSecondaryText(meta, sid)}</div></td><td class="mono">${saved ? formatDisplayTimestamp(saved) : "—"}</td><td class="mono">${titleizeTokenText(meta.source_session_id || meta.source_file || "—", "—")}</td><td class="mono">${durationText(meta)}</td><td class="mono">${sessionLoadText(meta)}</td><td class="session-actions"><button type="button" class="btn btn-small" data-processed-view-sid="${sid}">View</button><button type="button" class="btn btn-small" data-processed-sid="${sid}">Download</button><button type="button" class="btn btn-small btn-danger" data-del-processed-sid="${sid}">Delete</button></td></tr>`;
+      return `<tr data-session-row="${sid}" class="${activeCls}"><td class="mono">#${itemNo}</td><td><div class="mono">${sessionDisplayName(meta, sid)}</div><div class="muted small mono">${sessionSecondaryText(meta, sid)}</div></td><td class="mono">${saved ? formatDisplayTimestamp(saved) : "—"}</td><td class="mono">${titleizeTokenText(meta.source_session_id || canonicalDatasetStem(meta.source_file || sid, sid) || "—", "—")}</td><td class="mono">${durationText(meta)}</td><td class="mono">${sessionLoadText(meta)}</td><td class="session-actions"><button type="button" class="btn btn-small" data-processed-view-sid="${sid}">View</button><button type="button" class="btn btn-small" data-processed-sid="${sid}">Download</button><button type="button" class="btn btn-small btn-danger" data-del-processed-sid="${sid}">Delete</button></td></tr>`;
     }
     const stMs = Number(meta.start_ms_device_ack || meta.start_ms || meta.requested_ms || 0);
     const enMs = Number(meta.end_ms || 0);
-    return `<tr data-session-row="${sid}" class="${activeCls}"><td><div class="mono">${sessionDisplayName(meta, sid)}</div><div class="muted small mono">${sessionSecondaryText(meta, sid)}</div></td><td class="mono">${stMs ? formatDisplayTimestamp(stMs) : "Pending"}</td><td class="mono">${enMs ? formatDisplayTimestamp(enMs) : (Number(meta.requested_ms || 0) ? "Running" : "—")}</td><td class="mono">${durationText(meta)}</td><td class="mono">${sessionLoadText(meta)}</td><td class="session-actions"><button type="button" class="btn btn-small" data-view-sid="${sid}">View</button><button type="button" class="btn btn-small" data-sid="${sid}">Download</button><button type="button" class="btn btn-small btn-danger" data-del-sid="${sid}">Delete</button></td></tr>`;
+    return `<tr data-session-row="${sid}" class="${activeCls}"><td class="mono">#${itemNo}</td><td><div class="mono">${sessionDisplayName(meta, sid)}</div><div class="muted small mono">${sessionSecondaryText(meta, sid)}</div></td><td class="mono">${stMs ? formatDisplayTimestamp(stMs) : "Pending"}</td><td class="mono">${enMs ? formatDisplayTimestamp(enMs) : (Number(meta.requested_ms || 0) ? "Running" : "—")}</td><td class="mono">${durationText(meta)}</td><td class="mono">${sessionLoadText(meta)}</td><td class="session-actions"><button type="button" class="btn btn-small" data-view-sid="${sid}">View</button><button type="button" class="btn btn-small" data-sid="${sid}">Download</button><button type="button" class="btn btn-small btn-danger" data-del-sid="${sid}">Delete</button></td></tr>`;
   }).join("");
 
   bodyEl.querySelectorAll("button[data-sid]").forEach(btn => btn.addEventListener("click", async () => {
@@ -1943,7 +1993,7 @@ function renderSessionRows(bodyEl, obj, kind = "original") {
     const meta = obj[sid] || {};
     const csv = await fetchSessionCsv(sid);
     if (!csv) { toast("No data for this session yet.", "err"); return; }
-    downloadTextFileGeneric(`TSP_ML_${loggerFilename(meta, sid, "session")}`, csv);
+    downloadTextFileGeneric(sessionFilename(meta, sid), csv);
     if (mlLogStatus) mlLogStatus.textContent = `Downloaded session: ${sid}`;
     toast("Session CSV downloaded.", "ok");
   }));
@@ -1975,7 +2025,7 @@ function renderSessionRows(bodyEl, obj, kind = "original") {
     const meta = obj[sid] || {};
     const csv = await fetchStoredCsv(`ml_processed_logs/${sid}`);
     if (!csv) { toast("No processed data for this session yet.", "err"); return; }
-    downloadTextFileGeneric(`TSP_ML_${loggerFilename(meta, sid, "processed")}`, csv);
+    downloadTextFileGeneric(sessionFilename(meta, sid), csv);
     toast("Processed CSV downloaded.", "ok");
   }));
 
@@ -2010,59 +2060,42 @@ if (mlSessionBody) db.ref("ml_sessions").limitToLast(80).on("value", (s) => rend
 if (mlProcessedBody) db.ref("ml_processed_sessions").limitToLast(80).on("value", (s) => renderSessionRows(mlProcessedBody, s.val() || {}, "processed"));
 
 btnDownloadAllMl?.addEventListener("click", async () => {
-  if (activeLoggerTab === "processed") {
-    const metaSnap = await db.ref("ml_processed_sessions").get();
-    const sessions = metaSnap.exists() ? metaSnap.val() : {};
-    const ids = Object.keys(sessions || {});
-    if (ids.length === 0) { toast("No processed sessions yet.", "err"); return; }
-    ids.sort((a, b) => Number((sessions[a]?.saved_at_ms || sessions[a]?.start_ms || 0)) - Number((sessions[b]?.saved_at_ms || sessions[b]?.start_ms || 0)));
-    let header = "";
-    const rows = [];
-    for (const sid of ids) {
-      const csv = await fetchStoredCsv(`ml_processed_logs/${sid}`);
-      if (!csv) continue;
-      const lines = csv.split(/\r?\n/).filter((x) => x.trim().length);
-      if (!lines.length) continue;
-      if (!header) {
-        header = lines[0];
-        rows.push(...lines.slice(1));
-      } else {
-        const startIdx = (lines[0].trim() === header.trim()) ? 1 : 0;
-        rows.push(...lines.slice(startIdx));
-      }
-    }
-    if (!header || rows.length === 0) { toast("No processed session rows found.", "err"); return; }
-    const ts = new Date().toISOString().slice(0,19).replace(/[:T]/g, "-");
-    downloadTextFileGeneric(`TSP_ML_PROCESSED_ALL_${ts}.csv`, `${header}\n${rows.join("\n")}\n`);
-    toast("All processed sessions downloaded.", "ok");
+  const isProcessed = activeLoggerTab === "processed";
+  const metaPath = isProcessed ? "ml_processed_sessions" : "ml_sessions";
+  const sessionsSnap = await db.ref(metaPath).get();
+  const sessions = sessionsSnap.exists() ? sessionsSnap.val() : {};
+  const ids = Object.keys(sessions || {});
+  if (!ids.length) {
+    toast(isProcessed ? "No processed sessions yet." : "No sessions yet.", "err");
     return;
   }
 
-  const metaSnap = await db.ref("ml_sessions").get();
-  const sessions = metaSnap.exists() ? metaSnap.val() : {};
-  const ids = Object.keys(sessions || {});
-  if (ids.length === 0) { toast("No sessions yet.", "err"); return; }
-  ids.sort((a, b) => Number((sessions[a]?.start_ms_device_ack || sessions[a]?.start_ms || 0)) - Number((sessions[b]?.start_ms_device_ack || sessions[b]?.start_ms || 0)));
-  let header = "";
-  const rows = [];
+  ids.sort((a, b) => {
+    const av = sessions[a] || {};
+    const bv = sessions[b] || {};
+    const at = Number(av.start_ms_device_ack || av.start_ms || av.saved_at_ms || av.requested_ms || 0);
+    const bt = Number(bv.start_ms_device_ack || bv.start_ms || bv.saved_at_ms || bv.requested_ms || 0);
+    return at - bt;
+  });
+
+  const jobs = [];
   for (const sid of ids) {
-    const csv = await fetchSessionCsv(sid);
+    const meta = sessions[sid] || {};
+    const csv = isProcessed ? await fetchStoredCsv(`ml_processed_logs/${sid}`) : await fetchSessionCsv(sid);
     if (!csv) continue;
-    const lines = csv.split(/\r?\n/).filter((x) => x.trim().length);
-    if (!lines.length) continue;
-    if (!header) {
-      header = lines[0];
-      rows.push(...lines.slice(1));
-    } else {
-      const startIdx = (lines[0].trim() === header.trim()) ? 1 : 0;
-      rows.push(...lines.slice(startIdx));
-    }
+    jobs.push({ filename: sessionFilename(meta, sid), csv });
   }
-  if (!header || rows.length === 0) { toast("No session rows found.", "err"); return; }
-  const ts = new Date().toISOString().slice(0,19).replace(/[:T]/g, "-");
-  downloadTextFileGeneric(`TSP_ML_ALL_${ts}.csv`, `${header}\n${rows.join("\n")}\n`);
-  if (mlLogStatus) mlLogStatus.textContent = `Downloaded ALL sessions (${rows.length} rows)`;
-  toast("All sessions downloaded.", "ok");
+
+  if (!jobs.length) {
+    toast(isProcessed ? "No processed session rows found." : "No session rows found.", "err");
+    return;
+  }
+
+  jobs.forEach((job, idx) => {
+    setTimeout(() => downloadTextFileGeneric(job.filename, job.csv), idx * 180);
+  });
+  if (mlLogStatus) mlLogStatus.textContent = `Downloading ${jobs.length} ${isProcessed ? "processed" : "original"} session CSVs in order.`;
+  toast(`Downloading ${jobs.length} ${isProcessed ? "processed" : "original"} CSVs.`, "ok");
 });
 
 function safeSessionToken(name) {
@@ -2109,6 +2142,7 @@ async function storeCsvSession(fileName, csvText, kind = "original", metaPatch =
     end_ms: endMs,
     load_type: fileMeta.loadType || (kind === "processed" ? "processed_csv" : "uploaded_csv"),
     duration_s: durationS,
+    source_duration_s: durationS,
     label_override: -1,
     uploaded_csv: kind !== "processed",
     processed_csv: kind === "processed",

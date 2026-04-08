@@ -705,10 +705,14 @@ void FirebaseNetwork::ingestLog(const FeatureFrame& f, FaultState st, int arcCou
       ((millis() - _sessionStartMs) >= ((uint32_t)spec.durationS * 1000UL));
   if (manualExpired) return;
 
-  const bool usefulCurrent = (f.current_valid != 0) || (f.feat_valid != 0) || (f.irms >= CURRENT_DISPLAY_OFF_A);
+  const bool usefulCurrent =
+      (f.current_valid != 0) ||
+      (f.feat_valid != 0) ||
+      (f.invalid_loaded_flag != 0) ||
+      (f.irms >= CURRENT_DISPLAY_OFF_A);
   const bool mainsPresent = (f.vrms >= MAINS_PRESENT_ON_V);
   const bool keepFault = (st != STATE_NORMAL);
-  if (!keepFault && (!mainsPresent || !usefulCurrent)) return;
+  if (!keepFault && (!mainsPresent || !usefulCurrent) && (f.invalid_loaded_flag == 0)) return;
 
   if (_sessionStartMs == 0) _sessionStartMs = millis();
   if (_count == 0) _chunkStartMs = millis();
@@ -717,6 +721,10 @@ void FirebaseNetwork::ingestLog(const FeatureFrame& f, FaultState st, int arcCou
   Rec& r = _buf[_count++];
   r.epoch_ms = f.epoch_ms;
   r.uptime_ms = f.uptime_ms;
+  r.frame_start_uptime_ms = f.frame_start_uptime_ms;
+  r.frame_end_uptime_ms = f.frame_end_uptime_ms;
+  r.frame_dt_ms = f.frame_dt_ms;
+  r.compute_time_ms = f.compute_time_ms;
   r.spectral_flux_midhf = f.spectral_flux_midhf;
   r.residual_crest_factor = f.residual_crest_factor;
   r.edge_spike_ratio = f.edge_spike_ratio;
@@ -727,14 +735,31 @@ void FirebaseNetwork::ingestLog(const FeatureFrame& f, FaultState st, int arcCou
   r.hf_energy_delta = f.hf_energy_delta;
   r.zcv = f.zcv;
   r.abs_irms_zscore_vs_baseline = f.abs_irms_zscore_vs_baseline;
+  r.fs_err_hz = f.fs_err_hz;
+  r.suspicious_run_energy = f.suspicious_run_energy;
+  r.delta_irms_abs = f.delta_irms_abs;
+  r.delta_hf_energy = f.delta_hf_energy;
+  r.delta_flux = f.delta_flux;
+  r.v_sag_pct = f.v_sag_pct;
+  r.halfcycle_asymmetry = f.halfcycle_asymmetry;
   r.v_rms = f.vrms;
   r.i_rms = f.irms;
   r.temp_c = f.temp_c;
+  r.queue_drop_count = f.queue_drop_count;
+  r.suspicious_run_len = f.suspicious_run_len;
+  r.invalid_loaded_run_len = f.invalid_loaded_run_len;
   r.label_arc = (spec.labelOverride == 0 || spec.labelOverride == 1) ? spec.labelOverride : ML_UNKNOWN_LABEL;
+  r.restrike_count_short = f.restrike_count_short;
   r.model_pred = f.model_pred;
   r.feat_valid = f.feat_valid;
   r.current_valid = f.current_valid;
   r.fault_state = (uint8_t)st;
+  r.sampling_quality_bad = f.sampling_quality_bad;
+  r.invalid_loaded_flag = f.invalid_loaded_flag;
+  r.invalid_off_flag = f.invalid_off_flag;
+  r.relay_blank_active = f.relay_blank_active;
+  r.turnon_blank_active = f.turnon_blank_active;
+  r.transient_blank_active = f.transient_blank_active;
   r.arc_counter = (int16_t)arcCounter;
   r.adc_fs_hz = f.adc_fs_hz;
   r.auto_capture = activeIsAuto() ? 1 : 0;
@@ -837,8 +862,36 @@ bool FirebaseNetwork::serviceMlUpload_() {
     return false;
   }
 #endif
+
   if (_uploadNextIndex >= _uploadTotalCount) {
     const String finishedSessionId = _uploadSpec.sessionId;
+    if (_uploadTotalCount > 0) {
+      const Rec& firstUploaded = _buf[0];
+      const Rec& lastUploaded = _buf[_uploadTotalCount - 1];
+      float measuredDurationS = 0.0f;
+      if (lastUploaded.epoch_ms > firstUploaded.epoch_ms) {
+        measuredDurationS = float(lastUploaded.epoch_ms - firstUploaded.epoch_ms) / 1000.0f;
+      } else if (lastUploaded.uptime_ms > firstUploaded.uptime_ms) {
+        measuredDurationS = float(lastUploaded.uptime_ms - firstUploaded.uptime_ms) / 1000.0f;
+      }
+      float fsSum = 0.0f;
+      uint32_t fsCount = 0;
+      for (uint16_t i = 0; i < _uploadTotalCount; ++i) {
+        const float fs = _buf[i].adc_fs_hz;
+        if (isfinite(fs) && fs > 0.0f) { fsSum += fs; fsCount++; }
+      }
+      FirebaseJson sessMeta;
+      sessMeta.set("row_count", (int)_uploadTotalCount);
+      if (measuredDurationS > 0.0f) sessMeta.set("source_duration_s", measuredDurationS);
+      if (fsCount > 0) sessMeta.set("source_sample_rate_hz", fsSum / float(fsCount));
+      if (_uploadTotalCount > 1) {
+        const float meanFrameHz = (measuredDurationS > 0.0f) ? (float(_uploadTotalCount - 1U) / measuredDurationS) : 0.0f;
+        if (meanFrameHz > 0.0f) sessMeta.set("feature_frame_rate_hz", meanFrameHz);
+      }
+      String sessPath = "/ml_sessions/";
+      sessPath += finishedSessionId;
+      (void)Firebase.RTDB.updateNode(&fbLog, sessPath.c_str(), &sessMeta);
+    }
     const uint16_t tailCount = (_count > _uploadTotalCount) ? (uint16_t)(_count - _uploadTotalCount) : 0;
     if (tailCount > 0) {
       memmove(_buf, _buf + _uploadTotalCount, sizeof(Rec) * tailCount);
@@ -861,10 +914,10 @@ bool FirebaseNetwork::serviceMlUpload_() {
   const uint16_t i1 = ((uint16_t)(i0 + ROWS_PER_CHUNK) < _uploadTotalCount) ? (uint16_t)(i0 + ROWS_PER_CHUNK) : _uploadTotalCount;
   const Rec& firstRec = _buf[i0];
   const Rec& lastRec  = _buf[i1 - 1];
-  const char* header = "spectral_flux_midhf,residual_crest_factor,edge_spike_ratio,midband_residual_ratio,cycle_nmse,peak_fluct_cv,thd_i,hf_energy_delta,zcv,abs_irms_zscore_vs_baseline,v_rms,i_rms,temp_c,label_arc,load_type,session_id,epoch_ms,uptime_ms,model_pred,feat_valid,current_valid,fault_state,arc_counter,adc_fs_hz,auto_capture,feature_space_version\n";
+  const char* header = "spectral_flux_midhf,residual_crest_factor,edge_spike_ratio,midband_residual_ratio,cycle_nmse,peak_fluct_cv,thd_i,hf_energy_delta,zcv,abs_irms_zscore_vs_baseline,fs_err_hz,suspicious_run_energy,delta_irms_abs,delta_hf_energy,delta_flux,v_sag_pct,halfcycle_asymmetry,v_rms,i_rms,temp_c,label_arc,load_type,session_id,epoch_ms,uptime_ms,frame_start_uptime_ms,frame_end_uptime_ms,frame_dt_ms,compute_time_ms,queue_drop_count,suspicious_run_len,invalid_loaded_run_len,restrike_count_short,model_pred,feat_valid,current_valid,sampling_quality_bad,invalid_loaded_flag,invalid_off_flag,relay_blank_active,turnon_blank_active,transient_blank_active,fault_state,arc_counter,adc_fs_hz,auto_capture,feature_space_version\n";
 
   String csv;
-  csv.reserve((i1 - i0) * 220 + 320);
+  csv.reserve((i1 - i0) * 520 + 512);
   csv += header;
   for (uint16_t i = i0; i < i1; ++i) {
     const Rec& r = _buf[i];
@@ -878,6 +931,13 @@ bool FirebaseNetwork::serviceMlUpload_() {
     csv += String(r.hf_energy_delta, 6);             csv += ",";
     csv += String(r.zcv, 6);                         csv += ",";
     csv += String(r.abs_irms_zscore_vs_baseline, 6); csv += ",";
+    csv += String(r.fs_err_hz, 3);                   csv += ",";
+    csv += String(r.suspicious_run_energy, 6);       csv += ",";
+    csv += String(r.delta_irms_abs, 6);              csv += ",";
+    csv += String(r.delta_hf_energy, 6);             csv += ",";
+    csv += String(r.delta_flux, 6);                  csv += ",";
+    csv += String(r.v_sag_pct, 4);                   csv += ",";
+    csv += String(r.halfcycle_asymmetry, 6);         csv += ",";
     csv += String(r.v_rms, 3);                 csv += ",";
     csv += String(r.i_rms, 6);                 csv += ",";
     csv += String(r.temp_c, 3);                csv += ",";
@@ -886,9 +946,23 @@ bool FirebaseNetwork::serviceMlUpload_() {
     csv += _uploadSpec.sessionId;              csv += ",";
     csv += String((unsigned long long)r.epoch_ms); csv += ",";
     csv += String((unsigned long)r.uptime_ms); csv += ",";
+    csv += String((unsigned long)r.frame_start_uptime_ms); csv += ",";
+    csv += String((unsigned long)r.frame_end_uptime_ms); csv += ",";
+    csv += String(r.frame_dt_ms, 3);           csv += ",";
+    csv += String(r.compute_time_ms, 3);       csv += ",";
+    csv += String((unsigned long)r.queue_drop_count); csv += ",";
+    csv += String((int)r.suspicious_run_len);  csv += ",";
+    csv += String((int)r.invalid_loaded_run_len); csv += ",";
+    csv += String((int)r.restrike_count_short); csv += ",";
     csv += String((int)r.model_pred);          csv += ",";
     csv += String((int)r.feat_valid);          csv += ",";
     csv += String((int)r.current_valid);       csv += ",";
+    csv += String((int)r.sampling_quality_bad); csv += ",";
+    csv += String((int)r.invalid_loaded_flag); csv += ",";
+    csv += String((int)r.invalid_off_flag);    csv += ",";
+    csv += String((int)r.relay_blank_active);  csv += ",";
+    csv += String((int)r.turnon_blank_active); csv += ",";
+    csv += String((int)r.transient_blank_active); csv += ",";
     csv += String((int)r.fault_state);         csv += ",";
     csv += String((int)r.arc_counter);         csv += ",";
     csv += String(r.adc_fs_hz, 2);             csv += ",";

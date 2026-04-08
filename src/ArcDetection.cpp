@@ -196,7 +196,6 @@ bool ArcDetection::compute(const uint16_t* raw, size_t n, float fs_hz,
                            const CurrentCalib& cal, float mainsHz,
                            ArcDetectionResult& out) {
   out = ArcDetectionResult{};
-  if (fabsf(fs_hz - FS_TARGET_HZ) <= FS_CANONICALIZE_TOL_HZ) fs_hz = FS_TARGET_HZ;
   out.fs_hz = fs_hz;
 
   if (!raw || n != N_SAMP || fs_hz < 1000.0f) return false;
@@ -242,9 +241,23 @@ bool ArcDetection::compute(const uint16_t* raw, size_t n, float fs_hz,
   for (size_t i = 0; i < n; ++i) sig[i] = sigMed[i] - (float)mean;
 
   if (CURRENT_SOFT_AAF_ENABLE) {
-    BiquadLPF softAaf;
-    if (makeLowpassBiquad(fs_hz, CURRENT_SOFT_AAF_CUTOFF_HZ, CURRENT_SOFT_AAF_Q, softAaf)) {
-      for (size_t i = 0; i < n; ++i) sigFilt[i] = softAaf.step(sig[i]);
+    // Analog front-end is already ~10 kHz/Q≈0.73. Run a conservative cascaded
+    // digital LPF below that corner so feature extraction sees a cleaner band-
+    // limited waveform even when the measured ADC rate wanders.
+    BiquadLPF softAaf[CURRENT_SOFT_AAF_STAGES];
+    bool aafReady = true;
+    for (uint8_t st = 0; st < CURRENT_SOFT_AAF_STAGES; ++st) {
+      if (!makeLowpassBiquad(fs_hz, CURRENT_SOFT_AAF_CUTOFF_HZ, CURRENT_SOFT_AAF_Q, softAaf[st])) {
+        aafReady = false;
+        break;
+      }
+    }
+    if (aafReady) {
+      for (size_t i = 0; i < n; ++i) {
+        float y = sig[i];
+        for (uint8_t st = 0; st < CURRENT_SOFT_AAF_STAGES; ++st) y = softAaf[st].step(y);
+        sigFilt[i] = y;
+      }
     } else {
       memcpy(sigFilt, sig, n * sizeof(float));
     }
@@ -419,6 +432,27 @@ bool ArcDetection::compute(const uint16_t* raw, size_t n, float fs_hz,
 
     memcpy(prevCycle, curCycle, sizeof(prevCycle));
     havePrevCycle = true;
+  }
+
+  double posHalfSq = 0.0;
+  double negHalfSq = 0.0;
+  uint32_t posHalfN = 0;
+  uint32_t negHalfN = 0;
+  for (size_t i = 0; i < n; ++i) {
+    const float v = sigClean[i];
+    if (v >= 0.0f) {
+      posHalfSq += (double)v * (double)v;
+      posHalfN++;
+    } else {
+      negHalfSq += (double)v * (double)v;
+      negHalfN++;
+    }
+  }
+  if (posHalfN > 8 && negHalfN > 8) {
+    const float posRms = sqrtf((float)(posHalfSq / (double)posHalfN));
+    const float negRms = sqrtf((float)(negHalfSq / (double)negHalfN));
+    const float denom = fmaxf(0.01f, 0.5f * (posRms + negRms));
+    out.halfcycle_asymmetry = clampf((fabsf(posRms - negRms) / denom) * FEATURE_PERCENT_SCALE, 0.0f, 200.0f);
   }
 
   if (peakN >= 2) {

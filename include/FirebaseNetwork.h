@@ -99,18 +99,29 @@ private:
   struct Rec {
     uint64_t epoch_ms;
     uint32_t uptime_ms;
+    uint32_t frame_start_uptime_ms;
+    uint32_t frame_end_uptime_ms;
+    float frame_dt_ms;
+    float compute_time_ms;
     float spectral_flux_midhf, residual_crest_factor, edge_spike_ratio, midband_residual_ratio, cycle_nmse;
     float peak_fluct_cv, thd_i, hf_energy_delta, zcv, abs_irms_zscore_vs_baseline;
+    float fs_err_hz, suspicious_run_energy, delta_irms_abs, delta_hf_energy, delta_flux, v_sag_pct, halfcycle_asymmetry;
     float v_rms, i_rms, temp_c;
+    uint32_t queue_drop_count;
+    uint16_t suspicious_run_len;
+    uint16_t invalid_loaded_run_len;
     int8_t  label_arc;
+    uint8_t restrike_count_short;
     uint8_t model_pred, feat_valid, current_valid, fault_state;
+    uint8_t sampling_quality_bad, invalid_loaded_flag, invalid_off_flag;
+    uint8_t relay_blank_active, turnon_blank_active, transient_blank_active;
     int16_t arc_counter;
     float   adc_fs_hz;
     uint8_t auto_capture;
     uint8_t feature_space_version;
   };
 
-  static constexpr uint8_t HISTORY_QUEUE_MAX = 12;
+  static constexpr uint8_t HISTORY_QUEUE_MAX = 24;
   static constexpr uint32_t CLOUD_TX_MIN_GAP_MS = 140UL;
   static constexpr uint32_t CLOUD_TX_RETRY_MS = 1800UL;
   static constexpr uint32_t CLOUD_CTRL_READ_GAP_MS = 500UL;

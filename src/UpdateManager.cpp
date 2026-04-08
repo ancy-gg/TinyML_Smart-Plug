@@ -36,6 +36,7 @@ static bool isCrashReset(esp_reset_reason_t r) {
     case ESP_RST_INT_WDT:
     case ESP_RST_TASK_WDT:
     case ESP_RST_WDT:
+    case ESP_RST_BROWNOUT:
       return true;
     default:
       return false;

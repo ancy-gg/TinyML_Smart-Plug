@@ -139,29 +139,11 @@ size_t CurrentSensor::capture(uint16_t* dst, size_t n, float* measuredFsHz) {
 
   const int64_t t1 = esp_timer_get_time();
   if (measuredFsHz && t1 > t0 && count > 0) {
+    // Report the true measured cadence. Downstream code can mark it as bad, but it
+    // must not silently rewrite the number to a nominal target.
     float rawFs = (count * 1000000.0f) / float(t1 - t0);
-    if (!isfinite(rawFs) || rawFs < MCP3204_FS_MIN_ACCEPT_HZ || rawFs > MCP3204_FS_MAX_ACCEPT_HZ) {
-      rawFs = MCP3204_FS_SNAP_HZ;
-    }
-
-    static bool fsPrimed = false;
-    static float fsFiltered = MCP3204_FS_SNAP_HZ;
-
-    if (!fsPrimed) {
-      fsFiltered = rawFs;
-      fsPrimed = true;
-    } else {
-      fsFiltered += MCP3204_FS_FILTER_ALPHA * (rawFs - fsFiltered);
-    }
-
-    float reportedFs = fsFiltered;
-    if (fabsf(rawFs - MCP3204_FS_SNAP_HZ) <= MCP3204_FS_SNAP_BAND_HZ ||
-        fabsf(fsFiltered - MCP3204_FS_SNAP_HZ) <= (0.5f * MCP3204_FS_SNAP_BAND_HZ)) {
-      reportedFs = MCP3204_FS_SNAP_HZ;
-      fsFiltered = reportedFs;
-    }
-
-    *measuredFsHz = reportedFs;
+    if (!isfinite(rawFs) || rawFs <= 0.0f) rawFs = 0.0f;
+    *measuredFsHz = rawFs;
   }
   return count;
 }

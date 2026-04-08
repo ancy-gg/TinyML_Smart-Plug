@@ -621,31 +621,43 @@ def attach_training_metadata(df: pd.DataFrame) -> tuple[pd.DataFrame, dict]:
     # Explicit trusted-normal files remain strong negatives.
     df.loc[df["trusted_normal_session"] == 1, TARGET] = 0
 
-    # Section semantics: start/steady/close are all normal-only. Only arc sections may
-    # contain positive rows, and even those may still include label 0 rows.
-    forced_normal_section = division_tag.isin(["start", "steady", "close"])
-    df.loc[forced_normal_section, TARGET] = 0
+    # Section tags are priors only. Keep explicit row labels intact and let trust/weight
+    # capture our confidence rather than rewriting labels from the filename.
+    df["section_prior"] = "neutral"
+    df.loc[division_tag == "arc", "section_prior"] = "arc_eligible"
+    df.loc[division_tag == "steady", "section_prior"] = "steady_hint"
+    df.loc[division_tag.isin(["start", "close"]), "section_prior"] = "transient_hint"
 
     df["label_trust"] = _build_label_trust(df)
+    steady_neg_hint = (division_tag == "steady") & (df[TARGET].astype(int) == 0) & (df["trusted_normal_session"] == 0)
+    transient_neg_hint = division_tag.isin(["start", "close"]) & (df[TARGET].astype(int) == 0) & (df["trusted_normal_session"] == 0)
+    df.loc[steady_neg_hint, "label_trust"] = np.minimum(df.loc[steady_neg_hint, "label_trust"], 0.82)
+    df.loc[transient_neg_hint, "label_trust"] = np.minimum(df.loc[transient_neg_hint, "label_trust"], 0.68)
+
     df["arc_like_score"], df["normal_like_score"] = build_quality_scores(df)
     df["clean_reason"] = "kept"
     df["clean_quality"] = "trainable"
 
-    invalid_or_off = (
-        _num(df, "i_rms") < 0.05
-    ) | (
-        _num(df, "v_rms") < 170.0
-    )
+    invalid_off_flag = (_num(df, "invalid_off_flag") > 0.5) if "invalid_off_flag" in df.columns else pd.Series(False, index=df.index)
+    invalid_loaded_flag = (_num(df, "invalid_loaded_flag") > 0.5) if "invalid_loaded_flag" in df.columns else pd.Series(False, index=df.index)
     if "feat_valid" in df.columns:
-        invalid_or_off |= (_num(df, "feat_valid") < 1.0)
+        invalid_loaded_flag |= (_num(df, "feat_valid") < 1.0) & (_num(df, "v_rms") >= 170.0) & (_num(df, "i_rms") >= 0.20)
+        invalid_off_flag |= (_num(df, "feat_valid") < 1.0) & (_num(df, "v_rms") < 170.0)
     if "current_valid" in df.columns:
-        invalid_or_off |= (_num(df, "current_valid") < 1.0)
+        invalid_off_flag |= (_num(df, "current_valid") < 1.0) & (_num(df, "v_rms") < 170.0)
     if "adc_fs_hz" in df.columns:
-        invalid_or_off |= (_num(df, "adc_fs_hz") <= 0.0)
+        invalid_off_flag |= (_num(df, "adc_fs_hz") <= 0.0)
 
-    df.loc[invalid_or_off, "rf_train_row"] = 0
-    df.loc[invalid_or_off, "clean_reason"] = "invalid_or_off"
-    df.loc[invalid_or_off, "clean_quality"] = "excluded_invalid"
+    df["invalid_off_flag"] = invalid_off_flag.astype(int)
+    df["invalid_loaded_flag"] = invalid_loaded_flag.astype(int)
+
+    df.loc[invalid_off_flag, "rf_train_row"] = 0
+    df.loc[invalid_off_flag, "clean_reason"] = "invalid_off"
+    df.loc[invalid_off_flag, "clean_quality"] = "excluded_invalid_off"
+
+    df.loc[invalid_loaded_flag, "rf_train_row"] = 0
+    df.loc[invalid_loaded_flag & ~invalid_off_flag, "clean_reason"] = "invalid_loaded_context"
+    df.loc[invalid_loaded_flag & ~invalid_off_flag, "clean_quality"] = "context_invalid_loaded"
 
     positive_mask = (df[TARGET].astype(int) == 1) & (df["rf_train_row"] == 1)
     very_weak_positive = positive_mask & (df["arc_like_score"] < VERY_WEAK_POSITIVE_SCORE)
@@ -679,11 +691,13 @@ def attach_training_metadata(df: pd.DataFrame) -> tuple[pd.DataFrame, dict]:
     strong_arc_like_negative = negative_mask & (df["arc_like_score"] >= STRONG_NEGATIVE_ARC_SCORE)
     soft_arc_like_negative = negative_mask & ~strong_arc_like_negative & (df["arc_like_score"] >= SOFT_NEGATIVE_ARC_SCORE)
 
-    df.loc[strong_arc_like_negative, "rf_train_row"] = 0
+    df["hard_negative"] = 0
+    df.loc[strong_arc_like_negative, "hard_negative"] = 1
+    df.loc[strong_arc_like_negative, "label_trust"] = np.maximum(df.loc[strong_arc_like_negative, "label_trust"], 0.80)
     df.loc[strong_arc_like_negative, "clean_reason"] = "strong_arc_like_negative"
-    df.loc[strong_arc_like_negative, "clean_quality"] = "excluded_arc_like_negative"
+    df.loc[strong_arc_like_negative, "clean_quality"] = "hard_negative"
 
-    df.loc[soft_arc_like_negative, "label_trust"] = np.minimum(df.loc[soft_arc_like_negative, "label_trust"], 0.55)
+    df.loc[soft_arc_like_negative, "label_trust"] = np.minimum(df.loc[soft_arc_like_negative, "label_trust"], 0.75)
     df.loc[soft_arc_like_negative, "clean_reason"] = "soft_arc_like_negative"
     df.loc[soft_arc_like_negative, "clean_quality"] = "soft_negative"
 
@@ -728,6 +742,13 @@ def attach_training_metadata(df: pd.DataFrame) -> tuple[pd.DataFrame, dict]:
     else:
         df["transition_normal"] = 0
 
+    if "trial_id" in df.columns:
+        df["conflict_scope"] = df["trial_id"].astype(str)
+    elif "session_id" in df.columns:
+        df["conflict_scope"] = df["session_id"].astype(str)
+    else:
+        df["conflict_scope"] = df.get("parsed_load_type", pd.Series("unknown", index=df.index, dtype=object)).astype(str)
+
     sig_cols = [c for c in FEATURES if c in df.columns]
     rounded_exact = df[sig_cols].round(4).astype(str)
     rounded_coarse = df[sig_cols].round(CONFLICT_ROUND_DECIMALS).astype(str)
@@ -735,7 +756,8 @@ def attach_training_metadata(df: pd.DataFrame) -> tuple[pd.DataFrame, dict]:
     df["_conflict_sig"] = rounded_coarse.agg("|".join, axis=1)
 
     quality_summary = {
-        "invalid_or_off_rows": int(invalid_or_off.sum()),
+        "invalid_off_rows": int(invalid_off_flag.sum()),
+        "invalid_loaded_rows": int(invalid_loaded_flag.sum()),
         "very_weak_positive_rows": int(very_weak_positive.sum()),
         "soft_positive_rows": int(soft_positive.sum()),
         "flat_extinguish_positive_rows": int(flat_extinguish_positive.sum()),
@@ -775,7 +797,7 @@ def resolve_near_duplicate_label_conflicts(df: pd.DataFrame) -> tuple[pd.DataFra
     }
 
     kept_rows = []
-    for _, group in df.groupby("_conflict_sig", sort=False, dropna=False):
+    for _, group in df.groupby(["conflict_scope", "_conflict_sig"], sort=False, dropna=False):
         stats["groups_seen"] += 1
         g = group.copy()
         g[TARGET] = pd.to_numeric(g[TARGET], errors="coerce").fillna(0).astype(int)
@@ -890,12 +912,14 @@ def clean_dataset(df: pd.DataFrame) -> tuple[pd.DataFrame, dict]:
     df, quality_summary = attach_training_metadata(df)
     df, conflict_stats = resolve_near_duplicate_label_conflicts(df)
 
-    # Final exact dedupe after conflict handling. Ignore the label here so exact
-    # feature collisions do not keep both a 0 and a 1 copy.
+    # Final exact dedupe after conflict handling. Keep dedupe local to the current
+    # trial/session scope so similar arc signatures from unrelated captures are not
+    # collapsed into one row.
+    local_dedupe_cols = (["conflict_scope"] if "conflict_scope" in df.columns else []) + FEATURES
     df = df.sort_values(
         ["rf_train_row", "label_trust", "source_priority", "sample_weight"],
         ascending=[False, False, False, False],
-    ).drop_duplicates(subset=FEATURES, keep="first").copy()
+    ).drop_duplicates(subset=local_dedupe_cols, keep="first").copy()
 
     df[TARGET] = pd.to_numeric(df[TARGET], errors="coerce").fillna(0).astype(int)
     df["rf_train_row"] = pd.to_numeric(
@@ -909,6 +933,9 @@ def clean_dataset(df: pd.DataFrame) -> tuple[pd.DataFrame, dict]:
         errors="coerce",
     ).fillna(0).astype(int)
     df["label_conflict"] = pd.to_numeric(df.get("label_conflict", 0), errors="coerce").fillna(0).astype(int)
+    df["hard_negative"] = pd.to_numeric(df.get("hard_negative", 0), errors="coerce").fillna(0).astype(int)
+    if "conflict_scope" not in df.columns:
+        df["conflict_scope"] = "global"
 
     print("Rows before cleaning:", before)
     print("Rows after cleaning :", len(df))
@@ -944,7 +971,7 @@ def clean_dataset(df: pd.DataFrame) -> tuple[pd.DataFrame, dict]:
         "division_counts": ({str(k): int(v) for k, v in df["division_tag"].fillna("").replace("", "unknown").value_counts().to_dict().items()} if "division_tag" in df.columns else {}),
         "trial_counts": ({str(k): int(v) for k, v in df["trial_id"].astype(str).value_counts().to_dict().items()} if "trial_id" in df.columns else {}),
         "unknown_division_rows": int((df.get("division_tag", pd.Series("", index=df.index, dtype=object)).astype(str).str.strip() == "").sum()),
-        "forced_normal_section_rows": int((df.get("division_tag", pd.Series("", index=df.index, dtype=object)).astype(str).str.lower().isin(["start", "steady", "close"])).sum()),
+        "section_prior_counts": ({str(k): int(v) for k, v in df.get("section_prior", pd.Series("neutral", index=df.index)).astype(str).value_counts().to_dict().items()}),
         "conflict_resolution": {str(k): int(v) for k, v in conflict_stats.items()},
     }
     return df, summary

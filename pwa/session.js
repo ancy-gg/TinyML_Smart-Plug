@@ -96,7 +96,7 @@
   let sid = "";
   let currentCsv = "";
   let csvHeaders = [];
-  let currentDownloadName = "TSP_ML_session.csv";
+  let currentDownloadName = "session.csv";
   let currentMeta = {};
   let SEGMENTS = [];
 
@@ -137,13 +137,27 @@
       .slice(0, 64) || fallback;
   }
 
+  function canonicalDatasetStem(name, fallback = "session") {
+    let stem = String(name || "").replace(/\.[a-z0-9]+$/i, "").trim();
+    if (!stem) return fallback;
+    stem = stem.replace(/^TSP_ML_/i, "");
+    stem = stem.replace(/^upload_\d+_/i, "");
+    stem = stem.replace(/^processed_\d+_/i, "");
+    stem = stem.replace(/_(AUTO|ARC|NORMAL)_[0-9]{4}-[0-9]{2}-[0-9]{2}[-_0-9]*$/i, "");
+    stem = stem.replace(/__[a-z]+_\d+$/i, "");
+    stem = stem.replace(/(?:_|-)(?:19|20)\d{2}(?:[_-]?\d{2}){2}(?:[_-]?\d{2}){1,3}$/i, "");
+    stem = stem.replace(/(?:_|-)processed$/i, "");
+    stem = stem.replace(/_+/g, "_").replace(/^_+|_+$/g, "");
+    return stem || fallback;
+  }
+
   function isUploadedCsvSession(meta) {
     return !!(meta?.uploaded_csv || String(meta?.load_type || "").trim().toLowerCase() === "uploaded_csv");
   }
 
   function viewerDisplayName(meta, sessionId) {
     const sourceFile = String(meta?.source_file || "").trim();
-    if (sourceFile) return titleizeTokenText(sourceFile, sourceFile);
+    if (sourceFile) return titleizeTokenText(parseDatasetFilenameMeta(sourceFile).loadType ? canonicalDatasetStem(sourceFile, sourceFile) : sourceFile, sourceFile);
     const load = String(meta?.load_type || "").trim();
     if (load && load.toLowerCase() !== "uploaded_csv" && load.toLowerCase() !== "unknown") return titleizeTokenText(load, load);
     if (isUploadedCsvSession(meta)) return "Uploaded CSV";
@@ -153,8 +167,8 @@
   }
 
   function viewerDownloadName(meta, sessionId) {
-    const base = viewerDisplayName(meta, sessionId);
-    return `TSP_ML_${safeFilenameSegment(base, safeFilenameSegment(sessionId || 'session', 'session'))}.csv`;
+    const base = canonicalDatasetStem(String(meta?.source_file || "").trim() || viewerDisplayName(meta, sessionId), safeFilenameSegment(sessionId || 'session', 'session'));
+    return `${safeFilenameSegment(base, safeFilenameSegment(sessionId || 'session', 'session'))}.csv`;
   }
 
   function announceActiveSession(sessionId) {
@@ -170,13 +184,13 @@
   }
 
   function safeCsvFilename(name) {
-    let out = String(name || `TSP_ML_${sid || "session"}.csv`).trim();
+    let out = String(name || `${sid || "session"}.csv`).trim();
     if (!out.toLowerCase().endsWith(".csv")) out += ".csv";
     return out.replace(/[\/:*?"<>|]+/g, "_");
   }
 
   function viewerDurationSeconds(meta) {
-    const explicit = Number(meta?.duration_s ?? meta?.source_duration_s);
+    const explicit = Number(meta?.source_duration_s ?? meta?.duration_s);
     if (Number.isFinite(explicit) && explicit > 0) return explicit;
     const st = Number(meta?.start_ms || 0);
     const en = Number(meta?.end_ms || 0);
@@ -185,6 +199,40 @@
     const sourceFs = Number(meta?.source_sample_rate_hz || 0);
     if (rows > 0 && Number.isFinite(sourceFs) && sourceFs > 0) return rows / sourceFs;
     return null;
+  }
+
+  function deriveCsvTimingMetaLocal(csvText) {
+    const clean = String(csvText || "").replace(/^﻿/, "").trim();
+    if (!clean) return { durationS: null, rowCount: 0, sourceSampleRateHz: null };
+    const parsed = Papa.parse(clean, { header: true, dynamicTyping: true, skipEmptyLines: true, transformHeader: normalizeHeaderName });
+    const rows = (parsed?.data || []).filter((row) => row && Object.keys(row).length);
+    if (!rows.length) return { durationS: null, rowCount: 0, sourceSampleRateHz: null };
+    const rawEpoch = rows.map((r) => Number(r?.epoch_ms)).filter((v) => Number.isFinite(v) && v > 0);
+    if (rawEpoch.length >= 2) {
+      return { durationS: Math.max(0, (rawEpoch[rawEpoch.length - 1] - rawEpoch[0]) / 1000), rowCount: rows.length, sourceSampleRateHz: null };
+    }
+    const rawUp = rows.map((r) => Number(r?.uptime_ms)).filter((v) => Number.isFinite(v) && v >= 0);
+    if (rawUp.length >= 2) {
+      const positive = [];
+      for (let i = 1; i < rawUp.length; i++) {
+        const d = rawUp[i] - rawUp[i - 1];
+        if (Number.isFinite(d) && d > 0) positive.push(d);
+      }
+      if (positive.length) {
+        positive.sort((a, b) => a - b);
+        const med = positive[Math.floor(positive.length / 2)] / 1000;
+        let total = 0;
+        for (let i = 1; i < rawUp.length; i++) {
+          let d = (rawUp[i] - rawUp[i - 1]) / 1000;
+          if (!Number.isFinite(d) || d <= 0 || d > Math.max(med * 4, 0.75)) d = med;
+          total += d;
+        }
+        return { durationS: total > 0 ? total : null, rowCount: rows.length, sourceSampleRateHz: null };
+      }
+    }
+    const sourceFs = rows.map((r) => Number(r?.source_sample_rate_hz ?? r?.adc_fs_hz)).find((v) => Number.isFinite(v) && v > 0) || null;
+    if (sourceFs && rows.length) return { durationS: rows.length / sourceFs, rowCount: rows.length, sourceSampleRateHz: sourceFs };
+    return { durationS: null, rowCount: rows.length, sourceSampleRateHz: sourceFs };
   }
 
   function viewerMetaText(meta) {
@@ -419,7 +467,7 @@
       const csv = buildCsvFromRows();
       if (!csv) return;
       currentCsv = csv;
-      downloadTextFile(currentDownloadName || safeCsvFilename(`TSP_ML_${sid || "session"}.csv`), csv);
+      downloadTextFile(currentDownloadName || safeCsvFilename(`${sid || "session"}.csv`), csv);
     };
   }
 
@@ -770,6 +818,14 @@
       return fromEpoch;
     }
 
+    const fromFrameStart = rows.length && rows[0].frame_start_uptime_ms !== undefined
+      ? buildContinuousTimeAxisFromField(rows, "frame_start_uptime_ms", 0.001)
+      : null;
+    if (fromFrameStart) {
+      TIME_AXIS_SOURCE = "frame_start_uptime_ms";
+      return fromFrameStart;
+    }
+
     const fromUptime = rows.length && rows[0].uptime_ms !== undefined
       ? buildContinuousTimeAxisFromField(rows, "uptime_ms", 0.001)
       : null;
@@ -778,7 +834,8 @@
       return fromUptime;
     }
 
-    return rows.map((_, i) => i / 30.0);
+    TIME_AXIS_SOURCE = "row_index";
+    return rows.map((_, i) => i);
   }
 
   function normalizeHeaderName(name) {
@@ -846,10 +903,12 @@
       cb.checked = !!showPref.get(k);
       cb.onchange = () => {
         const on = !!cb.checked;
+        const xWindow = captureXWindow();
         showPref.set(k, on);
         if (plot) {
           plot.setSeries(i + 1, { show: on });
           plot.setData(plot.data, false);
+          restoreXWindow(xWindow);
         }
         updateValueReadout();
         updateStats();
@@ -923,7 +982,7 @@
     }
 
     csvHeaders = ensureCsvHeadersAndLabelArc(ROWS, parsed?.meta?.fields || []);
-    currentDownloadName = safeCsvFilename(options.downloadName || `TSP_ML_${sid || "session"}.csv`);
+    currentDownloadName = safeCsvFilename(options.downloadName || `${sid || "session"}.csv`);
 
     if (!refreshDerivedData(true)) {
       setStatus(options.noNumericStatus || "No numeric series found in this CSV.");
@@ -945,7 +1004,6 @@
       buildPlot();
       if (X.length) {
         setPlayIdx(0, true);
-        applyZoomPercent(100, X[0]);
       }
       updateStats();
       renderSegmentList();
@@ -991,9 +1049,9 @@
   }
 
   const palette = [
-    "#2ecc71", "#e74c3c", "#3498db", "#f1c40f",
-    "#9b59b6", "#1abc9c", "#e67e22", "#ecf0f1",
-    "#00bcd4", "#ff4081", "#cddc39", "#ff9800",
+    "#2ecc71", "#e85b53", "#4da3ff", "#f1c40f",
+    "#9b6dff", "#19c6b3", "#ff9b42", "#d7dde8",
+    "#6ad0ff", "#ff6fae", "#c7d84f", "#ffbf5a",
   ];
 
   let plot = null;
@@ -1044,6 +1102,27 @@
     fault_state: { label: "Fault State", unit: "", decimals: 0 },
     arc_counter: { label: "Arc Counter", unit: "", decimals: 0 },
     adc_fs_hz: { label: "ADC Rate", unit: "Hz", decimals: 1 },
+    fs_err_hz: { label: "ADC Rate Error", unit: "Hz", decimals: 1 },
+    frame_start_uptime_ms: { label: "Frame Start", unit: "ms", decimals: 0 },
+    frame_end_uptime_ms: { label: "Frame End", unit: "ms", decimals: 0 },
+    frame_dt_ms: { label: "Frame Dt", unit: "ms", decimals: 2 },
+    compute_time_ms: { label: "Compute Time", unit: "ms", decimals: 2 },
+    queue_drop_count: { label: "Queue Drops", unit: "", decimals: 0 },
+    sampling_quality_bad: { label: "Sampling Quality Bad", unit: "", decimals: 0 },
+    invalid_loaded_flag: { label: "Invalid Loaded", unit: "", decimals: 0 },
+    invalid_off_flag: { label: "Invalid Off", unit: "", decimals: 0 },
+    relay_blank_active: { label: "Relay Blank", unit: "", decimals: 0 },
+    turnon_blank_active: { label: "Turn-on Blank", unit: "", decimals: 0 },
+    transient_blank_active: { label: "Transient Blank", unit: "", decimals: 0 },
+    suspicious_run_len: { label: "Suspicious Run Len", unit: "", decimals: 0 },
+    suspicious_run_energy: { label: "Suspicious Run Energy", unit: "", decimals: 3 },
+    invalid_loaded_run_len: { label: "Invalid Loaded Run", unit: "", decimals: 0 },
+    delta_irms_abs: { label: "|Δ Irms|", unit: "A", decimals: 4 },
+    delta_hf_energy: { label: "|Δ HF|", unit: "dB", decimals: 4 },
+    delta_flux: { label: "|Δ Flux|", unit: "", decimals: 4 },
+    v_sag_pct: { label: "Voltage Sag", unit: "%", decimals: 3 },
+    restrike_count_short: { label: "Restrikes Short", unit: "", decimals: 0 },
+    halfcycle_asymmetry: { label: "Half-cycle Asym", unit: "%", decimals: 3 },
     auto_capture: { label: "Auto Capture", unit: "", decimals: 0 },
   };
 
@@ -1110,7 +1189,7 @@
     axisPref.clear();
     currentCsv = "";
     csvHeaders = [];
-    currentDownloadName = "TSP_ML_session.csv";
+    currentDownloadName = "session.csv";
     currentMeta = {};
     SEGMENTS = [];
     if (toggleList) toggleList.innerHTML = "";
@@ -1318,6 +1397,18 @@
     const cur = Math.max(1e-9, plot.scales.x.max - plot.scales.x.min);
     const pct = Math.round(Math.max(5, Math.min(100, (cur / full) * 100)));
     rngZoom.value = String(pct);
+  }
+
+  function captureXWindow() {
+    const min = plot?.scales?.x?.min;
+    const max = plot?.scales?.x?.max;
+    return Number.isFinite(min) && Number.isFinite(max) && max > min ? { min, max } : null;
+  }
+
+  function restoreXWindow(windowState) {
+    if (!plot || !windowState) return;
+    const [min, max] = clampXWindow(windowState.min, windowState.max);
+    plot.setScale("x", { min, max });
   }
 
   function applyZoomPercent(pct, centerX = null) {
@@ -1536,7 +1627,7 @@
     const showY2 = !normalize && hasVisibleY2();
 
     const axes = [
-      { stroke: axisStroke, grid: { show: false }, size: 48 },
+      { stroke: axisStroke, grid: { show: false }, size: 60 },
       { stroke: axisStroke, grid: { show: false }, scale: "y" },
     ];
     if (showY2) axes.push({ stroke: axisStroke, grid: { show: false }, scale: "y2", side: 1 });
@@ -1623,7 +1714,8 @@
   }
 
   function updateValueReadout() {
-    if (!valueLine || !DATA_RAW || !KEYS.length) return;
+    const source = currentData() || DATA_RAW;
+    if (!valueLine || !source || !KEYS.length) return;
     valueLine.innerHTML = "";
 
     const meta = document.createElement("div");
@@ -1631,7 +1723,7 @@
     meta.innerHTML = `<span class="vdot" style="background:rgba(255,255,255,0.35)"></span><span class="vk">idx ${playIdx}/${X.length - 1}</span><span class="vv">t ${fmt(X[playIdx])}s</span>`;
     valueLine.appendChild(meta);
 
-    const maxChips = 12;
+    const maxChips = 20;
     let shown = 0;
 
     for (let i = 0; i < KEYS.length; i++) {
@@ -1639,7 +1731,7 @@
       if (!showPref.get(k)) continue;
       if (shown >= maxChips) break;
 
-      const v = DATA_RAW[i + 1]?.[playIdx];
+      const v = source[i + 1]?.[playIdx];
       const chip = document.createElement("div");
       chip.className = "vchip";
       chip.innerHTML = `<span class="vdot" style="background:${palette[i % palette.length]}"></span><span class="vk">${displaySeriesName(k)}</span><span class="vv">${formatSeriesValue(k, v)}</span>`;
@@ -1833,15 +1925,12 @@
 
   function rebuildForDataMode() {
     const keep = playIdx;
-    const xMin = plot?.scales?.x?.min;
-    const xMax = plot?.scales?.x?.max;
-    const hadZoom = Number.isFinite(xMin) && Number.isFinite(xMax) && xMax > xMin;
+    const xWindow = captureXWindow();
     buildPlot();
-    if (plot && hadZoom) {
-      plot.setScale("x", { min: xMin, max: xMax });
-    }
+    restoreXWindow(xWindow);
     setPlayIdx(keep, true);
     syncZoomSlider();
+    updateValueReadout();
     updateStats();
   }
 
@@ -2076,31 +2165,16 @@
       return;
     }
 
-    const csv = buildCsvFromRows();
-    if (!csv) {
-      setStatus("No processed CSV to save.");
-      return;
-    }
-
     const sourceSid = String(sid || "").trim();
     const sourceFile = String(currentMeta?.source_file || currentDownloadName || sourceSid || "processed_csv").trim();
-    const metaPatch = {
+    const baseMeta = {
       source_session_id: sourceSid || "local_csv",
-      source_file: sourceFile,
-      load_type: String(currentMeta?.load_type || "processed_csv").trim() || "processed_csv",
-      duration_s: viewerDurationSeconds(currentMeta),
-      start_ms: Number(currentMeta?.start_ms || 0) || Date.now(),
-      end_ms: Number(currentMeta?.end_ms || 0) || null,
       uploaded_csv: false,
       processed_csv: true,
-      row_count: ROWS.length,
+      start_ms: Number(currentMeta?.start_ms || 0) || Date.now(),
+      end_ms: Number(currentMeta?.end_ms || 0) || null,
       source_sample_rate_hz: Number(currentMeta?.source_sample_rate_hz || 0) || null,
-      trial_number: Number(currentMeta?.trial_number || 0) || null,
-      division_tag: String(currentMeta?.division_tag || "").trim(),
     };
-    Object.keys(metaPatch).forEach((key) => {
-      if (metaPatch[key] === undefined) delete metaPatch[key];
-    });
 
     const button = btnSaveProcessed;
     const oldText = button?.textContent || "Save Processed";
@@ -2108,10 +2182,59 @@
       button.disabled = true;
       button.textContent = "Saving...";
     }
+
     try {
-      const stored = await window.storeCsvSession(sourceFile, csv, "processed", metaPatch);
-      setStatus(`Processed CSV saved as ${stored.sid}.`);
-      if (window.toast) window.toast("Processed CSV saved.", "ok");
+      const savedItems = [];
+      const segmentFiles = buildSegmentCsvFiles();
+
+      if (segmentFiles.length) {
+        for (const file of segmentFiles) {
+          const parsedName = parseDatasetFilenameMeta(file.filename);
+          const parsed = Papa.parse(file.text.trim(), { header: true, dynamicTyping: true, skipEmptyLines: true, transformHeader: normalizeHeaderName });
+          const segRows = (parsed?.data || []).filter((row) => row && Object.keys(row).length);
+          const segMeta = {
+            ...baseMeta,
+            source_file: file.filename,
+            load_type: parsedName.loadType || String(currentMeta?.load_type || "processed_csv").trim() || "processed_csv",
+            duration_s: viewerDurationSeconds({
+              row_count: segRows.length,
+              source_sample_rate_hz: Number(currentMeta?.source_sample_rate_hz || 0) || null
+            }),
+            row_count: segRows.length,
+            trial_number: parsedName.trial || null,
+            division_tag: String(parsedName.division || "").trim(),
+          };
+          const timing = (deriveCsvTimingMetaLocal(file.text));
+          if (timing && Number.isFinite(timing.durationS) && timing.durationS > 0) {
+            segMeta.duration_s = timing.durationS;
+            segMeta.source_duration_s = timing.durationS;
+          }
+          const stored = await window.storeCsvSession(file.filename, file.text, "processed", segMeta);
+          savedItems.push(stored);
+        }
+        setStatus(`Saved ${savedItems.length} processed split CSVs.`);
+        if (window.toast) window.toast(`Saved ${savedItems.length} processed split CSVs.`, "ok");
+      } else {
+        const csv = buildCsvFromRows();
+        if (!csv) {
+          setStatus("No processed CSV to save.");
+          return;
+        }
+        const timing = (deriveCsvTimingMetaLocal(csv));
+        const metaPatch = {
+          ...baseMeta,
+          source_file: sourceFile,
+          load_type: String(currentMeta?.load_type || "processed_csv").trim() || "processed_csv",
+          duration_s: timing?.durationS ?? viewerDurationSeconds(currentMeta),
+          source_duration_s: timing?.durationS ?? viewerDurationSeconds(currentMeta),
+          row_count: ROWS.length,
+          trial_number: Number(currentMeta?.trial_number || 0) || null,
+          division_tag: String(currentMeta?.division_tag || "").trim(),
+        };
+        const stored = await window.storeCsvSession(sourceFile, csv, "processed", metaPatch);
+        setStatus(`Processed CSV saved as ${stored.sid}.`);
+        if (window.toast) window.toast("Processed CSV saved.", "ok");
+      }
     } catch (err) {
       console.error(err);
       setStatus("Failed to save processed CSV.");

@@ -3,7 +3,7 @@
 #include "MainConfiguration.h"
 
 struct ArcDetectionResult {
-  float fs_hz   = FS_TARGET_HZ;
+  float fs_hz   = FS_INTENDED_HZ;
   float irms_a  = 0.0f;
 
   float spectral_flux_midhf         = 0.0f;
@@ -16,7 +16,7 @@ struct ArcDetectionResult {
   float hf_energy_delta             = 0.0f;
   float zcv                         = 0.0f;
   float abs_irms_zscore_vs_baseline = 0.0f;
-
+  float halfcycle_asymmetry         = 0.0f;
 
   bool feat_valid    = false;
   bool current_valid = false;

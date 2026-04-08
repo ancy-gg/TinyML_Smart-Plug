@@ -4,6 +4,9 @@ import os
 from pathlib import Path
 
 from tinyml_common import (
+    build_group_inventory_report,
+    build_short_burst_report,
+    build_subset_metrics_report,
     load_clean_dataset,
     make_group_splits,
     save_model_bundle,
@@ -49,7 +52,7 @@ def main():
     if args.n_jobs:
         os.environ["TINYML_N_JOBS"] = str(args.n_jobs)
 
-    _, X, y, groups, w = load_clean_dataset(
+    df_meta, X, y, groups, w = load_clean_dataset(
         args.csv,
         include_invalid=args.include_invalid,
     )
@@ -79,6 +82,22 @@ def main():
         min_threshold=args.min_threshold,
         progress_callback=emit_progress,
     )
+
+    y_score = result["estimator"].predict_proba(splits["X_test"])[:, 1]
+    test_meta = df_meta.iloc[splits["test_idx"]].reset_index(drop=True)
+    full_load_col = "parsed_load_type" if "parsed_load_type" in df_meta.columns else ("load_type" if "load_type" in df_meta.columns else None)
+    test_load_col = "parsed_load_type" if "parsed_load_type" in test_meta.columns else ("load_type" if "load_type" in test_meta.columns else None)
+    result["test_per_trial"] = build_subset_metrics_report(test_meta, splits["y_test"].to_numpy(), y_score, result["threshold"], "trial_id")
+    if test_load_col is not None:
+        result["test_per_load"] = build_subset_metrics_report(test_meta, splits["y_test"].to_numpy(), y_score, result["threshold"], test_load_col)
+    else:
+        result["test_per_load"] = []
+    result["short_burst_sensitivity"] = build_short_burst_report(test_meta, splits["y_test"].to_numpy(), y_score, result["threshold"], max_positive_run_rows=3)
+    result["leave_one_trial_out_inventory"] = build_group_inventory_report(df_meta, "trial_id")
+    if full_load_col is not None:
+        result["leave_one_load_type_out_inventory"] = build_group_inventory_report(df_meta, full_load_col)
+    else:
+        result["leave_one_load_type_out_inventory"] = []
 
     search_plan = estimate_search_plan(args.n_iter)
     print("Search plan:", search_plan)

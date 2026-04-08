@@ -13,7 +13,7 @@ static constexpr bool ENABLE_AUTO_ARC_CAPTURE = false;
 // Cloud / OTA configuration
 static constexpr const char* FIREBASE_API_KEY = "AIzaSyAmJlZZszyWPJFgIkTAAl_TbIySys1nvEw";
 static constexpr const char* FIREBASE_DB_URL  = "tinyml-smart-plug-default-rtdb.asia-southeast1.firebasedatabase.app";
-static constexpr const char* FW_VERSION       = "v7.0.5-c-gen0";
+static constexpr const char* FW_VERSION       = "v7.1.1-c-gen1";
 static constexpr const char* OTA_DESIRED_VERSION_PATH = "/ota/desired_version";
 static constexpr const char* OTA_FIRMWARE_URL_PATH    = "/ota/firmware_url";
 
@@ -45,7 +45,11 @@ static inline const char* stateToCstr(FaultState s) {
 struct FeatureFrame {
   uint64_t epoch_ms  = 0;
   uint32_t uptime_ms = 0;
+  uint32_t frame_start_uptime_ms = 0;
+  uint32_t frame_end_uptime_ms = 0;
 
+  float frame_dt_ms = 0.0f;
+  float compute_time_ms = 0.0f;
   float vrms   = 0.0f;
   float irms   = 0.0f;
   float temp_c = 0.0f;
@@ -61,11 +65,29 @@ struct FeatureFrame {
   float zcv                          = 0.0f;
   float abs_irms_zscore_vs_baseline  = 0.0f;
 
+  // Lightweight temporal / context signals.
+  float fs_err_hz = 0.0f;
+  float suspicious_run_energy = 0.0f;
+  float delta_irms_abs = 0.0f;
+  float delta_hf_energy = 0.0f;
+  float delta_flux = 0.0f;
+  float v_sag_pct = 0.0f;
+  float halfcycle_asymmetry = 0.0f;
   float adc_fs_hz = 0.0f;
 
+  uint32_t queue_drop_count = 0;
+  uint16_t suspicious_run_len = 0;
+  uint16_t invalid_loaded_run_len = 0;
+  uint8_t restrike_count_short = 0;
   uint8_t feat_valid    = 0;
   uint8_t current_valid = 0;
   uint8_t model_pred    = 0;
+  uint8_t sampling_quality_bad = 0;
+  uint8_t invalid_loaded_flag = 0;
+  uint8_t invalid_off_flag = 0;
+  uint8_t relay_blank_active = 0;
+  uint8_t turnon_blank_active = 0;
+  uint8_t transient_blank_active = 0;
 };
 
 // =========================
@@ -85,15 +107,20 @@ static constexpr uint8_t  BUZZER_STATUS_MAX_DUTY = 26;
 // =========================
 // Sampling and FFT
 // =========================
-static constexpr float    FS_TARGET_HZ = 32768.0f;
+// The ADC is tuned for an intended cadence near 30 kHz, but runtime must keep the
+// *measured* sampling rate truthful. Do not snap or canonicalize it in code.
+static constexpr float    FS_INTENDED_HZ = 30000.0f;
+static constexpr float    FS_TARGET_HZ = FS_INTENDED_HZ;
 static constexpr uint16_t N_SAMP       = 2048;
-static constexpr float    FS_CANONICALIZE_TOL_HZ = 4096.0f;
 static constexpr float    MAINS_F0_HZ  = 60.0f;
 
+// The analog AAF is already around 10 kHz / Q≈0.73. Keep a conservative cascaded
+// digital LPF as a second anti-alias / de-ringing stage before feature extraction.
 static constexpr bool     CURRENT_SOFT_AAF_ENABLE = true;
-static constexpr float    CURRENT_SOFT_AAF_CUTOFF_HZ = 15000.0f;
-static constexpr float    CURRENT_SOFT_AAF_Q = 0.70710678f;
-static constexpr float    CURRENT_SOFT_AAF_MAX_FRAC_NYQUIST = 0.98f;
+static constexpr uint8_t  CURRENT_SOFT_AAF_STAGES = 3;
+static constexpr float    CURRENT_SOFT_AAF_CUTOFF_HZ = 8700.0f;
+static constexpr float    CURRENT_SOFT_AAF_Q = 0.73f;
+static constexpr float    CURRENT_SOFT_AAF_MAX_FRAC_NYQUIST = 0.92f;
 
 // =========================
 // Wi-Fi startup / portal
@@ -159,6 +186,13 @@ static constexpr uint32_t FAULT_ALERT_MIN_MS = 3000UL;
 static constexpr uint32_t FAULT_BUZZ_MS      = 3000UL;
 static constexpr uint32_t FAULT_NET_QUIET_MS = 2350UL;
 static constexpr uint32_t OLED_RENDER_INTERVAL_MS = 33UL;
+
+// Sensing pipeline / timing quality
+static constexpr uint8_t  FEATURE_FRAME_QUEUE_LEN        = 8;
+static constexpr float    FRAME_DT_BAD_MS                = 110.0f;
+static constexpr float    FRAME_COMPUTE_BAD_MS           = 28.0f;
+static constexpr float    FS_ERR_BAD_HZ                  = 1800.0f;
+
 
 static constexpr int   ARC_RUNTIME_FEATURE_SPACE_VERSION = 4;
 static constexpr float DB_RATIO_EPS                 = 1e-6f;
@@ -246,7 +280,6 @@ static constexpr uint32_t CLOUD_CONTROL_POLL_MS         = 1500UL;
 static constexpr uint16_t AUTO_ARC_CAPTURE_DURATION_S   = 12;
 static constexpr uint32_t AUTO_ARC_CAPTURE_COOLDOWN_MS  = 60000UL;
 static constexpr int8_t ML_UNKNOWN_LABEL                = -1;
-static constexpr uint16_t ML_LOG_RATE_HZ                = 30;
 static constexpr uint16_t ML_LOG_DURATION_S             = 10;
 static constexpr uint16_t ML_LOG_CHUNK_DURATION_S       = 10;
 static constexpr uint16_t ML_LOG_MIN_DURATION_S         = 1;
@@ -254,25 +287,24 @@ static constexpr uint16_t ML_LOG_MAX_DURATION_S         = 7200;
 static constexpr uint16_t ML_LOG_AUTO_MIN_DURATION_S    = 5;
 static constexpr uint16_t ML_LOG_AUTO_MAX_DURATION_S    = 60;
 
-static constexpr uint32_t CLOUD_LIVE_NORMAL_INTERVAL_MS = 10000UL;
-static constexpr uint32_t CLOUD_LIVE_FAULT_INTERVAL_MS  = 2500UL;
+static constexpr uint32_t CLOUD_LIVE_NORMAL_INTERVAL_MS = 5000UL;
+static constexpr uint32_t CLOUD_LIVE_FAULT_INTERVAL_MS  = 1200UL;
 static constexpr uint32_t CLOUD_REFRESH_KEEPALIVE_MS    = 1000UL;
 
 // =========================
 // Current backend (MCP3204 only)
 // =========================
 static constexpr uint8_t  MCP3204_CHANNEL        = 0;
-static constexpr uint32_t MCP3204_SPI_HZ         = 2000000UL;
+static constexpr uint32_t MCP3204_SPI_HZ         = 1200000UL;
 static constexpr uint8_t  MCP3204_OVERSAMPLE     = 1;
 static constexpr uint8_t  MCP3204_MEDIAN_SAMPLES = 1;
 static constexpr uint16_t MCP3204_STARTUP_FLUSH  = 256;
 static constexpr uint8_t  MCP3204_WARMUP_BURSTS  = 2;
 static constexpr uint8_t  MCP3204_BURST_FLUSH    = 4;
-static constexpr float    MCP3204_FS_FILTER_ALPHA = 0.18f;
-static constexpr float    MCP3204_FS_MIN_ACCEPT_HZ = 24000.0f;
-static constexpr float    MCP3204_FS_MAX_ACCEPT_HZ = 45000.0f;
-static constexpr float    MCP3204_FS_SNAP_HZ = FS_TARGET_HZ;
-static constexpr float    MCP3204_FS_SNAP_BAND_HZ = 4096.0f;
+static constexpr float    MCP3204_FS_WARN_LOW_HZ = 24000.0f;
+static constexpr float    MCP3204_FS_WARN_HIGH_HZ = 34000.0f;
+static constexpr float    MCP3204_FS_HARD_LOW_HZ = 18000.0f;
+static constexpr float    MCP3204_FS_HARD_HIGH_HZ = 42000.0f;
 
 static constexpr float IRMS_GATE_ON_A               = 0.050f;
 static constexpr float IRMS_GATE_OFF_A              = 0.025f;
@@ -281,8 +313,8 @@ static constexpr float FEATURE_MIN_VRMS             = 70.0f;
 static constexpr float FEATURE_MIN_IRMS_A           = 0.050f;
 static constexpr float ARC_MIN_IRMS_A               = 0.060f;
 static constexpr float FEATURE_REQUIRE_FUND_BELOW_A = 0.180f;
-static constexpr float CURRENT_LPF_HZ               = 1800.0f;
-static constexpr float CURRENT_BASE_LPF_HZ          = 260.0f;
+static constexpr float CURRENT_LPF_HZ               = 2000.0f;
+static constexpr float CURRENT_BASE_LPF_HZ          = 240.0f;
 static constexpr float ZC_HYS_MIN_A                 = 0.035f;
 static constexpr float ZC_HYS_FRAC                  = 0.18f;
 static constexpr float ZC_DWELL_THR_FRAC            = 0.10f;
@@ -292,20 +324,20 @@ static constexpr float PULSE_MAX_WIDTH_US           = 500.0f;
 static constexpr float PULSE_THRESH_RMS_MUL         = 7.0f;
 static constexpr float PULSE_THRESH_MIN_A           = 0.120f;
 static constexpr float MIDBAND_LO_HZ                = 220.0f;
-static constexpr float MIDBAND_HI_HZ                = 3500.0f;
+static constexpr float MIDBAND_HI_HZ                = 3200.0f;
 static constexpr float UPPERMID_LO_HZ               = 900.0f;
-static constexpr float UPPERMID_HI_HZ               = 6000.0f;
-static constexpr float HF_BAND_LO_HZ                = 6000.0f;
-static constexpr float HF_BAND_HI_HZ                = 15000.0f;
+static constexpr float UPPERMID_HI_HZ               = 4500.0f;
+static constexpr float HF_BAND_LO_HZ                = 4500.0f;
+static constexpr float HF_BAND_HI_HZ                = 9000.0f;
 static constexpr float SPEC_ENT_LO_HZ               = 220.0f;
-static constexpr float SPEC_ENT_HI_HZ               = 15000.0f;
+static constexpr float SPEC_ENT_HI_HZ               = 9000.0f;
 static constexpr float FUND_SNR_MIN                 = 6.0f;
 static constexpr float FUND_MAG_MIN                 = 1e-5f;
 static constexpr float SF_EPS                       = 1e-12f;
 static constexpr int CURRENT_MIN_ACTIVITY_CHANGES   = 10;
 static constexpr uint16_t CURRENT_MIN_CODE_SPAN     = 10;
 static constexpr uint16_t LOW_CURRENT_CODE_SPAN     = 30;
-static constexpr float CURRENT_FRAME_MIN_FS_HZ      = 24000.0f;
+static constexpr float CURRENT_FRAME_MIN_FS_HZ      = MCP3204_FS_HARD_LOW_HZ;
 static constexpr float PULSE_ANALYSIS_MIN_IRMS_A    = 0.075f;
 static constexpr float PULSE_ANALYSIS_MIN_RESID_A   = 0.035f;
 static constexpr float CURRENT_DISPLAY_ON_A         = 0.040f;
@@ -315,7 +347,7 @@ static constexpr uint32_t CURRENT_IDLE_SUPPRESS_HOLD_MS = 5000UL;
 static constexpr float ARC_WEAK_EVENT_RESID_MUL     = 0.75f;
 
 static constexpr float SPECTRAL_FLUX_LO_HZ             = 900.0f;
-static constexpr float SPECTRAL_FLUX_HI_HZ             = 15000.0f;
+static constexpr float SPECTRAL_FLUX_HI_HZ             = 9000.0f;
 static constexpr int   SPECTRAL_FLUX_HARM_SKIP_BINS    = 2;
 static constexpr float EDGE_SPIKE_WINDOW_MS            = 0.35f;
 static constexpr float EDGE_SPIKE_MIN_BASELINE_A       = 0.10f;
