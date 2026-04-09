@@ -9,6 +9,7 @@ from pathlib import Path
 import joblib
 
 from tinyml_common import (
+    ARC_FEATURES,
     ensure_dir,
     pick_winner,
     save_duel_bundle,
@@ -20,7 +21,7 @@ SCRIPT_DIR = Path(__file__).resolve().parent
 TINYML_DIR = SCRIPT_DIR.parent
 PROJECT_ROOT = TINYML_DIR.parent
 
-CSV_PATH = str(PROJECT_ROOT / "tinyml" / "data" / "cleaned_data.csv")
+CSV_PATH = str(PROJECT_ROOT / "tinyml" / "data" / "arc_training.csv")
 OUT_HEADER = str(PROJECT_ROOT / "tinyml" / "model" / "TinyMLTreeEnsemble.h")
 OUT_JOBLIB = str(PROJECT_ROOT / "tinyml" / "trainer" / "lib" / "TinyMLTreeEnsemble.joblib")
 OUT_REPORT = str(PROJECT_ROOT / "tinyml" / "benchmark" / "benchmark_report.json")
@@ -327,6 +328,7 @@ def main():
         out_report=args.out_report,
         settings=settings,
         winner_policy=winner_policy,
+        feature_names=ARC_FEATURES,
     )
 
     companion_map = {
@@ -339,6 +341,7 @@ def main():
             continue
         ensure_dir(out_path)
         payload = strip_estimator(result)
+        payload["feature_names"] = list(ARC_FEATURES)
         payload["settings"] = settings
         payload["winner_policy"] = winner_policy
         payload["generated_by"] = "train_duel"

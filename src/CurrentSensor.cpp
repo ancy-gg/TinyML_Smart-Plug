@@ -88,8 +88,9 @@ size_t CurrentSensor::capture(uint16_t* dst, size_t n, float* measuredFsHz) {
 
   static uint8_t warmupBurstsRemaining = MCP3204_WARMUP_BURSTS;
   const uint8_t overs = (MCP3204_OVERSAMPLE < 1) ? 1 : MCP3204_OVERSAMPLE;
-  const int64_t t0 = esp_timer_get_time();
   size_t count = 0;
+  int64_t captureT0 = 0;
+  int64_t captureT1 = 0;
 
   (void)spi_device_acquire_bus(_dev, portMAX_DELAY);
 
@@ -103,6 +104,8 @@ size_t CurrentSensor::capture(uint16_t* dst, size_t n, float* measuredFsHz) {
   for (uint8_t i = 0; i < MCP3204_BURST_FLUSH; ++i) {
     (void)spi_device_polling_transmit(_dev, &t);
   }
+
+  captureT0 = esp_timer_get_time();
 
   while (count < n) {
     uint32_t acc = 0;
@@ -135,13 +138,13 @@ size_t CurrentSensor::capture(uint16_t* dst, size_t n, float* measuredFsHz) {
     dst[count++] = scale12to16(avg12);
   }
 
+  captureT1 = esp_timer_get_time();
   spi_device_release_bus(_dev);
 
-  const int64_t t1 = esp_timer_get_time();
-  if (measuredFsHz && t1 > t0 && count > 0) {
-    // Report the true measured cadence. Downstream code can mark it as bad, but it
-    // must not silently rewrite the number to a nominal target.
-    float rawFs = (count * 1000000.0f) / float(t1 - t0);
+  if (measuredFsHz && captureT1 > captureT0 && count > 0) {
+    // Report the truthful in-frame capture cadence, excluding one-time preflush and
+    // warmup overhead that would otherwise jitter the apparent sample rate.
+    float rawFs = (count * 1000000.0f) / float(captureT1 - captureT0);
     if (!isfinite(rawFs) || rawFs <= 0.0f) rawFs = 0.0f;
     *measuredFsHz = rawFs;
   }

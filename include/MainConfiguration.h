@@ -13,7 +13,7 @@ static constexpr bool ENABLE_AUTO_ARC_CAPTURE = false;
 // Cloud / OTA configuration
 static constexpr const char* FIREBASE_API_KEY = "AIzaSyAmJlZZszyWPJFgIkTAAl_TbIySys1nvEw";
 static constexpr const char* FIREBASE_DB_URL  = "tinyml-smart-plug-default-rtdb.asia-southeast1.firebasedatabase.app";
-static constexpr const char* FW_VERSION       = "v7.1.1-c-gen1";
+static constexpr const char* FW_VERSION       = "v7.2.0-c-gen1";
 static constexpr const char* OTA_DESIRED_VERSION_PATH = "/ota/desired_version";
 static constexpr const char* OTA_FIRMWARE_URL_PATH    = "/ota/firmware_url";
 
@@ -41,6 +41,74 @@ static inline const char* stateToCstr(FaultState s) {
     default:                        return "NORMAL";
   }
 }
+
+
+// =========================
+// Context / family inference
+// =========================
+// Canonical compact runtime taxonomy used by the current trainer/model headers.
+// Keep legacy aliases below so older firmware/PWA/trainer symbols still compile.
+#ifndef CONTEXT_FAMILY_UNKNOWN
+#define CONTEXT_FAMILY_UNKNOWN -1
+#endif
+#ifndef CONTEXT_FAMILY_RESISTIVE_LINEAR
+#define CONTEXT_FAMILY_RESISTIVE_LINEAR 0
+#endif
+#ifndef CONTEXT_FAMILY_INDUCTIVE_MOTOR
+#define CONTEXT_FAMILY_INDUCTIVE_MOTOR 1
+#endif
+#ifndef CONTEXT_FAMILY_RECTIFIER_SMPS
+#define CONTEXT_FAMILY_RECTIFIER_SMPS 2
+#endif
+#ifndef CONTEXT_FAMILY_PHASE_ANGLE_CONTROLLED
+#define CONTEXT_FAMILY_PHASE_ANGLE_CONTROLLED 3
+#endif
+#ifndef CONTEXT_FAMILY_BRUSH_UNIVERSAL_MOTOR
+#define CONTEXT_FAMILY_BRUSH_UNIVERSAL_MOTOR 4
+#endif
+#ifndef CONTEXT_FAMILY_OTHER_MIXED
+#define CONTEXT_FAMILY_OTHER_MIXED 5
+#endif
+
+// Legacy family-name aliases from older code/data.
+#ifndef CONTEXT_FAMILY_RESISTIVE
+#define CONTEXT_FAMILY_RESISTIVE CONTEXT_FAMILY_RESISTIVE_LINEAR
+#endif
+#ifndef CONTEXT_FAMILY_SMPS
+#define CONTEXT_FAMILY_SMPS CONTEXT_FAMILY_RECTIFIER_SMPS
+#endif
+#ifndef CONTEXT_FAMILY_DIMMER_PHASE
+#define CONTEXT_FAMILY_DIMMER_PHASE CONTEXT_FAMILY_PHASE_ANGLE_CONTROLLED
+#endif
+#ifndef CONTEXT_FAMILY_UNIVERSAL_MOTOR
+#define CONTEXT_FAMILY_UNIVERSAL_MOTOR CONTEXT_FAMILY_BRUSH_UNIVERSAL_MOTOR
+#endif
+#ifndef CONTEXT_FAMILY_MIXED_UNKNOWN
+#define CONTEXT_FAMILY_MIXED_UNKNOWN CONTEXT_FAMILY_OTHER_MIXED
+#endif
+#ifndef CONTEXT_FAMILY_OTHER
+#define CONTEXT_FAMILY_OTHER CONTEXT_FAMILY_OTHER_MIXED
+#endif
+
+enum ApplianceFamily : int8_t {
+  FAMILY_UNKNOWN = CONTEXT_FAMILY_UNKNOWN,
+  FAMILY_RESISTIVE_LINEAR = CONTEXT_FAMILY_RESISTIVE_LINEAR,
+  FAMILY_INDUCTIVE_MOTOR = CONTEXT_FAMILY_INDUCTIVE_MOTOR,
+  FAMILY_RECTIFIER_SMPS = CONTEXT_FAMILY_RECTIFIER_SMPS,
+  FAMILY_PHASE_ANGLE_CONTROLLED = CONTEXT_FAMILY_PHASE_ANGLE_CONTROLLED,
+  FAMILY_BRUSH_UNIVERSAL_MOTOR = CONTEXT_FAMILY_BRUSH_UNIVERSAL_MOTOR,
+  FAMILY_OTHER_MIXED = CONTEXT_FAMILY_OTHER_MIXED,
+
+  // Legacy enum aliases kept so older code still compiles.
+  FAMILY_RESISTIVE = FAMILY_RESISTIVE_LINEAR,
+  FAMILY_SMPS = FAMILY_RECTIFIER_SMPS,
+  FAMILY_DIMMER_PHASE = FAMILY_PHASE_ANGLE_CONTROLLED,
+  FAMILY_UNIVERSAL_MOTOR = FAMILY_BRUSH_UNIVERSAL_MOTOR,
+  FAMILY_MIXED_UNKNOWN = FAMILY_OTHER_MIXED,
+  FAMILY_OTHER = FAMILY_OTHER_MIXED,
+
+  FAMILY_COUNT = 6
+};
 
 struct FeatureFrame {
   uint64_t epoch_ms  = 0;
@@ -88,7 +156,25 @@ struct FeatureFrame {
   uint8_t relay_blank_active = 0;
   uint8_t turnon_blank_active = 0;
   uint8_t transient_blank_active = 0;
+
+  int8_t  device_family_code = CONTEXT_FAMILY_UNKNOWN;
+  int8_t  context_family_code_runtime = CONTEXT_FAMILY_UNKNOWN;
+  int8_t  context_family_code_provisional = CONTEXT_FAMILY_UNKNOWN;
+  float   context_family_confidence = 0.0f;
+  float   context_family_confidence_provisional = 0.0f;
+  uint8_t context_acquiring = 0;
+  uint8_t context_latched = 0;
 };
+
+
+// Context timing / confidence tuning
+static constexpr float CONTEXT_MIN_IRMS_A = 0.10f;
+static constexpr float CONTEXT_UNLATCH_ZERO_IRMS_A = 0.020f;
+static constexpr uint32_t CONTEXT_ACQUIRE_WINDOW_MS = 5000UL;
+static constexpr uint32_t CONTEXT_UNLATCH_ZERO_MS = 5000UL;
+static constexpr uint32_t CONTEXT_PROVISIONAL_MIN_MS = 300UL;
+static constexpr float CONTEXT_MIN_CONFIDENCE = 0.45f;
+static constexpr uint32_t CONTEXT_RESET_NO_MAINS_MS = 1200UL;
 
 // =========================
 // Relay / buzzer hardware
@@ -107,12 +193,17 @@ static constexpr uint8_t  BUZZER_STATUS_MAX_DUTY = 26;
 // =========================
 // Sampling and FFT
 // =========================
-// The ADC is tuned for an intended cadence near 30 kHz, but runtime must keep the
-// *measured* sampling rate truthful. Do not snap or canonicalize it in code.
-static constexpr float    FS_INTENDED_HZ = 30000.0f;
+// The ADC is tuned for a truthful operating cadence near 27 kHz. Runtime must keep
+// the *measured* sampling rate truthful and must not snap or canonicalize it.
+static constexpr float    FS_INTENDED_HZ = 27000.0f;
 static constexpr float    FS_TARGET_HZ = FS_INTENDED_HZ;
-static constexpr uint16_t N_SAMP       = 2048;
+static constexpr uint16_t N_SAMP       = 1024;
 static constexpr float    MAINS_F0_HZ  = 60.0f;
+
+// Pace feature generation to a stable latest-frame cadence instead of free-running.
+static constexpr float    FEATURE_TARGET_CADENCE_HZ = 10.0f;
+static constexpr uint32_t FEATURE_FRAME_PERIOD_US = (uint32_t)(1000000.0f / FEATURE_TARGET_CADENCE_HZ + 0.5f);
+static constexpr float    FEATURE_FRAME_PERIOD_MS = 1000.0f / FEATURE_TARGET_CADENCE_HZ;
 
 // The analog AAF is already around 10 kHz / Q≈0.73. Keep a conservative cascaded
 // digital LPF as a second anti-alias / de-ringing stage before feature extraction.
@@ -188,13 +279,16 @@ static constexpr uint32_t FAULT_NET_QUIET_MS = 2350UL;
 static constexpr uint32_t OLED_RENDER_INTERVAL_MS = 33UL;
 
 // Sensing pipeline / timing quality
-static constexpr uint8_t  FEATURE_FRAME_QUEUE_LEN        = 8;
-static constexpr float    FRAME_DT_BAD_MS                = 110.0f;
-static constexpr float    FRAME_COMPUTE_BAD_MS           = 28.0f;
-static constexpr float    FS_ERR_BAD_HZ                  = 1800.0f;
+static constexpr uint8_t  FEATURE_FRAME_QUEUE_LEN        = 12;
+static constexpr uint32_t FEATURE_TIMING_GRACE_MS        = 1500UL;
+static constexpr float    FRAME_DT_BAD_EARLY_MS          = 70.0f;
+static constexpr float    FRAME_DT_BAD_LATE_MS           = 170.0f;
+static constexpr float    FRAME_DT_JITTER_BAD_MS         = 48.0f;
+static constexpr float    FRAME_COMPUTE_BAD_MS           = 65.0f;
+static constexpr float    FS_ERR_BAD_HZ                  = 3200.0f;
 
 
-static constexpr int   ARC_RUNTIME_FEATURE_SPACE_VERSION = 4;
+static constexpr int   ARC_RUNTIME_FEATURE_SPACE_VERSION = 5;
 static constexpr float DB_RATIO_EPS                 = 1e-6f;
 static constexpr float DB_POWER_RATIO_EPS           = 1e-6f;
 static constexpr float DB_RATIO_CLIP_MIN            = -80.0f;
@@ -284,6 +378,11 @@ static constexpr uint16_t ML_LOG_DURATION_S             = 10;
 static constexpr uint16_t ML_LOG_CHUNK_DURATION_S       = 10;
 static constexpr uint16_t ML_LOG_MIN_DURATION_S         = 1;
 static constexpr uint16_t ML_LOG_MAX_DURATION_S         = 7200;
+static constexpr uint32_t ML_LOG_SETTLE_EXCLUDE_MS      = 1200UL;
+static constexpr uint8_t  ML_LOG_SETTLE_GOOD_FRAMES     = 4;
+static constexpr float    ML_LOG_SETTLE_FRAME_DT_MIN_MS = 70.0f;
+static constexpr float    ML_LOG_SETTLE_FRAME_DT_MAX_MS = 130.0f;
+static constexpr float    ML_LOG_SETTLE_COMPUTE_MAX_MS  = 55.0f;
 static constexpr uint16_t ML_LOG_AUTO_MIN_DURATION_S    = 5;
 static constexpr uint16_t ML_LOG_AUTO_MAX_DURATION_S    = 60;
 
@@ -301,10 +400,10 @@ static constexpr uint8_t  MCP3204_MEDIAN_SAMPLES = 1;
 static constexpr uint16_t MCP3204_STARTUP_FLUSH  = 256;
 static constexpr uint8_t  MCP3204_WARMUP_BURSTS  = 2;
 static constexpr uint8_t  MCP3204_BURST_FLUSH    = 4;
-static constexpr float    MCP3204_FS_WARN_LOW_HZ = 24000.0f;
-static constexpr float    MCP3204_FS_WARN_HIGH_HZ = 34000.0f;
-static constexpr float    MCP3204_FS_HARD_LOW_HZ = 18000.0f;
-static constexpr float    MCP3204_FS_HARD_HIGH_HZ = 42000.0f;
+static constexpr float    MCP3204_FS_WARN_LOW_HZ = 23000.0f;
+static constexpr float    MCP3204_FS_WARN_HIGH_HZ = 31000.0f;
+static constexpr float    MCP3204_FS_HARD_LOW_HZ = 20000.0f;
+static constexpr float    MCP3204_FS_HARD_HIGH_HZ = 34000.0f;
 
 static constexpr float IRMS_GATE_ON_A               = 0.050f;
 static constexpr float IRMS_GATE_OFF_A              = 0.025f;

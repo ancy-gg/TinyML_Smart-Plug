@@ -92,10 +92,13 @@ class TinyMLTrainerGUI(tk.Tk):
         self.rf_script = tk.StringVar(value="tinyml/trainer/train_rf.py")
         self.et_script = tk.StringVar(value="tinyml/trainer/train_et.py")
         self.duel_script = tk.StringVar(value="tinyml/trainer/train_duel.py")
-        self.cleaned_csv = tk.StringVar(value="tinyml/data/cleaned_data.csv")
+        self.context_script = tk.StringVar(value="tinyml/trainer/train_context.py")
+        self.cleaned_csv = tk.StringVar(value="tinyml/data/arc_training.csv")
+        self.context_csv = tk.StringVar(value="tinyml/data/load_context.csv")
         self.rf_report = tk.StringVar(value="tinyml/benchmark/TinyMLTreeEnsemble_RF_report.json")
         self.et_report = tk.StringVar(value="tinyml/benchmark/TinyMLTreeEnsemble_ET_report.json")
         self.duel_report = tk.StringVar(value="tinyml/benchmark/benchmark_report.json")
+        self.context_report = tk.StringVar(value="tinyml/benchmark/TinyMLContextModel_report.json")
         self.search_iters = tk.StringVar(value="120")
         self.max_search_iters = tk.StringVar(value="240")
         self.iter_growth = tk.StringVar(value="2.0")
@@ -235,10 +238,11 @@ class TinyMLTrainerGUI(tk.Tk):
         self._path_row(self.paths_card, 4, "Random Forest trainer", self.rf_script)
         self._path_row(self.paths_card, 5, "Extra Trees trainer", self.et_script)
         self._path_row(self.paths_card, 6, "Duel trainer", self.duel_script)
-        self._path_row(self.paths_card, 7, "Cleaned CSV", self.cleaned_csv)
-        self._path_row(self.paths_card, 8, "Random Forest report", self.rf_report)
-        self._path_row(self.paths_card, 9, "Extra Trees report", self.et_report)
-        self._path_row(self.paths_card, 10, "Duel report", self.duel_report)
+        self._path_row(self.paths_card, 7, "Arc Training CSV", self.cleaned_csv)
+        self._path_row(self.paths_card, 8, "Context CSV", self.context_csv)
+        self._path_row(self.paths_card, 9, "Random Forest report", self.rf_report)
+        self._path_row(self.paths_card, 10, "Extra Trees report", self.et_report)
+        self._path_row(self.paths_card, 11, "Duel report", self.duel_report)
 
         main_card = tk.Frame(
             outer,
@@ -256,15 +260,16 @@ class TinyMLTrainerGUI(tk.Tk):
 
         actions = ttk.Frame(main_card)
         actions.grid(row=1, column=0, sticky="ew", pady=(0, 12))
-        for i in range(6):
+        for i in range(7):
             actions.columnconfigure(i, weight=1)
 
         self._btn(actions, "Cleaner", self.run_cleaner, 0, 0)
         self._btn(actions, "Random Forest Only", self.run_rf_only, 0, 1)
         self._btn(actions, "Extra Trees Only", self.run_et_only, 0, 2)
         self._btn(actions, "King Training", self.run_duel, 0, 3)
-        self._btn(actions, "Refresh", self.refresh_views, 0, 4)
-        self._btn(actions, "Clear Output", self.clear_output, 0, 5)
+        self._btn(actions, "Context Trainer", self.run_context, 0, 4)
+        self._btn(actions, "Refresh", self.refresh_views, 0, 5)
+        self._btn(actions, "Clear Output", self.clear_output, 0, 6)
 
         options = tk.Frame(main_card, bg=CARD_BG_2, highlightthickness=1, highlightbackground=BORDER, padx=10, pady=10)
         options.grid(row=2, column=0, sticky="ew", pady=(0, 12))
@@ -499,16 +504,19 @@ class TinyMLTrainerGUI(tk.Tk):
         self.rf_tab = ttk.Frame(sub, padding=10)
         self.et_tab = ttk.Frame(sub, padding=10)
         self.duel_tab = ttk.Frame(sub, padding=10)
+        self.context_tab = ttk.Frame(sub, padding=10)
 
         sub.add(self.duel_compare_tab, text="Benchmark Overview")
         sub.add(self.rf_tab, text="Random Forest Report")
         sub.add(self.et_tab, text="Extra Trees Report")
         sub.add(self.duel_tab, text="King Report")
+        sub.add(self.context_tab, text="Context Report")
 
         self._build_compare_subtab(self.duel_compare_tab)
         self._build_single_report_subtab(self.rf_tab, prefix="rf")
         self._build_single_report_subtab(self.et_tab, prefix="et")
         self._build_single_report_subtab(self.duel_tab, prefix="duel")
+        self._build_single_report_subtab(self.context_tab, prefix="context")
 
     def _build_compare_subtab(self, parent):
         parent.columnconfigure(0, weight=1)
@@ -629,6 +637,7 @@ class TinyMLTrainerGUI(tk.Tk):
         )
 
         notebook = ttk.Notebook(parent)
+        setattr(self, f"{prefix}_notebook", notebook)
         notebook.grid(row=1, column=0, sticky="nsew")
 
         overview_tab = ttk.Frame(notebook, padding=10)
@@ -642,6 +651,11 @@ class TinyMLTrainerGUI(tk.Tk):
         notebook.add(cm_tab, text="Confusion Matrix")
         notebook.add(params_tab, text="Best Params")
         notebook.add(fi_tab, text="Feature Importances")
+        setattr(self, f"{prefix}_overview_tab", overview_tab)
+        setattr(self, f"{prefix}_class_tab", class_tab)
+        setattr(self, f"{prefix}_cm_tab", cm_tab)
+        setattr(self, f"{prefix}_params_tab", params_tab)
+        setattr(self, f"{prefix}_fi_tab", fi_tab)
 
         overview_tab.columnconfigure(0, weight=1)
         overview_tab.rowconfigure(0, weight=1)
@@ -746,6 +760,8 @@ class TinyMLTrainerGUI(tk.Tk):
             return self.rf_script
         if kind == "et":
             return self.et_script
+        if kind == "context":
+            return self.context_script
         return self.duel_script
 
     def _common_training_flags(self, n_iter):
@@ -783,6 +799,8 @@ class TinyMLTrainerGUI(tk.Tk):
         if kind == "et":
             payload = self._read_json(self.et_report) or self._get_duel_result_by_key("et") or {}
             return payload
+        if kind == "context":
+            return self._read_json(self.context_report) or {}
         payload = self._read_json(self.duel_report) or {}
         return payload.get("winner") or payload
 
@@ -855,6 +873,7 @@ class TinyMLTrainerGUI(tk.Tk):
             "rf": "Random Forest",
             "et": "Extra Trees",
             "duel": "King Training",
+            "context": "Context Trainer",
         }.get(kind, kind)
         self.status_text.set(f"Running {label} (n_iter={current_n_iter}, attempt {workflow['attempt']})…")
         self.progress_text.set(f"Preparing {label} search with n_iter={current_n_iter}")
@@ -928,9 +947,14 @@ class TinyMLTrainerGUI(tk.Tk):
             return "Cleaner summary unavailable."
         conflict = data.get("conflict_resolution", {})
         policy = data.get("conflict_policy_counts", {})
+        base_after = data.get('rows_after_cleaning', 0)
+        aug_rows = data.get('augmentation_rows_added', 0)
+        total_after = data.get('rows_after_cleaning_with_augmentation', base_after)
+        row_line = f"Rows: {data.get('rows_before_cleaning', 0)} → {base_after}  (removed {data.get('rows_removed', 0)})"
+        if aug_rows:
+            row_line += f" | +aug {aug_rows} => {total_after}"
         return (
-            f"Rows: {data.get('rows_before_cleaning', 0)} → {data.get('rows_after_cleaning', 0)}  "
-            f"(removed {data.get('rows_removed', 0)})\n"
+            row_line + "\n"
             f"Trainable: {data.get('trainable_rows', 0)} | Trusted normal: {data.get('trusted_normal_rows', 0)} | Conflict-marked: {data.get('conflict_marked_rows', 0)}\n"
             f"Forced-normal section rows: {data.get('forced_normal_section_rows', 0)} | Unknown-division rows: {data.get('unknown_division_rows', 0)} | Division counts: {data.get('division_counts', {})}\n"
             f"Conflict groups: {conflict.get('mixed_groups', 0)} | Prefer trusted normal: {conflict.get('prefer_trusted_normal', 0)} | Prefer stronger normal: {conflict.get('prefer_more_trusted_normal', 0)} | Keep stronger arc: {conflict.get('keep_more_trusted_arc', 0)} | Dropped ambiguous: {conflict.get('drop_ambiguous', 0)}\n"
@@ -1186,12 +1210,16 @@ class TinyMLTrainerGUI(tk.Tk):
     def run_duel(self):
         self._start_training_workflow("duel")
 
+    def run_context(self):
+        self._start_training_workflow("context")
+
     def refresh_views(self):
         self._refresh_dataset_view()
         self._refresh_compare_view()
         self._refresh_single_report("rf")
         self._refresh_single_report("et")
         self._refresh_single_report("duel")
+        self._refresh_single_report("context")
 
     def _refresh_dataset_view(self):
         for row in self.dataset_tree.get_children():
@@ -1222,6 +1250,7 @@ class TinyMLTrainerGUI(tk.Tk):
         trial_groups = int(df["trial_id"].astype(str).nunique()) if "trial_id" in df.columns else 0
         section_groups = int(df["session_id"].astype(str).nunique()) if "session_id" in df.columns else 0
         conflict_policy_counts = df["conflict_policy"].value_counts().to_dict() if "conflict_policy" in df.columns else {}
+        family_counts = df["device_family"].value_counts().to_dict() if "device_family" in df.columns else {}
         self.dataset_summary.set(
             f"Rows: {rows}\n"
             f"Trainable rows: {trainable}\n"
@@ -1230,6 +1259,7 @@ class TinyMLTrainerGUI(tk.Tk):
             f"Trial groups: {trial_groups} | Section groups: {section_groups}\n"
             f"Label counts: {label_counts}\n"
             f"Division counts: {division_counts}\n"
+            f"Family counts: {family_counts}\n"
             f"Source counts: {source_counts}\n"
             f"Conflict policies: {conflict_policy_counts}"
         )
@@ -1290,6 +1320,12 @@ class TinyMLTrainerGUI(tk.Tk):
             duel_item = self._get_duel_result_by_key("et")
             if duel_item:
                 return duel_item, "From King training benchmark"
+            return None, "No report loaded."
+
+        if prefix == "context":
+            report = self._read_json(self.context_report)
+            if report:
+                return report, "Standalone context-family report"
             return None, "No report loaded."
 
         duel = self._read_json(self.duel_report)
@@ -1393,6 +1429,7 @@ class TinyMLTrainerGUI(tk.Tk):
         cm_tree = getattr(self, f"{prefix}_cm_tree")
         param_tree = getattr(self, f"{prefix}_param_tree")
         fi_tree = getattr(self, f"{prefix}_fi_tree")
+        notebook = getattr(self, f"{prefix}_notebook", None)
 
         for tree in (metric_tree, class_tree, cm_tree, param_tree, fi_tree):
             for row in tree.get_children():
@@ -1414,34 +1451,105 @@ class TinyMLTrainerGUI(tk.Tk):
             )
         else:
             target = report
-            summary_var.set(
-                f"Source: {source_note}\n"
-                f"Model: {target.get('model_name', '—')}\n"
-                f"Threshold: {self._fmt(target.get('threshold', '—'))}"
-            )
+            if prefix == "context":
+                summary_var.set(
+                    f"Source: {source_note}\n"
+                    f"Model: {target.get('model_name', '—')}\n"
+                    f"Rows: {target.get('row_count', '—')} | Train: {target.get('train_rows', '—')} | Test: {target.get('test_rows', '—')}\n"
+                    f"Accuracy: {self._fmt(target.get('accuracy'))} | Balanced accuracy: {self._fmt(target.get('balanced_accuracy'))} | Mean confidence: {self._fmt(target.get('mean_confidence'))} | Unknown rate: {self._fmt(target.get('unknown_rate'))}"
+                )
+            else:
+                summary_var.set(
+                    f"Source: {source_note}\n"
+                    f"Model: {target.get('model_name', '—')}\n"
+                    f"Threshold: {self._fmt(target.get('threshold', '—'))}"
+                )
 
-        for label, key in DISPLAY_METRICS:
-            metric_tree.insert("", "end", values=(label, self._fmt(self._pick(target, key))))
+        if prefix == "context":
+            if notebook is not None:
+                notebook.tab(getattr(self, f"{prefix}_class_tab"), text="Per-class Metrics")
+                notebook.tab(getattr(self, f"{prefix}_cm_tab"), text="Multiclass Confusion")
+                notebook.hide(getattr(self, f"{prefix}_params_tab"))
+                notebook.hide(getattr(self, f"{prefix}_fi_tab"))
+            context_metrics = [
+                ("Row count", target.get("row_count")),
+                ("Train rows", target.get("train_rows")),
+                ("Test rows", target.get("test_rows")),
+                ("Accuracy", target.get("accuracy")),
+                ("Balanced accuracy", target.get("balanced_accuracy")),
+                ("Accuracy with unknown gate", target.get("accuracy_with_unknown_gate")),
+                ("Mean confidence", target.get("mean_confidence")),
+                ("Unknown rate", target.get("unknown_rate")),
+                ("Unknown confidence threshold", target.get("unknown_confidence_threshold")),
+                ("Class distribution", target.get("class_counts")),
+            ]
+            for label, value in context_metrics:
+                metric_tree.insert("", "end", values=(label, self._fmt(value)))
 
-        class_report = target.get("test_classification_report", {}) or {}
-        for label in ["0", "1", "macro avg", "weighted avg"]:
-            row = class_report.get(label)
-            if isinstance(row, dict):
+            class_tree.configure(columns=("family", "rows", "precision", "recall", "f1", "accuracy", "conf", "unknown"))
+            for c, title, width in [("family", "Family", 180), ("rows", "Rows", 80), ("precision", "Precision", 100), ("recall", "Recall", 100), ("f1", "F1", 100), ("accuracy", "Accuracy", 100), ("conf", "Mean conf", 110), ("unknown", "Unknown rate", 110)]:
+                class_tree.heading(c, text=title)
+                class_tree.column(c, width=width, anchor="center")
+            for row in target.get("per_class", []) or []:
+                class_tree.insert("", "end", values=(row.get("family", "—"), self._fmt(row.get("rows")), self._fmt(row.get("precision")), self._fmt(row.get("recall")), self._fmt(row.get("f1")), self._fmt(row.get("accuracy")), self._fmt(row.get("mean_confidence")), self._fmt(row.get("unknown_rate"))))
+
+            labels = target.get("class_labels", []) or []
+            matrix = target.get("confusion_matrix", []) or []
+            cm_cols = tuple(["label"] + [f"c{i}" for i in range(len(labels))])
+            cm_tree.configure(columns=cm_cols)
+            cm_tree.heading("label", text="Actual \\ Pred")
+            cm_tree.column("label", width=180, anchor="w")
+            for i, fam in enumerate(labels):
+                col = f"c{i}"
+                cm_tree.heading(col, text=fam)
+                cm_tree.column(col, width=100, anchor="center")
+            for idx, fam in enumerate(labels):
+                row_vals = matrix[idx] if idx < len(matrix) else []
+                values = [f"Actual {fam}"] + [int(row_vals[j]) if j < len(row_vals) else 0 for j in range(len(labels))]
+                cm_tree.insert("", "end", values=tuple(values))
+        else:
+            if notebook is not None:
+                notebook.add(getattr(self, f"{prefix}_params_tab"), text="Best Params") if str(getattr(self, f"{prefix}_params_tab")) not in notebook.tabs() else None
+                notebook.add(getattr(self, f"{prefix}_fi_tab"), text="Feature Importances") if str(getattr(self, f"{prefix}_fi_tab")) not in notebook.tabs() else None
+            for label, key in DISPLAY_METRICS:
+                metric_tree.insert("", "end", values=(label, self._fmt(self._pick(target, key))))
+
+            class_report = target.get("test_classification_report", {}) or {}
+            for label in ["0", "1", "macro avg", "weighted avg"]:
+                row = class_report.get(label)
+                if isinstance(row, dict):
+                    class_tree.insert(
+                        "",
+                        "end",
+                        values=(
+                            label,
+                            self._fmt(row.get("precision")),
+                            self._fmt(row.get("recall")),
+                            self._fmt(row.get("f1-score")),
+                            self._fmt(row.get("support")),
+                        ),
+                    )
+            for row in target.get("test_per_load", []) or []:
                 class_tree.insert(
                     "",
                     "end",
                     values=(
-                        label,
+                        f"load:{row.get('group', '—')}",
                         self._fmt(row.get("precision")),
                         self._fmt(row.get("recall")),
-                        self._fmt(row.get("f1-score")),
-                        self._fmt(row.get("support")),
+                        self._fmt(row.get("fpr")),
+                        self._fmt(row.get("rows")),
                     ),
                 )
-
-        cm = target.get("test_confusion_matrix", {}) or {}
-        cm_tree.insert("", "end", values=("Actual 0", self._fmt(cm.get("tn", "—")), self._fmt(cm.get("fp", "—"))))
-        cm_tree.insert("", "end", values=("Actual 1", self._fmt(cm.get("fn", "—")), self._fmt(cm.get("tp", "—"))))
+            cm = target.get("test_confusion_matrix", {}) or {}
+            cm_tree.insert("", "end", values=("Actual 0", self._fmt(cm.get("tn", "—")), self._fmt(cm.get("fp", "—"))))
+            cm_tree.insert("", "end", values=("Actual 1", self._fmt(cm.get("fn", "—")), self._fmt(cm.get("tp", "—"))))
+            for row in target.get("test_per_load", []) or []:
+                cmg = row.get("confusion_matrix", {}) or {}
+                cm_tree.insert("", "end", values=(f"Load {row.get('group', '—')}", f"TN={cmg.get('tn', '—')} FP={cmg.get('fp', '—')}", f"FN={cmg.get('fn', '—')} TP={cmg.get('tp', '—')}"))
+            for row in target.get("test_per_runtime_context", []) or []:
+                cmg = row.get("confusion_matrix", {}) or {}
+                cm_tree.insert("", "end", values=(f"Ctx {row.get('group', '—')}", f"TN={cmg.get('tn', '—')} FP={cmg.get('fp', '—')}", f"FN={cmg.get('fn', '—')} TP={cmg.get('tp', '—')}"))
 
         params = target.get("best_params", {}) or {}
         for name in sorted(params):

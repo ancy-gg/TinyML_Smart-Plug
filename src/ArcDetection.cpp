@@ -11,7 +11,7 @@
 #include "esp_err.h"
 
 #ifndef CONFIG_DSP_MAX_FFT_SIZE
-#define CONFIG_DSP_MAX_FFT_SIZE 2048
+#define CONFIG_DSP_MAX_FFT_SIZE N_SAMP
 #endif
 
 static inline float clampf(float x, float lo, float hi) {
@@ -157,11 +157,20 @@ struct RollingBaselineTracker {
 static float s_prevFluxNorm[N_SAMP / 2] = {0.0f};
 static bool s_havePrevFluxNorm = false;
 static RollingBaselineTracker s_baseline;
+static int8_t s_ctxFamily = CONTEXT_FAMILY_UNKNOWN;
+static float s_ctxConfidence = 0.0f;
 
 void ArcDetection::resetRuntime() {
   memset(s_prevFluxNorm, 0, sizeof(s_prevFluxNorm));
   s_havePrevFluxNorm = false;
   s_baseline.reset();
+  s_ctxFamily = CONTEXT_FAMILY_UNKNOWN;
+  s_ctxConfidence = 0.0f;
+}
+
+void ArcDetection::setContext(int8_t family, float confidence) {
+  s_ctxFamily = ((family >= 0) && (family < FAMILY_COUNT)) ? family : CONTEXT_FAMILY_UNKNOWN;
+  s_ctxConfidence = clampf(confidence, 0.0f, 1.0f);
 }
 
 static inline bool shouldSkipHarmonicBin(int k, bool haveFund, int k1, int half) {
@@ -210,6 +219,7 @@ bool ArcDetection::compute(const uint16_t* raw, size_t n, float fs_hz,
   static float resid[N_SAMP];
   static float fft_cf[2 * N_SAMP];
   static float win[N_SAMP];
+  static uint8_t harmonicSkip[N_SAMP / 2];
   static bool dspReady = false;
   static bool winReady = false;
 
@@ -386,7 +396,7 @@ bool ArcDetection::compute(const uint16_t* raw, size_t n, float fs_hz,
   float nmseAcc = 0.0f;
   int nmsePairs = 0;
 
-  static constexpr int RSZ = 96;
+  static constexpr int RSZ = 64;
   float prevCycle[RSZ];
   bool havePrevCycle = false;
 
@@ -469,24 +479,6 @@ bool ArcDetection::compute(const uint16_t* raw, size_t n, float fs_hz,
     out.peak_fluct_cv = (float)(sqrt(vv) / (mu + 1e-9)) * FEATURE_PERCENT_SCALE;
   }
 
-  if (peakN >= 2) {
-    float tmp[24];
-    for (int i = 0; i < peakN; ++i) tmp[i] = cycleRmsVals[i];
-    for (int i = 0; i < peakN - 1; ++i) {
-      for (int j = i + 1; j < peakN; ++j) {
-        if (tmp[j] < tmp[i]) { const float t = tmp[i]; tmp[i] = tmp[j]; tmp[j] = t; }
-      }
-    }
-    const float baseline = (peakN & 1) ? tmp[peakN / 2]
-                                       : 0.5f * (tmp[(peakN / 2) - 1] + tmp[peakN / 2]);
-    float minCycle = cycleRmsVals[0];
-    for (int i = 1; i < peakN; ++i) {
-      if (cycleRmsVals[i] < minCycle) minCycle = cycleRmsVals[i];
-    }
-    (void)baseline;
-    (void)minCycle;
-  }
-
   if (nmsePairs > 0) out.cycle_nmse = (nmseAcc / (float)nmsePairs) * FEATURE_PERCENT_SCALE;
 
   for (size_t i = 0; i < n; ++i) {
@@ -546,43 +538,44 @@ bool ArcDetection::compute(const uint16_t* raw, size_t n, float fs_hz,
     out.thd_i = 0.0f;
   }
 
-  int kSpec0 = 0, kSpec1 = 0;
-  if (makeBandBins(SPEC_ENT_LO_HZ, SPEC_ENT_HI_HZ, binHz, half, kSpec0, kSpec1)) {
-    double psum = 0.0;
-    for (int k = kSpec0; k <= kSpec1; ++k) psum += (double)sig[k];
-    if (psum > 1e-18) {
-      double H = 0.0;
-      const int bins = (kSpec1 - kSpec0 + 1);
-      for (int k = kSpec0; k <= kSpec1; ++k) {
-        const double p = (double)sig[k] / psum;
-        if (p > 1e-18) H += -p * log(p);
-      }
-      (void)bins;
+  memset(harmonicSkip, 0, sizeof(harmonicSkip));
+  if (haveFund && k1 > 0) {
+    for (int h = 1; h <= 24; ++h) {
+      const int kh = h * k1;
+      if (kh >= half) break;
+      const int a = clampi(kh - SPECTRAL_FLUX_HARM_SKIP_BINS, 1, half - 1);
+      const int b = clampi(kh + SPECTRAL_FLUX_HARM_SKIP_BINS, 1, half - 1);
+      for (int k = a; k <= b; ++k) harmonicSkip[k] = 1;
     }
   }
 
   int kUm0 = 0, kUm1 = 0, kHf0 = 0, kHf1 = 0;
+  int kMb0 = 0, kMb1 = 0;
+  int kFlux0 = 0, kFlux1 = 0;
   double pUM = 0.0;
   double pHF = 0.0;
+  double pResidual = 0.0;
+  double fluxMagSum = 0.0;
 
-  if (makeBandBins(UPPERMID_LO_HZ, UPPERMID_HI_HZ, binHz, half, kUm0, kUm1)) {
-    for (int k = kUm0; k <= kUm1; ++k) pUM += (double)sig[k];
+  const bool haveUpperMidBand = makeBandBins(UPPERMID_LO_HZ, UPPERMID_HI_HZ, binHz, half, kUm0, kUm1);
+  const bool haveHfBand = makeBandBins(HF_BAND_LO_HZ, HF_BAND_HI_HZ, binHz, half, kHf0, kHf1);
+  const bool haveMidBand = makeBandBins(MIDBAND_LO_HZ, MIDBAND_HI_HZ, binHz, half, kMb0, kMb1);
+  const bool haveFluxBand = makeBandBins(SPECTRAL_FLUX_LO_HZ, SPECTRAL_FLUX_HI_HZ, binHz, half, kFlux0, kFlux1);
+
+  for (int k = 1; k < half; ++k) {
+    const double p = (double)sig[k];
+    if (haveUpperMidBand && k >= kUm0 && k <= kUm1) pUM += p;
+    if (haveHfBand && k >= kHf0 && k <= kHf1) pHF += p;
+
+    if (harmonicSkip[k]) continue;
+    if (haveMidBand && k >= kMb0 && k <= kMb1) pResidual += p;
+    if (haveFluxBand && k >= kFlux0 && k <= kFlux1) fluxMagSum += sqrt((double)fmaxf(sig[k], 0.0f));
   }
-  if (makeBandBins(HF_BAND_LO_HZ, HF_BAND_HI_HZ, binHz, half, kHf0, kHf1)) {
-    for (int k = kHf0; k <= kHf1; ++k) pHF += (double)sig[k];
-  }
+
   const float hfBandEnergyRatio = (float)(pHF / (pHF + pUM + 1e-12));
-
-  int kMb0 = 0, kMb1 = 0;
-  float midbandResidualRms = 0.0f;
-  if (makeBandBins(MIDBAND_LO_HZ, MIDBAND_HI_HZ, binHz, half, kMb0, kMb1)) {
-    double pResidual = 0.0;
-    for (int k = kMb0; k <= kMb1; ++k) {
-      if (shouldSkipHarmonicBin(k, haveFund, k1, half)) continue;
-      pResidual += (double)sig[k];
-    }
-    midbandResidualRms = (float)(sqrt(pResidual + 1e-12) / (double)n);
-  }
+  const float midbandResidualRms = haveMidBand
+      ? (float)(sqrt(pResidual + 1e-12) / (double)n)
+      : 0.0f;
 
   float residPeak = 0.0f;
   for (size_t i = 0; i < n; ++i) residPeak = fmaxf(residPeak, fabsf(resid[i]));
@@ -594,28 +587,20 @@ bool ArcDetection::compute(const uint16_t* raw, size_t n, float fs_hz,
       -20.0f,
       40.0f);
 
-  double fluxMagSum = 0.0;
-  int kFlux0 = 0, kFlux1 = 0;
-  if (makeBandBins(SPECTRAL_FLUX_LO_HZ, SPECTRAL_FLUX_HI_HZ, binHz, half, kFlux0, kFlux1)) {
+  if (haveFluxBand && fluxMagSum > 1e-12) {
+    double fluxAcc = 0.0;
     for (int k = kFlux0; k <= kFlux1; ++k) {
-      if (shouldSkipHarmonicBin(k, haveFund, k1, half)) continue;
-      fluxMagSum += sqrt((double)fmaxf(sig[k], 0.0f));
-    }
-    if (fluxMagSum > 1e-12) {
-      double fluxAcc = 0.0;
-      for (int k = kFlux0; k <= kFlux1; ++k) {
-        float cur = 0.0f;
-        if (!shouldSkipHarmonicBin(k, haveFund, k1, half)) {
-          cur = (float)(sqrt((double)fmaxf(sig[k], 0.0f)) / fluxMagSum);
-        }
-        if (s_havePrevFluxNorm) fluxAcc += fabs((double)cur - (double)s_prevFluxNorm[k]);
-        s_prevFluxNorm[k] = cur;
+      float cur = 0.0f;
+      if (!harmonicSkip[k]) {
+        cur = (float)(sqrt((double)fmaxf(sig[k], 0.0f)) / fluxMagSum);
       }
-      out.spectral_flux_midhf = s_havePrevFluxNorm ? clampf((float)(0.5 * fluxAcc) * FEATURE_PERCENT_SCALE, 0.0f, 200.0f) : 0.0f;
-      s_havePrevFluxNorm = true;
-    } else {
-      out.spectral_flux_midhf = 0.0f;
+      if (s_havePrevFluxNorm) fluxAcc += fabs((double)cur - (double)s_prevFluxNorm[k]);
+      s_prevFluxNorm[k] = cur;
     }
+    out.spectral_flux_midhf = s_havePrevFluxNorm ? clampf((float)(0.5 * fluxAcc) * FEATURE_PERCENT_SCALE, 0.0f, 200.0f) : 0.0f;
+    s_havePrevFluxNorm = true;
+  } else {
+    out.spectral_flux_midhf = 0.0f;
   }
 
   const uint32_t nowMs = millis();
@@ -716,16 +701,117 @@ bool ArcDetection::compute(const uint16_t* raw, size_t n, float fs_hz,
   return true;
 }
 
+static inline void fillArcModelInput_(double* dst,
+                                     float spectral_flux_midhf,
+                                     float residual_crest_factor,
+                                     float edge_spike_ratio,
+                                     float midband_residual_ratio,
+                                     float cycle_nmse,
+                                     float peak_fluct_cv,
+                                     float thd_i,
+                                     float hf_energy_delta,
+                                     float zcv,
+                                     float abs_irms_zscore_vs_baseline,
+                                     int8_t ctxFamily,
+                                     float ctxConfidence) {
+  for (int i = 0; i < ARC_MODEL_INPUT_DIM; ++i) dst[i] = 0.0;
+  dst[0] = (double)spectral_flux_midhf;
+  dst[1] = (double)residual_crest_factor;
+  dst[2] = (double)edge_spike_ratio;
+  dst[3] = (double)midband_residual_ratio;
+  dst[4] = (double)cycle_nmse;
+  dst[5] = (double)peak_fluct_cv;
+  dst[6] = (double)thd_i;
+  dst[7] = (double)hf_energy_delta;
+  dst[8] = (double)zcv;
+  dst[9] = (double)abs_irms_zscore_vs_baseline;
+  if (ctxFamily >= 0 && ctxFamily < FAMILY_COUNT) dst[10 + ctxFamily] = 1.0;
+  dst[16] = (double)clampf(ctxConfidence, 0.0f, 1.0f);
+}
+
+
+static inline float contextAwareArcThreshold_() {
+#if defined(ARC_CONTEXT_CONFIDENCE_MIN) && defined(ARC_THRESHOLD_UNKNOWN)
+  if (s_ctxFamily >= 0 && s_ctxFamily < FAMILY_COUNT && s_ctxConfidence >= ARC_CONTEXT_CONFIDENCE_MIN) {
+  #if defined(arc_family_thresholds)
+    return arc_family_thresholds[s_ctxFamily];
+  #else
+    return arc_context_threshold_for_family((int)s_ctxFamily, s_ctxConfidence);
+  #endif
+  }
+  return ARC_THRESHOLD_UNKNOWN;
+#else
+  return ARC_THRESHOLD;
+#endif
+}
+
+static inline int unknownContextArcVotes_(float spectral_flux_midhf,
+                                          float residual_crest_factor,
+                                          float edge_spike_ratio,
+                                          float midband_residual_ratio,
+                                          float cycle_nmse,
+                                          float peak_fluct_cv,
+                                          float thd_i,
+                                          float hf_energy_delta,
+                                          float zcv,
+                                          float abs_irms_zscore_vs_baseline) {
+  int votes = 0;
+  if (spectral_flux_midhf >= ARC_SIG_SPECTRAL_FLUX) votes++;
+  if (residual_crest_factor >= ARC_SIG_RESIDUAL_CF) votes++;
+  if (edge_spike_ratio >= ARC_SIG_EDGE_SPIKE_RATIO) votes++;
+  if (midband_residual_ratio >= ARC_SIG_MIDBAND_RATIO) votes++;
+  if (cycle_nmse >= ARC_SIG_CYCLE_NMSE) votes++;
+  if (peak_fluct_cv >= ARC_SIG_PEAK_FLUCT) votes++;
+  if (thd_i >= ARC_SIG_THD_I) votes++;
+  if (hf_energy_delta >= ARC_SIG_HF_ENERGY_DELTA) votes++;
+  if (zcv >= ARC_SIG_ZCV) votes++;
+  if (abs_irms_zscore_vs_baseline >= ARC_SIG_IRMS_ZSCORE) votes++;
+  return votes;
+}
+
+
 int ArcDetection::predict(float spectral_flux_midhf, float residual_crest_factor,
                           float edge_spike_ratio, float midband_residual_ratio,
                           float cycle_nmse, float peak_fluct_cv,
                           float thd_i, float hf_energy_delta,
                           float zcv, float abs_irms_zscore_vs_baseline,
                           float v_rms, float i_rms, float temp_c) const {
+#if defined(ARC_MODEL_FEATURE_VERSION) && (ARC_MODEL_FEATURE_VERSION >= 5)
   (void)v_rms; (void)i_rms; (void)temp_c;
-  // Heuristic fallback operates directly in the current mixed feature space
-  // where spectral flux / NMSE / CV / THD are percentages, ratio terms are in dB,
-  // hf_energy_delta is a dB power-ratio delta, and zcv is in milliseconds.
+  double input_features[ARC_MODEL_INPUT_DIM];
+  fillArcModelInput_(input_features,
+                     spectral_flux_midhf,
+                     residual_crest_factor,
+                     edge_spike_ratio,
+                     midband_residual_ratio,
+                     cycle_nmse,
+                     peak_fluct_cv,
+                     thd_i,
+                     hf_energy_delta,
+                     zcv,
+                     abs_irms_zscore_vs_baseline,
+                     s_ctxFamily,
+                     s_ctxConfidence);
+  double output_probs[2] = {0.0, 0.0};
+  arc_rf_predict(input_features, output_probs);
+  const float threshold = contextAwareArcThreshold_();
+  const bool unknown_ctx = !((s_ctxFamily >= 0) && (s_ctxFamily < FAMILY_COUNT) && (s_ctxConfidence >= ARC_CONTEXT_CONFIDENCE_MIN));
+  if (unknown_ctx) {
+    const int votes = unknownContextArcVotes_(spectral_flux_midhf,
+                                              residual_crest_factor,
+                                              edge_spike_ratio,
+                                              midband_residual_ratio,
+                                              cycle_nmse,
+                                              peak_fluct_cv,
+                                              thd_i,
+                                              hf_energy_delta,
+                                              zcv,
+                                              abs_irms_zscore_vs_baseline);
+    if (votes < ARC_UNKNOWN_MIN_FEATURE_VOTES) return 0;
+  }
+  return (output_probs[1] >= threshold) ? 1 : 0;
+#else
+  (void)v_rms; (void)i_rms; (void)temp_c;
   float score = 0.0f;
   if (spectral_flux_midhf >= ARC_SIG_SPECTRAL_FLUX) score += 1.3f;
   if (residual_crest_factor >= ARC_SIG_RESIDUAL_CF) score += 0.9f;
@@ -738,6 +824,7 @@ int ArcDetection::predict(float spectral_flux_midhf, float residual_crest_factor
   if (zcv >= ARC_SIG_ZCV) score += 0.6f;
   if (abs_irms_zscore_vs_baseline >= ARC_SIG_IRMS_ZSCORE) score += 0.8f;
   return (score >= 3.4f) ? 1 : 0;
+#endif
 }
 
 int ArcDetection::computeAndPredict(const uint16_t* raw, size_t n, float fs_hz,
@@ -750,7 +837,44 @@ int ArcDetection::computeAndPredict(const uint16_t* raw, size_t n, float fs_hz,
     return 0;
   }
 
-#if defined(ARC_MODEL_FEATURE_VERSION) && (ARC_MODEL_FEATURE_VERSION >= 4)
+#if defined(ARC_MODEL_FEATURE_VERSION) && (ARC_MODEL_FEATURE_VERSION >= 5)
+  double input_features[ARC_MODEL_INPUT_DIM];
+  fillArcModelInput_(input_features,
+                     out.spectral_flux_midhf,
+                     out.residual_crest_factor,
+                     out.edge_spike_ratio,
+                     out.midband_residual_ratio,
+                     out.cycle_nmse,
+                     out.peak_fluct_cv,
+                     out.thd_i,
+                     out.hf_energy_delta,
+                     out.zcv,
+                     out.abs_irms_zscore_vs_baseline,
+                     s_ctxFamily,
+                     s_ctxConfidence);
+  double output_probs[2] = {0.0, 0.0};
+  arc_rf_predict(input_features, output_probs);
+  const float threshold = contextAwareArcThreshold_();
+  const bool unknown_ctx = !((s_ctxFamily >= 0) && (s_ctxFamily < FAMILY_COUNT) && (s_ctxConfidence >= ARC_CONTEXT_CONFIDENCE_MIN));
+  if (unknown_ctx) {
+    const int votes = unknownContextArcVotes_(out.spectral_flux_midhf,
+                                              out.residual_crest_factor,
+                                              out.edge_spike_ratio,
+                                              out.midband_residual_ratio,
+                                              out.cycle_nmse,
+                                              out.peak_fluct_cv,
+                                              out.thd_i,
+                                              out.hf_energy_delta,
+                                              out.zcv,
+                                              out.abs_irms_zscore_vs_baseline);
+    if (votes < ARC_UNKNOWN_MIN_FEATURE_VOTES) {
+      out.model_pred = 0;
+      return 0;
+    }
+  }
+  out.model_pred = (output_probs[1] >= threshold) ? 1 : 0;
+  return out.model_pred;
+#elif defined(ARC_MODEL_FEATURE_VERSION) && (ARC_MODEL_FEATURE_VERSION >= 4)
   double input_features[10] = {
     (double)out.spectral_flux_midhf,
     (double)out.residual_crest_factor,

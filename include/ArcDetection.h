@@ -26,6 +26,7 @@ struct ArcDetectionResult {
 class ArcDetection {
 public:
   void resetRuntime();
+  void setContext(int8_t family, float confidence);
   bool compute(const uint16_t* raw, size_t n, float fs_hz,
                const CurrentCalib& cal, float mainsHz,
                ArcDetectionResult& out);

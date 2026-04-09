@@ -1,5 +1,6 @@
 import json
 import os
+import re
 import warnings
 from dataclasses import dataclass
 from typing import Dict, List, Tuple
@@ -34,7 +35,7 @@ except Exception:
     StratifiedGroupKFold = None
 
 
-FEATURES = [
+ARC_BASE_FEATURES = [
     "spectral_flux_midhf",
     "residual_crest_factor",
     "edge_spike_ratio",
@@ -46,10 +47,38 @@ FEATURES = [
     "zcv",
     "abs_irms_zscore_vs_baseline",
 ]
+DEVICE_FAMILY_CLASSES = [
+    "resistive_linear",
+    "inductive_motor",
+    "rectifier_smps",
+    "phase_angle_controlled",
+    "brush_universal_motor",
+    "other_mixed",
+]
+DEVICE_FAMILY_UNKNOWN_CODE = -1
+DEVICE_FAMILY_CODE_MAP = {fam: idx for idx, fam in enumerate(DEVICE_FAMILY_CLASSES)}
+DEVICE_FAMILY_NAME_FROM_CODE = {idx: fam for fam, idx in DEVICE_FAMILY_CODE_MAP.items()}
+DEVICE_FAMILY_CODE_MAP_WITH_UNKNOWN = {"unknown": DEVICE_FAMILY_UNKNOWN_CODE, **DEVICE_FAMILY_CODE_MAP}
+ARC_CONTEXT_FEATURES = [f"ctx_family_{fam}" for fam in DEVICE_FAMILY_CLASSES] + ["context_family_confidence"]
+ARC_FEATURES = ARC_BASE_FEATURES + ARC_CONTEXT_FEATURES
+CONTEXT_FEATURES = [
+    "residual_crest_factor",
+    "edge_spike_ratio",
+    "midband_residual_ratio",
+    "thd_i",
+    "hf_energy_delta",
+    "zcv",
+    "i_rms",
+    "v_rms",
+    "cycle_nmse",
+    "peak_fluct_cv",
+]
+FEATURES = ARC_BASE_FEATURES
 TARGET = "label_arc"
+CONTEXT_TARGET = "device_family_code"
 GROUP_COL_CANDIDATES = ["trial_id", "session_id", "section_id", "session", "sid"]
 
-DB_FEATURE_SPACE_VERSION = 4
+DB_FEATURE_SPACE_VERSION = 5
 DB_RATIO_FLOOR = 1e-6
 DB_POWER_RATIO_FLOOR = 1e-6
 DB_RATIO_CLIP = (-80.0, 20.0)
@@ -207,6 +236,27 @@ def _db_negative_score(series: pd.Series, neutral_db: float = 0.0, floor_db: flo
     s = _series_from(series)
     span = max(float(neutral_db) - float(floor_db), 1e-6)
     return ((float(neutral_db) - s) / span).clip(0.0, hi)
+
+
+def augment_unknown_context_rows(df: pd.DataFrame, target_col: str = TARGET) -> pd.DataFrame:
+    work = normalize_feature_names(df.copy())
+    if work.empty:
+        return work
+    work["context_family_code_runtime"] = -1
+    work["context_family_confidence"] = 0.0
+    for fam in DEVICE_FAMILY_CLASSES:
+        work[f"ctx_family_{fam}"] = 0.0
+    work["context_runtime_source"] = "augmented_unknown"
+    work["context_augmented"] = 1
+    if "sample_weight" not in work.columns:
+        work["sample_weight"] = 1.0
+    work["sample_weight"] = pd.to_numeric(work["sample_weight"], errors="coerce").fillna(1.0)
+    labels = pd.to_numeric(work.get(target_col, 0), errors="coerce").fillna(0).astype(int)
+    neg_mask = labels == 0
+    pos_mask = labels == 1
+    work.loc[neg_mask, "sample_weight"] = np.maximum(work.loc[neg_mask, "sample_weight"] * 2.5, 3.0)
+    work.loc[pos_mask, "sample_weight"] = np.maximum(work.loc[pos_mask, "sample_weight"] * 0.35, 0.15)
+    return work
 
 
 
@@ -393,39 +443,70 @@ def normalize_feature_names(df: pd.DataFrame) -> pd.DataFrame:
     if "thd_i" not in df.columns:
         df["thd_i"] = DB_THD_CLIP[0]
 
+    fam_series = df.get("device_family", pd.Series("unknown", index=df.index)).astype(str).map(_normalize_device_family_name)
+    if "device_family_code" in df.columns:
+        fam_code = pd.to_numeric(df["device_family_code"], errors="coerce").apply(_coerce_device_family_code).astype(int)
+        fam_from_code = fam_code.map(lambda c: DEVICE_FAMILY_NAME_FROM_CODE.get(int(c), "unknown"))
+        fam_series = np.where(pd.Series(fam_series, index=df.index) == "unknown", fam_from_code, fam_series)
+        df["device_family_code"] = fam_code
+    else:
+        df["device_family_code"] = pd.Series(fam_series, index=df.index).map(lambda name: DEVICE_FAMILY_CODE_MAP.get(name, DEVICE_FAMILY_UNKNOWN_CODE)).astype(int)
+
+    df["device_family"] = pd.Series(fam_series, index=df.index).astype(str)
+    if "device_name" in df.columns:
+        df["device_name"] = df["device_name"].astype(str).fillna("unknown_device")
+    else:
+        df["device_name"] = "unknown_device"
+
+    if "context_family_code_runtime" in df.columns:
+        runtime_codes = pd.to_numeric(df["context_family_code_runtime"], errors="coerce").apply(_coerce_device_family_code).astype(int)
+    else:
+        runtime_codes = df["device_family_code"].astype(int)
+    df["context_family_code_runtime"] = runtime_codes
+
+    for fam in DEVICE_FAMILY_CLASSES:
+        fam_idx = DEVICE_FAMILY_CODE_MAP[fam]
+        col = f"ctx_family_{fam}"
+        if col not in df.columns:
+            df[col] = (runtime_codes == fam_idx).astype(float)
+        else:
+            df[col] = pd.to_numeric(df[col], errors="coerce").fillna(0.0)
+    if "context_family_confidence" not in df.columns:
+        df["context_family_confidence"] = np.where(runtime_codes >= 0, 1.0, 0.0)
+    else:
+        df["context_family_confidence"] = pd.to_numeric(df["context_family_confidence"], errors="coerce").fillna(0.0).clip(0.0, 1.0)
+
     return df
 
 
-def clean_df(df: pd.DataFrame, include_invalid: bool = False) -> pd.DataFrame:
+def clean_df(df: pd.DataFrame, include_invalid: bool = False, feature_names=None, target_col: str = TARGET) -> pd.DataFrame:
     df = normalize_feature_names(df.copy())
+    feature_names = list(feature_names or FEATURES)
 
-    missing = [c for c in FEATURES + [TARGET] if c not in df.columns]
+    missing = [c for c in feature_names + [target_col] if c not in df.columns]
     if missing:
         raise ValueError(f"Missing required columns: {missing}")
 
-    df[TARGET] = pd.to_numeric(df[TARGET], errors="coerce")
-    df = df[df[TARGET].isin([0, 1])].copy()
+    df[target_col] = pd.to_numeric(df[target_col], errors="coerce")
+    if target_col == TARGET:
+        df = df[df[target_col].isin([0, 1])].copy()
+    else:
+        df = df[df[target_col].notna()].copy()
 
-    for c in FEATURES:
+    for c in feature_names:
         df[c] = pd.to_numeric(df[c], errors="coerce")
 
     if include_invalid:
-        x = df[FEATURES].replace([np.inf, -np.inf], np.nan)
+        x = df[feature_names].replace([np.inf, -np.inf], np.nan)
         df = df.loc[x.notna().all(axis=1)].copy()
     else:
-        if "rf_train_row" in df.columns:
+        if "rf_train_row" in df.columns and target_col == TARGET:
             df = df[df["rf_train_row"] == 1].copy()
-        elif "feat_valid" in df.columns:
-            curv = pd.to_numeric(
-                df.get("current_valid", 1),
-                errors="coerce",
-            ).fillna(1)
-            df = df[
-                (pd.to_numeric(df["feat_valid"], errors="coerce") == 1)
-                & (curv == 1)
-            ].copy()
+        elif "feat_valid" in df.columns and target_col == TARGET:
+            curv = pd.to_numeric(df.get("current_valid", 1), errors="coerce").fillna(1)
+            df = df[(pd.to_numeric(df["feat_valid"], errors="coerce") == 1) & (curv == 1)].copy()
 
-        x = df[FEATURES].replace([np.inf, -np.inf], np.nan)
+        x = df[feature_names].replace([np.inf, -np.inf], np.nan)
         df = df.loc[x.notna().all(axis=1)].copy()
 
     clip_bounds = {
@@ -439,20 +520,22 @@ def clean_df(df: pd.DataFrame, include_invalid: bool = False) -> pd.DataFrame:
         "hf_energy_delta": DB_HF_CLIP,
         "zcv": (0.0, 10.0),
         "abs_irms_zscore_vs_baseline": (0.0, 25.0),
+        "context_family_confidence": (0.0, 1.0),
+        "v_rms": (0.0, 400.0),
+        "i_rms": (0.0, 40.0),
     }
     for c, (lo, hi) in clip_bounds.items():
-        df[c] = df[c].clip(lo, hi)
+        if c in df.columns:
+            df[c] = df[c].clip(lo, hi)
 
     if "sample_weight" in df.columns:
-        df["sample_weight"] = pd.to_numeric(
-            df["sample_weight"],
-            errors="coerce",
-        ).fillna(1.0)
+        df["sample_weight"] = pd.to_numeric(df["sample_weight"], errors="coerce").fillna(1.0)
         df["sample_weight"] = df["sample_weight"].clip(0.05, 100.0)
     else:
         df["sample_weight"] = 1.0
 
-    df[TARGET] = df[TARGET].astype(int)
+    if target_col == TARGET:
+        df[target_col] = df[target_col].astype(int)
     return df
 
 
@@ -610,6 +693,71 @@ def _safe_float(value, default: float = 0.0) -> float:
         return out
     except Exception:
         return float(default)
+
+
+def _normalize_device_family_name(value, default: str = "unknown") -> str:
+    raw = str(value or "").strip().lower()
+    raw = raw.replace("-", "_").replace(" ", "_")
+    alias = {
+        "": default,
+        "unknown": "unknown",
+        "resistive": "resistive_linear",
+        "resistive_linear": "resistive_linear",
+        "heater": "resistive_linear",
+        "heating": "resistive_linear",
+        "inductive": "inductive_motor",
+        "motor": "inductive_motor",
+        "fan": "inductive_motor",
+        "inductive_motor": "inductive_motor",
+        "smps": "rectifier_smps",
+        "rectifier": "rectifier_smps",
+        "rectifier_smps": "rectifier_smps",
+        "charger": "rectifier_smps",
+        "adapter": "rectifier_smps",
+        "phase": "phase_angle_controlled",
+        "dimmer": "phase_angle_controlled",
+        "dimmer_phase": "phase_angle_controlled",
+        "phase_angle": "phase_angle_controlled",
+        "phase_angle_controlled": "phase_angle_controlled",
+        "universal": "brush_universal_motor",
+        "universal_motor": "brush_universal_motor",
+        "brush": "brush_universal_motor",
+        "brush_universal_motor": "brush_universal_motor",
+        "vacuum": "brush_universal_motor",
+        "mixed": "other_mixed",
+        "mixed_unknown": "other_mixed",
+        "other": "other_mixed",
+        "other_mixed": "other_mixed",
+    }
+    out = alias.get(raw, raw)
+    if out in DEVICE_FAMILY_CODE_MAP:
+        return out
+    return default
+
+
+def _coerce_device_family_code(value) -> int:
+    try:
+        if value is None or (isinstance(value, float) and np.isnan(value)):
+            return DEVICE_FAMILY_UNKNOWN_CODE
+        iv = int(value)
+        if iv in DEVICE_FAMILY_NAME_FROM_CODE or iv == DEVICE_FAMILY_UNKNOWN_CODE:
+            return iv
+    except Exception:
+        pass
+    return DEVICE_FAMILY_UNKNOWN_CODE
+
+
+def c_float_literal(value: float, digits: int = 9) -> str:
+    fv = _safe_float(value, 0.0)
+    s = f"{fv:.{digits}g}"
+    if "e" in s or "E" in s:
+        mantissa, exponent = re.split(r"[eE]", s, maxsplit=1)
+        if "." not in mantissa:
+            mantissa += ".0"
+        return f"{mantissa}e{exponent}f"
+    if "." not in s:
+        s += ".0"
+    return s + "f"
 
 
 
@@ -956,19 +1104,29 @@ def postprocess_m2c_header(c_code: str) -> str:
         )
 
     c_code = memcpy_pat.sub(repl, c_code)
+    c_code = re.sub(r"(?<![\w.])(-?\d+)f\b", lambda m: f"{m.group(1)}.0f", c_code)
     return c_code
 
 
-def load_clean_dataset(csv_path: str, include_invalid: bool = False):
+def load_clean_dataset(csv_path: str, include_invalid: bool = False, feature_names=None, target_col: str = TARGET, augment_unknown_context: bool = True):
     if not os.path.isfile(csv_path):
         raise ValueError(f"Merged dataset not found: {csv_path}")
 
     raw_df = pd.read_csv(csv_path)
     raw_df = normalize_feature_names(raw_df)
-    df = clean_df(raw_df, include_invalid=include_invalid)
+    feature_names = list(feature_names or FEATURES)
+    df = clean_df(raw_df, include_invalid=include_invalid, feature_names=feature_names, target_col=target_col)
 
-    if df.empty or df[TARGET].nunique() < 2:
-        raise ValueError("Training requires both classes in cleaned_data.csv.")
+    if augment_unknown_context and target_col == TARGET and any(str(name).startswith("ctx_family_") for name in feature_names):
+        already_augmented = pd.Series(False, index=df.index)
+        if "context_augmented" in df.columns:
+            already_augmented = pd.to_numeric(df["context_augmented"], errors="coerce").fillna(0).astype(int) == 1
+        base_aug = df.loc[~already_augmented].copy()
+        if not base_aug.empty:
+            df = pd.concat([df, augment_unknown_context_rows(base_aug, target_col=target_col)], ignore_index=True, sort=False)
+
+    if df.empty or df[target_col].nunique() < 2:
+        raise ValueError(f"Training requires at least 2 classes in {target_col} from cleaned_data.csv.")
 
     group_col = pick_group_column(df)
     if group_col is None:
@@ -977,8 +1135,8 @@ def load_clean_dataset(csv_path: str, include_invalid: bool = False):
 
     groups = df[group_col].astype(str)
     df["_group_col_used"] = group_col
-    X = df[FEATURES].astype(float)
-    y = df[TARGET].astype(int)
+    X = df[feature_names].astype(float)
+    y = df[target_col].astype(int)
     w = df["sample_weight"].astype(float).to_numpy()
     return df, X, y, groups, w
 
@@ -1055,21 +1213,26 @@ def _stratified_group_shuffle_indices(groups, y, test_size: float, random_state:
     groups_arr = pd.Series(groups).astype(str).to_numpy()
     all_idx = np.arange(len(groups_arr))
 
-    if pos_groups >= 2 and neg_groups >= 2:
-        splitter = StratifiedShuffleSplit(
-            n_splits=24,
-            test_size=test_size,
-            random_state=random_state,
-        )
+    n_group_classes = int(summary["group_label"].nunique())
+    if pos_groups >= 2 and neg_groups >= 2 and len(summary) >= (2 * n_group_classes):
         group_names = summary["group"].astype(str).to_numpy()
         group_labels = summary["group_label"].astype(int).to_numpy()
-        for train_gi, test_gi in splitter.split(group_names, group_labels):
-            train_groups = set(group_names[train_gi].tolist())
-            test_groups = set(group_names[test_gi].tolist())
-            if _split_has_both_classes(summary, train_groups) and _split_has_both_classes(summary, test_groups):
-                train_mask = np.isin(groups_arr, list(train_groups))
-                test_mask = np.isin(groups_arr, list(test_groups))
-                return all_idx[train_mask], all_idx[test_mask]
+        test_groups = int(round(len(summary) * float(test_size))) if isinstance(test_size, float) else int(test_size)
+        test_groups = max(n_group_classes, test_groups)
+        test_groups = min(test_groups, len(summary) - n_group_classes)
+        if test_groups >= n_group_classes and (len(summary) - test_groups) >= n_group_classes:
+            splitter = StratifiedShuffleSplit(
+                n_splits=24,
+                test_size=test_groups,
+                random_state=random_state,
+            )
+            for train_gi, test_gi in splitter.split(group_names, group_labels):
+                train_groups = set(group_names[train_gi].tolist())
+                test_groups_set = set(group_names[test_gi].tolist())
+                if _split_has_both_classes(summary, train_groups) and _split_has_both_classes(summary, test_groups_set):
+                    train_mask = np.isin(groups_arr, list(train_groups))
+                    test_mask = np.isin(groups_arr, list(test_groups_set))
+                    return all_idx[train_mask], all_idx[test_mask]
 
     gss = GroupShuffleSplit(n_splits=24, test_size=test_size, random_state=random_state)
     best = None
@@ -1101,12 +1264,16 @@ def make_group_splits(X, y, groups, test_size=0.20):
     X_test = X.iloc[test_idx]
     y_test = y.iloc[test_idx]
 
-    train_idx, val_idx = _stratified_group_shuffle_indices(
-        groups=groups_train_full,
-        y=y_train_full,
-        test_size=0.20,
-        random_state=123,
-    )
+    try:
+        train_idx, val_idx = _stratified_group_shuffle_indices(
+            groups=groups_train_full,
+            y=y_train_full,
+            test_size=0.20,
+            random_state=123,
+        )
+    except Exception:
+        train_idx = np.arange(len(X_train_full))
+        val_idx = np.arange(len(X_train_full))
 
     train_summary = _group_summary_frame(groups_train_full, y_train_full)
     pos_group_count = int((train_summary["group_label"] == 1).sum())
@@ -1129,7 +1296,7 @@ def make_group_splits(X, y, groups, test_size=0.20):
             "negative_group_count": neg_group_count,
             "recommended_cv_splits": int(recommended_cv_splits),
             "stratified_group_cv": bool(StratifiedGroupKFold is not None and recommended_cv_splits >= 2),
-            "grouping_note": "Grouping prefers trial_id over session_id so start/steady/arc/close sections from one trial stay together.",
+            "grouping_note": "Grouping prefers trial_id over session_id so start/steady/arc sections from one trial stay together.",
         },
     }
 
@@ -1725,7 +1892,7 @@ def train_one_model(
 
     fi = pd.Series(
         best.feature_importances_,
-        index=FEATURES,
+        index=list(X_train.columns),
     ).sort_values(ascending=False)
 
     progress_step = total_steps
@@ -1823,6 +1990,235 @@ def _preferred_meta_col(df: pd.DataFrame, candidates: list[str]) -> str | None:
             return col
     return None
 
+
+
+
+def family_label_from_code(code: int) -> str:
+    return DEVICE_FAMILY_NAME_FROM_CODE.get(int(code), "unknown")
+
+
+def pick_runtime_family_code(meta_df: pd.DataFrame, row_idx: int, runtime_col: str = "context_family_code_runtime") -> int:
+    if meta_df is None or runtime_col not in meta_df.columns:
+        return DEVICE_FAMILY_UNKNOWN_CODE
+    try:
+        return _coerce_device_family_code(meta_df.iloc[int(row_idx)][runtime_col])
+    except Exception:
+        return DEVICE_FAMILY_UNKNOWN_CODE
+
+
+def pick_context_confidence(meta_df: pd.DataFrame, row_idx: int, confidence_col: str = "context_family_confidence") -> float:
+    if meta_df is None or confidence_col not in meta_df.columns:
+        return 0.0
+    try:
+        return float(pd.to_numeric(pd.Series([meta_df.iloc[int(row_idx)][confidence_col]]), errors="coerce").fillna(0.0).iloc[0])
+    except Exception:
+        return 0.0
+
+
+def calibrate_family_threshold_policy(
+    val_meta: pd.DataFrame,
+    y_true,
+    y_score,
+    *,
+    base_threshold: float,
+    fn_weight: float = 80.0,
+    fp_weight: float = 4.0,
+    min_recall: float = 0.97,
+    min_precision: float = 0.90,
+    max_fpr: float = 0.03,
+    min_threshold: float = 0.08,
+    known_confidence_min: float = 0.45,
+    family_min_rows: int = 12,
+) -> dict:
+    y_true = np.asarray(y_true).astype(int)
+    y_score = np.asarray(y_score).astype(float)
+    work = (val_meta.copy() if val_meta is not None else pd.DataFrame(index=np.arange(len(y_true))))
+    if len(work) != len(y_true):
+        work = work.reset_index(drop=True).iloc[:len(y_true)].copy()
+    work["_y_true"] = y_true
+    work["_y_score"] = y_score
+
+    if "context_family_code_runtime" not in work.columns:
+        if "device_family_code" in work.columns:
+            work["context_family_code_runtime"] = pd.to_numeric(work["device_family_code"], errors="coerce").fillna(-1).astype(int)
+        else:
+            work["context_family_code_runtime"] = DEVICE_FAMILY_UNKNOWN_CODE
+    else:
+        work["context_family_code_runtime"] = pd.to_numeric(work["context_family_code_runtime"], errors="coerce").fillna(-1).astype(int)
+
+    if "context_family_confidence" not in work.columns:
+        work["context_family_confidence"] = np.where(work["context_family_code_runtime"] >= 0, 1.0, 0.0)
+    else:
+        work["context_family_confidence"] = pd.to_numeric(work["context_family_confidence"], errors="coerce").fillna(0.0).clip(0.0, 1.0)
+
+    known_rows = work[work["context_family_confidence"] >= float(known_confidence_min)].copy()
+    per_family = {}
+    for fam_idx, fam_name in DEVICE_FAMILY_NAME_FROM_CODE.items():
+        group = known_rows[known_rows["context_family_code_runtime"] == int(fam_idx)].copy()
+        source = "fallback_global"
+        details = {
+            "family": fam_name,
+            "family_code": int(fam_idx),
+            "rows": int(len(group)),
+            "positive_rows": int(group["_y_true"].sum()) if len(group) else 0,
+            "negative_rows": int((group["_y_true"] == 0).sum()) if len(group) else 0,
+        }
+        thr = float(base_threshold)
+        thr_meta = None
+        if len(group) >= family_min_rows and group["_y_true"].nunique() >= 2:
+            thr_meta = select_threshold_cost(
+                group["_y_true"].to_numpy(),
+                group["_y_score"].to_numpy(),
+                fn_weight=fn_weight,
+                fp_weight=fp_weight,
+                min_recall=min_recall,
+                min_precision=min_precision,
+                max_fpr=max_fpr,
+                min_threshold=min_threshold,
+            )
+            thr = float(thr_meta["thr"])
+            source = "family_validation"
+        elif len(group) >= family_min_rows and int(group["_y_true"].sum()) == 0:
+            neg = np.sort(group["_y_score"].to_numpy())
+            if neg.size:
+                thr = float(min(0.995, max(base_threshold, np.quantile(neg, 0.995) + 0.01)))
+                source = "family_negative_only"
+        per_family[str(int(fam_idx))] = {
+            "threshold": float(thr),
+            "source": source,
+            "selection": thr_meta,
+            **details,
+        }
+
+    unknown_group = work[(work["context_family_code_runtime"] < 0) | (work["context_family_confidence"] < float(known_confidence_min))].copy()
+    unknown_threshold = float(max(min_threshold, base_threshold + 0.12, 0.55))
+    unknown_source = "strict_fallback"
+    unknown_sel = None
+    if len(unknown_group) >= max(10, family_min_rows) and unknown_group["_y_true"].nunique() >= 2:
+        unknown_sel = select_threshold_cost(
+            unknown_group["_y_true"].to_numpy(),
+            unknown_group["_y_score"].to_numpy(),
+            fn_weight=max(fn_weight, 120.0),
+            fp_weight=max(fp_weight * 3.0, 12.0),
+            min_recall=max(0.75, min_recall - 0.15),
+            min_precision=max(0.98, min_precision),
+            max_fpr=min(max_fpr, 0.005),
+            min_threshold=max(min_threshold, base_threshold + 0.10, 0.50),
+        )
+        unknown_threshold = float(max(unknown_threshold, unknown_sel["thr"]))
+        unknown_source = "unknown_validation"
+    elif len(unknown_group) >= max(10, family_min_rows) and int(unknown_group["_y_true"].sum()) == 0:
+        neg = np.sort(unknown_group["_y_score"].to_numpy())
+        if neg.size:
+            unknown_threshold = float(min(0.999, max(unknown_threshold, np.quantile(neg, 0.999) + 0.01)))
+            unknown_source = "unknown_negative_only"
+
+    return {
+        "policy_type": "family_conditioned_thresholds",
+        "base_threshold": float(base_threshold),
+        "known_confidence_min": float(known_confidence_min),
+        "family_thresholds": per_family,
+        "unknown_threshold": float(unknown_threshold),
+        "unknown_policy": {
+            "threshold": float(unknown_threshold),
+            "source": unknown_source,
+            "selection": unknown_sel,
+            "rows": int(len(unknown_group)),
+            "positive_rows": int(unknown_group["_y_true"].sum()) if len(unknown_group) else 0,
+            "negative_rows": int((unknown_group["_y_true"] == 0).sum()) if len(unknown_group) else 0,
+            "min_positive_feature_votes": 3,
+            "description": "Unknown or low-confidence context requires a stricter threshold and corroborating arc-like features.",
+        },
+    }
+
+
+def threshold_for_policy(policy: dict | None, family_code: int, confidence: float) -> float:
+    if not isinstance(policy, dict):
+        return 0.5
+    base = float(policy.get("base_threshold", 0.5))
+    if int(family_code) >= 0 and float(confidence) >= float(policy.get("known_confidence_min", 0.45)):
+        fam = (policy.get("family_thresholds") or {}).get(str(int(family_code))) or {}
+        return float(fam.get("threshold", base))
+    return float((policy.get("unknown_policy") or {}).get("threshold", policy.get("unknown_threshold", max(base, 0.65))))
+
+
+def apply_threshold_policy(meta_df: pd.DataFrame, y_score, policy: dict | None) -> tuple[np.ndarray, np.ndarray]:
+    y_score = np.asarray(y_score).astype(float)
+    n = len(y_score)
+    meta = meta_df.reset_index(drop=True) if meta_df is not None else pd.DataFrame(index=np.arange(n))
+    thresholds = np.zeros(n, dtype=float)
+    y_pred = np.zeros(n, dtype=int)
+    for i in range(n):
+        fam = pick_runtime_family_code(meta, i)
+        conf = pick_context_confidence(meta, i)
+        thr = threshold_for_policy(policy, fam, conf)
+        thresholds[i] = float(thr)
+        y_pred[i] = int(y_score[i] >= thr)
+    return y_pred, thresholds
+
+
+def evaluate_threshold_policy(meta_df: pd.DataFrame, y_true, y_score, policy: dict | None) -> dict:
+    y_true = np.asarray(y_true).astype(int)
+    y_score = np.asarray(y_score).astype(float)
+    y_pred, thresholds = apply_threshold_policy(meta_df, y_score, policy)
+    tn, fp, fn, tp = confusion_matrix(y_true, y_pred, labels=[0, 1]).ravel()
+    recall = _safe_rate(tp, tp + fn)
+    specificity = _safe_rate(tn, tn + fp)
+    out = {
+        "accuracy": float(_safe_rate(tp + tn, tp + tn + fp + fn)),
+        "balanced_accuracy": float((recall + specificity) * 0.5),
+        "average_precision": _safe_average_precision(y_true, y_score),
+        "roc_auc": _safe_roc_auc(y_true, y_score),
+        "precision": float(precision_score(y_true, y_pred, zero_division=0)),
+        "recall": float(recall),
+        "f1": float(f1_score(y_true, y_pred, zero_division=0)),
+        "specificity": float(specificity),
+        "npv": _safe_rate(tn, tn + fn),
+        "fpr": _safe_rate(fp, fp + tn),
+        "fnr": _safe_rate(fn, fn + tp),
+        "confusion_matrix": {"tn": int(tn), "fp": int(fp), "fn": int(fn), "tp": int(tp)},
+        "threshold_mean": float(np.mean(thresholds)) if thresholds.size else 0.0,
+        "threshold_min": float(np.min(thresholds)) if thresholds.size else 0.0,
+        "threshold_max": float(np.max(thresholds)) if thresholds.size else 0.0,
+        "row_count": int(len(y_true)),
+        "positive_count": int(np.sum(y_true == 1)),
+        "negative_count": int(np.sum(y_true == 0)),
+    }
+    return out
+
+
+def build_policy_subset_metrics_report(meta_df: pd.DataFrame, y_true, y_score, policy: dict | None, group_col: str, min_rows: int = 6) -> list[dict]:
+    if meta_df is None or group_col not in meta_df.columns:
+        return []
+    frame = meta_df.copy().reset_index(drop=True)
+    frame["_y_true"] = np.asarray(y_true).astype(int)
+    frame["_y_score"] = np.asarray(y_score).astype(float)
+    pred, thr = apply_threshold_policy(frame, frame["_y_score"].to_numpy(), policy)
+    frame["_y_pred"] = pred
+    frame["_thr"] = thr
+    rows = []
+    for value, group in frame.groupby(group_col, dropna=False, sort=True):
+        if len(group) < min_rows:
+            continue
+        tn, fp, fn, tp = confusion_matrix(group["_y_true"].to_numpy(), group["_y_pred"].to_numpy(), labels=[0, 1]).ravel()
+        recall = _safe_rate(tp, tp + fn)
+        specificity = _safe_rate(tn, tn + fp)
+        rows.append({
+            "group": "<blank>" if pd.isna(value) else str(value),
+            "rows": int(len(group)),
+            "positive_rows": int(group["_y_true"].sum()),
+            "threshold_mean": float(group["_thr"].mean()),
+            "threshold_min": float(group["_thr"].min()),
+            "threshold_max": float(group["_thr"].max()),
+            "average_precision": _safe_average_precision(group["_y_true"].to_numpy(), group["_y_score"].to_numpy()),
+            "precision": float(precision_score(group["_y_true"].to_numpy(), group["_y_pred"].to_numpy(), zero_division=0)),
+            "recall": float(recall),
+            "fpr": float(_safe_rate(fp, fp + tn)),
+            "specificity": float(specificity),
+            "confusion_matrix": {"tn": int(tn), "fp": int(fp), "fn": int(fn), "tp": int(tp)},
+        })
+    rows.sort(key=lambda r: (-r["positive_rows"], -r["rows"], r["group"]))
+    return rows
 
 def build_subset_metrics_report(meta_df: pd.DataFrame, y_true, y_score, thr: float, group_col: str, min_rows: int = 6) -> list[dict]:
     if meta_df is None or group_col not in meta_df.columns:
@@ -2065,13 +2461,7 @@ def _export_tree_ensemble_to_c(model, function_name: str = "arc_rf_predict") -> 
         def fmt_int_list(vals):
             return ", ".join(str(int(v)) for v in vals)
         def fmt_float_list(vals):
-            out = []
-            for v in vals:
-                fv = float(v)
-                if np.isnan(fv) or np.isinf(fv):
-                    fv = 0.0
-                out.append(f"{fv:.9g}f")
-            return ", ".join(out)
+            return ", ".join(c_float_literal(v) for v in vals)
 
         prefix = f"tree_{tree_idx}"
         lines.append(f"static const int16_t {prefix}_left[{len(left)}] = {{{fmt_int_list(left)}}};")
@@ -2095,37 +2485,161 @@ def _export_tree_ensemble_to_c(model, function_name: str = "arc_rf_predict") -> 
     return "\n".join(lines)
 
 
+def export_context_header(
+    *,
+    out_header: str,
+    feature_names,
+    class_labels,
+    means,
+    stds,
+    centroids,
+    unknown_confidence_threshold: float = 0.45,
+    model_name: str = "ContextPrototype",
+    function_name: str = "context_family_predict",
+) -> None:
+    ensure_dir(out_header)
+    feature_names = list(feature_names or CONTEXT_FEATURES)
+    class_labels = [str(x) for x in class_labels]
+    means = [float(x) for x in means]
+    stds = [max(1e-9, float(x)) for x in stds]
+    centroids = {str(k): [float(v) for v in vals] for k, vals in dict(centroids).items()}
+
+    with open(out_header, "w", encoding="utf-8") as f:
+        f.write("#pragma once\n")
+        f.write(f"// Auto-generated context family prototype model: {model_name}\n")
+        f.write(f"#define CONTEXT_MODEL_INPUT_DIM {len(feature_names)}\n")
+        f.write(f"#define CONTEXT_MODEL_FAMILY_COUNT {len(class_labels)}\n")
+        f.write(f"#define CONTEXT_UNKNOWN_CONFIDENCE {float(unknown_confidence_threshold):.4f}f\n\n")
+        f.write("#define CONTEXT_FAMILY_UNKNOWN -1\n")
+        for idx, label in enumerate(class_labels):
+            macro = re.sub(r"[^A-Z0-9]+", "_", label.upper()).strip("_")
+            f.write(f"#define CONTEXT_FAMILY_{macro} {idx}\n")
+        f.write("\n// Input Feature Order:\n")
+        for i, name in enumerate(feature_names):
+            f.write(f"// [{i}] {name}\n")
+        f.write("\n#include <math.h>\n\n")
+        f.write(f"static const float context_means[{len(feature_names)}] = {{{', '.join(c_float_literal(v) for v in means)}}};\n")
+        f.write(f"static const float context_stds[{len(feature_names)}] = {{{', '.join(c_float_literal(v) for v in stds)}}};\n")
+        centroid_symbols = []
+        for label in class_labels:
+            arr = centroids.get(label, [0.0] * len(feature_names))
+            if len(arr) != len(feature_names):
+                raise ValueError(f"Centroid length mismatch for {label}: expected {len(feature_names)}, got {len(arr)}")
+            safe_label = re.sub(r"[^a-z0-9]+", "_", label.lower()).strip("_")
+            symbol = f"context_centroid_{safe_label}"
+            centroid_symbols.append(symbol)
+            f.write(f"static const float {symbol}[{len(feature_names)}] = {{{', '.join(c_float_literal(v) for v in arr)}}};\n")
+        f.write("\n")
+        f.write(f"static inline void {function_name}(double *input, double *output) {{\n")
+        f.write("    const float *centroids[] = {" + ", ".join(centroid_symbols) + "};\n")
+        f.write(f"    float logits[{len(class_labels)}];\n")
+        f.write("    float max_logit = -1e30f;\n")
+        f.write(f"    for (int c = 0; c < {len(class_labels)}; ++c) {{\n")
+        f.write("        float d2 = 0.0f;\n")
+        f.write(f"        for (int i = 0; i < {len(feature_names)}; ++i) {{\n")
+        f.write("            const float z = (((float)input[i]) - context_means[i]) / context_stds[i];\n")
+        f.write("            const float d = z - centroids[c][i];\n")
+        f.write("            d2 += d * d;\n")
+        f.write("        }\n")
+        f.write("        logits[c] = -d2;\n")
+        f.write("        if (logits[c] > max_logit) max_logit = logits[c];\n")
+        f.write("    }\n")
+        f.write("    float sum = 0.0f;\n")
+        f.write(f"    for (int c = 0; c < {len(class_labels)}; ++c) {{\n")
+        f.write("        logits[c] = expf(logits[c] - max_logit);\n")
+        f.write("        sum += logits[c];\n")
+        f.write("    }\n")
+        f.write("    if (sum <= 1e-12f) sum = 1.0f;\n")
+        f.write(f"    for (int c = 0; c < {len(class_labels)}; ++c) output[c] = (double)(logits[c] / sum);\n")
+        f.write("}\n\n")
+        f.write("static inline int context_family_best(double *output, double *confidence) {\n")
+        f.write("    int best = 0;\n")
+        f.write("    double best_v = output[0];\n")
+        f.write(f"    for (int c = 1; c < {len(class_labels)}; ++c) {{ if (output[c] > best_v) {{ best_v = output[c]; best = c; }} }}\n")
+        f.write("    if (confidence) *confidence = best_v;\n")
+        f.write(f"    return (best_v < {float(unknown_confidence_threshold):.4f}) ? CONTEXT_FAMILY_UNKNOWN : best;\n")
+        f.write("}\n")
+
+
+def save_context_bundle(
+    *,
+    report: dict,
+    out_header: str,
+    out_joblib: str,
+    out_report: str,
+    settings: dict,
+) -> None:
+    ensure_dir(out_joblib)
+    ensure_dir(out_report)
+    estimator = report.get("estimator")
+    if estimator is None:
+        raise ValueError("Context report must include estimator for save_context_bundle().")
+    joblib.dump(estimator, out_joblib)
+    export_context_header(
+        out_header=out_header,
+        feature_names=report.get("feature_names", CONTEXT_FEATURES),
+        class_labels=report.get("class_labels", DEVICE_FAMILY_CLASSES),
+        means=report.get("means", [0.0] * len(report.get("feature_names", CONTEXT_FEATURES))),
+        stds=report.get("stds", [1.0] * len(report.get("feature_names", CONTEXT_FEATURES))),
+        centroids=report.get("centroids", {}),
+        unknown_confidence_threshold=float(report.get("unknown_confidence_threshold", 0.45)),
+        model_name=str(report.get("model_name", "ContextPrototype")),
+    )
+    payload = dict(report)
+    payload.pop("estimator", None)
+    payload["settings"] = settings
+    with open(out_report, "w", encoding="utf-8") as f:
+        json.dump(payload, f, indent=2)
+
+
 def export_header(
     model,
     threshold: float,
     out_header: str,
     model_name: str,
+    feature_names=None,
+    function_name: str = "arc_rf_predict",
+    threshold_policy: dict | None = None,
 ) -> None:
     ensure_dir(out_header)
-    export_backend = "m2cgen"
-    try:
-        if m2c is None:
-            raise RuntimeError("m2cgen is unavailable")
-        c_code = m2c.export_to_c(model, function_name="arc_rf_predict")
-        c_code = postprocess_m2c_header(c_code)
-    except Exception:
-        export_backend = "native_tree_ensemble"
-        c_code = _export_tree_ensemble_to_c(model, function_name="arc_rf_predict")
+    export_backend = "native_tree_ensemble"
+    feature_names = list(feature_names or FEATURES)
+    c_code = _export_tree_ensemble_to_c(model, function_name=function_name)
+
+    family_thresholds = []
+    if isinstance(threshold_policy, dict):
+        fam_map = threshold_policy.get("family_thresholds") or {}
+        for fam_idx in range(len(DEVICE_FAMILY_CLASSES)):
+            fam = fam_map.get(str(int(fam_idx))) or {}
+            family_thresholds.append(float(fam.get("threshold", threshold)))
+    else:
+        family_thresholds = [float(threshold)] * len(DEVICE_FAMILY_CLASSES)
+    unknown_threshold = float(((threshold_policy or {}).get("unknown_policy") or {}).get("threshold", (threshold_policy or {}).get("unknown_threshold", max(float(threshold), 0.65))))
+    known_confidence_min = float((threshold_policy or {}).get("known_confidence_min", 0.45))
+    unknown_min_votes = int(((threshold_policy or {}).get("unknown_policy") or {}).get("min_positive_feature_votes", 3))
 
     with open(out_header, "w", encoding="utf-8") as f:
         f.write("#pragma once\n")
-        f.write(
-            f"// Auto-generated C header from scikit-learn {model_name} ({export_backend})\n"
-        )
-        f.write("#define ARC_MODEL_FEATURE_VERSION 4\n")
-        f.write(f"#define ARC_THRESHOLD {threshold:.4f}\n\n")
+        f.write(f"// Auto-generated C header from scikit-learn {model_name} ({export_backend})\n")
+        feature_version = 5 if any(str(name).startswith("ctx_family_") for name in feature_names) else 4
+        f.write(f"#define ARC_MODEL_FEATURE_VERSION {feature_version}\n")
+        f.write(f"#define ARC_MODEL_INPUT_DIM {len(feature_names)}\n")
+        f.write(f"#define ARC_THRESHOLD {float(threshold):.4f}f\n")
+        f.write(f"#define ARC_CONTEXT_CONFIDENCE_MIN {known_confidence_min:.4f}f\n")
+        f.write(f"#define ARC_THRESHOLD_UNKNOWN {unknown_threshold:.4f}f\n")
+        f.write(f"#define ARC_UNKNOWN_MIN_FEATURE_VOTES {unknown_min_votes}\n\n")
         f.write("// Input Feature Order:\n")
-        for i, name in enumerate(FEATURES):
+        for i, name in enumerate(feature_names):
             f.write(f"// [{i}] {name}\n")
         f.write("\n#include <string.h>\n")
+        f.write(f"static const float arc_family_thresholds[{len(family_thresholds)}] = {{{', '.join(c_float_literal(v) for v in family_thresholds)}}};\n")
+        f.write("static inline float arc_context_threshold_for_family(int family, float confidence) {\n")
+        f.write("    if (family >= 0 && family < (int)(sizeof(arc_family_thresholds)/sizeof(arc_family_thresholds[0])) && confidence >= ARC_CONTEXT_CONFIDENCE_MIN) return arc_family_thresholds[family];\n")
+        f.write("    return ARC_THRESHOLD_UNKNOWN;\n")
+        f.write("}\n\n")
         f.write(c_code)
 
-    norm_out = out_header.replace("\\", "/")
+    norm_out = out_header.replace('\\', '/')
     marker = "/tinyml/model/"
     if marker in norm_out:
         compat_path = os.path.join(norm_out.split(marker, 1)[0], "tinyml", os.path.basename(out_header))
@@ -2138,11 +2652,14 @@ def export_header(
 
 
 def save_model_bundle(
+
     result: dict,
     out_header: str,
     out_joblib: str,
     out_report: str,
     settings: dict,
+    feature_names=None,
+    function_name: str = "arc_rf_predict",
 ) -> None:
     ensure_dir(out_joblib)
     ensure_dir(out_report)
@@ -2153,9 +2670,12 @@ def save_model_bundle(
         threshold=float(result["threshold"]),
         out_header=out_header,
         model_name=result["model_name"],
+        feature_names=feature_names,
+        function_name=function_name,
     )
 
     report = strip_estimator(result)
+    report["feature_names"] = list(feature_names or FEATURES)
     report["settings"] = settings
     with open(out_report, "w", encoding="utf-8") as f:
         json.dump(report, f, indent=2)
@@ -2169,6 +2689,8 @@ def save_duel_bundle(
     out_report: str,
     settings: dict,
     winner_policy: dict | None = None,
+    feature_names=None,
+    function_name: str = "arc_rf_predict",
 ) -> None:
     ensure_dir(out_joblib)
     ensure_dir(out_report)
@@ -2179,11 +2701,15 @@ def save_duel_bundle(
         threshold=float(winner["threshold"]),
         out_header=out_header,
         model_name=winner["model_name"],
+        feature_names=feature_names,
+        function_name=function_name,
+        threshold_policy=winner.get("threshold_policy"),
     )
 
     report = {
         "winner": strip_estimator(winner),
         "all_results": [strip_estimator(r) for r in results],
+        "feature_names": list(feature_names or FEATURES),
         "winner_policy": winner_policy or {},
         "settings": settings,
     }

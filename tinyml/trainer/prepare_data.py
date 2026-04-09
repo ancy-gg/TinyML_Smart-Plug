@@ -16,7 +16,8 @@ TINYML_DIR = SCRIPT_DIR.parent
 PROJECT_ROOT = TINYML_DIR.parent
 
 DEFAULT_INPUT_GLOB = str(PROJECT_ROOT / "tinyml" / "data" / "raw" / "**" / "*.csv")
-DEFAULT_OUTPUT = str(PROJECT_ROOT / "tinyml" / "data" / "cleaned_data.csv")
+DEFAULT_OUTPUT = str(PROJECT_ROOT / "tinyml" / "data" / "arc_training.csv")
+DEFAULT_CONTEXT_OUTPUT = str(PROJECT_ROOT / "tinyml" / "data" / "load_context.csv")
 
 REAL_NEG_WEIGHT = 3.5
 REAL_POS_WEIGHT = 5.0
@@ -60,10 +61,10 @@ FILENAME_DIVISION_ALIASES = {
     "steady": "steady",
     "baseline": "steady",
     "arc": "arc",
-    "close": "close",
-    "closing": "close",
-    "end": "close",
-    "ending": "close",
+    "close": "steady",
+    "closing": "steady",
+    "end": "steady",
+    "ending": "steady",
 }
 
 FILENAME_SUFFIX_TOKENS = {
@@ -91,7 +92,7 @@ FILENAME_PREFIX_TOKENS = {
     "log",
 }
 
-DB_FEATURE_SPACE_VERSION = 4
+DB_FEATURE_SPACE_VERSION = 5
 DB_RATIO_FLOOR = 1e-6
 DB_POWER_RATIO_FLOOR = 1e-6
 DB_RATIO_CLIP = (-80.0, 20.0)
@@ -123,6 +124,66 @@ DB_ALIAS_MAP = {
     "hf_energy_delta_db": "hf_energy_delta",
 }
 
+DEVICE_FAMILY_CLASSES = (
+    "resistive_linear",
+    "inductive_motor",
+    "rectifier_smps",
+    "phase_angle_controlled",
+    "brush_universal_motor",
+    "other_mixed",
+)
+
+
+
+
+def normalize_device_family_token(value, fallback: str = "unknown") -> str:
+    raw = re.sub(r"[^a-z0-9]+", "_", str(value or "").strip().lower()).strip("_")
+    alias = {
+        "resistive": "resistive_linear", "resistive_linear": "resistive_linear", "heater": "resistive_linear", "heating": "resistive_linear",
+        "inductive": "inductive_motor", "motor": "inductive_motor", "fan": "inductive_motor", "inductive_motor": "inductive_motor",
+        "smps": "rectifier_smps", "rectifier": "rectifier_smps", "rectifier_smps": "rectifier_smps", "charger": "rectifier_smps", "adapter": "rectifier_smps",
+        "dimmer": "phase_angle_controlled", "phase": "phase_angle_controlled", "dimmer_phase": "phase_angle_controlled", "phase_angle": "phase_angle_controlled", "phase_angle_controlled": "phase_angle_controlled",
+        "universal": "brush_universal_motor", "universal_motor": "brush_universal_motor", "brush": "brush_universal_motor", "brush_universal_motor": "brush_universal_motor", "vacuum": "brush_universal_motor",
+        "mixed": "other_mixed", "mixed_unknown": "other_mixed", "other": "other_mixed", "other_mixed": "other_mixed", "unknown": "unknown",
+    }
+    out = alias.get(raw, raw or fallback)
+    return out if out in DEVICE_FAMILY_CLASSES else fallback
+
+
+def normalize_device_name_token(value, fallback: str = "unknown_device") -> str:
+    raw = re.sub(r"\.[a-z0-9]+$", "", str(value or "").strip(), flags=re.I)
+    token = re.sub(r"[^a-z0-9]+", "_", raw.lower()).strip("_")
+    return token or fallback
+
+
+def normalize_division_tag(value, fallback: str = "steady") -> str:
+    raw = re.sub(r"[^a-z0-9]+", "_", str(value or "").strip().lower()).strip("_")
+    return FILENAME_DIVISION_ALIASES.get(raw, raw or fallback) or fallback
+
+def device_family_code_from_token(value) -> int:
+    token = normalize_device_family_token(value, "unknown")
+    if token == "unknown":
+        return -1
+    return DEVICE_FAMILY_CLASSES.index(token) if token in DEVICE_FAMILY_CLASSES else -1
+
+
+def apply_runtime_context_columns(df: pd.DataFrame, runtime_code_col: str = "context_family_code_runtime", confidence_col: str = "context_family_confidence") -> pd.DataFrame:
+    df = df.copy()
+    runtime_codes = pd.to_numeric(df.get(runtime_code_col, pd.Series(-1, index=df.index)), errors="coerce").fillna(-1).astype(int)
+    df[runtime_code_col] = runtime_codes
+    for fam in DEVICE_FAMILY_CLASSES:
+        fam_idx = DEVICE_FAMILY_CLASSES.index(fam)
+        df[f"ctx_family_{fam}"] = (runtime_codes == fam_idx).astype(int)
+    conf = pd.to_numeric(df.get(confidence_col, pd.Series(0.0, index=df.index)), errors="coerce").fillna(0.0).clip(0.0, 1.0)
+    df[confidence_col] = conf
+    return df
+
+
+def text_series(df: pd.DataFrame, *cols, default: str = "") -> pd.Series:
+    for col in cols:
+        if col in df.columns:
+            return df[col].astype(str).fillna(default)
+    return pd.Series(default, index=df.index, dtype=object)
 
 def _series_from(values) -> pd.Series:
     if isinstance(values, pd.Series):
@@ -265,6 +326,25 @@ def resolve_csv_files(csv_glob: str, output_path: str):
     return files
 
 
+def build_unknown_context_augmented_rows(df: pd.DataFrame, target_col: str = TARGET) -> pd.DataFrame:
+    work = df.copy()
+    if work.empty:
+        return work
+    work["context_family_code_runtime"] = -1
+    work["context_family_confidence"] = 0.0
+    work = apply_runtime_context_columns(work)
+    work["context_runtime_source"] = "augmented_unknown"
+    work["context_augmented"] = 1
+    if "sample_weight" not in work.columns:
+        work["sample_weight"] = 1.0
+    work["sample_weight"] = pd.to_numeric(work["sample_weight"], errors="coerce").fillna(1.0)
+    labels = pd.to_numeric(work.get(target_col, 0), errors="coerce").fillna(0).astype(int)
+    neg_mask = labels == 0
+    pos_mask = labels == 1
+    work.loc[neg_mask, "sample_weight"] = np.maximum(work.loc[neg_mask, "sample_weight"] * 2.5, 3.0)
+    work.loc[pos_mask, "sample_weight"] = np.maximum(work.loc[pos_mask, "sample_weight"] * 0.35, 0.15)
+    return work
+
 
 def normalize_feature_names(df: pd.DataFrame) -> pd.DataFrame:
     df = df.copy()
@@ -331,6 +411,25 @@ def _has_any_name_token(path: str, tokens) -> bool:
 
 def parse_filename_tokens(path: str) -> dict:
     stem = Path(path).stem
+    structured = [p for p in stem.split("__") if p]
+    if len(structured) >= 4 and re.fullmatch(r"trial_?\d+", structured[2], flags=re.I):
+        trial = max(1, int(re.sub(r"[^0-9]+", "", structured[2]) or "1"))
+        division = normalize_division_tag(structured[3], "steady")
+        device_family = normalize_device_family_token(structured[0], "unknown")
+        device_name = normalize_device_name_token(structured[1], structured[1])
+        trial_key = f"{device_family}__{device_name}__trial{trial:03d}"
+        return {
+            "division_tag": division,
+            "trial_number": int(trial),
+            "parsed_load_type": device_name,
+            "parsed_load_family": device_family,
+            "device_family": device_family,
+            "device_name": device_name,
+            "trial_key": trial_key,
+            "section_key": division or "unknown",
+            "segment_index": 0,
+        }
+
     parts = [p for p in re.split(r"[_\s-]+", stem) if p]
     norm_parts = [str(p).lower() for p in parts]
 
@@ -380,13 +479,17 @@ def parse_filename_tokens(path: str) -> dict:
     while keep_tokens and str(keep_tokens[-1]).lower() in FILENAME_SUFFIX_TOKENS:
         keep_tokens.pop()
 
-    load_type = re.sub(r"[^a-z0-9]+", "_", "_".join(keep_tokens).lower()).strip("_") or "unknown"
-    trial_key = f"{load_type}__trial{int(trial):03d}"
+    device_name = normalize_device_name_token("_".join(keep_tokens), "unknown_device")
+    device_family = normalize_device_family_token("unknown")
+    trial_key = f"{device_family}__{device_name}__trial{int(trial):03d}"
     section_key = division or "unknown"
     return {
         "division_tag": division,
         "trial_number": int(trial),
-        "parsed_load_type": load_type,
+        "parsed_load_type": device_name,
+        "parsed_load_family": device_family,
+        "device_family": device_family,
+        "device_name": device_name,
         "trial_key": trial_key,
         "section_key": section_key,
         "segment_index": int(segment_index),
@@ -400,7 +503,7 @@ def infer_source_kind(path: str):
         return "scaffold", 1, 0
     if division == "steady":
         return "real", 4, 1
-    if division in {"start", "close"}:
+    if division == "start":
         return "real", 3, 0
     if _has_any_name_token(path, TRUSTED_NORMAL_NAME_TOKENS):
         return "real", 4, 1
@@ -439,14 +542,26 @@ def load_and_tag_csvs(csv_files):
         df["trial_id"] = trial_prefix
         df["section_id"] = section_prefix
 
+        device_family_series = text_series(df, "device_family", "family", default=file_tokens.get("device_family", "unknown")).map(normalize_device_family_token)
+        device_name_series = text_series(df, "device_name", "load_type", default=file_tokens.get("device_name", file_tokens.get("parsed_load_type", "unknown_device"))).map(lambda v: normalize_device_name_token(v, file_tokens.get("device_name", "unknown_device")))
+        division_series = text_series(df, "division_tag", default=file_tokens.get("division_tag", "steady")).map(normalize_division_tag)
+        trial_series = pd.to_numeric(df["trial_number"], errors="coerce").fillna(file_tokens.get("trial_number", 1)).astype(int) if "trial_number" in df.columns else pd.Series(int(file_tokens.get("trial_number", 1)), index=df.index, dtype=int)
+        notes_series = text_series(df, "notes", default="").map(lambda v: str(v).strip())
+        trusted_series = pd.to_numeric(df.get("trusted_normal_session", pd.Series(int(trusted_normal_session), index=df.index)), errors="coerce").fillna(int(trusted_normal_session)).astype(int)
+
         df["_source_file"] = str(rel_path).replace(chr(92), "/")
         df["_source_folder"] = source_folder
         df["source_kind"] = source_kind
         df["source_priority"] = source_priority
-        df["trusted_normal_session"] = int(trusted_normal_session)
-        df["division_tag"] = file_tokens.get("division_tag", "")
-        df["trial_number"] = int(file_tokens.get("trial_number", 1))
-        df["parsed_load_type"] = file_tokens.get("parsed_load_type", "unknown")
+        df["trusted_normal_session"] = trusted_series
+        df["division_tag"] = division_series
+        df["trial_number"] = trial_series
+        df["device_family"] = device_family_series
+        df["device_name"] = device_name_series
+        df["parsed_load_type"] = device_name_series
+        df["parsed_load_family"] = device_family_series
+        df["notes"] = notes_series
+        df["load_type"] = device_name_series
         df["section_key"] = file_tokens.get("section_key", "unknown")
         if "rf_train_row" not in df.columns:
             df["rf_train_row"] = 1
@@ -626,11 +741,11 @@ def attach_training_metadata(df: pd.DataFrame) -> tuple[pd.DataFrame, dict]:
     df["section_prior"] = "neutral"
     df.loc[division_tag == "arc", "section_prior"] = "arc_eligible"
     df.loc[division_tag == "steady", "section_prior"] = "steady_hint"
-    df.loc[division_tag.isin(["start", "close"]), "section_prior"] = "transient_hint"
+    df.loc[division_tag == "start", "section_prior"] = "transient_hint"
 
     df["label_trust"] = _build_label_trust(df)
     steady_neg_hint = (division_tag == "steady") & (df[TARGET].astype(int) == 0) & (df["trusted_normal_session"] == 0)
-    transient_neg_hint = division_tag.isin(["start", "close"]) & (df[TARGET].astype(int) == 0) & (df["trusted_normal_session"] == 0)
+    transient_neg_hint = (division_tag == "start") & (df[TARGET].astype(int) == 0) & (df["trusted_normal_session"] == 0)
     df.loc[steady_neg_hint, "label_trust"] = np.minimum(df.loc[steady_neg_hint, "label_trust"], 0.82)
     df.loc[transient_neg_hint, "label_trust"] = np.minimum(df.loc[transient_neg_hint, "label_trust"], 0.68)
 
@@ -729,7 +844,7 @@ def attach_training_metadata(df: pd.DataFrame) -> tuple[pd.DataFrame, dict]:
         transient_norm = (
             (df[TARGET] == 0)
             & (df["rf_train_row"] == 1)
-            & (turn_like | division_tag.isin(["start", "close"]))
+            & (turn_like | (division_tag == "start"))
             & (df["trusted_normal_session"] == 0)
             & (df["arc_like_score"] < SOFT_NEGATIVE_ARC_SCORE)
         )
@@ -860,7 +975,7 @@ def resolve_near_duplicate_label_conflicts(df: pd.DataFrame) -> tuple[pd.DataFra
 
 
 
-def clean_dataset(df: pd.DataFrame) -> tuple[pd.DataFrame, dict]:
+def clean_dataset(df: pd.DataFrame, augment_unknown_context: bool = False) -> tuple[pd.DataFrame, dict]:
     df = df.copy()
     required = FEATURES + [TARGET]
     missing = [c for c in required if c not in df.columns]
@@ -922,6 +1037,20 @@ def clean_dataset(df: pd.DataFrame) -> tuple[pd.DataFrame, dict]:
     ).drop_duplicates(subset=local_dedupe_cols, keep="first").copy()
 
     df[TARGET] = pd.to_numeric(df[TARGET], errors="coerce").fillna(0).astype(int)
+    df["device_family"] = text_series(df, "device_family", "parsed_load_family", default="unknown").map(normalize_device_family_token)
+    df["device_name"] = text_series(df, "device_name", "parsed_load_type", "load_type", default="unknown_device").map(normalize_device_name_token)
+    df["device_family_code"] = df["device_family"].map(device_family_code_from_token).fillna(-1).astype(int)
+    if "context_family_code_runtime" in df.columns:
+        runtime_codes = pd.to_numeric(df["context_family_code_runtime"], errors="coerce").fillna(-1).astype(int)
+    else:
+        runtime_codes = df["device_family_code"].astype(int)
+    df["context_family_code_runtime"] = runtime_codes
+    default_ctx_conf = pd.Series(np.where(runtime_codes >= 0, 1.0, 0.0), index=df.index, dtype=float)
+    ctx_conf = df.get("context_family_confidence", default_ctx_conf)
+    if not isinstance(ctx_conf, pd.Series):
+        ctx_conf = pd.Series(ctx_conf, index=df.index)
+    df["context_family_confidence"] = pd.to_numeric(ctx_conf, errors="coerce").fillna(0.0).clip(0.0, 1.0)
+    df = apply_runtime_context_columns(df)
     df["rf_train_row"] = pd.to_numeric(
         df["rf_train_row"],
         errors="coerce",
@@ -934,12 +1063,26 @@ def clean_dataset(df: pd.DataFrame) -> tuple[pd.DataFrame, dict]:
     ).fillna(0).astype(int)
     df["label_conflict"] = pd.to_numeric(df.get("label_conflict", 0), errors="coerce").fillna(0).astype(int)
     df["hard_negative"] = pd.to_numeric(df.get("hard_negative", 0), errors="coerce").fillna(0).astype(int)
+    df["context_runtime_source"] = "metadata_family"
+    df["context_augmented"] = 0
+
+    augmentation_rows = 0
+    if augment_unknown_context:
+        aug_src = build_unknown_context_augmented_rows(df[df["rf_train_row"] == 1].copy(), target_col=TARGET)
+        if not aug_src.empty:
+            augmentation_rows = int(len(aug_src))
+            df = pd.concat([df, aug_src], ignore_index=True, sort=False)
     if "conflict_scope" not in df.columns:
         df["conflict_scope"] = "global"
 
+    base_rows_after = int(len(df) - augmentation_rows)
+    rows_removed = int(before - base_rows_after)
+
     print("Rows before cleaning:", before)
-    print("Rows after cleaning :", len(df))
-    print("Rows removed        :", before - len(df))
+    print("Rows after cleaning :", base_rows_after)
+    print("Rows removed        :", rows_removed)
+    if augmentation_rows:
+        print("Augmented rows added:", augmentation_rows)
     print("Trainable rows      :", int(df["rf_train_row"].sum()))
     print("Trusted normal rows :", int((df["trusted_normal_session"] == 1).sum()))
     print("Conflict-marked rows:", int((df["label_conflict"] == 1).sum()))
@@ -955,8 +1098,10 @@ def clean_dataset(df: pd.DataFrame) -> tuple[pd.DataFrame, dict]:
         print(df["conflict_policy"].value_counts().to_string())
     summary = {
         "rows_before_cleaning": int(before),
-        "rows_after_cleaning": int(len(df)),
-        "rows_removed": int(before - len(df)),
+        "rows_after_cleaning": int(base_rows_after),
+        "rows_removed": int(rows_removed),
+        "augmentation_rows_added": int(augmentation_rows),
+        "rows_after_cleaning_with_augmentation": int(len(df)),
         "trainable_rows": int(df["rf_train_row"].sum()),
         "trusted_normal_rows": int((df["trusted_normal_session"] == 1).sum()),
         "conflict_marked_rows": int((df["label_conflict"] == 1).sum()),
@@ -970,6 +1115,9 @@ def clean_dataset(df: pd.DataFrame) -> tuple[pd.DataFrame, dict]:
         "quality_summary": {str(k): int(v) for k, v in quality_summary.items()},
         "division_counts": ({str(k): int(v) for k, v in df["division_tag"].fillna("").replace("", "unknown").value_counts().to_dict().items()} if "division_tag" in df.columns else {}),
         "trial_counts": ({str(k): int(v) for k, v in df["trial_id"].astype(str).value_counts().to_dict().items()} if "trial_id" in df.columns else {}),
+        "device_family_counts": ({str(k): int(v) for k, v in df["device_family"].astype(str).value_counts().to_dict().items()} if "device_family" in df.columns else {}),
+        "device_family_code_counts": ({str(int(k)): int(v) for k, v in pd.to_numeric(df.get("device_family_code", pd.Series([], dtype=int)), errors="coerce").fillna(-1).astype(int).value_counts().to_dict().items()} if "device_family_code" in df.columns else {}),
+        "context_runtime_code_counts": ({str(int(k)): int(v) for k, v in pd.to_numeric(df.get("context_family_code_runtime", pd.Series([], dtype=int)), errors="coerce").fillna(-1).astype(int).value_counts().to_dict().items()} if "context_family_code_runtime" in df.columns else {}),
         "unknown_division_rows": int((df.get("division_tag", pd.Series("", index=df.index, dtype=object)).astype(str).str.strip() == "").sum()),
         "section_prior_counts": ({str(k): int(v) for k, v in df.get("section_prior", pd.Series("neutral", index=df.index)).astype(str).value_counts().to_dict().items()}),
         "conflict_resolution": {str(k): int(v) for k, v in conflict_stats.items()},
@@ -982,14 +1130,33 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--csv_glob", default=DEFAULT_INPUT_GLOB)
     ap.add_argument("--output", default=DEFAULT_OUTPUT)
+    ap.add_argument("--arc_output", default=None)
+    ap.add_argument("--context_output", default=DEFAULT_CONTEXT_OUTPUT)
+    ap.add_argument("--augment_unknown_context", action="store_true")
     args = ap.parse_args()
 
-    csv_files = resolve_csv_files(args.csv_glob, args.output)
+    arc_output = args.arc_output or args.output
+
+    csv_files = resolve_csv_files(args.csv_glob, arc_output)
     df = load_and_tag_csvs(csv_files)
-    df, summary = clean_dataset(df)
-    ensure_dir(args.output)
-    df.to_csv(args.output, index=False)
-    print("Saved merged dataset to:", args.output)
+    df, summary = clean_dataset(df, augment_unknown_context=args.augment_unknown_context)
+
+    division = df.get("division_tag", pd.Series("steady", index=df.index)).astype(str).str.lower()
+    arc_df = df[division.isin(["steady", "arc"])].copy()
+    context_df = df[division == "start"].copy()
+
+    ensure_dir(arc_output)
+    arc_df.to_csv(arc_output, index=False)
+    ensure_dir(args.context_output)
+    context_df.to_csv(args.context_output, index=False)
+
+    summary["arc_training_rows"] = int(len(arc_df))
+    summary["load_context_rows"] = int(len(context_df))
+    summary["arc_training_path"] = arc_output
+    summary["load_context_path"] = args.context_output
+
+    print("Saved arc training dataset to:", arc_output)
+    print("Saved load context dataset to:", args.context_output)
     print("__CLEANER_SUMMARY__ " + json.dumps(summary, sort_keys=True))
 
 

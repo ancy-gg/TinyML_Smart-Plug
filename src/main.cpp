@@ -20,6 +20,7 @@
 #include "TempSensor.h"
 #include "ProtectionManager.h"
 #include "ArcDetection.h"
+#include "TinyMLContextModel.h"
 
 Notification       notification(0x3C);
 WifiHandler        wifiMgr;
@@ -40,13 +41,202 @@ static volatile bool gPauseByOta = false;
 static volatile bool gStopSenseTask = false;
 static volatile bool gSenseTaskRunning = false;
 static volatile uint32_t gRelayArtifactBlankUntilMs = 0;
-static volatile uint32_t gFeatureQueueDropCount = 0;
 static bool gManualRelayAssumedOn = false;
 static uint32_t gManualRelayCandidateSinceMs = 0;
 static uint32_t gManualRelayReleaseSinceMs = 0;
 
 static void Core0Task(void* pv);
 
+
+
+struct RuntimeContextTracker {
+  bool ready = false;
+  int8_t family = FAMILY_UNKNOWN;
+  float confidence = 0.0f;
+  int8_t provisionalFamily = CONTEXT_FAMILY_UNKNOWN;
+  float provisionalConfidence = 0.0f;
+  uint16_t stableFrames = 0;
+  uint32_t activeSinceMs = 0;
+  uint32_t zeroSinceMs = 0;
+  uint32_t stableAccumMs = 0;
+  float sumResidualCf = 0.0f;
+  float sumEdge = 0.0f;
+  float sumMidband = 0.0f;
+  float sumThd = 0.0f;
+  float sumHf = 0.0f;
+  float sumZcv = 0.0f;
+  float sumIrms = 0.0f;
+  float sumVrms = 0.0f;
+  float sumNmse = 0.0f;
+  float sumPeak = 0.0f;
+  uint32_t noMainsSinceMs = 0;
+};
+
+static RuntimeContextTracker gContext;
+
+static void resetContextTracker_() {
+  memset(&gContext, 0, sizeof(gContext));
+  gContext.family = FAMILY_UNKNOWN;
+  gContext.provisionalFamily = CONTEXT_FAMILY_UNKNOWN;
+  gContext.confidence = 0.0f;
+  gContext.provisionalConfidence = 0.0f;
+  arcDetect.setContext(CONTEXT_FAMILY_UNKNOWN, 0.0f);
+}
+
+static inline void clearContextAccumulation_() {
+  const uint32_t activeSinceMs = gContext.activeSinceMs;
+  const uint32_t zeroSinceMs = gContext.zeroSinceMs;
+  const uint32_t noMainsSinceMs = gContext.noMainsSinceMs;
+  memset(&gContext, 0, sizeof(gContext));
+  gContext.family = FAMILY_UNKNOWN;
+  gContext.provisionalFamily = CONTEXT_FAMILY_UNKNOWN;
+  gContext.activeSinceMs = activeSinceMs;
+  gContext.zeroSinceMs = zeroSinceMs;
+  gContext.noMainsSinceMs = noMainsSinceMs;
+  arcDetect.setContext(CONTEXT_FAMILY_UNKNOWN, 0.0f);
+}
+
+static inline bool contextCurrentActive_(float vProtect, float irmsLogic) {
+  return (vProtect >= MAINS_PRESENT_ON_V) && (irmsLogic >= CONTEXT_MIN_IRMS_A);
+}
+
+static inline bool contextFeatureFrameUsable_(const FeatureFrame& f, float vProtect, float irmsLogic, bool arcBlank) {
+  if (arcBlank) return false;
+  if (vProtect < MAINS_PRESENT_ON_V) return false;
+  if ((f.current_valid == 0) || (f.feat_valid == 0)) return false;
+  if (irmsLogic < CONTEXT_MIN_IRMS_A) return false;
+  return true;
+}
+
+static inline uint32_t contextFrameMs_(const FeatureFrame& f) {
+  float dtMs = f.frame_dt_ms;
+  if (!isfinite(dtMs) || dtMs < 20.0f || dtMs > 500.0f) dtMs = FEATURE_FRAME_PERIOD_MS;
+  if (dtMs < 20.0f) dtMs = 20.0f;
+  if (dtMs > 500.0f) dtMs = 500.0f;
+  return (uint32_t)(dtMs + 0.5f);
+}
+
+static inline void evaluateContextPrediction_() {
+  if (gContext.stableFrames == 0) {
+    gContext.provisionalFamily = CONTEXT_FAMILY_UNKNOWN;
+    gContext.provisionalConfidence = 0.0f;
+    return;
+  }
+
+  const float denom = fmaxf(1.0f, (float)gContext.stableFrames);
+  double input[10] = {
+    gContext.sumResidualCf / denom,
+    gContext.sumEdge / denom,
+    gContext.sumMidband / denom,
+    gContext.sumThd / denom,
+    gContext.sumHf / denom,
+    gContext.sumZcv / denom,
+    gContext.sumIrms / denom,
+    gContext.sumVrms / denom,
+    gContext.sumNmse / denom,
+    gContext.sumPeak / denom,
+  };
+  double probs[CONTEXT_MODEL_FAMILY_COUNT] = {0};
+  context_family_predict(input, probs);
+  double conf = 0.0;
+  int fam = context_family_best(probs, &conf);
+  const float cf = (conf >= 0.0) ? (float)conf : 0.0f;
+  gContext.provisionalConfidence = cf;
+  if (cf < CONTEXT_MIN_CONFIDENCE) fam = CONTEXT_FAMILY_UNKNOWN;
+  gContext.provisionalFamily =
+      (fam >= 0 && fam < FAMILY_COUNT) ? (int8_t)fam : (int8_t)CONTEXT_FAMILY_UNKNOWN;
+}
+
+static void updateContextTracker_(const FeatureFrame& f, float vProtect, float irmsLogic, bool arcBlank) {
+  const uint32_t now = millis();
+  if (vProtect < MAINS_PRESENT_ON_V) {
+    if (gContext.noMainsSinceMs == 0) gContext.noMainsSinceMs = now;
+    if ((now - gContext.noMainsSinceMs) >= CONTEXT_RESET_NO_MAINS_MS) resetContextTracker_();
+    return;
+  }
+  gContext.noMainsSinceMs = 0;
+
+  const bool currentActive = contextCurrentActive_(vProtect, irmsLogic);
+
+  if (!currentActive) {
+    if (gContext.ready) {
+      if (gContext.zeroSinceMs == 0) gContext.zeroSinceMs = now;
+      if ((now - gContext.zeroSinceMs) >= CONTEXT_UNLATCH_ZERO_MS) resetContextTracker_();
+      else arcDetect.setContext(gContext.family, gContext.confidence);
+    } else {
+      gContext.activeSinceMs = 0;
+      gContext.zeroSinceMs = 0;
+      clearContextAccumulation_();
+    }
+    return;
+  }
+
+  gContext.zeroSinceMs = 0;
+  if (gContext.activeSinceMs == 0) {
+    clearContextAccumulation_();
+    gContext.activeSinceMs = now;
+  }
+
+  if (gContext.ready) {
+    arcDetect.setContext(gContext.family, gContext.confidence);
+    return;
+  }
+
+  if (contextFeatureFrameUsable_(f, vProtect, irmsLogic, arcBlank)) {
+    gContext.stableFrames++;
+    gContext.stableAccumMs += contextFrameMs_(f);
+    gContext.sumResidualCf += f.residual_crest_factor;
+    gContext.sumEdge += f.edge_spike_ratio;
+    gContext.sumMidband += f.midband_residual_ratio;
+    gContext.sumThd += f.thd_i;
+    gContext.sumHf += f.hf_energy_delta;
+    gContext.sumZcv += f.zcv;
+    gContext.sumIrms += irmsLogic;
+    gContext.sumVrms += f.vrms;
+    gContext.sumNmse += f.cycle_nmse;
+    gContext.sumPeak += f.peak_fluct_cv;
+    evaluateContextPrediction_();
+  }
+
+  const uint32_t activeWindowMs = (gContext.activeSinceMs > 0U) ? (now - gContext.activeSinceMs) : 0U;
+  const bool provisionalReady =
+      (activeWindowMs >= CONTEXT_PROVISIONAL_MIN_MS) &&
+      (gContext.provisionalFamily != CONTEXT_FAMILY_UNKNOWN) &&
+      (gContext.provisionalConfidence >= CONTEXT_MIN_CONFIDENCE);
+
+  if ((activeWindowMs >= CONTEXT_ACQUIRE_WINDOW_MS) && provisionalReady) {
+    gContext.ready = true;
+    gContext.family = gContext.provisionalFamily;
+    gContext.confidence = gContext.provisionalConfidence;
+    arcDetect.setContext(gContext.family, gContext.confidence);
+  } else if (provisionalReady) {
+    arcDetect.setContext(gContext.provisionalFamily, gContext.provisionalConfidence);
+  } else {
+    arcDetect.setContext(CONTEXT_FAMILY_UNKNOWN, 0.0f);
+  }
+}
+
+static inline void applyContextToFrame_(FeatureFrame& f) {
+  const uint32_t now = millis();
+  const uint32_t activeWindowMs = (gContext.activeSinceMs > 0U) ? (now - gContext.activeSinceMs) : 0U;
+  const bool provisionalReady =
+      !gContext.ready &&
+      (activeWindowMs >= CONTEXT_PROVISIONAL_MIN_MS) &&
+      (gContext.provisionalFamily != CONTEXT_FAMILY_UNKNOWN) &&
+      (gContext.provisionalConfidence >= CONTEXT_MIN_CONFIDENCE);
+
+  const int8_t runtimeFamily =
+      gContext.ready ? gContext.family : (provisionalReady ? gContext.provisionalFamily : (int8_t)CONTEXT_FAMILY_UNKNOWN);
+  const float runtimeConfidence =
+      gContext.ready ? gContext.confidence : (provisionalReady ? gContext.provisionalConfidence : 0.0f);
+
+  f.context_family_code_runtime = runtimeFamily;
+  f.context_family_confidence = runtimeConfidence;
+  f.context_family_code_provisional = gContext.provisionalFamily;
+  f.context_family_confidence_provisional = gContext.provisionalConfidence;
+  f.context_acquiring = (!gContext.ready && gContext.activeSinceMs > 0U) ? 1U : 0U;
+  f.context_latched = gContext.ready ? 1U : 0U;
+}
 static bool allocSampleBuffer_() {
   if (s_raw) return true;
   s_raw = static_cast<uint16_t*>(heap_caps_malloc(sizeof(uint16_t) * N_SAMP, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT));
@@ -88,9 +278,8 @@ static bool stopSensePipeline_(bool freeBuffer = true) {
 static bool startSensePipeline_() {
   if (gCore0SenseTask) return true;
   if (!allocSampleBuffer_()) return false;
-  gFeatureQueueDropCount = 0;
   if (!curSensor.begin()) return false;
-  if (!qFeat) qFeat = xQueueCreate(1, sizeof(FeatureFrame));
+  if (!qFeat) qFeat = xQueueCreate(FEATURE_FRAME_QUEUE_LEN, sizeof(FeatureFrame));
   if (!qFeat) return false;
   const BaseType_t ok = xTaskCreatePinnedToCore(Core0Task, "Core0Sense", 16384, nullptr, 3, &gCore0SenseTask, 0);
   if (ok != pdPASS) {
@@ -437,12 +626,37 @@ static void handleCueEvents(float vRaw, float vProtect, float irms, bool mainsPr
   }
 }
 
-static bool pushFeatureFrame_(const FeatureFrame& frame) {
+static bool pushFeatureFrame_(FeatureFrame& frame) {
   if (!qFeat) return false;
-  const UBaseType_t hadQueued = uxQueueMessagesWaiting(qFeat);
-  const BaseType_t ok = xQueueOverwrite(qFeat, &frame);
-  if (hadQueued > 0) gFeatureQueueDropCount++;
+  UBaseType_t queued = uxQueueMessagesWaiting(qFeat);
+  uint32_t dropped = 0;
+  while (queued >= FEATURE_FRAME_QUEUE_LEN) {
+    FeatureFrame dump;
+    if (xQueueReceive(qFeat, &dump, 0) != pdTRUE) break;
+    dropped++;
+    queued = uxQueueMessagesWaiting(qFeat);
+  }
+  frame.queue_drop_count = dropped;
+  const BaseType_t ok = xQueueSendToBack(qFeat, &frame, 0);
   return ok == pdPASS;
+}
+
+static void sleepUntilUs_(int64_t targetUs) {
+  while (true) {
+    const int64_t nowUs = esp_timer_get_time();
+    const int64_t remainUs = targetUs - nowUs;
+    if (remainUs <= 0) break;
+
+    if (remainUs >= 12000) {
+      TickType_t ticks = pdMS_TO_TICKS((uint32_t)(remainUs / 1000));
+      if (ticks < 1) ticks = 1;
+      vTaskDelay(ticks);
+    } else if (remainUs >= 150) {
+      delayMicroseconds((uint32_t)remainUs);
+    } else {
+      break;
+    }
+  }
 }
 
 static void onOtaEvent(OtaEvent ev, int progress) {
@@ -481,7 +695,9 @@ static void Core0Task(void* pv) {
   (void)pv;
   gSenseTaskRunning = true;
   ArcDetectionResult out;
-  uint32_t prevFrameStartMs = 0;
+  int64_t prevFrameStartUs = 0;
+  int64_t nextFrameStartUs = 0;
+  uint32_t timingGraceStartMs = 0;
 
   while (millis() < SENSOR_BOOT_SETTLE_MS) {
     if (gStopSenseTask) {
@@ -492,22 +708,31 @@ static void Core0Task(void* pv) {
     vTaskDelay(20 / portTICK_PERIOD_MS);
   }
 
+  timingGraceStartMs = millis();
+  nextFrameStartUs = esp_timer_get_time();
+
   while (true) {
     if (gStopSenseTask) break;
     if (gPauseByOta || gSafeMode) {
       if (gStopSenseTask) break;
       vTaskDelay(20 / portTICK_PERIOD_MS);
+      prevFrameStartUs = 0;
+      nextFrameStartUs = esp_timer_get_time();
+      timingGraceStartMs = millis();
       continue;
     }
+
+    sleepUntilUs_(nextFrameStartUs);
+    const int64_t frameStartUs = esp_timer_get_time();
 
     FeatureFrame f = {};
     const uint32_t frameStartMs = millis();
     f.uptime_ms = frameStartMs;
     f.frame_start_uptime_ms = frameStartMs;
-    if (prevFrameStartMs != 0 && frameStartMs >= prevFrameStartMs) {
-      f.frame_dt_ms = float(frameStartMs - prevFrameStartMs);
+    if (prevFrameStartUs > 0 && frameStartUs > prevFrameStartUs) {
+      f.frame_dt_ms = float(frameStartUs - prevFrameStartUs) * 0.001f;
     }
-    prevFrameStartMs = frameStartMs;
+    prevFrameStartUs = frameStartUs;
 
     float fs_hz = 0.0f;
     size_t got = curSensor.capture(s_raw, N_SAMP, &fs_hz);
@@ -515,12 +740,13 @@ static void Core0Task(void* pv) {
     if (gPauseByOta || gSafeMode) {
       if (gStopSenseTask) break;
       vTaskDelay(20 / portTICK_PERIOD_MS);
+      prevFrameStartUs = 0;
+      nextFrameStartUs = esp_timer_get_time();
+      timingGraceStartMs = millis();
       continue;
     }
 
     bool sampleRateHardBad = (!isfinite(fs_hz)) || (fs_hz < MCP3204_FS_HARD_LOW_HZ) || (fs_hz > MCP3204_FS_HARD_HIGH_HZ);
-    bool sampleRateWarnBad = (!isfinite(fs_hz)) || (fs_hz < MCP3204_FS_WARN_LOW_HZ) || (fs_hz > MCP3204_FS_WARN_HIGH_HZ);
-
     if (got != N_SAMP || sampleRateHardBad) {
       vTaskDelay(1);
       fs_hz = 0.0f;
@@ -529,11 +755,13 @@ static void Core0Task(void* pv) {
       if (gPauseByOta || gSafeMode) {
         if (gStopSenseTask) break;
         vTaskDelay(20 / portTICK_PERIOD_MS);
+        prevFrameStartUs = 0;
+        nextFrameStartUs = esp_timer_get_time();
+        timingGraceStartMs = millis();
         continue;
       }
 
       sampleRateHardBad = (!isfinite(fs_hz)) || (fs_hz < MCP3204_FS_HARD_LOW_HZ) || (fs_hz > MCP3204_FS_HARD_HIGH_HZ);
-      sampleRateWarnBad = (!isfinite(fs_hz)) || (fs_hz < MCP3204_FS_WARN_LOW_HZ) || (fs_hz > MCP3204_FS_WARN_HIGH_HZ);
     }
 
     f.adc_fs_hz = fs_hz;
@@ -570,21 +798,48 @@ static void Core0Task(void* pv) {
       f.irms = 0.0f;
     }
 
+    const bool sampleRateWarnBad =
+        sampleRateHardBad ||
+        (!isfinite(f.adc_fs_hz)) ||
+        (f.adc_fs_hz < MCP3204_FS_WARN_LOW_HZ) ||
+        (f.adc_fs_hz > MCP3204_FS_WARN_HIGH_HZ) ||
+        (f.fs_err_hz > FS_ERR_BAD_HZ);
+
+    const bool timingGraceActive = ((frameStartMs - timingGraceStartMs) < FEATURE_TIMING_GRACE_MS);
+    const float frameJitterMs = (f.frame_dt_ms > 0.0f)
+        ? fabsf(f.frame_dt_ms - FEATURE_FRAME_PERIOD_MS)
+        : 0.0f;
+    const bool frameTimingBad =
+        !timingGraceActive &&
+        (f.frame_dt_ms > 0.0f) &&
+        ((f.frame_dt_ms < FRAME_DT_BAD_EARLY_MS) ||
+         (f.frame_dt_ms > FRAME_DT_BAD_LATE_MS) ||
+         (frameJitterMs > FRAME_DT_JITTER_BAD_MS));
+    const bool computeTimingBad = !timingGraceActive && (f.compute_time_ms > FRAME_COMPUTE_BAD_MS);
+
     f.sampling_quality_bad =
         (got != N_SAMP) ||
         sampleRateWarnBad ||
-        (f.frame_dt_ms > FRAME_DT_BAD_MS) ||
-        (f.compute_time_ms > FRAME_COMPUTE_BAD_MS);
-    f.queue_drop_count = gFeatureQueueDropCount;
+        frameTimingBad ||
+        computeTimingBad;
     f.frame_end_uptime_ms = millis();
     (void)pushFeatureFrame_(f);
-    vTaskDelay(1);
+
+    nextFrameStartUs = frameStartUs + (int64_t)FEATURE_FRAME_PERIOD_US;
+    const int64_t nowUs = esp_timer_get_time();
+    if (nextFrameStartUs <= nowUs) {
+      const int64_t missed = 1 + ((nowUs - nextFrameStartUs) / (int64_t)FEATURE_FRAME_PERIOD_US);
+      nextFrameStartUs += missed * (int64_t)FEATURE_FRAME_PERIOD_US;
+    }
+
+    taskYIELD();
   }
 
   gSenseTaskRunning = false;
   gCore0SenseTask = nullptr;
   vTaskDelete(nullptr);
 }
+
 
 
 static void pollMlControl(FirebaseNetwork& network, Notification& notifyUi) {
@@ -594,19 +849,30 @@ static void pollMlControl(FirebaseNetwork& network, Notification& notifyUi) {
   lastPoll = millis();
 
   bool enabled = false;
+  bool trustedNormal = false;
   int dur = ML_LOG_DURATION_S;
   int labelOv = ML_UNKNOWN_LABEL;
+  int trialNumber = 1;
   String sid = "";
   String load = "unknown";
+  String deviceFamily = "mixed_unknown";
+  String deviceName = "unknown_device";
+  String divisionTag = "steady";
+  String notes = "";
   String requestToken = "";
-  (void)network.fetchMlControl(enabled, dur, labelOv, sid, load, requestToken);
+  (void)network.fetchMlControl(enabled, dur, labelOv, sid, load,
+                               deviceFamily, deviceName, trialNumber,
+                               divisionTag, notes, trustedNormal, requestToken);
 
   if (dur < ML_LOG_MIN_DURATION_S) dur = ML_LOG_MIN_DURATION_S;
   if (dur > ML_LOG_MAX_DURATION_S) dur = ML_LOG_MAX_DURATION_S;
+  if (trialNumber < 1) trialNumber = 1;
   if (enabled && sid.length() < 3) enabled = false;
 
   network.setLogDurationSeconds((uint16_t)dur);
-  network.setLogSession(sid, load, labelOv);
+  network.setLogSession(sid, load, labelOv,
+                        deviceFamily, deviceName, trialNumber,
+                        divisionTag, notes, trustedNormal);
   network.setLogEnabled(enabled);
   if (enabled && !lastEnabled) {
     notification.notify(SND_LOGGER_ON);
@@ -658,6 +924,7 @@ void setup() {
   wifiMgr.begin([](WiFiManager* wm) { (void)wm; });
   network.setLogEnabled(false);
   network.setLogDurationSeconds(ML_LOG_DURATION_S);
+  resetContextTracker_();
 }
 
 void loop() {
@@ -729,12 +996,13 @@ void loop() {
 
   static bool lastMainsPresentForFeat = false;
   const bool mainsPresentForFeat = (vFast >= MAINS_PRESENT_ON_V);
-  if (mainsPresentForFeat && !lastMainsPresentForFeat) {
+  if (mainsPresentForFeat != lastMainsPresentForFeat) {
     hasLast = false;
     lastFeatRxMs = 0;
     memset(&lastF, 0, sizeof(lastF));
     arcDetect.resetRuntime();
-    armRelayArtifactBlank_(1200UL);
+    resetContextTracker_();
+    if (mainsPresentForFeat) armRelayArtifactBlank_(1200UL);
   }
   lastMainsPresentForFeat = mainsPresentForFeat;
 
@@ -941,6 +1209,9 @@ void loop() {
   const bool controlPollMuted = ((int32_t)(controlPollMuteUntilMs - millis()) > 0);
 
   network.pollControls(!paused && !portalActive && wifiConnected && !relayNetQuietActive && !controlPollMuted, portalActive);
+  if (paused || gSafeMode) network.setLogEnabled(false);
+  else if (!relayNetQuietActive) pollMlControl(network, notification);
+  const bool collectionModeActive = network.manualEnabled();
 
   const bool faultClearRequested = (!gSafeMode) ? network.consumeFaultClearRequest() : false;
   const bool revertFirmwareRequested = network.consumeRevertFirmwareRequest();
@@ -970,6 +1241,7 @@ void loop() {
     prevHfDelta = f.hf_energy_delta;
     prevIrmsLogic = irmsRawForLogic;
     prevVFast = vFast;
+    resetContextTracker_();
     (void)stabilizeFeatureValidity(f, vFast, irmsRawForLogic, true);
     notification.notify(SND_RESET_ACK);
     notification.clearFaultAlert();
@@ -982,6 +1254,9 @@ void loop() {
   }
 
   const bool faultClearSuppressActive = ((int32_t)(faultClearSuppressUntilMs - millis()) > 0);
+
+  updateContextTracker_(f, vFast, irmsRawForLogic, arcBlankActive || relayArtifactBlankActive);
+  applyContextToFrame_(f);
 
   int rawPred = 0;
   if (!faultClearSuppressActive && mlArcEligible) {
@@ -1010,7 +1285,8 @@ void loop() {
        (f.v_sag_pct >= 3.0f && f.delta_flux >= 3.0f) ||
        (f.halfcycle_asymmetry >= 10.0f && f.delta_irms_abs >= 0.12f));
 
-  bool suspiciousFrame = (rawPred == 1) || fallbackArcEvent || softFallbackArcEvent || temporalKick;
+  bool suspiciousFrame =
+      ((rawPred == 1) || fallbackArcEvent || softFallbackArcEvent || temporalKick);
   if (arcBlankActive || relayArtifactBlankActive || invalidOff) suspiciousFrame = false;
 
   if (suspiciousFrame) {
@@ -1048,13 +1324,16 @@ void loop() {
 
   FaultState st = STATE_NORMAL;
   if (!bootSettling && !faultClearSuppressActive) {
+    const bool arcProtectionEligible =
+        !collectionModeActive &&
+        !arcBlankActive &&
+        (mlArcEligible || fallbackArcEvent || softFallbackArcEvent || temporalKick);
     st = protection.update(vFast,
                            vRaw,
                            tC,
                            irmsRawForLogic,
-                           f.model_pred,
-                           (!arcBlankActive &&
-                            (mlArcEligible || fallbackArcEvent || softFallbackArcEvent || temporalKick)));
+                           collectionModeActive ? 0 : f.model_pred,
+                           arcProtectionEligible);
   }
   if (gSafeMode) st = STATE_NORMAL;
 
@@ -1137,7 +1416,7 @@ void loop() {
     FeatureFrame fTrip = f;
     fTrip.epoch_ms = network.isSynced() ? network.nowEpochMs() : 0;
     fTrip.irms = irmsRawForLogic;
-    network.ingestLog(fTrip, st, protection.arcCounter());
+    network.ingestLog(fTrip, st, collectionModeActive ? 0 : protection.arcCounter());
   }
 
   protection.apply(st, vRms, vFast, irmsRawForLogic, tC);
@@ -1169,8 +1448,6 @@ void loop() {
   }
 
   network.setMlUploadSuspended(relayNetQuietActive || paused || gSafeMode || (st != STATE_NORMAL));
-  if (!paused && !gSafeMode && !relayNetQuietActive) pollMlControl(network, notification);
-  else if (paused || gSafeMode) network.setLogEnabled(false);
   if (!paused && !gSafeMode) {
     static uint32_t lastLoggedFeatUptimeMs = 0;
     if (freshFeatThisLoop && f.uptime_ms != 0 && f.uptime_ms != lastLoggedFeatUptimeMs) {
@@ -1178,7 +1455,7 @@ void loop() {
       f.epoch_ms = network.isSynced() ? network.nowEpochMs() : 0;
       FeatureFrame fLog = f;
       fLog.irms = irmsRawForLogic;
-      network.ingestLog(fLog, st, protection.arcCounter());
+      network.ingestLog(fLog, st, collectionModeActive ? 0 : protection.arcCounter());
     }
   }
 
@@ -1244,7 +1521,14 @@ void loop() {
                               f.cycle_nmse, f.peak_fluct_cv,
                               f.thd_i, f.hf_energy_delta,
                               f.zcv, f.abs_irms_zscore_vs_baseline,
-                              f.model_pred, stateStr,
+                              f.model_pred,
+                              f.context_family_code_runtime,
+                              f.context_family_confidence,
+                              f.context_family_code_provisional,
+                              f.context_family_confidence_provisional,
+                              f.context_acquiring != 0,
+                              f.context_latched != 0,
+                              stateStr,
                               protection.faultLatched(), controlsLocked, effectiveRelayLatchedOn);
   }
 

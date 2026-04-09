@@ -1,0 +1,323 @@
+{
+  "model_name": "ContextPrototype",
+  "feature_names": [
+    "residual_crest_factor",
+    "edge_spike_ratio",
+    "midband_residual_ratio",
+    "thd_i",
+    "hf_energy_delta",
+    "zcv",
+    "i_rms",
+    "v_rms",
+    "cycle_nmse",
+    "peak_fluct_cv"
+  ],
+  "class_labels": [
+    "resistive_linear",
+    "inductive_motor",
+    "rectifier_smps",
+    "phase_angle_controlled",
+    "brush_universal_motor",
+    "other_mixed"
+  ],
+  "unknown_confidence_threshold": 0.45,
+  "row_count": 11,
+  "train_rows": 8,
+  "test_rows": 3,
+  "class_counts": {
+    "brush_universal_motor": 6,
+    "resistive_linear": 5
+  },
+  "accuracy": 1.0,
+  "balanced_accuracy": 1.0,
+  "accuracy_with_unknown_gate": 0.6666666666666666,
+  "mean_confidence": 0.7450130165604315,
+  "unknown_rate": 0.3333333333333333,
+  "confusion_matrix": [
+    [
+      1,
+      0,
+      0,
+      0,
+      0,
+      0
+    ],
+    [
+      0,
+      0,
+      0,
+      0,
+      0,
+      0
+    ],
+    [
+      0,
+      0,
+      0,
+      0,
+      0,
+      0
+    ],
+    [
+      0,
+      0,
+      0,
+      0,
+      0,
+      0
+    ],
+    [
+      0,
+      0,
+      0,
+      0,
+      2,
+      0
+    ],
+    [
+      0,
+      0,
+      0,
+      0,
+      0,
+      0
+    ]
+  ],
+  "per_class": [
+    {
+      "family": "resistive_linear",
+      "family_code": 0,
+      "rows": 1,
+      "accuracy": 1.0,
+      "mean_confidence": 0.23602954607910334,
+      "unknown_rate": 1.0,
+      "precision": 1.0,
+      "recall": 1.0,
+      "f1": 1.0,
+      "support": 1,
+      "predicted_rows": 1
+    },
+    {
+      "family": "inductive_motor",
+      "family_code": 1,
+      "rows": 0,
+      "accuracy": 0.0,
+      "mean_confidence": 0.0,
+      "unknown_rate": 0.0,
+      "precision": 0.0,
+      "recall": 0.0,
+      "f1": 0.0,
+      "support": 0,
+      "predicted_rows": 0
+    },
+    {
+      "family": "rectifier_smps",
+      "family_code": 2,
+      "rows": 0,
+      "accuracy": 0.0,
+      "mean_confidence": 0.0,
+      "unknown_rate": 0.0,
+      "precision": 0.0,
+      "recall": 0.0,
+      "f1": 0.0,
+      "support": 0,
+      "predicted_rows": 0
+    },
+    {
+      "family": "phase_angle_controlled",
+      "family_code": 3,
+      "rows": 0,
+      "accuracy": 0.0,
+      "mean_confidence": 0.0,
+      "unknown_rate": 0.0,
+      "precision": 0.0,
+      "recall": 0.0,
+      "f1": 0.0,
+      "support": 0,
+      "predicted_rows": 0
+    },
+    {
+      "family": "brush_universal_motor",
+      "family_code": 4,
+      "rows": 2,
+      "accuracy": 1.0,
+      "mean_confidence": 0.9995047518010955,
+      "unknown_rate": 0.0,
+      "precision": 1.0,
+      "recall": 1.0,
+      "f1": 1.0,
+      "support": 2,
+      "predicted_rows": 2
+    },
+    {
+      "family": "other_mixed",
+      "family_code": 5,
+      "rows": 0,
+      "accuracy": 0.0,
+      "mean_confidence": 0.0,
+      "unknown_rate": 0.0,
+      "precision": 0.0,
+      "recall": 0.0,
+      "f1": 0.0,
+      "support": 0,
+      "predicted_rows": 0
+    }
+  ],
+  "classification_report": {
+    "resistive_linear": {
+      "precision": 1.0,
+      "recall": 1.0,
+      "f1-score": 1.0,
+      "support": 1.0
+    },
+    "inductive_motor": {
+      "precision": 0.0,
+      "recall": 0.0,
+      "f1-score": 0.0,
+      "support": 0.0
+    },
+    "rectifier_smps": {
+      "precision": 0.0,
+      "recall": 0.0,
+      "f1-score": 0.0,
+      "support": 0.0
+    },
+    "phase_angle_controlled": {
+      "precision": 0.0,
+      "recall": 0.0,
+      "f1-score": 0.0,
+      "support": 0.0
+    },
+    "brush_universal_motor": {
+      "precision": 1.0,
+      "recall": 1.0,
+      "f1-score": 1.0,
+      "support": 2.0
+    },
+    "other_mixed": {
+      "precision": 0.0,
+      "recall": 0.0,
+      "f1-score": 0.0,
+      "support": 0.0
+    },
+    "accuracy": 1.0,
+    "macro avg": {
+      "precision": 0.3333333333333333,
+      "recall": 0.3333333333333333,
+      "f1-score": 0.3333333333333333,
+      "support": 3.0
+    },
+    "weighted avg": {
+      "precision": 1.0,
+      "recall": 1.0,
+      "f1-score": 1.0,
+      "support": 3.0
+    }
+  },
+  "means": [
+    9.1229982125,
+    -7.511100875,
+    -55.259405134999994,
+    150.27731451078094,
+    16.17268489,
+    0.7851533300000001,
+    5.305094517500001,
+    226.42539999999997,
+    143.34809425,
+    41.4644565
+  ],
+  "stds": [
+    0.9365593257311124,
+    1.2223695751678647,
+    3.518102322758046,
+    30.0490874467317,
+    0.34335115385076853,
+    0.09680956461533699,
+    0.4920922349792147,
+    1.0049470675612735,
+    6.898730874381269,
+    36.12694053443601
+  ],
+  "centroids": {
+    "resistive_linear": [
+      0.7197619136126511,
+      0.17416290402251228,
+      -0.9737056403505855,
+      -0.9974984372964453,
+      -0.9327530762841013,
+      -0.9539218089342572,
+      0.991141919808185,
+      0.27349201651684274,
+      -0.6189099600704362,
+      -0.9416465799968154
+    ],
+    "inductive_motor": [
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0
+    ],
+    "rectifier_smps": [
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0
+    ],
+    "phase_angle_controlled": [
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0
+    ],
+    "brush_universal_motor": [
+      -0.7197619136126521,
+      -0.17416290402251197,
+      0.9737056403505844,
+      0.9974984372964459,
+      0.9327530762840986,
+      0.9539218089342554,
+      -0.9911419198081877,
+      -0.2734920165167932,
+      0.6189099600704351,
+      0.9416465799968157
+    ],
+    "other_mixed": [
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0
+    ]
+  },
+  "settings": {
+    "csv": "C:\\Disk\\Ancy\\Platform IO\\TinyML_Smart-Plug\\tinyml\\data\\load_context.csv",
+    "n_iter": 120,
+    "min_recall": 0.98,
+    "min_precision": 0.95,
+    "max_fpr": 0.01,
+    "min_threshold": 0.08
+  }
+}

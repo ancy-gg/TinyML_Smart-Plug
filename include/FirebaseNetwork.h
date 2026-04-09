@@ -37,7 +37,7 @@ public:
   bool consumeFaultClearRequest();
   bool consumeRevertFirmwareRequest();
   bool consumeOtaCheckRequest();
-  bool fetchMlControl(bool& enabled, int& dur, int& labelOv, String& sid, String& load, String& requestToken) const;
+  bool fetchMlControl(bool& enabled, int& dur, int& labelOv, String& sid, String& load, String& deviceFamily, String& deviceName, int& trialNumber, String& divisionTag, String& notes, bool& trustedNormal, String& requestToken) const;
 
   void requestLiveUpdate(float v, float c, float apparentPower, float t,
                          float spectral_flux_midhf, float residual_crest_factor,
@@ -46,6 +46,12 @@ public:
                          float thd_i, float hf_energy_delta,
                          float zcv, float abs_irms_zscore_vs_baseline,
                          uint8_t model_pred,
+                         int8_t contextFamilyCodeRuntime,
+                         float contextFamilyConfidence,
+                         int8_t provisionalContextFamilyCode,
+                         float provisionalContextFamilyConfidence,
+                         bool contextAcquiring,
+                         bool contextLatched,
                          const String& state,
                          bool faultLatched, bool webControlsLocked, bool relayLatchedOn);
 
@@ -61,7 +67,7 @@ public:
   bool autoCaptureActive() const { return false; }
   void setLogDurationSeconds(uint16_t sec);
   void setMlUploadSuspended(bool en) { _suspendMlUpload = en; }
-  void setLogSession(const String& sessionId, const String& loadType, int labelOverride);
+  void setLogSession(const String& sessionId, const String& loadType, int labelOverride, const String& deviceFamily = "unknown", const String& deviceName = "unknown_device", int trialNumber = 1, const String& divisionTag = "steady", const String& notes = "", bool trustedNormal = false);
   bool startAutoCapture(const String& reason, uint16_t sec = AUTO_ARC_CAPTURE_DURATION_S);
   void stopAutoCapture();
   void ingestLog(const FeatureFrame& f, FaultState st, int arcCounter);
@@ -75,6 +81,12 @@ private:
     float thd_i = 0.0f, hf_energy_delta = 0.0f;
     float zcv = 0.0f, abs_irms_zscore_vs_baseline = 0.0f;
     uint8_t model_pred = 0;
+    int8_t contextFamilyCodeRuntime = CONTEXT_FAMILY_UNKNOWN;
+    float contextFamilyConfidence = 0.0f;
+    int8_t provisionalContextFamilyCode = CONTEXT_FAMILY_UNKNOWN;
+    float provisionalContextFamilyConfidence = 0.0f;
+    bool contextAcquiring = false;
+    bool contextLatched = false;
     String state;
     bool faultLatched = false;
     bool webControlsLocked = false;
@@ -92,6 +104,12 @@ private:
   struct SessionSpec {
     String sessionId = "";
     String loadType = "unknown";
+    String deviceFamily = "unknown";
+    String deviceName = "unknown_device";
+    int trialNumber = 1;
+    String divisionTag = "steady";
+    String notes = "";
+    uint8_t trustedNormalSession = 0;
     int8_t labelOverride = ML_UNKNOWN_LABEL;
     uint16_t durationS = ML_LOG_DURATION_S;
   };
@@ -115,6 +133,13 @@ private:
     uint8_t model_pred, feat_valid, current_valid, fault_state;
     uint8_t sampling_quality_bad, invalid_loaded_flag, invalid_off_flag;
     uint8_t relay_blank_active, turnon_blank_active, transient_blank_active;
+    int8_t  device_family_code;
+    int8_t  context_family_code_runtime;
+    int8_t  context_family_code_provisional;
+    float   context_family_confidence;
+    float   context_family_confidence_provisional;
+    uint8_t context_acquiring;
+    uint8_t context_latched;
     int16_t arc_counter;
     float   adc_fs_hz;
     uint8_t auto_capture;
@@ -122,9 +147,10 @@ private:
   };
 
   static constexpr uint8_t HISTORY_QUEUE_MAX = 24;
-  static constexpr uint32_t CLOUD_TX_MIN_GAP_MS = 140UL;
+  static constexpr uint32_t CLOUD_TX_MIN_GAP_MS = 220UL;
   static constexpr uint32_t CLOUD_TX_RETRY_MS = 1800UL;
   static constexpr uint32_t CLOUD_CTRL_READ_GAP_MS = 500UL;
+  static constexpr uint32_t CLOUD_CTRL_READ_GAP_LOGGING_MS = 1200UL;
   static constexpr uint16_t ROWS_PER_CHUNK = 12;
 
   FirebaseData fbLive;
@@ -191,6 +217,12 @@ private:
   int  _mlLabelOverrideCache = ML_UNKNOWN_LABEL;
   String _mlSessionIdCache = "";
   String _mlLoadTypeCache = "unknown";
+  String _mlDeviceFamilyCache = "unknown";
+  String _mlDeviceNameCache = "unknown_device";
+  int _mlTrialNumberCache = 1;
+  String _mlDivisionTagCache = "steady";
+  String _mlNotesCache = "";
+  bool _mlTrustedNormalCache = false;
   String _mlRequestTokenCache = "";
   uint8_t _controlPollSlot = 0;
   uint32_t _lastControlPollMs = 0;
@@ -216,6 +248,8 @@ private:
   bool _uploadAuto = false;
   bool _suspendMlUpload = false;
   bool _loggerFrozen = false;
+  bool _collectionEligible = false;
+  uint8_t _collectionGoodFrames = 0;
   uint32_t _sessionChunkSerial = 0;
 
   static bool timeLooksValid(time_t t);

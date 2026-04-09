@@ -371,12 +371,18 @@ bool FirebaseNetwork::consumeOtaCheckRequest() {
   return v;
 }
 
-bool FirebaseNetwork::fetchMlControl(bool& enabled, int& dur, int& labelOv, String& sid, String& load, String& requestToken) const {
+bool FirebaseNetwork::fetchMlControl(bool& enabled, int& dur, int& labelOv, String& sid, String& load, String& deviceFamily, String& deviceName, int& trialNumber, String& divisionTag, String& notes, bool& trustedNormal, String& requestToken) const {
   enabled = _mlEnabledCache;
   dur = _mlDurationCache;
   labelOv = _mlLabelOverrideCache;
   sid = _mlSessionIdCache;
   load = _mlLoadTypeCache;
+  deviceFamily = _mlDeviceFamilyCache;
+  deviceName = _mlDeviceNameCache;
+  trialNumber = _mlTrialNumberCache;
+  divisionTag = _mlDivisionTagCache;
+  notes = _mlNotesCache;
+  trustedNormal = _mlTrustedNormalCache;
   requestToken = _mlRequestTokenCache;
   return true;
 }
@@ -408,6 +414,12 @@ void FirebaseNetwork::pollControls(bool allowNet, bool portalActive) {
     if (jsonIntField_(raw, "label_override", v)) _mlLabelOverrideCache = v;
     if (jsonStringField_(raw, "session_id", s)) { _mlSessionIdCache = s; _mlSessionIdCache.trim(); }
     if (jsonStringField_(raw, "load_type", s)) { _mlLoadTypeCache = s; _mlLoadTypeCache.trim(); }
+    if (jsonStringField_(raw, "device_family", s)) { _mlDeviceFamilyCache = s; _mlDeviceFamilyCache.trim(); }
+    if (jsonStringField_(raw, "device_name", s)) { _mlDeviceNameCache = s; _mlDeviceNameCache.trim(); }
+    if (jsonIntField_(raw, "trial_number", v)) _mlTrialNumberCache = v;
+    if (jsonStringField_(raw, "division_tag", s)) { _mlDivisionTagCache = s; _mlDivisionTagCache.trim(); }
+    if (jsonStringField_(raw, "notes", s)) { _mlNotesCache = s; _mlNotesCache.trim(); }
+    if (jsonBoolField_(raw, "trusted_normal_session", b)) _mlTrustedNormalCache = b;
     if (jsonStringField_(raw, "request_token", s)) { _mlRequestTokenCache = s; _mlRequestTokenCache.trim(); }
   }
 }
@@ -419,6 +431,12 @@ void FirebaseNetwork::requestLiveUpdate(float v, float c, float apparentPower, f
                                         float thd_i, float hf_energy_delta,
                                         float zcv, float abs_irms_zscore_vs_baseline,
                                         uint8_t model_pred,
+                                        int8_t contextFamilyCodeRuntime,
+                                        float contextFamilyConfidence,
+                                        int8_t provisionalContextFamilyCode,
+                                        float provisionalContextFamilyConfidence,
+                                        bool contextAcquiring,
+                                        bool contextLatched,
                                         const String& state,
                                         bool faultLatched, bool webControlsLocked, bool relayLatchedOn) {
   const bool isNormal = (state == "NORMAL") || (state == "UNPLUGGED");
@@ -443,6 +461,12 @@ void FirebaseNetwork::requestLiveUpdate(float v, float c, float apparentPower, f
   _live.zcv = zcv;
   _live.abs_irms_zscore_vs_baseline = abs_irms_zscore_vs_baseline;
   _live.model_pred = model_pred;
+  _live.contextFamilyCodeRuntime = contextFamilyCodeRuntime;
+  _live.contextFamilyConfidence = contextFamilyConfidence;
+  _live.provisionalContextFamilyCode = provisionalContextFamilyCode;
+  _live.provisionalContextFamilyConfidence = provisionalContextFamilyConfidence;
+  _live.contextAcquiring = contextAcquiring;
+  _live.contextLatched = contextLatched;
   _live.state = state;
   _live.faultLatched = faultLatched;
   _live.webControlsLocked = webControlsLocked;
@@ -583,6 +607,12 @@ bool FirebaseNetwork::serviceLive_() {
   json.set("zcv", _live.zcv);
   json.set("abs_irms_zscore_vs_baseline", _live.abs_irms_zscore_vs_baseline);
   json.set("model_pred", (int)_live.model_pred);
+  json.set("context_family_code_runtime", (int)_live.contextFamilyCodeRuntime);
+  json.set("context_family_confidence", _live.contextFamilyConfidence);
+  json.set("context_family_code_provisional", (int)_live.provisionalContextFamilyCode);
+  json.set("context_family_confidence_provisional", _live.provisionalContextFamilyConfidence);
+  json.set("context_acquiring", _live.contextAcquiring);
+  json.set("context_latched", _live.contextLatched);
   json.set("status", _live.state);
   json.set("device_online", true);
   json.set("mains_present", mainsPresent);
@@ -667,9 +697,15 @@ const FirebaseNetwork::SessionSpec& FirebaseNetwork::activeSpec() const {
   return _manual;
 }
 
-void FirebaseNetwork::setLogSession(const String& sessionId, const String& loadType, int labelOverride) {
+void FirebaseNetwork::setLogSession(const String& sessionId, const String& loadType, int labelOverride, const String& deviceFamily, const String& deviceName, int trialNumber, const String& divisionTag, const String& notes, bool trustedNormal) {
   _manual.sessionId = sanitizeToken(sessionId);
   _manual.loadType  = sanitizeToken(loadType);
+  _manual.deviceFamily = sanitizeToken(deviceFamily);
+  _manual.deviceName = sanitizeToken(deviceName);
+  _manual.trialNumber = (trialNumber > 0) ? trialNumber : 1;
+  _manual.divisionTag = sanitizeToken(divisionTag);
+  _manual.notes = sanitizeToken(notes);
+  _manual.trustedNormalSession = trustedNormal ? 1 : 0;
   _manual.labelOverride = (int8_t)labelOverride;
 }
 
@@ -699,10 +735,12 @@ void FirebaseNetwork::ingestLog(const FeatureFrame& f, FaultState st, int arcCou
   const SessionSpec& spec = activeSpec();
   if (spec.sessionId.length() < 3 || !_buf || _maxRec == 0 || _count >= _maxRec) return;
 
+  const uint32_t now = millis();
+  if (_sessionStartMs == 0) _sessionStartMs = now;
+
   const bool manualExpired =
       _manualEnabled &&
-      (_sessionStartMs != 0) &&
-      ((millis() - _sessionStartMs) >= ((uint32_t)spec.durationS * 1000UL));
+      ((now - _sessionStartMs) >= ((uint32_t)spec.durationS * 1000UL));
   if (manualExpired) return;
 
   const bool usefulCurrent =
@@ -714,8 +752,9 @@ void FirebaseNetwork::ingestLog(const FeatureFrame& f, FaultState st, int arcCou
   const bool keepFault = (st != STATE_NORMAL);
   if (!keepFault && (!mainsPresent || !usefulCurrent) && (f.invalid_loaded_flag == 0)) return;
 
-  if (_sessionStartMs == 0) _sessionStartMs = millis();
-  if (_count == 0) _chunkStartMs = millis();
+  if (_manualEnabled) _collectionEligible = true;
+
+  if (_count == 0) _chunkStartMs = now;
   if (_count >= _maxRec) return;
 
   Rec& r = _buf[_count++];
@@ -760,7 +799,14 @@ void FirebaseNetwork::ingestLog(const FeatureFrame& f, FaultState st, int arcCou
   r.relay_blank_active = f.relay_blank_active;
   r.turnon_blank_active = f.turnon_blank_active;
   r.transient_blank_active = f.transient_blank_active;
-  r.arc_counter = (int16_t)arcCounter;
+  r.device_family_code = f.device_family_code;
+  r.context_family_code_runtime = f.context_family_code_runtime;
+  r.context_family_code_provisional = f.context_family_code_provisional;
+  r.context_family_confidence = f.context_family_confidence;
+  r.context_family_confidence_provisional = f.context_family_confidence_provisional;
+  r.context_acquiring = f.context_acquiring;
+  r.context_latched = f.context_latched;
+  r.arc_counter = _manualEnabled ? 0 : (int16_t)arcCounter;
   r.adc_fs_hz = f.adc_fs_hz;
   r.auto_capture = activeIsAuto() ? 1 : 0;
   r.feature_space_version = ARC_RUNTIME_FEATURE_SPACE_VERSION;
@@ -778,6 +824,8 @@ void FirebaseNetwork::resetLoggerRuntime_() {
   _uploadFinalFlush = false;
   _uploadAuto = false;
   _suspendMlUpload = false;
+  _collectionEligible = false;
+  _collectionGoodFrames = 0;
   _sessionChunkSerial = 0;
 }
 
@@ -826,7 +874,7 @@ void FirebaseNetwork::serviceMlState_() {
 
   const bool manualTimeUp = _manualEnabled && ((now - _sessionStartMs) >= ((uint32_t)spec.durationS * 1000UL));
   const bool autoTimeUp   = false;
-  const bool chunkTimeUp  = (_count > 0) && (_chunkStartMs != 0) && ((now - _chunkStartMs) >= ((uint32_t)ML_LOG_CHUNK_DURATION_S * 1000UL));
+  const bool chunkTimeUp  = (!_manualEnabled) && (_count > 0) && (_chunkStartMs != 0) && ((now - _chunkStartMs) >= ((uint32_t)ML_LOG_CHUNK_DURATION_S * 1000UL));
   const bool full         = (_maxRec > 0) && (_count >= _maxRec);
 
   if (_mlUploadActive) return;
@@ -882,6 +930,12 @@ bool FirebaseNetwork::serviceMlUpload_() {
       }
       FirebaseJson sessMeta;
       sessMeta.set("row_count", (int)_uploadTotalCount);
+      sessMeta.set("device_family", _uploadSpec.deviceFamily);
+      sessMeta.set("device_name", _uploadSpec.deviceName);
+      sessMeta.set("trial_number", _uploadSpec.trialNumber);
+      sessMeta.set("division_tag", _uploadSpec.divisionTag);
+      sessMeta.set("notes", _uploadSpec.notes);
+      sessMeta.set("trusted_normal_session", (int)_uploadSpec.trustedNormalSession);
       if (measuredDurationS > 0.0f) sessMeta.set("source_duration_s", measuredDurationS);
       if (fsCount > 0) sessMeta.set("source_sample_rate_hz", fsSum / float(fsCount));
       if (_uploadTotalCount > 1) {
@@ -914,7 +968,7 @@ bool FirebaseNetwork::serviceMlUpload_() {
   const uint16_t i1 = ((uint16_t)(i0 + ROWS_PER_CHUNK) < _uploadTotalCount) ? (uint16_t)(i0 + ROWS_PER_CHUNK) : _uploadTotalCount;
   const Rec& firstRec = _buf[i0];
   const Rec& lastRec  = _buf[i1 - 1];
-  const char* header = "spectral_flux_midhf,residual_crest_factor,edge_spike_ratio,midband_residual_ratio,cycle_nmse,peak_fluct_cv,thd_i,hf_energy_delta,zcv,abs_irms_zscore_vs_baseline,fs_err_hz,suspicious_run_energy,delta_irms_abs,delta_hf_energy,delta_flux,v_sag_pct,halfcycle_asymmetry,v_rms,i_rms,temp_c,label_arc,load_type,session_id,epoch_ms,uptime_ms,frame_start_uptime_ms,frame_end_uptime_ms,frame_dt_ms,compute_time_ms,queue_drop_count,suspicious_run_len,invalid_loaded_run_len,restrike_count_short,model_pred,feat_valid,current_valid,sampling_quality_bad,invalid_loaded_flag,invalid_off_flag,relay_blank_active,turnon_blank_active,transient_blank_active,fault_state,arc_counter,adc_fs_hz,auto_capture,feature_space_version\n";
+  const char* header = "spectral_flux_midhf,residual_crest_factor,edge_spike_ratio,midband_residual_ratio,cycle_nmse,peak_fluct_cv,thd_i,hf_energy_delta,zcv,abs_irms_zscore_vs_baseline,fs_err_hz,suspicious_run_energy,delta_irms_abs,delta_hf_energy,delta_flux,v_sag_pct,halfcycle_asymmetry,v_rms,i_rms,temp_c,label_arc,device_family,device_name,trial_number,division_tag,notes,trusted_normal_session,load_type,session_id,epoch_ms,uptime_ms,frame_start_uptime_ms,frame_end_uptime_ms,frame_dt_ms,compute_time_ms,queue_drop_count,suspicious_run_len,invalid_loaded_run_len,restrike_count_short,model_pred,feat_valid,current_valid,sampling_quality_bad,invalid_loaded_flag,invalid_off_flag,relay_blank_active,turnon_blank_active,transient_blank_active,device_family_code,context_family_code_runtime,context_family_code_provisional,context_family_confidence,context_family_confidence_provisional,context_acquiring,context_latched,fault_state,arc_counter,adc_fs_hz,auto_capture,feature_space_version\n";
 
   String csv;
   csv.reserve((i1 - i0) * 520 + 512);
@@ -942,6 +996,12 @@ bool FirebaseNetwork::serviceMlUpload_() {
     csv += String(r.i_rms, 6);                 csv += ",";
     csv += String(r.temp_c, 3);                csv += ",";
     csv += String((int)r.label_arc);           csv += ",";
+    csv += _uploadSpec.deviceFamily;           csv += ",";
+    csv += _uploadSpec.deviceName;             csv += ",";
+    csv += String(_uploadSpec.trialNumber);    csv += ",";
+    csv += _uploadSpec.divisionTag;            csv += ",";
+    csv += _uploadSpec.notes;                  csv += ",";
+    csv += String((int)_uploadSpec.trustedNormalSession); csv += ",";
     csv += _uploadSpec.loadType;               csv += ",";
     csv += _uploadSpec.sessionId;              csv += ",";
     csv += String((unsigned long long)r.epoch_ms); csv += ",";
@@ -963,6 +1023,13 @@ bool FirebaseNetwork::serviceMlUpload_() {
     csv += String((int)r.relay_blank_active);  csv += ",";
     csv += String((int)r.turnon_blank_active); csv += ",";
     csv += String((int)r.transient_blank_active); csv += ",";
+    csv += String((int)r.device_family_code);  csv += ",";
+    csv += String((int)r.context_family_code_runtime); csv += ",";
+    csv += String((int)r.context_family_code_provisional); csv += ",";
+    csv += String(r.context_family_confidence, 4); csv += ",";
+    csv += String(r.context_family_confidence_provisional, 4); csv += ",";
+    csv += String((int)r.context_acquiring);   csv += ",";
+    csv += String((int)r.context_latched);     csv += ",";
     csv += String((int)r.fault_state);         csv += ",";
     csv += String((int)r.arc_counter);         csv += ",";
     csv += String(r.adc_fs_hz, 2);             csv += ",";
@@ -990,6 +1057,12 @@ bool FirebaseNetwork::serviceMlUpload_() {
   json.set("csv", csv);
   json.set("meta/session_id", _uploadSpec.sessionId);
   json.set("meta/load_type", _uploadSpec.loadType);
+  json.set("meta/device_family", _uploadSpec.deviceFamily);
+  json.set("meta/device_name", _uploadSpec.deviceName);
+  json.set("meta/trial_number", _uploadSpec.trialNumber);
+  json.set("meta/division_tag", _uploadSpec.divisionTag);
+  json.set("meta/notes", _uploadSpec.notes);
+  json.set("meta/trusted_normal_session", (int)_uploadSpec.trustedNormalSession);
   json.set("meta/label_override", (int)_uploadSpec.labelOverride);
   json.set("meta/duration_s", (int)_uploadSpec.durationS);
   json.set("meta/auto_capture", _uploadAuto);
