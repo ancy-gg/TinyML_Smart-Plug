@@ -29,6 +29,42 @@ static inline float median3f(float a, float b, float c) {
   return b;
 }
 
+static float medianCopy_(const float* src, int n) {
+  if (!src || n <= 0) return 0.0f;
+  float buf[128];
+  if (n > (int)(sizeof(buf) / sizeof(buf[0]))) n = (int)(sizeof(buf) / sizeof(buf[0]));
+  for (int i = 0; i < n; ++i) buf[i] = src[i];
+  for (int i = 1; i < n; ++i) {
+    const float v = buf[i];
+    int j = i - 1;
+    while (j >= 0 && buf[j] > v) {
+      buf[j + 1] = buf[j];
+      --j;
+    }
+    buf[j + 1] = v;
+  }
+  if (n & 1) return buf[n / 2];
+  return 0.5f * (buf[n / 2 - 1] + buf[n / 2]);
+}
+
+static float robustIntervalJitterMs_(const float* xs, int n, float fs_hz) {
+  if (!xs || n < 3 || fs_hz <= 0.0f) return 0.0f;
+  float diffs[127];
+  int m = 0;
+  for (int i = 1; i < n && m < (int)(sizeof(diffs) / sizeof(diffs[0])); ++i) {
+    const float d = xs[i] - xs[i - 1];
+    if (d > 1.0f) diffs[m++] = d;
+  }
+  if (m < 2) return 0.0f;
+  const float med = medianCopy_(diffs, m);
+  if (med <= 0.0f) return 0.0f;
+  float devs[127];
+  for (int i = 0; i < m; ++i) devs[i] = fabsf(diffs[i] - med);
+  const float mad = medianCopy_(devs, m);
+  const float robustSigmaSamples = 1.4826f * mad;
+  return robustSigmaSamples * (1000.0f / fs_hz);
+}
+
 struct BiquadLPF {
   float b0 = 1.0f, b1 = 0.0f, b2 = 0.0f;
   float a1 = 0.0f, a2 = 0.0f;
@@ -369,18 +405,10 @@ bool ArcDetection::compute(const uint16_t* raw, size_t n, float fs_hz,
     return true;
   }
 
-  if (crossAllN >= 4) {
-    double mu = 0.0;
-    for (int i = 1; i < crossAllN; ++i) mu += (double)(crossAll[i] - crossAll[i - 1]);
-    mu /= (double)(crossAllN - 1);
-
-    double vv = 0.0;
-    for (int i = 1; i < crossAllN; ++i) {
-      const double d = (double)(crossAll[i] - crossAll[i - 1]) - mu;
-      vv += d * d;
-    }
-    vv /= (double)(crossAllN - 1);
-    out.zcv = (float)(sqrt(vv) * (1000.0 / fs_hz));
+  if (crossPosN >= 3) {
+    out.zcv = robustIntervalJitterMs_(crossPos, crossPosN, fs_hz);
+  } else if (crossAllN >= 4) {
+    out.zcv = robustIntervalJitterMs_(crossAll, crossAllN, fs_hz);
   }
 
 
@@ -393,11 +421,12 @@ bool ArcDetection::compute(const uint16_t* raw, size_t n, float fs_hz,
   float cyclePeaks[24];
   float cycleRmsVals[24];
   int peakN = 0;
-  float nmseAcc = 0.0f;
+  float nmsePairsVals[24];
   int nmsePairs = 0;
 
   static constexpr int RSZ = 64;
   float prevCycle[RSZ];
+  int prevCycleLen = 0;
   bool havePrevCycle = false;
 
   for (int c = 0; c < cycleCount && c < 24; ++c) {
@@ -415,8 +444,11 @@ bool ArcDetection::compute(const uint16_t* raw, size_t n, float fs_hz,
       cycSq += (double)sigClean[i] * (double)sigClean[i];
     }
 
+    const float cycRms = (len > 0) ? sqrtf((float)(cycSq / (double)len)) : 0.0f;
+    if (cycRms <= 1e-5f) continue;
+
     cyclePeaks[peakN] = peak;
-    cycleRmsVals[peakN] = (len > 0) ? sqrtf((float)(cycSq / (double)len)) : 0.0f;
+    cycleRmsVals[peakN] = cycRms;
     peakN++;
 
     float curCycle[RSZ];
@@ -425,22 +457,38 @@ bool ArcDetection::compute(const uint16_t* raw, size_t n, float fs_hz,
       const int i0 = clampi((int)floorf(pos), a, b - 1);
       const int i1 = clampi(i0 + 1, a, b - 1);
       const float frac = pos - (float)i0;
-      curCycle[j] = sigClean[i0] + frac * (sigClean[i1] - sigClean[i0]);
+      curCycle[j] = (sigClean[i0] + frac * (sigClean[i1] - sigClean[i0])) / cycRms;
     }
 
     if (havePrevCycle) {
-      double mse = 0.0;
-      double eRef = 0.0;
-      for (int j = 0; j < RSZ; ++j) {
-        const double d = (double)curCycle[j] - (double)prevCycle[j];
-        mse += d * d;
-        eRef += 0.5 * ((double)curCycle[j] * (double)curCycle[j] + (double)prevCycle[j] * (double)prevCycle[j]);
+      const int lenDelta = abs(len - prevCycleLen);
+      const int lenLimit = clampi((int)(0.12f * (float)prevCycleLen), 3, 24);
+      if (lenDelta <= lenLimit) {
+        float bestRatio = INFINITY;
+        for (int shift = -2; shift <= 2; ++shift) {
+          double mse = 0.0;
+          double eRef = 0.0;
+          int aligned = 0;
+          for (int j = 0; j < RSZ; ++j) {
+            const int pj = j + shift;
+            if (pj < 0 || pj >= RSZ) continue;
+            const double cur = (double)curCycle[j];
+            const double prv = (double)prevCycle[pj];
+            const double d = cur - prv;
+            mse += d * d;
+            eRef += 0.5 * (cur * cur + prv * prv);
+            aligned++;
+          }
+          if (aligned < (RSZ - 4)) continue;
+          const float ratio = clampf((float)(mse / (eRef + 1e-9)), 0.0f, 1.5f);
+          if (ratio < bestRatio) bestRatio = ratio;
+        }
+        if (isfinite(bestRatio) && nmsePairs < 24) nmsePairsVals[nmsePairs++] = bestRatio;
       }
-      nmseAcc += (float)(mse / (eRef + 1e-9));
-      nmsePairs++;
     }
 
     memcpy(prevCycle, curCycle, sizeof(prevCycle));
+    prevCycleLen = len;
     havePrevCycle = true;
   }
 
@@ -479,7 +527,19 @@ bool ArcDetection::compute(const uint16_t* raw, size_t n, float fs_hz,
     out.peak_fluct_cv = (float)(sqrt(vv) / (mu + 1e-9)) * FEATURE_PERCENT_SCALE;
   }
 
-  if (nmsePairs > 0) out.cycle_nmse = (nmseAcc / (float)nmsePairs) * FEATURE_PERCENT_SCALE;
+  if (nmsePairs > 0) {
+    for (int i = 1; i < nmsePairs; ++i) {
+      const float key = nmsePairsVals[i];
+      int j = i - 1;
+      while (j >= 0 && nmsePairsVals[j] > key) {
+        nmsePairsVals[j + 1] = nmsePairsVals[j];
+        --j;
+      }
+      nmsePairsVals[j + 1] = key;
+    }
+    const float medianNmse = nmsePairsVals[nmsePairs / 2];
+    out.cycle_nmse = clampf(medianNmse * FEATURE_PERCENT_SCALE, 0.0f, 100.0f);
+  }
 
   for (size_t i = 0; i < n; ++i) {
     fft_cf[2 * i + 0] = sigFilt[i] * win[i];

@@ -2,6 +2,7 @@
 #define FIREBASE_NETWORK_H
 
 #include <Arduino.h>
+#include <freertos/FreeRTOS.h>
 #include <WiFi.h>
 #ifndef WiFI_CONNECTED
 #define WiFI_CONNECTED (WiFi.status() == WL_CONNECTED)
@@ -17,6 +18,7 @@ public:
   void updateClock();
   bool isSynced() const { return _synced; }
   uint64_t nowEpochMs() const;
+  uint64_t epochForUptimeMs(uint32_t uptimeMs) const;
   String nowISO8601Ms() const;
 
   void setFirmwareVersion(const char* fw);
@@ -53,12 +55,13 @@ public:
                          bool contextAcquiring,
                          bool contextLatched,
                          const String& state,
-                         bool faultLatched, bool webControlsLocked, bool relayLatchedOn);
+                         bool faultLatched, bool webControlsLocked, bool relayLatchedOn, bool relayPulseActive);
 
   bool logStatusEvent(const String& status, float v, float c, float apparentPower, float t);
   bool logFeatureEvent(const String& status, const FeatureFrame& f, float apparentPower, bool relayTrip);
   bool publishOtaDebug(const String& phase, const String& detail, int progress = -1);
   bool publishControlAck(const String& kind, const String& token);
+  bool publishRelayPulseEvent(const String& kind, const String& token, const String& source = "device");
   void stopAllClients();
 
   void setLogEnabled(bool en);
@@ -91,6 +94,7 @@ private:
     bool faultLatched = false;
     bool webControlsLocked = false;
     bool relayLatchedOn = false;
+    bool relayPulseActive = false;
   };
 
   struct HistoryJob {
@@ -119,8 +123,11 @@ private:
     uint32_t uptime_ms;
     uint32_t frame_start_uptime_ms;
     uint32_t frame_end_uptime_ms;
+    uint32_t feature_compute_end_uptime_ms;
+    uint32_t log_enqueue_uptime_ms;
     float frame_dt_ms;
     float compute_time_ms;
+    float timing_skew_ms;
     float spectral_flux_midhf, residual_crest_factor, edge_spike_ratio, midband_residual_ratio, cycle_nmse;
     float peak_fluct_cv, thd_i, hf_energy_delta, zcv, abs_irms_zscore_vs_baseline;
     float fs_err_hz, suspicious_run_energy, delta_irms_abs, delta_hf_energy, delta_flux, v_sag_pct, halfcycle_asymmetry;
@@ -179,6 +186,10 @@ private:
 
   bool _started = false;
   bool _synced = false;
+  bool _epochAnchorValid = false;
+  uint64_t _epochAnchorMs = 0;
+  uint32_t _uptimeAnchorMs = 0;
+  mutable portMUX_TYPE _timeAnchorMux = portMUX_INITIALIZER_UNLOCKED;
 
   bool _pendingLive = false;
   LiveSnapshot _live;
@@ -232,6 +243,7 @@ private:
   bool _wasEnabled = false;
   SessionSpec _manual;
   SessionSpec _auto;
+  uint32_t _manualArmMs = 0;
   uint32_t _sessionStartMs = 0;
   uint32_t _chunkStartMs = 0;
   uint16_t _count = 0;
@@ -271,6 +283,8 @@ private:
   void serviceMlState_();
   bool closeManualSession_(const String& finishedSessionId);
   void resetLoggerRuntime_();
+  bool captureUsefulForManual_(const FeatureFrame& f, FaultState st) const;
+  float computeContinuousDurationSeconds_(const Rec* recs, uint16_t count) const;
   void ensureBuffersAllocated_();
 };
 

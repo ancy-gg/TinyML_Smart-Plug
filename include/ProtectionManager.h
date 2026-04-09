@@ -20,6 +20,11 @@ public:
   void pulseRelayOn(uint32_t pulseMs = 0);
   void pulseRelayOff(uint32_t pulseMs = 0);
   bool relayLatchedOn() const { return _relayLatchedOn; }
+  bool relayPulseActive() const {
+    const uint32_t now = millis();
+    return (_pulseOnUntil && (int32_t)(now - _pulseOnUntil) < 0) ||
+           (_pulseOffUntil && (int32_t)(now - _pulseOffUntil) < 0);
+  }
 
 private:
   int _pinLatchOn = -1;

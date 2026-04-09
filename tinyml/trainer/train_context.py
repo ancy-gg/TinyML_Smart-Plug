@@ -4,7 +4,7 @@ from pathlib import Path
 
 import numpy as np
 import pandas as pd
-from sklearn.metrics import accuracy_score, balanced_accuracy_score, confusion_matrix
+from sklearn.metrics import accuracy_score, balanced_accuracy_score, classification_report, confusion_matrix
 from sklearn.model_selection import StratifiedShuffleSplit
 
 from tinyml_common import (
@@ -35,11 +35,11 @@ def family_name_from_code(code: int) -> str:
     return DEVICE_FAMILY_NAME_FROM_CODE.get(int(code), "unknown")
 
 
-
 def build_context_frame(df: pd.DataFrame) -> pd.DataFrame:
     df = normalize_feature_names(df.copy())
     if "device_family_code" not in df.columns:
         fam = df.get("device_family", pd.Series("unknown", index=df.index)).astype(str)
+        fam = fam.str.strip().str.lower()
         df["device_family_code"] = fam.map(lambda s: DEVICE_FAMILY_CODE_MAP.get(str(s), DEVICE_FAMILY_UNKNOWN_CODE)).fillna(DEVICE_FAMILY_UNKNOWN_CODE).astype(int)
 
     df = clean_df(df, include_invalid=False, feature_names=CONTEXT_FEATURES, target_col="device_family_code")
@@ -53,7 +53,7 @@ def build_context_frame(df: pd.DataFrame) -> pd.DataFrame:
         df["_ctx_group"] = work_group
         group_col = "_ctx_group"
 
-    time_col = "frame_start_uptime_ms" if "frame_start_uptime_ms" in df.columns else ("epoch_ms" if "epoch_ms" in df.columns else ("uptime_ms" if "uptime_ms" in df.columns else None))
+    time_col = "frame_start_uptime_ms" if "frame_start_uptime_ms" in df.columns else ("frame_end_uptime_ms" if "frame_end_uptime_ms" in df.columns else ("uptime_ms" if "uptime_ms" in df.columns else ("epoch_ms" if "epoch_ms" in df.columns else None)))
     work = df.copy()
     if time_col is not None:
         work = work.sort_values([group_col, time_col]).reset_index(drop=True)
@@ -86,7 +86,7 @@ def build_context_frame(df: pd.DataFrame) -> pd.DataFrame:
             "group": str(group_value),
             "device_family_code": fam_code,
             "device_family": fam_name,
-            "device_name": str(window.get("device_name", pd.Series("unknown_device")).iloc[0]),
+            "device_name": str(window.get("device_name", pd.Series("unknown_device", index=window.index)).iloc[0]),
             "row_count": int(len(window)),
             "window_rows_target": int(CONTEXT_WINDOW_ROWS),
         }
@@ -132,6 +132,7 @@ def main():
     ap.add_argument("--min_precision", type=float, default=0.0)
     ap.add_argument("--max_fpr", type=float, default=1.0)
     ap.add_argument("--min_threshold", type=float, default=0.0)
+    ap.add_argument("--unknown_confidence", type=float, default=CONTEXT_UNKNOWN_CONFIDENCE)
     args = ap.parse_args()
 
     raw_df = pd.read_csv(args.csv)
@@ -179,28 +180,12 @@ def main():
     proba = prototype_predict_proba(X_test_std, centroids)
     pred = np.argmax(proba, axis=1)
     conf = np.max(proba, axis=1)
-    pred_with_unknown = np.where(conf >= CONTEXT_UNKNOWN_CONFIDENCE, pred, DEVICE_FAMILY_UNKNOWN_CODE)
+    unknown_conf = float(args.unknown_confidence)
+    pred_with_unknown = np.where(conf >= unknown_conf, pred, DEVICE_FAMILY_UNKNOWN_CODE)
 
     labels = list(range(len(DEVICE_FAMILY_CLASSES)))
     cm = confusion_matrix(y_test, pred, labels=labels)
     per_class = []
-    for fam_idx, fam in enumerate(DEVICE_FAMILY_CLASSES):
-        mask = y_test == fam_idx
-        class_rows = int(mask.sum())
-        class_acc = float(np.mean(pred[mask] == fam_idx)) if class_rows else 0.0
-        mean_conf = float(np.mean(conf[mask])) if class_rows else 0.0
-        unknown_rate = float(np.mean(pred_with_unknown[mask] == DEVICE_FAMILY_UNKNOWN_CODE)) if class_rows else 0.0
-        per_class.append({
-            "family": fam,
-            "family_code": fam_idx,
-            "rows": class_rows,
-            "accuracy": class_acc,
-            "mean_confidence": mean_conf,
-            "unknown_rate": unknown_rate,
-        })
-
-    from sklearn.metrics import classification_report
-
     class_report = classification_report(
         y_test,
         pred,
@@ -209,24 +194,34 @@ def main():
         output_dict=True,
         zero_division=0,
     )
-    mean_conf_by_class = {
-        fam: float(np.mean(conf[y_test == idx])) if np.any(y_test == idx) else 0.0
-        for idx, fam in enumerate(DEVICE_FAMILY_CLASSES)
-    }
+
     pred_unknown_rate = float(np.mean(pred_with_unknown == DEVICE_FAMILY_UNKNOWN_CODE)) if len(pred_with_unknown) else 0.0
-    for row in per_class:
-        metrics = class_report.get(row["family"], {}) or {}
-        row["precision"] = float(metrics.get("precision", 0.0))
-        row["recall"] = float(metrics.get("recall", 0.0))
-        row["f1"] = float(metrics.get("f1-score", 0.0))
-        row["support"] = int(metrics.get("support", row.get("rows", 0)) or 0)
-        row["predicted_rows"] = int(np.sum(pred == int(row["family_code"])))
+    for fam_idx, fam in enumerate(DEVICE_FAMILY_CLASSES):
+        mask = y_test == fam_idx
+        class_rows = int(mask.sum())
+        class_acc = float(np.mean(pred[mask] == fam_idx)) if class_rows else 0.0
+        mean_conf = float(np.mean(conf[mask])) if class_rows else 0.0
+        unknown_rate = float(np.mean(pred_with_unknown[mask] == DEVICE_FAMILY_UNKNOWN_CODE)) if class_rows else 0.0
+        metrics = class_report.get(fam, {}) or {}
+        per_class.append({
+            "family": fam,
+            "family_code": fam_idx,
+            "rows": class_rows,
+            "accuracy": class_acc,
+            "mean_confidence": mean_conf,
+            "unknown_rate": unknown_rate,
+            "precision": float(metrics.get("precision", 0.0)),
+            "recall": float(metrics.get("recall", 0.0)),
+            "f1": float(metrics.get("f1-score", 0.0)),
+            "support": int(metrics.get("support", class_rows) or 0),
+            "predicted_rows": int(np.sum(pred == fam_idx)),
+        })
 
     report = {
         "model_name": "ContextPrototype",
         "feature_names": CONTEXT_FEATURES,
         "class_labels": DEVICE_FAMILY_CLASSES,
-        "unknown_confidence_threshold": CONTEXT_UNKNOWN_CONFIDENCE,
+        "unknown_confidence_threshold": unknown_conf,
         "row_count": int(len(ctx_df)),
         "train_rows": int(len(train_idx)),
         "test_rows": int(len(test_idx)),
@@ -244,6 +239,7 @@ def main():
         "centroids": centroid_map,
         "estimator": {
             "model_type": "prototype_centroid",
+            "feature_names": list(CONTEXT_FEATURES),
             "means": means.tolist(),
             "stds": stds.tolist(),
             "centroids": centroid_map,
@@ -257,6 +253,8 @@ def main():
         "min_precision": args.min_precision,
         "max_fpr": args.max_fpr,
         "min_threshold": args.min_threshold,
+        "unknown_confidence": unknown_conf,
+        "model": "context",
     }
 
     save_context_bundle(
@@ -275,6 +273,7 @@ def main():
         "accuracy": report["accuracy"],
         "balanced_accuracy": report["balanced_accuracy"],
         "mean_confidence": report["mean_confidence"],
+        "unknown_rate": report["unknown_rate"],
     }, indent=2))
     print("Saved:", args.out_joblib)
     print("Saved:", args.out_header)

@@ -2267,7 +2267,7 @@ def build_short_burst_report(meta_df: pd.DataFrame, y_true, y_score, thr: float,
     frame["_y_true"] = np.asarray(y_true).astype(int)
     frame["_y_score"] = np.asarray(y_score).astype(float)
     session_col = _preferred_meta_col(frame, ["session_id", "section_id", "trial_id"])
-    time_col = _preferred_meta_col(frame, ["epoch_ms", "frame_start_uptime_ms", "uptime_ms"])
+    time_col = _preferred_meta_col(frame, ["frame_start_uptime_ms", "frame_end_uptime_ms", "uptime_ms", "epoch_ms"])
     if session_col is None:
         return {}
     if time_col is not None:
@@ -2604,17 +2604,44 @@ def export_header(
     ensure_dir(out_header)
     export_backend = "native_tree_ensemble"
     feature_names = list(feature_names or FEATURES)
-    c_code = _export_tree_ensemble_to_c(model, function_name=function_name)
+    function_name = str(function_name or "arc_rf_predict")
+
+    model_label = str(model_name or "").strip().lower()
+    use_native_export = isinstance(model, (ExtraTreesClassifier, RandomForestClassifier))
+
+    if use_native_export:
+        c_code = _export_tree_ensemble_to_c(model, function_name=function_name)
+        if model_label == "extratrees":
+            default_threshold = max(float(threshold), 0.26)
+            default_unknown_threshold = max(default_threshold + 0.10, 0.65)
+        elif model_label == "randomforest":
+            default_threshold = max(float(threshold), 0.17)
+            default_unknown_threshold = max(default_threshold + 0.10, 0.65)
+        else:
+            default_threshold = float(threshold)
+            default_unknown_threshold = max(default_threshold, 0.65)
+    else:
+        if m2c is None:
+            raise RuntimeError("m2cgen is not installed and native export is unavailable for this model.")
+        raw_code = m2c.export_to_c(model)
+        c_code = postprocess_m2c_header(raw_code)
+        default_threshold = float(threshold)
+        default_unknown_threshold = max(default_threshold, 0.65)
 
     family_thresholds = []
     if isinstance(threshold_policy, dict):
         fam_map = threshold_policy.get("family_thresholds") or {}
         for fam_idx in range(len(DEVICE_FAMILY_CLASSES)):
             fam = fam_map.get(str(int(fam_idx))) or {}
-            family_thresholds.append(float(fam.get("threshold", threshold)))
+            family_thresholds.append(float(fam.get("threshold", default_threshold)))
     else:
-        family_thresholds = [float(threshold)] * len(DEVICE_FAMILY_CLASSES)
-    unknown_threshold = float(((threshold_policy or {}).get("unknown_policy") or {}).get("threshold", (threshold_policy or {}).get("unknown_threshold", max(float(threshold), 0.65))))
+        family_thresholds = [float(default_threshold)] * len(DEVICE_FAMILY_CLASSES)
+    unknown_threshold = float(
+        ((threshold_policy or {}).get("unknown_policy") or {}).get(
+            "threshold",
+            (threshold_policy or {}).get("unknown_threshold", default_unknown_threshold),
+        )
+    )
     known_confidence_min = float((threshold_policy or {}).get("known_confidence_min", 0.45))
     unknown_min_votes = int(((threshold_policy or {}).get("unknown_policy") or {}).get("min_positive_feature_votes", 3))
 
@@ -2624,7 +2651,7 @@ def export_header(
         feature_version = 5 if any(str(name).startswith("ctx_family_") for name in feature_names) else 4
         f.write(f"#define ARC_MODEL_FEATURE_VERSION {feature_version}\n")
         f.write(f"#define ARC_MODEL_INPUT_DIM {len(feature_names)}\n")
-        f.write(f"#define ARC_THRESHOLD {float(threshold):.4f}f\n")
+        f.write(f"#define ARC_THRESHOLD {float(default_threshold):.4f}f\n")
         f.write(f"#define ARC_CONTEXT_CONFIDENCE_MIN {known_confidence_min:.4f}f\n")
         f.write(f"#define ARC_THRESHOLD_UNKNOWN {unknown_threshold:.4f}f\n")
         f.write(f"#define ARC_UNKNOWN_MIN_FEATURE_VOTES {unknown_min_votes}\n\n")
@@ -2639,7 +2666,7 @@ def export_header(
         f.write("}\n\n")
         f.write(c_code)
 
-    norm_out = out_header.replace('\\', '/')
+    norm_out = out_header.replace("\", "/")
     marker = "/tinyml/model/"
     if marker in norm_out:
         compat_path = os.path.join(norm_out.split(marker, 1)[0], "tinyml", os.path.basename(out_header))
@@ -2648,7 +2675,7 @@ def export_header(
             with open(compat_path, "w", encoding="utf-8") as shim:
                 shim.write("#pragma once\n")
                 shim.write(f"// Compatibility shim that forwards to model/{os.path.basename(out_header)}\n")
-                shim.write(f"#include \"model/{os.path.basename(out_header)}\"\n")
+                shim.write(f"#include "model/{os.path.basename(out_header)}"\n")
 
 
 def save_model_bundle(

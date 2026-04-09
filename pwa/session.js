@@ -104,6 +104,133 @@
   let currentDownloadName = "session.csv";
   let currentMeta = {};
   let SEGMENTS = [];
+  let currentViewStateKey = "";
+
+  const LS_VIEWER_SERIES_PREFS = "tsp_viewer_series_prefs_v1";
+  const LS_VIEWER_VIEW_PREFS = "tsp_viewer_view_prefs_v3";
+  const VIEWER_STATE_BY_KEY = new Map();
+
+  function loadPersistedSeriesPrefs() {
+    const out = { show: new Map(), axis: new Map() };
+    try {
+      const raw = localStorage.getItem(LS_VIEWER_SERIES_PREFS);
+      if (!raw) return out;
+      const parsed = JSON.parse(raw);
+      const showObj = parsed && typeof parsed.show === "object" ? parsed.show : {};
+      const axisObj = parsed && typeof parsed.axis === "object" ? parsed.axis : {};
+      Object.entries(showObj).forEach(([key, value]) => {
+        if (!key) return;
+        out.show.set(String(key), !!value);
+      });
+      Object.entries(axisObj).forEach(([key, value]) => {
+        if (!key) return;
+        out.axis.set(String(key), String(value || "y").toLowerCase() === "y2" ? "y2" : "y");
+      });
+    } catch (err) {
+      console.warn("Failed to load persisted series prefs", err);
+    }
+    return out;
+  }
+
+  function persistSeriesPrefs() {
+    try {
+      const show = {};
+      const axis = {};
+      showPref.forEach((value, key) => {
+        if (!key) return;
+        show[String(key)] = !!value;
+      });
+      axisPref.forEach((value, key) => {
+        if (!key) return;
+        axis[String(key)] = String(value || "y").toLowerCase() === "y2" ? "y2" : "y";
+      });
+      localStorage.setItem(LS_VIEWER_SERIES_PREFS, JSON.stringify({ show, axis }));
+    } catch (err) {
+      console.warn("Failed to persist series prefs", err);
+    }
+  }
+
+  function loadPersistedViewPrefs() {
+    try {
+      const raw = localStorage.getItem(LS_VIEWER_VIEW_PREFS);
+      if (!raw) return null;
+      return cloneViewerState(JSON.parse(raw));
+    } catch (err) {
+      console.warn("Failed to load persisted viewer prefs", err);
+      return null;
+    }
+  }
+
+  function persistViewPrefs(state) {
+    const normalized = cloneViewerState(state);
+    if (!normalized) return null;
+    try {
+      localStorage.setItem(LS_VIEWER_VIEW_PREFS, JSON.stringify(normalized));
+    } catch (err) {
+      console.warn("Failed to persist viewer prefs", err);
+    }
+    return normalized;
+  }
+
+  function cloneViewerState(state) {
+    if (!state || typeof state !== "object") return null;
+    const xWindow = state.xWindow && Number.isFinite(state.xWindow.min) && Number.isFinite(state.xWindow.max) && state.xWindow.max > state.xWindow.min
+      ? { min: Number(state.xWindow.min), max: Number(state.xWindow.max) }
+      : null;
+    const xWindowFrac = state.xWindowFrac
+      && Number.isFinite(state.xWindowFrac.min)
+      && Number.isFinite(state.xWindowFrac.max)
+      && state.xWindowFrac.max > state.xWindowFrac.min
+      ? {
+          min: Math.max(0, Math.min(1, Number(state.xWindowFrac.min))),
+          max: Math.max(0, Math.min(1, Number(state.xWindowFrac.max))),
+        }
+      : null;
+    return {
+      playIdx: Math.max(0, Number(state.playIdx) | 0),
+      xWindow,
+      xWindowFrac,
+      zoomPct: Math.max(5, Math.min(100, Number(state.zoomPct || 100) || 100)),
+      centerX: Number.isFinite(Number(state.centerX)) ? Number(state.centerX) : null,
+      centerFrac: Number.isFinite(Number(state.centerFrac)) ? Math.max(0, Math.min(1, Number(state.centerFrac))) : null,
+      activeSeriesKey: String(state.activeSeriesKey || ""),
+    };
+  }
+
+  function viewerStateKeyFor(sessionId = sid, meta = currentMeta, fallbackName = currentDownloadName) {
+    const sidToken = String(sessionId || "").trim();
+    if (sidToken) return `sid:${sidToken}`;
+    const nameToken = safeFilenameSegment(meta?.source_file || fallbackName || meta?.device_name || "local_csv", "local_csv");
+    return `csv:${nameToken}`;
+  }
+
+  function setCurrentViewerStateKey(nextKey) {
+    currentViewStateKey = String(nextKey || "").trim();
+    return currentViewStateKey;
+  }
+
+  function getRememberedViewerState(key = currentViewStateKey) {
+    const targetKey = String(key || "").trim();
+    const hit = targetKey ? VIEWER_STATE_BY_KEY.get(targetKey) : null;
+    return cloneViewerState(hit) || loadPersistedViewPrefs();
+  }
+
+  function rememberViewerState(state, key = currentViewStateKey) {
+    const normalized = persistViewPrefs(state);
+    const targetKey = String(key || "").trim();
+    if (!normalized) return null;
+    if (targetKey) VIEWER_STATE_BY_KEY.set(targetKey, normalized);
+    return normalized;
+  }
+
+  function rememberCurrentViewerState() {
+    if (!currentViewStateKey || !X.length) return null;
+    return rememberViewerState(captureViewerState(), currentViewStateKey);
+  }
+
+  function resolveViewerState(preferredState = null) {
+    return cloneViewerState(preferredState) || getRememberedViewerState(currentViewStateKey) || null;
+  }
 
   function formatDisplayTimestamp(ms) {
     if (!ms || ms <= 0) return "—";
@@ -244,14 +371,10 @@
   }
 
   function viewerDisplayName(meta, sessionId) {
-    const deviceName = String(meta?.device_name || "").trim();
-    if (deviceName) return deviceTitle(deviceName);
-    const sourceFile = String(meta?.source_file || "").trim();
-    if (sourceFile) return deviceTitle(canonicalDatasetStem(sourceFile, sourceFile));
-    if (isUploadedCsvSession(meta)) return "Uploaded CSV";
-    const start = Number(meta?.start_ms || 0);
-    if (start) return `Session ${formatDisplayTimestamp(start)}`;
-    return deviceTitle(sessionId || "session");
+    const device = deviceTitle(pickViewerDevice(meta, sessionId || "session"));
+    const trial = Math.max(1, parseInt(meta?.trial_number || 1, 10) || 1);
+    const division = titleizeTokenText(normalizeDivisionTagToken(meta?.division_tag || "steady"), "Steady");
+    return `${device} - Trial ${trial} - ${division}`;
   }
 
   function viewerDownloadName(meta, sessionId) {
@@ -302,12 +425,12 @@
   function viewerMetaText(meta) {
     const dur = viewerDurationSeconds(meta);
     const durText = (dur === null) ? "—" : (Math.abs(dur - Math.round(dur)) < 0.05 ? `${Math.round(dur)}s` : `${dur.toFixed(1)}s`);
-    const startText = Number(meta?.start_ms || 0) > 0 ? formatDisplayTimestamp(Number(meta.start_ms)) : "—";
+    const startSourceMs = Number(meta?.first_epoch_ms || meta?.start_ms || 0);
+    const dateText = startSourceMs > 0
+      ? new Intl.DateTimeFormat("en-US", { timeZone: "Asia/Manila", month: "long", day: "2-digit", year: "numeric" }).format(new Date(startSourceMs))
+      : "—";
     const family = familyTitle(pickViewerFamily(meta));
-    const device = deviceTitle(pickViewerDevice(meta));
-    const trial = Math.max(1, parseInt(meta?.trial_number || 1, 10) || 1);
-    const division = normalizeDivisionTagToken(meta?.division_tag || "steady");
-    return `${family} • ${device} • Trial ${trial} • ${division} • ${durText} • ${startText}`;
+    return `${family} • ${durText} • ${dateText}`;
   }
 
   function parseDatasetFilenameMeta(name) {
@@ -715,8 +838,8 @@
 
     if (!refreshDerivedData(false)) return;
 
-    buildPlot();
-    if (X.length) restoreViewerState(viewState);
+    rememberViewerState(viewState);
+    buildPlot(viewState);
 
     updateStats();
     updateArcEditButtons();
@@ -984,20 +1107,58 @@
 
   function setActiveSeriesKey(nextKey = "") {
     const normalized = String(nextKey || "").trim();
-    activeSeriesKey = KEYS.includes(normalized) ? normalized : "";
-    if (activeSeriesKey && !showPref.get(activeSeriesKey)) showPref.set(activeSeriesKey, true);
+    const keepWindow = captureXWindow();
+    const keepIdx = playIdx;
+    const resume = playing;
+    if (resume) pause();
+
+    const nextActiveKey = KEYS.includes(normalized) ? normalized : "";
+    const wasHidden = !!nextActiveKey && !showPref.get(nextActiveKey);
+    activeSeriesKey = nextActiveKey;
+    if (activeSeriesKey && wasHidden) showPref.set(activeSeriesKey, true);
+
     const row = activeSeriesKey ? toggleList?.querySelector?.(`.row[data-key="${activeSeriesKey}"]`) : null;
     const cb = row?.querySelector?.('input[type="checkbox"]');
     if (cb && activeSeriesKey) cb.checked = true;
     row?.classList?.add("is-selected");
-    const viewState = captureViewerState();
-    if (plot) {
-      buildPlot();
-      restoreViewerState(viewState);
+
+    const viewState = captureViewerState() || {};
+    viewState.playIdx = keepIdx;
+    viewState.activeSeriesKey = activeSeriesKey;
+    if (keepWindow) {
+      viewState.xWindow = { ...keepWindow };
+      viewState.xWindowFrac = null;
+      viewState.zoomPct = Math.max(5, Math.min(100, Math.round(((keepWindow.max - keepWindow.min) / Math.max(1e-9, FULL_X_MAX - FULL_X_MIN)) * 100)));
+      viewState.centerX = (keepWindow.min + keepWindow.max) * 0.5;
+      viewState.centerFrac = Number.isFinite(viewState.centerX) && FULL_X_MAX > FULL_X_MIN
+        ? Math.max(0, Math.min(1, (viewState.centerX - FULL_X_MIN) / (FULL_X_MAX - FULL_X_MIN)))
+        : null;
     }
+
+    rememberViewerState(viewState);
+
+    if (plot) {
+      if (wasHidden) {
+        const idx = KEYS.indexOf(activeSeriesKey);
+        if (idx >= 0) {
+          plot.setSeries(idx + 1, { show: true }, false);
+          try { plot.setData(currentData(), false); } catch (_) {}
+        }
+      }
+      syncActiveSeriesStyles();
+      if (keepWindow) restoreXWindow(keepWindow);
+      setPlayIdx(keepIdx, true, true);
+    } else {
+      buildPlot(viewState);
+      if (keepWindow) restoreXWindow(keepWindow);
+      setPlayIdx(keepIdx, true, true);
+    }
+
     toggleList?.querySelectorAll?.(".row")?.forEach?.((node) => {
       node.classList.toggle("is-focused", !!activeSeriesKey && node.dataset.key === activeSeriesKey);
     });
+    if (resume) play();
+    rememberCurrentViewerState();
     applySeriesFilter();
     updateValueReadout();
     updateStats();
@@ -1022,6 +1183,7 @@
         const on = !!cb.checked;
         const viewState = captureViewerState();
         showPref.set(k, on);
+        persistSeriesPrefs();
         wrap.classList.toggle("is-selected", on);
         if (activeSeriesKey === k && !on) activeSeriesKey = "";
         if (plot) {
@@ -1052,6 +1214,7 @@
       sel.value = axisPref.get(k) || "y";
       sel.onchange = () => {
         axisPref.set(k, sel.value);
+        persistSeriesPrefs();
         rebuildForDataMode();
       };
 
@@ -1088,14 +1251,23 @@
 
     buildArcIndexes();
 
+    const persistedPrefs = loadPersistedSeriesPrefs();
     const defaults = new Set(preferredDefaultKeys(KEYS));
     KEYS.forEach((k) => {
-      if (resetPrefs || !showPref.has(k)) showPref.set(k, defaults.has(k));
-      if (resetPrefs || !axisPref.has(k)) axisPref.set(k, DEFAULT_Y2.has(k) ? "y2" : "y");
+      if (resetPrefs) {
+        showPref.set(k, defaults.has(k));
+        axisPref.set(k, DEFAULT_Y2.has(k) ? "y2" : "y");
+        return;
+      }
+      if (!showPref.has(k)) {
+        showPref.set(k, persistedPrefs.show.has(k) ? !!persistedPrefs.show.get(k) : defaults.has(k));
+      }
+      if (!axisPref.has(k)) {
+        axisPref.set(k, persistedPrefs.axis.has(k) ? (persistedPrefs.axis.get(k) || "y") : (DEFAULT_Y2.has(k) ? "y2" : "y"));
+      }
     });
 
-    Array.from(showPref.keys()).forEach((k) => { if (!KEYS.includes(k)) showPref.delete(k); });
-    Array.from(axisPref.keys()).forEach((k) => { if (!KEYS.includes(k)) axisPref.delete(k); });
+    persistSeriesPrefs();
 
     renderToggleList();
     scrub.max = String(Math.max(0, X.length - 1));
@@ -1116,10 +1288,21 @@
       return false;
     }
 
+    const timing = deriveRowTimingWindow(ROWS);
+    currentMeta = {
+      ...(currentMeta || {}),
+      row_count: ROWS.length,
+      source_duration_s: (Number.isFinite(timing?.durationS) && timing.durationS > 0) ? timing.durationS : (currentMeta?.source_duration_s || currentMeta?.duration_s || null),
+      source_sample_rate_hz: (Number.isFinite(timing?.sourceSampleRateHz) && timing.sourceSampleRateHz > 0) ? timing.sourceSampleRateHz : (currentMeta?.source_sample_rate_hz || null),
+      first_epoch_ms: (Number.isFinite(timing?.startMs) && timing.startMs > 0) ? timing.startMs : (currentMeta?.first_epoch_ms || currentMeta?.start_ms || null),
+      last_epoch_ms: (Number.isFinite(timing?.endMs) && timing.endMs > 0) ? timing.endMs : (currentMeta?.last_epoch_ms || currentMeta?.end_ms || null),
+    };
+    if (metaEl) metaEl.textContent = viewerMetaText(currentMeta);
+
     csvHeaders = ensureCsvHeadersAndLabelArc(ROWS, parsed?.meta?.fields || []);
     currentDownloadName = safeCsvFilename(options.downloadName || `${sid || "session"}.csv`);
 
-    if (!refreshDerivedData(true)) {
+    if (!refreshDerivedData(false)) {
       setStatus(options.noNumericStatus || "No numeric series found in this CSV.");
       clearValueReadout();
       updateArcEditButtons();
@@ -1135,16 +1318,9 @@
     setStatus(readyStatus.replace(/__ROWS__/g, String(ROWS.length)).replace(/__ARCS__/g, String(ARC_IDXS.length)));
     clearValueReadout();
 
-    requestAnimationFrame(() => {
-      buildPlot();
-      if (X.length) {
-        setPlayIdx(0, true);
-      }
-      updateStats();
-      renderSegmentList();
-      refreshDownloadBinding();
-      updateArcEditButtons();
-    });
+    const initialViewState = cloneViewerState(PENDING_OPEN_VIEW_STATE) || resolveViewerState();
+    PENDING_OPEN_VIEW_STATE = null;
+    buildPlotAfterLayout(initialViewState);
 
     return true;
   }
@@ -1188,6 +1364,85 @@
     "#9b6dff", "#19c6b3", "#ff9b42", "#d7dde8",
     "#6ad0ff", "#ff6fae", "#c7d84f", "#ffbf5a",
   ];
+
+
+  function withAlpha(hex, alpha) {
+    const raw = String(hex || "").trim();
+    const a = Math.max(0, Math.min(1, Number(alpha)));
+    const short = raw.match(/^#([0-9a-f]{3})$/i);
+    const full = raw.match(/^#([0-9a-f]{6})$/i);
+    let value = "";
+    if (short) value = short[1].split("").map((ch) => ch + ch).join("");
+    else if (full) value = full[1];
+    if (!value) return raw || `rgba(255,255,255,${a})`;
+    const r = parseInt(value.slice(0, 2), 16);
+    const g = parseInt(value.slice(2, 4), 16);
+    const b = parseInt(value.slice(4, 6), 16);
+    return `rgba(${r}, ${g}, ${b}, ${a})`;
+  }
+
+  function seriesStrokeColor(index, isDimmed) {
+    const base = palette[index % palette.length];
+    return isDimmed ? withAlpha(base, 0.18) : base;
+  }
+
+  function isViewerLaidOut() {
+    const chart = $("chart");
+    if (!plotDrawer || !chart || plotDrawer.hidden) return false;
+    const drawerRect = plotDrawer.getBoundingClientRect();
+    const chartRect = chart.getBoundingClientRect();
+    return drawerRect.width > 0 && drawerRect.height > 0 && chartRect.width >= 240 && chartRect.height >= 220;
+  }
+
+  function runAfterViewerLayout(task, maxFrames = 32) {
+    let frames = 0;
+    let stable = 0;
+    let lastW = 0;
+    let lastH = 0;
+    const tick = () => {
+      const chart = $("chart");
+      const rect = chart?.getBoundingClientRect?.() || { width: 0, height: 0 };
+      const w = Math.round(rect.width || 0);
+      const h = Math.round(rect.height || 0);
+      if (isViewerLaidOut()) {
+        stable = (Math.abs(w - lastW) <= 1 && Math.abs(h - lastH) <= 1) ? (stable + 1) : 0;
+        lastW = w;
+        lastH = h;
+        if (stable >= 2 || frames >= maxFrames) {
+          task();
+          return;
+        }
+      }
+      frames += 1;
+      if (frames >= maxFrames) {
+        task();
+        return;
+      }
+      requestAnimationFrame(tick);
+    };
+    requestAnimationFrame(tick);
+  }
+
+  function openViewerThen(task) {
+    setViewerOpen(true);
+    plotDrawer?.offsetHeight;
+    $("chart")?.offsetWidth;
+    $("chart")?.offsetHeight;
+    setTimeout(() => {
+      plotDrawer?.scrollIntoView?.({ behavior: "smooth", block: "start" });
+    }, 10);
+    runAfterViewerLayout(task);
+  }
+
+  function buildPlotAfterLayout(initialViewState = null) {
+    runAfterViewerLayout(() => {
+      buildPlot(initialViewState);
+      updateStats();
+      renderSegmentList();
+      refreshDownloadBinding();
+      updateArcEditButtons();
+    });
+  }
 
   let plot = null;
   let playing = false;
@@ -1271,6 +1526,11 @@
 
   const showPref = new Map();
   const axisPref = new Map();
+  {
+    const persisted = loadPersistedSeriesPrefs();
+    persisted.show.forEach((v, k) => showPref.set(k, !!v));
+    persisted.axis.forEach((v, k) => axisPref.set(k, String(v || "y")));
+  }
 
   const DEFAULT_ON = new Set(["voltage", "v_rms", "current", "i_rms"]);
   const DEFAULT_Y2 = new Set(["residual_crest_factor", "edge_spike_ratio", "midband_residual_ratio", "hf_energy_delta", "i_rms", "current", "temp_c", "temp"]);
@@ -1308,7 +1568,9 @@
     return keys.filter((k) => k === "voltage" || k === "v_rms" || k === "current" || k === "i_rms").slice(0, 2);
   }
 
-  function resetState() {
+  function resetState(options = {}) {
+    const preserveViewKey = !!options.preserveViewKey;
+    VIEW_RESTORE_TOKEN += 1;
     pause();
     if (plot) {
       plot.destroy();
@@ -1329,13 +1591,14 @@
     playIdxF = 0;
     lastRAF = 0;
     activeSeriesKey = "";
-    showPref.clear();
-    axisPref.clear();
     currentCsv = "";
     csvHeaders = [];
+    LAST_X_WINDOW = null;
+    LAST_ZOOM_PCT = 100;
     currentDownloadName = "session.csv";
     currentMeta = {};
     SEGMENTS = [];
+    if (!preserveViewKey) currentViewStateKey = "";
     if (toggleList) toggleList.innerHTML = "";
     if (valueLine) valueLine.innerHTML = "";
     if (statsBody) statsBody.innerHTML = "";
@@ -1540,17 +1803,66 @@
     const full = Math.max(1e-9, FULL_X_MAX - FULL_X_MIN);
     const cur = Math.max(1e-9, plot.scales.x.max - plot.scales.x.min);
     const pct = Math.round(Math.max(5, Math.min(100, (cur / full) * 100)));
+    LAST_ZOOM_PCT = pct;
     rngZoom.value = String(pct);
   }
 
   let LAST_X_WINDOW = null;
+  let LAST_ZOOM_PCT = 100;
+  let VIEW_RESTORE_TOKEN = 0;
+  let PENDING_OPEN_VIEW_STATE = null;
+
+  function makeCarryoverOpenState(state) {
+    const base = cloneViewerState(state) || captureViewerState() || null;
+    if (!base) return null;
+    return {
+      playIdx: 0,
+      xWindow: null,
+      xWindowFrac: null,
+      zoomPct: Math.max(5, Math.min(100, Number(base.zoomPct || LAST_ZOOM_PCT || 100) || 100)),
+      centerX: null,
+      centerFrac: null,
+      activeSeriesKey: String(base.activeSeriesKey || activeSeriesKey || ""),
+    };
+  }
 
   function captureXWindow() {
     const min = plot?.scales?.x?.min;
     const max = plot?.scales?.x?.max;
-    const out = Number.isFinite(min) && Number.isFinite(max) && max > min ? { min, max } : (LAST_X_WINDOW && Number.isFinite(LAST_X_WINDOW.min) && Number.isFinite(LAST_X_WINDOW.max) && LAST_X_WINDOW.max > LAST_X_WINDOW.min ? { ...LAST_X_WINDOW } : null);
+    const out = Number.isFinite(min) && Number.isFinite(max) && max > min
+      ? { min, max }
+      : (LAST_X_WINDOW && Number.isFinite(LAST_X_WINDOW.min) && Number.isFinite(LAST_X_WINDOW.max) && LAST_X_WINDOW.max > LAST_X_WINDOW.min
+          ? { ...LAST_X_WINDOW }
+          : null);
     if (out) LAST_X_WINDOW = { ...out };
     return out;
+  }
+
+  function currentViewFractions(windowState) {
+    const full = Math.max(1e-9, FULL_X_MAX - FULL_X_MIN);
+    const win = windowState && Number.isFinite(windowState.min) && Number.isFinite(windowState.max) && windowState.max > windowState.min
+      ? windowState
+      : captureXWindow();
+    if (!win || full <= 0) return null;
+    return {
+      min: Math.max(0, Math.min(1, (win.min - FULL_X_MIN) / full)),
+      max: Math.max(0, Math.min(1, (win.max - FULL_X_MIN) / full)),
+    };
+  }
+
+  function resolveWindowFromState(state) {
+    if (!state) return null;
+    if (state.xWindowFrac && Number.isFinite(state.xWindowFrac.min) && Number.isFinite(state.xWindowFrac.max) && state.xWindowFrac.max > state.xWindowFrac.min && FULL_X_MAX > FULL_X_MIN) {
+      const full = FULL_X_MAX - FULL_X_MIN;
+      return {
+        min: FULL_X_MIN + (full * state.xWindowFrac.min),
+        max: FULL_X_MIN + (full * state.xWindowFrac.max),
+      };
+    }
+    if (state.xWindow && Number.isFinite(state.xWindow.min) && Number.isFinite(state.xWindow.max) && state.xWindow.max > state.xWindow.min) {
+      return state.xWindow;
+    }
+    return null;
   }
 
   function restoreXWindow(windowState) {
@@ -1562,48 +1874,92 @@
 
   function captureViewerState() {
     const xWindow = captureXWindow();
+    const xWindowFrac = currentViewFractions(xWindow);
+    const fallbackCenterX = X.length ? X[Math.max(0, Math.min(X.length - 1, playIdx | 0))] : null;
+    const centerX = xWindow ? (xWindow.min + xWindow.max) * 0.5 : fallbackCenterX;
+    const full = Math.max(1e-9, FULL_X_MAX - FULL_X_MIN);
+    const zoomPctFromScale = xWindow ? Math.max(5, Math.min(100, Math.round(((xWindow.max - xWindow.min) / full) * 100))) : (Number(rngZoom?.value || LAST_ZOOM_PCT || 100) || 100);
     return {
       playIdx: Math.max(0, Math.min(X.length ? X.length - 1 : 0, playIdx | 0)),
       xWindow,
-      zoomPct: Number(rngZoom?.value || 100) || 100,
-      centerX: xWindow ? (xWindow.min + xWindow.max) * 0.5 : (X.length ? X[Math.max(0, Math.min(X.length - 1, playIdx | 0))] : null),
+      xWindowFrac,
+      zoomPct: zoomPctFromScale,
+      centerX,
+      centerFrac: Number.isFinite(centerX) && FULL_X_MAX > FULL_X_MIN
+        ? Math.max(0, Math.min(1, (centerX - FULL_X_MIN) / (FULL_X_MAX - FULL_X_MIN)))
+        : null,
       activeSeriesKey,
     };
   }
 
+  function scheduleDeferredViewerRestore(state, frames = 3) {
+    const snapshot = cloneViewerState(state);
+    if (!snapshot || !X.length) return;
+    const token = ++VIEW_RESTORE_TOKEN;
+    const rerun = (remaining) => {
+      requestAnimationFrame(() => {
+        if (token != VIEW_RESTORE_TOKEN || !plot || !X.length) return;
+        restoreViewerState(snapshot);
+        if (remaining > 1) rerun(remaining - 1);
+      });
+    };
+    rerun(Math.max(1, frames | 0));
+  }
+
   function restoreViewerState(state) {
     if (!X.length) return;
-    const nextPlayIdx = Math.max(0, Math.min(X.length ? X.length - 1 : 0, (state?.playIdx ?? 0) | 0));
-    if (state?.xWindow && Number.isFinite(state.xWindow.min) && Number.isFinite(state.xWindow.max) && state.xWindow.max > state.xWindow.min) {
-      restoreXWindow(state.xWindow);
+    const normalizedState = cloneViewerState(state) || resolveViewerState(null);
+    const nextPlayIdx = Math.max(0, Math.min(X.length ? X.length - 1 : 0, (normalizedState?.playIdx ?? 0) | 0));
+    const resolvedWindow = resolveWindowFromState(normalizedState);
+    if (resolvedWindow) {
+      restoreXWindow(resolvedWindow);
     } else if (plot) {
-      const pct = Number(state?.zoomPct || 100) || 100;
-      if (pct >= 99.5) plot.setScale("x", { min: FULL_X_MIN, max: FULL_X_MAX });
-      else applyZoomPercent(pct, Number.isFinite(state?.centerX) ? state.centerX : X[nextPlayIdx]);
+      const pct = Number(normalizedState?.zoomPct || 100) || 100;
+      const centerFromFrac = Number.isFinite(normalizedState?.centerFrac) && FULL_X_MAX > FULL_X_MIN
+        ? FULL_X_MIN + ((FULL_X_MAX - FULL_X_MIN) * normalizedState.centerFrac)
+        : null;
+      if (pct >= 99.5) {
+        LAST_ZOOM_PCT = 100;
+        LAST_X_WINDOW = { min: FULL_X_MIN, max: FULL_X_MAX };
+        plot.setScale("x", { min: FULL_X_MIN, max: FULL_X_MAX });
+      } else {
+        applyZoomPercent(
+          pct,
+          Number.isFinite(normalizedState?.centerX)
+            ? normalizedState.centerX
+            : (Number.isFinite(centerFromFrac) ? centerFromFrac : X[nextPlayIdx])
+        );
+      }
     }
-    activeSeriesKey = KEYS.includes(String(state?.activeSeriesKey || "")) ? String(state.activeSeriesKey) : activeSeriesKey;
+    activeSeriesKey = KEYS.includes(String(normalizedState?.activeSeriesKey || "")) ? String(normalizedState.activeSeriesKey) : activeSeriesKey;
     setPlayIdx(nextPlayIdx, true, true);
     syncZoomSlider();
+    rememberCurrentViewerState();
   }
 
   function applyZoomPercent(pct, centerX = null) {
     if (!plot || !X.length) return;
+    LAST_ZOOM_PCT = Math.max(5, Math.min(100, Number(pct || 100) || 100));
     const full = Math.max(1e-9, FULL_X_MAX - FULL_X_MIN);
-    const ratio = Math.max(0.05, Math.min(1.0, Number(pct || 100) / 100.0));
+    const ratio = Math.max(0.05, Math.min(1.0, LAST_ZOOM_PCT / 100.0));
     const width = full * ratio;
     const anchorX = Number.isFinite(centerX) ? centerX : X[playIdx];
     const [min, max] = clampXWindow(anchorX - (width * 0.5), anchorX + (width * 0.5));
     plot.setScale("x", { min, max });
     syncZoomSlider();
+    rememberCurrentViewerState();
   }
 
   function resetZoom() {
     if (!plot || !X.length) return;
     const keepIdx = playIdx;
+    LAST_ZOOM_PCT = 100;
+    LAST_X_WINDOW = { min: FULL_X_MIN, max: FULL_X_MAX };
     plot.setScale("x", { min: FULL_X_MIN, max: FULL_X_MAX });
     if (rngZoom) rngZoom.value = "100";
     setPlayIdx(keepIdx, true, true);
     syncZoomSlider();
+    rememberCurrentViewerState();
   }
 
   function zoomPanPlugin() {
@@ -1750,6 +2106,20 @@
     };
   }
 
+  function focusGlowPlugin() {
+    return {
+      hooks: {
+        draw: [
+          () => {
+            // Disabled on purpose.
+            // The manual overlay path does not match spline/curve rendering exactly,
+            // which caused a false second line and stale highlight artifacts.
+          }
+        ]
+      }
+    };
+  }
+
   function playheadPlugin() {
     return {
       hooks: {
@@ -1772,7 +2142,53 @@
     };
   }
 
-  function buildPlot() {
+
+  function syncActiveSeriesStyles() {
+    if (!plot || !KEYS.length) return;
+    for (let i = 0; i < KEYS.length; i++) {
+      const k = KEYS[i];
+      const isFocused = !!activeSeriesKey && activeSeriesKey === k;
+      const isDimmed = !!activeSeriesKey && activeSeriesKey !== k;
+      plot.setSeries(i + 1, {
+        stroke: seriesStrokeColor(i, isDimmed),
+        width: isFocused ? 2.15 : 2,
+        dash: [],
+      }, false);
+    }
+    plot.redraw();
+  }
+
+  function scheduleViewerPrime(state = null) {
+    const snapshot = cloneViewerState(state) || captureViewerState() || resolveViewerState();
+    const token = ++VIEW_RESTORE_TOKEN;
+
+    const primeOnce = () => {
+      if (token !== VIEW_RESTORE_TOKEN || !plot) return;
+      const { w, h } = chartSize();
+      if (w > 0 && h > 0) plot.setSize({ width: w, height: h });
+      try {
+        plot.setData(currentData(), false);
+      } catch (_) {}
+      if (snapshot) restoreViewerState(snapshot);
+      syncActiveSeriesStyles();
+      plot.redraw();
+      updateStats();
+    };
+
+    const kick = (remaining) => {
+      requestAnimationFrame(() => {
+        primeOnce();
+        if (remaining > 1) kick(remaining - 1);
+      });
+    };
+
+    kick(5);
+    setTimeout(primeOnce, 40);
+    setTimeout(primeOnce, 120);
+    setTimeout(primeOnce, 240);
+  }
+
+  function buildPlot(preservedState = null) {
     if (!DATA_RAW || !X.length) return;
     if (visibleSeriesCount() === 0) setStatus("No series selected. Check at least one series.");
 
@@ -1781,6 +2197,9 @@
     const useCurves = !!chkCurves?.checked;
     const splinePaths = (useCurves && uPlot?.paths?.spline) ? uPlot.paths.spline({}) : null;
     const { w, h } = chartSize();
+    const viewState = resolveViewerState(preservedState);
+    const requestedZoomPct = Number(viewState?.zoomPct || rngZoom?.value || LAST_ZOOM_PCT || 100) || 100;
+    const requestedWindow = resolveWindowFromState(viewState);
 
     const series = [{ label: "t(s)" }];
     KEYS.forEach((k, i) => {
@@ -1788,14 +2207,13 @@
       const scale = normalize ? "y" : (axisPref.get(k) ?? "y");
       const isFocused = !!activeSeriesKey && activeSeriesKey === k;
       const isDimmed = !!activeSeriesKey && activeSeriesKey !== k;
-      const strokeBase = palette[i % palette.length];
+      const strokeBase = seriesStrokeColor(i, isDimmed);
       series.push({
         label: k,
         show,
         stroke: strokeBase,
-        alpha: isDimmed ? 0.20 : 1,
-        width: isFocused ? 4 : (activeSeriesKey ? 1.35 : 2),
-        dash: isDimmed ? [5, 4] : [],
+        width: isFocused ? 2.15 : 2,
+        dash: [],
         scale,
         ...(splinePaths ? { paths: splinePaths } : {}),
       });
@@ -1828,29 +2246,65 @@
       select: { show: true },
       hooks: {
         setScale: [() => {
+          if (plot?.scales?.x && Number.isFinite(plot.scales.x.min) && Number.isFinite(plot.scales.x.max) && plot.scales.x.max > plot.scales.x.min) {
+            LAST_X_WINDOW = { min: plot.scales.x.min, max: plot.scales.x.max };
+          }
           syncZoomSlider();
+          rememberCurrentViewerState();
           updateStats();
         }],
       },
       plugins: [zoomPanPlugin(), eventsPlugin(), statsPlugin(), playheadPlugin()],
     };
 
-    const preservedWindow = captureXWindow();
     if (plot) plot.destroy();
     plot = new uPlot(opts, data, $("chart"));
 
     FULL_X_MIN = X[0];
     FULL_X_MAX = X[X.length - 1];
-    if (preservedWindow) restoreXWindow(preservedWindow);
-    else plot.setScale("x", { min: FULL_X_MIN, max: FULL_X_MAX });
 
+    if (KEYS.includes(String(viewState?.activeSeriesKey || ""))) activeSeriesKey = String(viewState.activeSeriesKey || "");
     if (btnResetZoom) btnResetZoom.onclick = () => resetZoom();
 
-    setPlayIdx(Math.min(playIdx, X.length - 1), true, true);
+    const nextPlayIdx = Math.min(viewState?.playIdx ?? playIdx, X.length - 1);
+    setPlayIdx(nextPlayIdx, false, true);
+
+    if (requestedWindow) {
+      restoreXWindow(requestedWindow);
+    } else {
+      const centerFromFrac = Number.isFinite(viewState?.centerFrac) && FULL_X_MAX > FULL_X_MIN
+        ? FULL_X_MIN + ((FULL_X_MAX - FULL_X_MIN) * viewState.centerFrac)
+        : null;
+      applyZoomPercent(
+        requestedZoomPct,
+        Number.isFinite(viewState?.centerX)
+          ? viewState.centerX
+          : (Number.isFinite(centerFromFrac) ? centerFromFrac : (X[nextPlayIdx] ?? X[0]))
+      );
+    }
+
+    setPlayIdx(nextPlayIdx, true, true);
     syncZoomSlider();
+    rememberCurrentViewerState();
     updateValueReadout();
     updateArcReadout();
     updateStats();
+
+    requestAnimationFrame(() => {
+      if (!plot) return;
+      const { w: nextW, h: nextH } = chartSize();
+      plot.setSize({ width: nextW, height: nextH });
+      try {
+        plot.setData(currentData(), false);
+      } catch (_) {}
+      if (requestedWindow) restoreXWindow(requestedWindow);
+      syncActiveSeriesStyles();
+      syncZoomSlider();
+      updateStats();
+      plot.redraw();
+    });
+
+    scheduleViewerPrime(viewState);
   }
 
   function setPlayIdx(idx, updateCursor = false, preserveWindow = false) {
@@ -1888,6 +2342,7 @@
         plot.setScale("x", { min: nextMin, max: nextMax });
       }
     }
+    if (plot && !playing) rememberCurrentViewerState();
   }
 
   function clearValueReadout() {
@@ -2108,9 +2563,31 @@
   };
 
   function rebuildForDataMode() {
-    const viewState = captureViewerState();
-    buildPlot();
-    restoreViewerState(viewState);
+    const keep = playIdx;
+    const keepWindow = captureXWindow();
+    const resume = playing;
+    const keepActiveSeriesKey = activeSeriesKey;
+    const viewState = captureViewerState() || {};
+    if (resume) pause();
+
+    viewState.playIdx = keep;
+    viewState.activeSeriesKey = keepActiveSeriesKey;
+    if (keepWindow) {
+      viewState.xWindow = { ...keepWindow };
+      viewState.xWindowFrac = null;
+      viewState.zoomPct = Math.max(5, Math.min(100, Math.round(((keepWindow.max - keepWindow.min) / Math.max(1e-9, FULL_X_MAX - FULL_X_MIN)) * 100)));
+      viewState.centerX = (keepWindow.min + keepWindow.max) * 0.5;
+      viewState.centerFrac = Number.isFinite(viewState.centerX) && FULL_X_MAX > FULL_X_MIN
+        ? Math.max(0, Math.min(1, (viewState.centerX - FULL_X_MIN) / (FULL_X_MAX - FULL_X_MIN)))
+        : null;
+    }
+
+    rememberViewerState(viewState);
+    buildPlot(viewState);
+    setPlayIdx(keep, true, true);
+    if (keepWindow) restoreXWindow(keepWindow);
+    if (resume) play();
+    rememberCurrentViewerState();
     updateValueReadout();
     updateStats();
   }
@@ -2119,7 +2596,12 @@
   chkSmooth.onchange = rebuildForDataMode;
   chkCurves.onchange = rebuildForDataMode;
   chkEvents.onchange = () => { if (plot) { plot.redraw(); updateStats(); } };
-  rngZoom?.addEventListener("input", () => { if (plot) applyZoomPercent(Number(rngZoom.value) || 100); });
+  const applyZoomFromSlider = () => {
+    if (!plot || !rngZoom) return;
+    applyZoomPercent(Number(rngZoom.value) || 100);
+  };
+  rngZoom?.addEventListener("input", applyZoomFromSlider);
+  rngZoom?.addEventListener("change", applyZoomFromSlider);
 
   rngSmooth.oninput = () => {
     const win = Number(rngSmooth.value) || 1;
@@ -2160,6 +2642,7 @@
       plot.setData(plot.data, false);
       restoreViewerState(viewState);
     }
+    persistSeriesPrefs();
     applySeriesFilter();
     updateSeriesListMeta();
     updateValueReadout();
@@ -2184,6 +2667,7 @@
 
       if (plot) plot.setSeries(i + 1, { show: on });
     });
+    persistSeriesPrefs();
     rebuildForDataMode();
     updateStats();
   }
@@ -2212,8 +2696,10 @@
     requestAnimationFrame(() => {
       resizeQueued = false;
       if (!plot) return;
+      const viewState = captureViewerState();
       const { w, h } = chartSize();
       plot.setSize({ width: w, height: h });
+      restoreViewerState(viewState);
       updateStats();
     });
   });
@@ -2247,8 +2733,10 @@
   });
 
   async function loadSession(targetSid, metaOverride = null) {
+    rememberCurrentViewerState();
     sid = targetSid || "";
-    resetState();
+    setCurrentViewerStateKey(viewerStateKeyFor(sid, metaOverride || {}, targetSid || "session"));
+    resetState({ preserveViewKey: true });
 
     if (!sid) {
       titleEl.textContent = "Plot Viewer";
@@ -2267,7 +2755,7 @@
       currentMeta = meta || {};
       SEGMENTS = [];
       titleEl.textContent = viewerDisplayName(meta, sid);
-      metaEl.textContent = `${viewerMetaText(meta)} • ${sid}`;
+      metaEl.textContent = viewerMetaText(meta);
       currentDownloadName = viewerDownloadName(meta, sid);
       applySegmentDefaults(currentMeta);
       renderSegmentList();
@@ -2301,54 +2789,57 @@
 
 
   function openSessionViewer(targetSid, metaOverride = null) {
+    const carryState = makeCarryoverOpenState(captureViewerState());
+    rememberCurrentViewerState();
     announceActiveSession(targetSid);
-    setViewerOpen(true);
-    setTimeout(() => {
-      plotDrawer?.scrollIntoView?.({ behavior: "smooth", block: "start" });
-    }, 10);
-    loadSession(targetSid, metaOverride);
+    closeSeries();
+    PENDING_OPEN_VIEW_STATE = carryState;
+    openViewerThen(() => loadSession(targetSid, metaOverride));
   }
 
   function openSessionViewerFromCsv(name, csvText, metaOverride = null) {
+    const carryState = makeCarryoverOpenState(captureViewerState());
+    rememberCurrentViewerState();
     announceActiveSession("");
-    setViewerOpen(true);
-    setTimeout(() => {
-      plotDrawer?.scrollIntoView?.({ behavior: "smooth", block: "start" });
-    }, 10);
+    closeSeries();
+    PENDING_OPEN_VIEW_STATE = carryState;
 
-    sid = (name || "uploaded_csv").replace(/[^a-zA-Z0-9_.-]/g, "_");
-    resetState();
-    const meta = metaOverride || {};
-    currentMeta = meta || {};
-    SEGMENTS = [];
-    titleEl.textContent = viewerDisplayName(meta, sid);
-    metaEl.textContent = `${viewerMetaText(meta)} • Local CSV`;
-    currentDownloadName = viewerDownloadName(meta, sid);
-    currentCsv = csvText || "";
-    applySegmentDefaults(currentMeta);
-    renderSegmentList();
-    refreshDownloadBinding();
+    openViewerThen(() => {
+      sid = (name || "uploaded_csv").replace(/[^a-zA-Z0-9_.-]/g, "_");
+      setCurrentViewerStateKey(viewerStateKeyFor("", metaOverride || {}, sid || "uploaded_csv"));
+      resetState({ preserveViewKey: true });
+      const meta = metaOverride || {};
+      currentMeta = meta || {};
+      SEGMENTS = [];
+      titleEl.textContent = viewerDisplayName(meta, sid);
+      metaEl.textContent = viewerMetaText(meta);
+      currentDownloadName = viewerDownloadName(meta, sid);
+      currentCsv = csvText || "";
+      applySegmentDefaults(currentMeta);
+      renderSegmentList();
+      refreshDownloadBinding();
 
-    try {
-      if (!currentCsv.trim()) {
-        setStatus("Uploaded CSV is empty.");
+      try {
+        if (!currentCsv.trim()) {
+          setStatus("Uploaded CSV is empty.");
+          clearValueReadout();
+          return;
+        }
+
+        setStatus("Parsing uploaded CSV…");
+        const parsed = Papa.parse(currentCsv.trim(), { header: true, dynamicTyping: true, skipEmptyLines: true, transformHeader: normalizeHeaderName });
+        ingestParsedCsv(parsed, {
+          downloadName: currentDownloadName,
+          emptyStatus: "Parsed 0 rows from uploaded CSV.",
+          noNumericStatus: "No numeric series found in uploaded CSV.",
+          readyStatus: ""
+        });
+      } catch (e) {
+        console.error(e);
+        setStatus("Failed to parse uploaded CSV.");
         clearValueReadout();
-        return;
       }
-
-      setStatus("Parsing uploaded CSV…");
-      const parsed = Papa.parse(currentCsv.trim(), { header: true, dynamicTyping: true, skipEmptyLines: true, transformHeader: normalizeHeaderName });
-      ingestParsedCsv(parsed, {
-        downloadName: currentDownloadName,
-        emptyStatus: "Parsed 0 rows from uploaded CSV.",
-        noNumericStatus: "No numeric series found in uploaded CSV.",
-        readyStatus: ""
-      });
-    } catch (e) {
-      console.error(e);
-      setStatus("Failed to parse uploaded CSV.");
-      clearValueReadout();
-    }
+    });
   }
 
 
@@ -2465,10 +2956,12 @@
   }
 
   function closeSessionViewer() {
+    rememberCurrentViewerState();
     announceActiveSession("");
     closeSeries();
     resetState();
     refreshDownloadBinding();
+    PENDING_OPEN_VIEW_STATE = null;
     setViewerOpen(false);
     titleEl.textContent = "Plot Viewer";
     metaEl.textContent = "Open a session from the ML table above.";

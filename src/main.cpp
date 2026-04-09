@@ -729,6 +729,7 @@ static void Core0Task(void* pv) {
     const uint32_t frameStartMs = millis();
     f.uptime_ms = frameStartMs;
     f.frame_start_uptime_ms = frameStartMs;
+    f.epoch_ms = network.epochForUptimeMs(frameStartMs);
     if (prevFrameStartUs > 0 && frameStartUs > prevFrameStartUs) {
       f.frame_dt_ms = float(frameStartUs - prevFrameStartUs) * 0.001f;
     }
@@ -764,6 +765,7 @@ static void Core0Task(void* pv) {
       sampleRateHardBad = (!isfinite(fs_hz)) || (fs_hz < MCP3204_FS_HARD_LOW_HZ) || (fs_hz > MCP3204_FS_HARD_HIGH_HZ);
     }
 
+    f.frame_end_uptime_ms = millis();
     f.adc_fs_hz = fs_hz;
     f.fs_err_hz = (fs_hz > 0.0f) ? fabsf(fs_hz - FS_INTENDED_HZ) : fabsf(FS_INTENDED_HZ);
 
@@ -774,6 +776,7 @@ static void Core0Task(void* pv) {
     }
     const int64_t tComp1 = esp_timer_get_time();
     f.compute_time_ms = (tComp1 > tComp0) ? float(tComp1 - tComp0) * 0.001f : 0.0f;
+    f.feature_compute_end_uptime_ms = millis();
 
     if (ok && out.current_valid) {
       f.adc_fs_hz = out.fs_hz;
@@ -822,7 +825,6 @@ static void Core0Task(void* pv) {
         sampleRateWarnBad ||
         frameTimingBad ||
         computeTimingBad;
-    f.frame_end_uptime_ms = millis();
     (void)pushFeatureFrame_(f);
 
     nextFrameStartUs = frameStartUs + (int64_t)FEATURE_FRAME_PERIOD_US;
@@ -1018,16 +1020,24 @@ void loop() {
       (!protection.relayLatchedOn()) &&
       (vFast >= MAINS_PRESENT_ON_V) &&
       (f.current_valid != 0) &&
-      (irmsRawMeasured >= MANUAL_RELAY_REARM_MIN_A);
+      (irmsRawForLogic >= MANUAL_RELAY_REARM_MIN_A);
 
   if (!gManualRelayAssumedOn) {
     if (manualRelayRearmSignal) {
       if (gManualRelayCandidateSinceMs == 0) gManualRelayCandidateSinceMs = millis();
       else if ((millis() - gManualRelayCandidateSinceMs) >= MANUAL_RELAY_REARM_DEBOUNCE_MS) {
-        gManualRelayAssumedOn = true;
-        gManualRelayCandidateSinceMs = 0;
-        gManualRelayReleaseSinceMs = 0;
-        armRelayArtifactBlank_(MANUAL_RELAY_REARM_BLANK_MS);
+        const bool wasLatched = protection.relayLatchedOn();
+        protection.pulseRelayOn();
+        const bool pulseSent = protection.relayPulseActive() || (protection.relayLatchedOn() != wasLatched);
+        if (pulseSent) {
+          const String localRelayToken = String("relay_on_local_") + String((unsigned long)millis());
+          gManualRelayAssumedOn = true;
+          gManualRelayCandidateSinceMs = 0;
+          gManualRelayReleaseSinceMs = 0;
+          armRelayArtifactBlank_(MANUAL_RELAY_REARM_BLANK_MS);
+          (void)network.publishRelayPulseEvent("relay_on", localRelayToken, "physical_confirm");
+          notification.notify(SND_RESET_ACK);
+        }
       }
     } else {
       gManualRelayCandidateSinceMs = 0;
@@ -1035,7 +1045,7 @@ void loop() {
   } else {
     const bool manualRelayKeepAlive =
         (vFast >= MAINS_PRESENT_ON_V) &&
-        (irmsRawMeasured >= MANUAL_RELAY_REARM_RELEASE_A);
+        (irmsRawForLogic >= MANUAL_RELAY_REARM_RELEASE_A);
     if (!manualRelayKeepAlive) {
       if (gManualRelayReleaseSinceMs == 0) gManualRelayReleaseSinceMs = millis();
       else if ((millis() - gManualRelayReleaseSinceMs) >= MANUAL_RELAY_REARM_RELEASE_MS) clearManualRelayAssume_();
@@ -1354,15 +1364,21 @@ void loop() {
     if (portalRequested && !controlsLocked) wifiMgr.requestPortal(true);
     if (!controlsLocked) {
       if (relayOffRequested) {
-        (void)network.publishControlAck("relay_off", relayOffToken);
         clearManualRelayAssume_();
+        const bool wasLatched = protection.relayLatchedOn();
         protection.pulseRelayOff();
+        const bool pulseSent = protection.relayPulseActive() || (protection.relayLatchedOn() != wasLatched);
+        if (pulseSent) (void)network.publishRelayPulseEvent("relay_off", relayOffToken, "web");
+        else (void)network.publishControlAck("relay_off", relayOffToken);
         armRelayArtifactBlank_();
         notification.notify(SND_RESET_ACK);
       } else if (relayOnRequested) {
-        (void)network.publishControlAck("relay_on", relayOnToken);
         clearManualRelayAssume_();
+        const bool wasLatched = protection.relayLatchedOn();
         protection.pulseRelayOn();
+        const bool pulseSent = protection.relayPulseActive() || (protection.relayLatchedOn() != wasLatched);
+        if (pulseSent) (void)network.publishRelayPulseEvent("relay_on", relayOnToken, "web");
+        else (void)network.publishControlAck("relay_on", relayOnToken);
         armRelayArtifactBlank_(1200UL);
         notification.notify(SND_RESET_ACK);
       }
@@ -1414,8 +1430,11 @@ void loop() {
 
   if (tripOffEdge && !paused && !gSafeMode) {
     FeatureFrame fTrip = f;
-    fTrip.epoch_ms = network.isSynced() ? network.nowEpochMs() : 0;
     fTrip.irms = irmsRawForLogic;
+    fTrip.log_enqueue_uptime_ms = millis();
+    fTrip.timing_skew_ms = (fTrip.log_enqueue_uptime_ms >= fTrip.frame_start_uptime_ms)
+        ? float(fTrip.log_enqueue_uptime_ms - fTrip.frame_start_uptime_ms)
+        : 0.0f;
     network.ingestLog(fTrip, st, collectionModeActive ? 0 : protection.arcCounter());
   }
 
@@ -1452,9 +1471,12 @@ void loop() {
     static uint32_t lastLoggedFeatUptimeMs = 0;
     if (freshFeatThisLoop && f.uptime_ms != 0 && f.uptime_ms != lastLoggedFeatUptimeMs) {
       lastLoggedFeatUptimeMs = f.uptime_ms;
-      f.epoch_ms = network.isSynced() ? network.nowEpochMs() : 0;
       FeatureFrame fLog = f;
       fLog.irms = irmsRawForLogic;
+      fLog.log_enqueue_uptime_ms = millis();
+      fLog.timing_skew_ms = (fLog.log_enqueue_uptime_ms >= fLog.frame_start_uptime_ms)
+          ? float(fLog.log_enqueue_uptime_ms - fLog.frame_start_uptime_ms)
+          : 0.0f;
       network.ingestLog(fLog, st, collectionModeActive ? 0 : protection.arcCounter());
     }
   }
@@ -1529,7 +1551,23 @@ void loop() {
                               f.context_acquiring != 0,
                               f.context_latched != 0,
                               stateStr,
-                              protection.faultLatched(), controlsLocked, effectiveRelayLatchedOn);
+                              protection.faultLatched(), controlsLocked, effectiveRelayLatchedOn, protection.relayPulseActive());
+  }
+
+  static uint32_t wifiDropSinceMs = 0;
+  static uint32_t lastWifiRecoverKickMs = 0;
+  if (!portalActive && !wifiConnected) {
+    if (wifiDropSinceMs == 0) wifiDropSinceMs = millis();
+    const bool wifiDropPersistent = (millis() - wifiDropSinceMs) >= 8000UL;
+    if (wifiDropPersistent && (millis() - lastWifiRecoverKickMs) >= 10000UL) {
+      network.stopAllClients();
+      WiFi.disconnect(false, false);
+      delay(20);
+      WiFi.reconnect();
+      lastWifiRecoverKickMs = millis();
+    }
+  } else {
+    wifiDropSinceMs = 0;
   }
 
   if (!paused && ((int32_t)(relayNetQuietUntilMs - millis()) <= 0)) network.loop();

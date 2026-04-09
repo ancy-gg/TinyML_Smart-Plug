@@ -6125,24 +6125,511 @@ select option{
   cursor:pointer;
 }
 .plot-drawer #toggleList .row.is-focused{
-  border-color:rgba(111,156,242,0.38) !important;
+  border-color:rgba(111,156,242,0.44) !important;
   background:linear-gradient(180deg, rgba(111,156,242,0.16), rgba(255,255,255,0.04)) !important;
-  box-shadow:0 0 0 1px rgba(111,156,242,0.18) inset;
+  box-shadow:0 0 0 1px rgba(111,156,242,0.20) inset, 0 0 18px rgba(111,156,242,0.16);
 }
 .plot-drawer #valueLine.valueLineSide .vchip-series{
   cursor:pointer;
-  transition:transform 140ms ease, border-color 140ms ease, background 140ms ease;
+  transition:transform 140ms ease, border-color 140ms ease, background 140ms ease, box-shadow 140ms ease;
 }
 .plot-drawer #valueLine.valueLineSide .vchip-series:hover{
   transform:translateY(-1px);
   border-color:rgba(111,156,242,0.22);
 }
 .plot-drawer #valueLine.valueLineSide .vchip-series.is-focused{
-  border-color:rgba(111,156,242,0.34);
+  border-color:rgba(111,156,242,0.42);
   background:linear-gradient(180deg, rgba(111,156,242,0.16), rgba(255,255,255,0.04));
+  box-shadow:0 0 0 1px rgba(111,156,242,0.18) inset, 0 0 16px rgba(111,156,242,0.14);
 }
 @media (max-width: 980px){
   .history-head-logger{
     grid-template-columns:1fr;
   }
+}
+
+
+/* ===== timing/relay/logger coherence patch ===== */
+.health-controls-wrap{
+  display:flex !important;
+  flex-direction:column !important;
+  align-items:center !important;
+  justify-content:center !important;
+  gap:8px !important;
+}
+.relay-switch-wrap{
+  display:inline-flex;
+  align-items:center;
+  gap:10px;
+  padding:10px 12px;
+  border-radius:999px;
+  border:1px solid rgba(255,255,255,0.10);
+  background:linear-gradient(180deg, rgba(255,255,255,0.08), rgba(255,255,255,0.04));
+}
+.relay-switch{
+  position:relative;
+  width:68px;
+  height:36px;
+  display:inline-flex;
+  align-items:center;
+  justify-content:center;
+}
+.relay-switch input{
+  position:absolute;
+  inset:0;
+  opacity:0;
+  margin:0;
+  cursor:pointer;
+}
+.relay-switch-track{
+  position:absolute;
+  inset:0;
+  border-radius:999px;
+  background:linear-gradient(180deg, rgba(120,128,144,0.42), rgba(76,82,96,0.40));
+  border:1px solid rgba(255,255,255,0.12);
+  transition:background 180ms ease, border-color 180ms ease, opacity 180ms ease;
+}
+.relay-switch-knob{
+  position:absolute;
+  left:4px;
+  top:4px;
+  width:28px;
+  height:28px;
+  border-radius:50%;
+  background:linear-gradient(180deg, rgba(255,255,255,0.98), rgba(210,214,222,0.92));
+  box-shadow:0 6px 16px rgba(0,0,0,0.34);
+  transition:left 180ms ease, transform 180ms ease, background 180ms ease;
+}
+.relay-switch input:checked + .relay-switch-track{
+  background:linear-gradient(180deg, rgba(46,204,113,0.42), rgba(24,132,76,0.42));
+  border-color:rgba(46,204,113,0.38);
+}
+.relay-switch input:checked + .relay-switch-track + .relay-switch-knob{
+  left:36px;
+}
+.relay-rocker.is-busy .relay-switch-track{
+  background:linear-gradient(180deg, rgba(52,152,219,0.42), rgba(44,104,166,0.42)) !important;
+  border-color:rgba(52,152,219,0.40) !important;
+}
+.relay-rocker.is-disabled{ opacity:0.62; }
+.relay-switch input:disabled{ cursor:not-allowed; }
+.relay-switch-side{
+  font-size:12px;
+  font-weight:900;
+  letter-spacing:0.06em;
+  color:rgba(255,255,255,0.58);
+}
+.relay-rocker.is-off .relay-switch-side-off,
+.relay-rocker.is-on .relay-switch-side-on{
+  color:#fff;
+}
+
+.history-head-logger{
+  grid-template-columns:1fr !important;
+  gap:8px !important;
+}
+.history-head-logger > div:first-child{
+  padding:0 2px 0 2px !important;
+}
+.logger-actions-row{
+  margin-top:0 !important;
+}
+
+/* ===== v11.1 logger session fallback + editor control uniformity ===== */
+.plot-drawer .segment-toolbar-editor{
+  display:flex;
+  flex-wrap:wrap;
+  gap:10px;
+  align-items:stretch;
+}
+.plot-drawer .segment-toolbar-editor .btn{
+  min-height:42px;
+  border-radius:14px;
+}
+.plot-drawer .segment-toolbar-editor .editor-field{
+  display:inline-flex;
+  align-items:center;
+  gap:10px;
+  min-height:42px;
+  padding:0 12px;
+  border-radius:14px;
+  border:1px solid rgba(255,255,255,0.10);
+  background:linear-gradient(180deg, rgba(38,41,47,0.96), rgba(24,27,32,0.96)) !important;
+  box-shadow:0 8px 18px rgba(0,0,0,0.14);
+}
+.plot-drawer .segment-toolbar-editor .editor-field label{
+  font-size:12px;
+  color:rgba(243,239,230,0.72);
+  white-space:nowrap;
+}
+.plot-drawer .segment-toolbar-editor .editor-field input,
+.plot-drawer .segment-toolbar-editor .editor-field select{
+  min-height:40px;
+  width:100%;
+  background:transparent !important;
+  border:none !important;
+  box-shadow:none !important;
+  color:var(--text) !important;
+  outline:none;
+  font:inherit;
+  padding:0;
+}
+.plot-drawer .segment-toolbar-editor .editor-field input::placeholder{
+  color:rgba(243,239,230,0.42);
+}
+.plot-drawer .segment-toolbar-editor .editor-field-select select{
+  appearance:none;
+  background-image:linear-gradient(45deg, transparent 50%, rgba(243,239,230,0.5) 50%), linear-gradient(135deg, rgba(243,239,230,0.5) 50%, transparent 50%);
+  background-position:calc(100% - 18px) calc(50% - 3px), calc(100% - 12px) calc(50% - 3px);
+  background-size:6px 6px, 6px 6px;
+  background-repeat:no-repeat;
+  padding-right:34px;
+}
+.plot-drawer .segment-toolbar-editor .editor-field:focus-within{
+  border-color:var(--border-accent);
+  box-shadow:0 0 0 4px rgba(212,177,89,0.10);
+}
+.plot-drawer .segment-toolbar-editor .editor-field-compact{
+  min-width:118px;
+  flex:0 0 auto;
+}
+.plot-drawer .segment-toolbar-editor .editor-field-family{
+  min-width:180px;
+}
+.plot-drawer .segment-toolbar-editor .editor-field-device{
+  min-width:220px;
+  flex:1 1 220px;
+}
+.plot-drawer .segment-toolbar-editor .editor-field-notes{
+  min-width:220px;
+  flex:1 1 260px;
+}
+.plot-drawer .segment-toolbar-editor .editor-field-trial{
+  min-width:92px;
+  max-width:116px;
+}
+.plot-drawer .segment-toolbar-editor .editor-field-toggle{
+  padding-inline:12px 14px;
+}
+.plot-drawer .segment-toolbar-editor .editor-field-toggle label{
+  display:inline-flex;
+  align-items:center;
+  gap:8px;
+}
+.plot-drawer .segment-toolbar-editor .chip-events,
+.plot-drawer .segment-toolbar-editor .chip-arc-index,
+.plot-drawer .segment-toolbar-editor .editor-field,
+.plot-drawer .segment-toolbar-editor .btn{
+  align-self:stretch;
+}
+@media (max-width: 980px){
+  .plot-drawer .segment-toolbar-editor .editor-field-device,
+  .plot-drawer .segment-toolbar-editor .editor-field-notes,
+  .plot-drawer .segment-toolbar-editor .editor-field-family{
+    flex:1 1 calc(50% - 10px);
+    min-width:0;
+  }
+}
+@media (max-width: 760px){
+  .plot-drawer .segment-toolbar-editor .editor-field,
+  .plot-drawer .segment-toolbar-editor .btn{
+    flex:1 1 calc(50% - 10px);
+    min-width:0;
+  }
+}
+@media (max-width: 560px){
+  .plot-drawer .segment-toolbar-editor .editor-field,
+  .plot-drawer .segment-toolbar-editor .btn{
+    flex:1 1 100%;
+  }
+}
+
+/* ===== v11.2 viewer state polish + editor control alignment ===== */
+.plot-drawer .segment-toolbar-editor{
+  gap:12px;
+}
+.plot-drawer .segment-toolbar-editor .editor-field{
+  display:flex;
+  flex-direction:column;
+  align-items:stretch;
+  justify-content:center;
+  gap:6px;
+  min-height:58px;
+  padding:10px 12px 9px;
+  border-radius:16px;
+  border:1px solid rgba(255,255,255,0.10);
+  background:linear-gradient(180deg, rgba(36,39,45,0.96), rgba(21,24,29,0.98)) !important;
+  box-shadow:0 10px 26px rgba(0,0,0,0.18), inset 0 1px 0 rgba(255,255,255,0.03);
+}
+.plot-drawer .segment-toolbar-editor .editor-field label{
+  display:block;
+  margin:0;
+  font-size:11px;
+  line-height:1;
+  letter-spacing:0.08em;
+  text-transform:uppercase;
+  font-weight:800;
+  color:rgba(243,239,230,0.62);
+}
+.plot-drawer .segment-toolbar-editor .editor-field input,
+.plot-drawer .segment-toolbar-editor .editor-field select{
+  min-height:22px;
+  width:100%;
+  padding:0;
+  border:none !important;
+  background:transparent !important;
+  box-shadow:none !important;
+  outline:none;
+  color:rgba(243,243,243,0.96) !important;
+  font-size:13px;
+  font-weight:700;
+  line-height:1.25;
+}
+.plot-drawer .segment-toolbar-editor .editor-field input::placeholder{
+  color:rgba(243,239,230,0.36);
+}
+.plot-drawer .segment-toolbar-editor .editor-field input[type="number"]{
+  -moz-appearance:textfield;
+}
+.plot-drawer .segment-toolbar-editor .editor-field input[type="number"]::-webkit-outer-spin-button,
+.plot-drawer .segment-toolbar-editor .editor-field input[type="number"]::-webkit-inner-spin-button{
+  -webkit-appearance:none;
+  margin:0;
+}
+.plot-drawer .segment-toolbar-editor .editor-field-select select{
+  appearance:none;
+  -webkit-appearance:none;
+  background-image:
+    linear-gradient(45deg, transparent 50%, rgba(243,239,230,0.48) 50%),
+    linear-gradient(135deg, rgba(243,239,230,0.48) 50%, transparent 50%);
+  background-position:calc(100% - 15px) calc(50% - 3px), calc(100% - 9px) calc(50% - 3px);
+  background-size:6px 6px, 6px 6px;
+  background-repeat:no-repeat;
+  padding-right:30px;
+}
+.plot-drawer .segment-toolbar-editor .editor-field:focus-within{
+  border-color:var(--border-accent);
+  box-shadow:0 0 0 4px rgba(212,177,89,0.10), 0 12px 28px rgba(0,0,0,0.20);
+}
+.plot-drawer .segment-toolbar-editor .editor-field-compact{
+  min-width:124px;
+}
+.plot-drawer .segment-toolbar-editor .editor-field-family{
+  min-width:192px;
+}
+.plot-drawer .segment-toolbar-editor .editor-field-device{
+  min-width:230px;
+  flex:1 1 230px;
+}
+.plot-drawer .segment-toolbar-editor .editor-field-notes{
+  min-width:240px;
+  flex:1 1 280px;
+}
+.plot-drawer .segment-toolbar-editor .editor-field-trial{
+  min-width:96px;
+  max-width:120px;
+}
+.plot-drawer .segment-toolbar-editor .editor-field-toggle{
+  justify-content:center;
+  gap:8px;
+}
+.plot-drawer .segment-toolbar-editor .editor-field-toggle label{
+  display:inline-flex;
+  align-items:center;
+  gap:8px;
+  font-size:12px;
+  letter-spacing:0.02em;
+  text-transform:none;
+}
+.plot-drawer .segment-toolbar-editor .chip-events,
+.plot-drawer .segment-toolbar-editor .chip-arc-index,
+.plot-drawer .segment-toolbar-editor .btn{
+  min-height:58px;
+  border-radius:16px;
+}
+.plot-drawer .segment-toolbar-editor .chip-events{
+  display:inline-flex;
+  align-items:center;
+  padding:0 14px;
+}
+.plot-drawer .segment-toolbar-editor .chip-events label{
+  display:inline-flex;
+  align-items:center;
+  gap:8px;
+  font-size:13px;
+  font-weight:800;
+}
+.plot-drawer .segment-toolbar-editor .btn{
+  min-width:92px;
+  padding-inline:14px;
+}
+.plot-drawer .segment-tools{
+  padding:16px;
+}
+.plot-drawer .segment-tools-head{
+  margin-bottom:12px;
+}
+@media (max-width: 760px){
+  .plot-drawer .segment-toolbar-editor{
+    gap:10px;
+  }
+  .plot-drawer .segment-toolbar-editor .editor-field,
+  .plot-drawer .segment-toolbar-editor .btn,
+  .plot-drawer .segment-toolbar-editor .chip-events{
+    flex:1 1 calc(50% - 10px);
+    min-width:0;
+  }
+}
+@media (max-width: 560px){
+  .plot-drawer .segment-toolbar-editor .editor-field,
+  .plot-drawer .segment-toolbar-editor .btn,
+  .plot-drawer .segment-toolbar-editor .chip-events{
+    flex:1 1 100%;
+  }
+}
+
+/* ===== v11.3 editor parity + compact controls ===== */
+.plot-drawer .segment-toolbar-editor{
+  gap:10px;
+  align-items:stretch;
+}
+.plot-drawer .segment-toolbar-editor .editor-field,
+.plot-drawer .segment-toolbar-editor .chip-events,
+.plot-drawer .segment-toolbar-editor .chip-arc-index{
+  min-height:42px;
+  padding:9px 12px;
+  border-radius:14px;
+  border:1px solid rgba(255,255,255,0.09);
+  background:linear-gradient(180deg, rgba(38,41,47,0.96), rgba(24,27,32,0.96)) !important;
+  box-shadow:0 8px 18px rgba(0,0,0,0.14);
+}
+.plot-drawer .segment-toolbar-editor .editor-field{
+  gap:5px;
+  justify-content:center;
+}
+.plot-drawer .segment-toolbar-editor .editor-field label,
+.plot-drawer .segment-toolbar-editor .chip-events label,
+.plot-drawer .segment-toolbar-editor .chip-arc-index label{
+  margin:0;
+  font-size:11px;
+  line-height:1;
+  letter-spacing:0.08em;
+  text-transform:uppercase;
+  font-weight:800;
+  color:rgba(243,239,230,0.58);
+}
+.plot-drawer .segment-toolbar-editor .chip-events label{
+  display:inline-flex;
+  align-items:center;
+  gap:8px;
+  font-size:12px;
+  letter-spacing:0.02em;
+  text-transform:none;
+  color:var(--text);
+}
+.plot-drawer .segment-toolbar-editor .editor-field input,
+.plot-drawer .segment-toolbar-editor .editor-field select,
+.plot-drawer .segment-toolbar-editor .chip-arc-index input{
+  min-height:20px;
+  width:100%;
+  padding:0 !important;
+  border:none !important;
+  background:transparent !important;
+  box-shadow:none !important;
+  outline:none;
+  color:var(--text) !important;
+  font-size:13px;
+  font-weight:700;
+  line-height:1.2;
+}
+.plot-drawer .segment-toolbar-editor .editor-field input::placeholder,
+.plot-drawer .segment-toolbar-editor .chip-arc-index input::placeholder{
+  color:rgba(243,239,230,0.36);
+}
+.plot-drawer .segment-toolbar-editor .editor-field select,
+.plot-drawer .segment-toolbar-editor .chip-arc-index select{
+  appearance:none;
+  -webkit-appearance:none;
+  background-image:linear-gradient(45deg, transparent 50%, rgba(243,239,230,0.5) 50%), linear-gradient(135deg, rgba(243,239,230,0.5) 50%, transparent 50%);
+  background-position:calc(100% - 15px) calc(50% - 3px), calc(100% - 9px) calc(50% - 3px);
+  background-size:6px 6px, 6px 6px;
+  background-repeat:no-repeat;
+  padding-right:28px !important;
+}
+.plot-drawer .segment-toolbar-editor .editor-field:focus-within,
+.plot-drawer .segment-toolbar-editor .chip-arc-index:focus-within,
+.plot-drawer .segment-toolbar-editor .chip-events:focus-within{
+  border-color:var(--border-accent);
+  box-shadow:0 0 0 4px rgba(212,177,89,0.10), 0 8px 18px rgba(0,0,0,0.14);
+}
+.plot-drawer .segment-toolbar-editor .btn{
+  min-height:42px;
+  min-width:88px;
+  padding:0 14px;
+  border-radius:14px;
+  align-self:stretch;
+  flex:0 0 auto;
+}
+.plot-drawer .segment-toolbar-editor .chip-events,
+.plot-drawer .segment-toolbar-editor .chip-arc-index,
+.plot-drawer .segment-toolbar-editor .editor-field{
+  flex:1 1 auto;
+}
+.plot-drawer .segment-toolbar-editor .editor-field-trial{
+  min-width:92px;
+  max-width:112px;
+}
+.plot-drawer .segment-toolbar-editor .editor-field-family{
+  min-width:180px;
+}
+.plot-drawer .segment-toolbar-editor .editor-field-device{
+  min-width:220px;
+  flex:1 1 220px;
+}
+.plot-drawer .segment-toolbar-editor .editor-field-notes{
+  min-width:220px;
+  flex:1 1 260px;
+}
+.plot-drawer .segment-toolbar-editor .editor-field-toggle{
+  justify-content:center;
+}
+.plot-drawer .segment-toolbar-editor .editor-field-toggle label{
+  display:inline-flex;
+  align-items:center;
+  gap:8px;
+  font-size:12px;
+  letter-spacing:0.02em;
+  text-transform:none;
+  color:var(--text);
+}
+
+
+/* ===== v11.4 viewer prime + editor parity hotfix ===== */
+.plot-drawer,
+.plot-drawer.history,
+.plot-drawer .viewer-grid,
+.plot-drawer .plot-main-grid,
+.plot-drawer .plot-stage,
+.plot-drawer #chart{
+  contain:none !important;
+  content-visibility:visible !important;
+}
+
+.plot-drawer .segment-toolbar-editor .editor-field input,
+.plot-drawer .segment-toolbar-editor .editor-field select,
+.plot-drawer .segment-toolbar-editor .chip-arc-index input{
+  appearance:none !important;
+  -webkit-appearance:none !important;
+  -moz-appearance:none !important;
+  background:transparent !important;
+  border:none !important;
+  box-shadow:none !important;
+  border-radius:0 !important;
+}
+.plot-drawer .segment-toolbar-editor .editor-field select::-ms-expand{
+  display:none;
+}
+.plot-drawer .segment-toolbar-editor .editor-field select,
+.plot-drawer .segment-toolbar-editor .chip-arc-index select{
+  background-color:transparent !important;
 }

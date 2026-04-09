@@ -3,6 +3,7 @@
 #include <sys/time.h>
 #include <esp_heap_caps.h>
 #include <string.h>
+#include <stdlib.h>
 
 static inline bool cloudNetReady_() {
   return WiFi.status() == WL_CONNECTED;
@@ -167,9 +168,32 @@ void FirebaseNetwork::begin(const char* apiKey, const char* dbUrl, const char* t
 }
 
 void FirebaseNetwork::updateClock() {
-  if (!_started || _synced) return;
-  time_t now = time(nullptr);
-  if (timeLooksValid(now)) _synced = true;
+  if (!_started) return;
+  const uint64_t epochMs = nowEpochMs();
+  if (epochMs == 0) return;
+
+  const uint32_t uptimeMs = millis();
+  bool shouldRefreshAnchor = false;
+
+  portENTER_CRITICAL(&_timeAnchorMux);
+  const bool hadAnchor = _epochAnchorValid;
+  const uint64_t anchoredEpoch = hadAnchor
+      ? (_epochAnchorMs + (uint64_t)(uint32_t)(uptimeMs - _uptimeAnchorMs))
+      : 0ULL;
+  if (!hadAnchor) {
+    shouldRefreshAnchor = true;
+  } else {
+    const int64_t driftMs = (int64_t)epochMs - (int64_t)anchoredEpoch;
+    shouldRefreshAnchor = llabs(driftMs) > 2500LL;
+  }
+  if (shouldRefreshAnchor) {
+    _epochAnchorMs = epochMs;
+    _uptimeAnchorMs = uptimeMs;
+    _epochAnchorValid = true;
+  }
+  portEXIT_CRITICAL(&_timeAnchorMux);
+
+  _synced = true;
 }
 
 uint64_t FirebaseNetwork::nowEpochMs() const {
@@ -177,6 +201,17 @@ uint64_t FirebaseNetwork::nowEpochMs() const {
   gettimeofday(&tv, nullptr);
   if (!timeLooksValid(tv.tv_sec)) return 0;
   return (uint64_t)tv.tv_sec * 1000ULL + (uint64_t)(tv.tv_usec / 1000ULL);
+}
+
+uint64_t FirebaseNetwork::epochForUptimeMs(uint32_t uptimeMs) const {
+  uint64_t epochMs = 0;
+  portENTER_CRITICAL(&_timeAnchorMux);
+  if (_epochAnchorValid) {
+    const int32_t deltaMs = (int32_t)(uptimeMs - _uptimeAnchorMs);
+    if (deltaMs >= 0) epochMs = _epochAnchorMs + (uint64_t)(uint32_t)deltaMs;
+  }
+  portEXIT_CRITICAL(&_timeAnchorMux);
+  return epochMs;
 }
 
 String FirebaseNetwork::nowISO8601Ms() const {
@@ -277,6 +312,29 @@ bool FirebaseNetwork::publishControlAck(const String& kind, const String& token)
   json.set("last_control_ack_token", token);
   json.set("last_control_ack_server_ts/.sv", "timestamp");
   json.set("last_control_ack_uptime_ms", (int)millis());
+  return Firebase.RTDB.updateNode(&fbLive, "/live_data", &json);
+}
+
+bool FirebaseNetwork::publishRelayPulseEvent(const String& kind, const String& token, const String& source) {
+  if (!isReady()) return false;
+
+  FirebaseJson json;
+  json.set("last_control_ack_kind", kind);
+  json.set("last_control_ack_token", token);
+  json.set("last_control_ack_server_ts/.sv", "timestamp");
+  json.set("last_control_ack_uptime_ms", (int)millis());
+  json.set("last_relay_pulse_kind", kind);
+  json.set("last_relay_pulse_token", token);
+  json.set("last_relay_pulse_source", source);
+  json.set("last_relay_pulse_server_ts/.sv", "timestamp");
+  json.set("last_relay_pulse_uptime_ms", (int)millis());
+  if (kind == "relay_on") {
+    json.set("relay_latched_on", true);
+    json.set("relay_pulse_active", true);
+  } else if (kind == "relay_off") {
+    json.set("relay_latched_on", false);
+    json.set("relay_pulse_active", true);
+  }
   return Firebase.RTDB.updateNode(&fbLive, "/live_data", &json);
 }
 
@@ -438,7 +496,7 @@ void FirebaseNetwork::requestLiveUpdate(float v, float c, float apparentPower, f
                                         bool contextAcquiring,
                                         bool contextLatched,
                                         const String& state,
-                                        bool faultLatched, bool webControlsLocked, bool relayLatchedOn) {
+                                        bool faultLatched, bool webControlsLocked, bool relayLatchedOn, bool relayPulseActive) {
   const bool isNormal = (state == "NORMAL") || (state == "UNPLUGGED");
   const bool stateChanged = (state != _lastSentLiveState);
   const unsigned long now = millis();
@@ -471,6 +529,7 @@ void FirebaseNetwork::requestLiveUpdate(float v, float c, float apparentPower, f
   _live.faultLatched = faultLatched;
   _live.webControlsLocked = webControlsLocked;
   _live.relayLatchedOn = relayLatchedOn;
+  _live.relayPulseActive = relayPulseActive;
   _pendingLive = true;
 }
 
@@ -622,6 +681,7 @@ bool FirebaseNetwork::serviceLive_() {
   json.set("fault_latched", _live.faultLatched);
   json.set("web_controls_locked", _live.webControlsLocked);
   json.set("relay_latched_on", _live.relayLatchedOn);
+  json.set("relay_pulse_active", _live.relayPulseActive);
   json.set("ml_log_enabled", _manualEnabled);
   json.set("ml_log_session_id", _manual.sessionId);
   json.set("last_transition", _lastTransitionEvent);
@@ -709,9 +769,74 @@ void FirebaseNetwork::setLogSession(const String& sessionId, const String& loadT
   _manual.labelOverride = (int8_t)labelOverride;
 }
 
+
+bool FirebaseNetwork::captureUsefulForManual_(const FeatureFrame& f, FaultState st) const {
+  const bool usefulCurrent =
+      (f.current_valid != 0) ||
+      (f.feat_valid != 0) ||
+      (f.irms >= CURRENT_DISPLAY_OFF_A);
+  const bool mainsPresent = (f.vrms >= MAINS_PRESENT_ON_V);
+  const bool keepFault = (st != STATE_NORMAL);
+  return keepFault || (f.invalid_loaded_flag != 0) || (mainsPresent && usefulCurrent);
+}
+
+float FirebaseNetwork::computeContinuousDurationSeconds_(const Rec* recs, uint16_t count) const {
+  if (!recs || count < 2) return 0.0f;
+
+  float diffs[64];
+  uint16_t diffCount = 0;
+  uint32_t prev = recs[0].frame_start_uptime_ms ? recs[0].frame_start_uptime_ms :
+                  (recs[0].frame_end_uptime_ms ? recs[0].frame_end_uptime_ms : recs[0].uptime_ms);
+  for (uint16_t i = 1; i < count && diffCount < 64; ++i) {
+    const uint32_t cur = recs[i].frame_start_uptime_ms ? recs[i].frame_start_uptime_ms :
+                         (recs[i].frame_end_uptime_ms ? recs[i].frame_end_uptime_ms : recs[i].uptime_ms);
+    if (cur > prev) diffs[diffCount++] = float(cur - prev) * 0.001f;
+    prev = cur;
+  }
+
+  float medianStep = 0.0f;
+  if (diffCount > 0) {
+    for (uint16_t i = 1; i < diffCount; ++i) {
+      const float key = diffs[i];
+      int j = (int)i - 1;
+      while (j >= 0 && diffs[j] > key) { diffs[j + 1] = diffs[j]; --j; }
+      diffs[j + 1] = key;
+    }
+    medianStep = diffs[diffCount / 2];
+  }
+
+  if (!(medianStep > 0.0f)) {
+    double dtSum = 0.0;
+    uint16_t dtCount = 0;
+    for (uint16_t i = 0; i < count; ++i) {
+      const float dt = recs[i].frame_dt_ms * 0.001f;
+      if (isfinite(dt) && dt > 0.0f) { dtSum += dt; dtCount++; }
+    }
+    if (dtCount > 0) medianStep = float(dtSum / double(dtCount));
+  }
+
+  if (!(medianStep > 0.0f)) return 0.0f;
+  const float gapThreshold = fmaxf(medianStep * 4.0f, 0.75f);
+
+  float total = 0.0f;
+  prev = recs[0].frame_start_uptime_ms ? recs[0].frame_start_uptime_ms :
+         (recs[0].frame_end_uptime_ms ? recs[0].frame_end_uptime_ms : recs[0].uptime_ms);
+  for (uint16_t i = 1; i < count; ++i) {
+    const uint32_t cur = recs[i].frame_start_uptime_ms ? recs[i].frame_start_uptime_ms :
+                         (recs[i].frame_end_uptime_ms ? recs[i].frame_end_uptime_ms : recs[i].uptime_ms);
+    float dt = (cur > prev) ? float(cur - prev) * 0.001f : medianStep;
+    if (!isfinite(dt) || dt <= 0.0f) dt = medianStep;
+    if (dt > gapThreshold) dt = medianStep;
+    total += dt;
+    prev = cur;
+  }
+  return (total > 0.0f) ? total : 0.0f;
+}
+
 void FirebaseNetwork::setLogEnabled(bool en) {
   if (en && !_manualEnabled) resetLoggerRuntime_();
   _manualEnabled = en;
+  if (en) _manualArmMs = millis();
 }
 
 void FirebaseNetwork::setLogDurationSeconds(uint16_t sec) {
@@ -736,25 +861,37 @@ void FirebaseNetwork::ingestLog(const FeatureFrame& f, FaultState st, int arcCou
   if (spec.sessionId.length() < 3 || !_buf || _maxRec == 0 || _count >= _maxRec) return;
 
   const uint32_t now = millis();
-  if (_sessionStartMs == 0) _sessionStartMs = now;
+  const bool captureUseful = captureUsefulForManual_(f, st);
+
+  if (_manualEnabled) {
+    if (_count == 0) {
+      if (!captureUseful) return;
+      if (_sessionStartMs == 0) _sessionStartMs = now;
+      if (_chunkStartMs == 0) _chunkStartMs = now;
+    } else if (_sessionStartMs == 0) {
+      _sessionStartMs = now;
+    }
+  } else {
+    if (_sessionStartMs == 0) _sessionStartMs = now;
+    const bool usefulCurrent =
+        (f.current_valid != 0) ||
+        (f.feat_valid != 0) ||
+        (f.invalid_loaded_flag != 0) ||
+        (f.irms >= CURRENT_DISPLAY_OFF_A);
+    const bool mainsPresent = (f.vrms >= MAINS_PRESENT_ON_V);
+    const bool keepFault = (st != STATE_NORMAL);
+    if (!keepFault && (!mainsPresent || !usefulCurrent) && (f.invalid_loaded_flag == 0)) return;
+  }
 
   const bool manualExpired =
       _manualEnabled &&
+      (_sessionStartMs != 0) &&
       ((now - _sessionStartMs) >= ((uint32_t)spec.durationS * 1000UL));
   if (manualExpired) return;
 
-  const bool usefulCurrent =
-      (f.current_valid != 0) ||
-      (f.feat_valid != 0) ||
-      (f.invalid_loaded_flag != 0) ||
-      (f.irms >= CURRENT_DISPLAY_OFF_A);
-  const bool mainsPresent = (f.vrms >= MAINS_PRESENT_ON_V);
-  const bool keepFault = (st != STATE_NORMAL);
-  if (!keepFault && (!mainsPresent || !usefulCurrent) && (f.invalid_loaded_flag == 0)) return;
-
   if (_manualEnabled) _collectionEligible = true;
 
-  if (_count == 0) _chunkStartMs = now;
+  if (_count == 0 && _chunkStartMs == 0) _chunkStartMs = now;
   if (_count >= _maxRec) return;
 
   Rec& r = _buf[_count++];
@@ -762,8 +899,11 @@ void FirebaseNetwork::ingestLog(const FeatureFrame& f, FaultState st, int arcCou
   r.uptime_ms = f.uptime_ms;
   r.frame_start_uptime_ms = f.frame_start_uptime_ms;
   r.frame_end_uptime_ms = f.frame_end_uptime_ms;
+  r.feature_compute_end_uptime_ms = f.feature_compute_end_uptime_ms;
+  r.log_enqueue_uptime_ms = f.log_enqueue_uptime_ms;
   r.frame_dt_ms = f.frame_dt_ms;
   r.compute_time_ms = f.compute_time_ms;
+  r.timing_skew_ms = f.timing_skew_ms;
   r.spectral_flux_midhf = f.spectral_flux_midhf;
   r.residual_crest_factor = f.residual_crest_factor;
   r.edge_spike_ratio = f.edge_spike_ratio;
@@ -813,6 +953,7 @@ void FirebaseNetwork::ingestLog(const FeatureFrame& f, FaultState st, int arcCou
 }
 
 void FirebaseNetwork::resetLoggerRuntime_() {
+  _manualArmMs = 0;
   _sessionStartMs = 0;
   _chunkStartMs = 0;
   _count = 0;
@@ -870,9 +1011,12 @@ void FirebaseNetwork::serviceMlState_() {
   if (spec.sessionId.length() < 3) return;
 
   const uint32_t now = millis();
-  if (_sessionStartMs == 0) _sessionStartMs = now;
+  if (_manualEnabled && _manualArmMs == 0) _manualArmMs = now;
 
-  const bool manualTimeUp = _manualEnabled && ((now - _sessionStartMs) >= ((uint32_t)spec.durationS * 1000UL));
+  const bool manualCaptureStarted = _manualEnabled && (_count > 0) && (_sessionStartMs != 0);
+  const bool manualTimeUp = manualCaptureStarted && ((now - _sessionStartMs) >= ((uint32_t)spec.durationS * 1000UL));
+  const bool manualArmTimeout = _manualEnabled && !manualCaptureStarted && (_manualArmMs != 0) &&
+                                ((now - _manualArmMs) >= (((uint32_t)spec.durationS * 1000UL) + ML_LOG_IDLE_ARM_GRACE_MS));
   const bool autoTimeUp   = false;
   const bool chunkTimeUp  = (!_manualEnabled) && (_count > 0) && (_chunkStartMs != 0) && ((now - _chunkStartMs) >= ((uint32_t)ML_LOG_CHUNK_DURATION_S * 1000UL));
   const bool full         = (_maxRec > 0) && (_count >= _maxRec);
@@ -880,7 +1024,7 @@ void FirebaseNetwork::serviceMlState_() {
   if (_mlUploadActive) return;
 
   if (_count == 0) {
-    if (manualTimeUp) {
+    if (manualTimeUp || manualArmTimeout) {
       (void)closeManualSession_(spec.sessionId);
       resetLoggerRuntime_();
     } else if (autoTimeUp) {
@@ -916,12 +1060,19 @@ bool FirebaseNetwork::serviceMlUpload_() {
     if (_uploadTotalCount > 0) {
       const Rec& firstUploaded = _buf[0];
       const Rec& lastUploaded = _buf[_uploadTotalCount - 1];
-      float measuredDurationS = 0.0f;
-      if (lastUploaded.epoch_ms > firstUploaded.epoch_ms) {
-        measuredDurationS = float(lastUploaded.epoch_ms - firstUploaded.epoch_ms) / 1000.0f;
+      float wallDurationS = 0.0f;
+      if (lastUploaded.frame_end_uptime_ms > firstUploaded.frame_start_uptime_ms) {
+        wallDurationS = float(lastUploaded.frame_end_uptime_ms - firstUploaded.frame_start_uptime_ms) / 1000.0f;
+      } else if (lastUploaded.frame_start_uptime_ms > firstUploaded.frame_start_uptime_ms) {
+        wallDurationS = float(lastUploaded.frame_start_uptime_ms - firstUploaded.frame_start_uptime_ms) / 1000.0f;
+      } else if (lastUploaded.frame_end_uptime_ms > firstUploaded.frame_end_uptime_ms) {
+        wallDurationS = float(lastUploaded.frame_end_uptime_ms - firstUploaded.frame_end_uptime_ms) / 1000.0f;
       } else if (lastUploaded.uptime_ms > firstUploaded.uptime_ms) {
-        measuredDurationS = float(lastUploaded.uptime_ms - firstUploaded.uptime_ms) / 1000.0f;
+        wallDurationS = float(lastUploaded.uptime_ms - firstUploaded.uptime_ms) / 1000.0f;
+      } else if (lastUploaded.epoch_ms > firstUploaded.epoch_ms) {
+        wallDurationS = float(lastUploaded.epoch_ms - firstUploaded.epoch_ms) / 1000.0f;
       }
+      const float measuredDurationS = computeContinuousDurationSeconds_(_buf, _uploadTotalCount);
       float fsSum = 0.0f;
       uint32_t fsCount = 0;
       for (uint16_t i = 0; i < _uploadTotalCount; ++i) {
@@ -930,6 +1081,12 @@ bool FirebaseNetwork::serviceMlUpload_() {
       }
       FirebaseJson sessMeta;
       sessMeta.set("row_count", (int)_uploadTotalCount);
+      sessMeta.set("first_epoch_ms", (double)firstUploaded.epoch_ms);
+      sessMeta.set("last_epoch_ms", (double)lastUploaded.epoch_ms);
+      sessMeta.set("capture_start_ms", (double)firstUploaded.epoch_ms);
+      sessMeta.set("capture_end_ms", (double)lastUploaded.epoch_ms);
+      sessMeta.set("first_frame_start_uptime_ms", (int)firstUploaded.frame_start_uptime_ms);
+      sessMeta.set("last_frame_end_uptime_ms", (int)lastUploaded.frame_end_uptime_ms);
       sessMeta.set("device_family", _uploadSpec.deviceFamily);
       sessMeta.set("device_name", _uploadSpec.deviceName);
       sessMeta.set("trial_number", _uploadSpec.trialNumber);
@@ -937,9 +1094,11 @@ bool FirebaseNetwork::serviceMlUpload_() {
       sessMeta.set("notes", _uploadSpec.notes);
       sessMeta.set("trusted_normal_session", (int)_uploadSpec.trustedNormalSession);
       if (measuredDurationS > 0.0f) sessMeta.set("source_duration_s", measuredDurationS);
+      if (wallDurationS > 0.0f) sessMeta.set("source_wall_duration_s", wallDurationS);
       if (fsCount > 0) sessMeta.set("source_sample_rate_hz", fsSum / float(fsCount));
       if (_uploadTotalCount > 1) {
-        const float meanFrameHz = (measuredDurationS > 0.0f) ? (float(_uploadTotalCount - 1U) / measuredDurationS) : 0.0f;
+        const float meanFrameHz = (measuredDurationS > 0.0f) ? (float(_uploadTotalCount - 1U) / measuredDurationS) :
+                                 ((wallDurationS > 0.0f) ? (float(_uploadTotalCount - 1U) / wallDurationS) : 0.0f);
         if (meanFrameHz > 0.0f) sessMeta.set("feature_frame_rate_hz", meanFrameHz);
       }
       String sessPath = "/ml_sessions/";
@@ -968,7 +1127,7 @@ bool FirebaseNetwork::serviceMlUpload_() {
   const uint16_t i1 = ((uint16_t)(i0 + ROWS_PER_CHUNK) < _uploadTotalCount) ? (uint16_t)(i0 + ROWS_PER_CHUNK) : _uploadTotalCount;
   const Rec& firstRec = _buf[i0];
   const Rec& lastRec  = _buf[i1 - 1];
-  const char* header = "spectral_flux_midhf,residual_crest_factor,edge_spike_ratio,midband_residual_ratio,cycle_nmse,peak_fluct_cv,thd_i,hf_energy_delta,zcv,abs_irms_zscore_vs_baseline,fs_err_hz,suspicious_run_energy,delta_irms_abs,delta_hf_energy,delta_flux,v_sag_pct,halfcycle_asymmetry,v_rms,i_rms,temp_c,label_arc,device_family,device_name,trial_number,division_tag,notes,trusted_normal_session,load_type,session_id,epoch_ms,uptime_ms,frame_start_uptime_ms,frame_end_uptime_ms,frame_dt_ms,compute_time_ms,queue_drop_count,suspicious_run_len,invalid_loaded_run_len,restrike_count_short,model_pred,feat_valid,current_valid,sampling_quality_bad,invalid_loaded_flag,invalid_off_flag,relay_blank_active,turnon_blank_active,transient_blank_active,device_family_code,context_family_code_runtime,context_family_code_provisional,context_family_confidence,context_family_confidence_provisional,context_acquiring,context_latched,fault_state,arc_counter,adc_fs_hz,auto_capture,feature_space_version\n";
+  const char* header = "spectral_flux_midhf,residual_crest_factor,edge_spike_ratio,midband_residual_ratio,cycle_nmse,peak_fluct_cv,thd_i,hf_energy_delta,zcv,abs_irms_zscore_vs_baseline,fs_err_hz,suspicious_run_energy,delta_irms_abs,delta_hf_energy,delta_flux,v_sag_pct,halfcycle_asymmetry,v_rms,i_rms,temp_c,label_arc,device_family,device_name,trial_number,division_tag,notes,trusted_normal_session,load_type,session_id,epoch_ms,uptime_ms,frame_start_uptime_ms,frame_end_uptime_ms,feature_compute_end_uptime_ms,log_enqueue_uptime_ms,frame_dt_ms,compute_time_ms,timing_skew_ms,queue_drop_count,suspicious_run_len,invalid_loaded_run_len,restrike_count_short,model_pred,feat_valid,current_valid,sampling_quality_bad,invalid_loaded_flag,invalid_off_flag,relay_blank_active,turnon_blank_active,transient_blank_active,device_family_code,context_family_code_runtime,context_family_code_provisional,context_family_confidence,context_family_confidence_provisional,context_acquiring,context_latched,fault_state,arc_counter,adc_fs_hz,auto_capture,feature_space_version\n";
 
   String csv;
   csv.reserve((i1 - i0) * 520 + 512);
@@ -1008,8 +1167,11 @@ bool FirebaseNetwork::serviceMlUpload_() {
     csv += String((unsigned long)r.uptime_ms); csv += ",";
     csv += String((unsigned long)r.frame_start_uptime_ms); csv += ",";
     csv += String((unsigned long)r.frame_end_uptime_ms); csv += ",";
+    csv += String((unsigned long)r.feature_compute_end_uptime_ms); csv += ",";
+    csv += String((unsigned long)r.log_enqueue_uptime_ms); csv += ",";
     csv += String(r.frame_dt_ms, 3);           csv += ",";
     csv += String(r.compute_time_ms, 3);       csv += ",";
+    csv += String(r.timing_skew_ms, 3);        csv += ",";
     csv += String((unsigned long)r.queue_drop_count); csv += ",";
     csv += String((int)r.suspicious_run_len);  csv += ",";
     csv += String((int)r.invalid_loaded_run_len); csv += ",";
@@ -1053,6 +1215,8 @@ bool FirebaseNetwork::serviceMlUpload_() {
   json.set("last_epoch_ms", (double)lastRec.epoch_ms);
   json.set("first_uptime_ms", (int)firstRec.uptime_ms);
   json.set("last_uptime_ms", (int)lastRec.uptime_ms);
+  json.set("first_frame_start_uptime_ms", (int)firstRec.frame_start_uptime_ms);
+  json.set("last_frame_end_uptime_ms", (int)lastRec.frame_end_uptime_ms);
   json.set("final", _uploadFinalFlush && (i1 >= _uploadTotalCount));
   json.set("csv", csv);
   json.set("meta/session_id", _uploadSpec.sessionId);

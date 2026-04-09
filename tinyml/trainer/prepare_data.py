@@ -134,6 +134,18 @@ DEVICE_FAMILY_CLASSES = (
 )
 
 
+def preferred_time_sort_cols(df: pd.DataFrame, session_first: bool = False) -> list[str]:
+    cols = []
+    if session_first and "session_id" in df.columns:
+        cols.append("session_id")
+    for col in ("frame_start_uptime_ms", "frame_end_uptime_ms", "uptime_ms", "epoch_ms"):
+        if col in df.columns and col not in cols:
+            cols.append(col)
+    if session_first and not cols:
+        cols = ["session_id"]
+    return cols
+
+
 
 
 def normalize_device_family_token(value, fallback: str = "unknown") -> str:
@@ -637,9 +649,7 @@ def build_quality_scores(df: pd.DataFrame) -> tuple[pd.Series, pd.Series]:
     )
 
     if "session_id" in df.columns:
-        order_cols = ["session_id"]
-        if "epoch_ms" in df.columns:
-            order_cols.append("epoch_ms")
+        order_cols = preferred_time_sort_cols(df, session_first=True)
         tmp = df[order_cols].copy()
         tmp["_arc_base"] = arc_base.to_numpy(dtype=float)
         tmp = tmp.sort_values(order_cols).copy()
@@ -763,8 +773,17 @@ def attach_training_metadata(df: pd.DataFrame) -> tuple[pd.DataFrame, dict]:
     if "adc_fs_hz" in df.columns:
         invalid_off_flag |= (_num(df, "adc_fs_hz") <= 0.0)
 
+    transport_glitch_flag = pd.Series(False, index=df.index)
+    if "sampling_quality_bad" in df.columns:
+        transport_glitch_flag |= (_num(df, "sampling_quality_bad") > 0.5)
+    if "queue_drop_count" in df.columns:
+        transport_glitch_flag |= (_num(df, "queue_drop_count") > 0.5)
+    if "timing_skew_ms" in df.columns:
+        transport_glitch_flag |= (_num(df, "timing_skew_ms").abs() > 250.0)
+
     df["invalid_off_flag"] = invalid_off_flag.astype(int)
     df["invalid_loaded_flag"] = invalid_loaded_flag.astype(int)
+    df["transport_glitch_flag"] = transport_glitch_flag.astype(int)
 
     df.loc[invalid_off_flag, "rf_train_row"] = 0
     df.loc[invalid_off_flag, "clean_reason"] = "invalid_off"
@@ -773,6 +792,10 @@ def attach_training_metadata(df: pd.DataFrame) -> tuple[pd.DataFrame, dict]:
     df.loc[invalid_loaded_flag, "rf_train_row"] = 0
     df.loc[invalid_loaded_flag & ~invalid_off_flag, "clean_reason"] = "invalid_loaded_context"
     df.loc[invalid_loaded_flag & ~invalid_off_flag, "clean_quality"] = "context_invalid_loaded"
+
+    df.loc[transport_glitch_flag, "rf_train_row"] = 0
+    df.loc[transport_glitch_flag & (df["clean_reason"] == "kept"), "clean_reason"] = "transport_or_timing_glitch"
+    df.loc[transport_glitch_flag & (df["clean_quality"] == "trainable"), "clean_quality"] = "excluded_transport_glitch"
 
     positive_mask = (df[TARGET].astype(int) == 1) & (df["rf_train_row"] == 1)
     very_weak_positive = positive_mask & (df["arc_like_score"] < VERY_WEAK_POSITIVE_SCORE)
@@ -835,7 +858,7 @@ def attach_training_metadata(df: pd.DataFrame) -> tuple[pd.DataFrame, dict]:
     )
 
     if "session_id" in df.columns and "i_rms" in df.columns:
-        sort_cols = ["session_id", "epoch_ms"] if "epoch_ms" in df.columns else ["session_id"]
+        sort_cols = preferred_time_sort_cols(df, session_first=True)
         df = df.sort_values(sort_cols).copy()
         di = df.groupby("session_id")["i_rms"].diff().abs().fillna(0.0)
         turn_like = (di >= 0.60) | (
@@ -993,6 +1016,11 @@ def clean_dataset(df: pd.DataFrame, augment_unknown_context: bool = False) -> tu
         "v_rms",
         "temp_c",
         "epoch_ms",
+        "frame_start_uptime_ms",
+        "frame_end_uptime_ms",
+        "feature_compute_end_uptime_ms",
+        "log_enqueue_uptime_ms",
+        "timing_skew_ms",
         "rf_train_row",
         "trusted_normal_session",
         "label_trust",

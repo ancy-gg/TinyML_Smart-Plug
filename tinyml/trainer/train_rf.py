@@ -6,9 +6,9 @@ from pathlib import Path
 from tinyml_common import (
     ARC_FEATURES,
     build_group_inventory_report,
+    build_policy_subset_metrics_report,
     build_short_burst_report,
     build_subset_metrics_report,
-    build_policy_subset_metrics_report,
     calibrate_family_threshold_policy,
     evaluate_threshold_policy,
     load_clean_dataset,
@@ -17,7 +17,6 @@ from tinyml_common import (
     train_one_model,
     estimate_search_plan,
 )
-
 
 SCRIPT_DIR = Path(__file__).resolve().parent
 TINYML_DIR = SCRIPT_DIR.parent
@@ -53,7 +52,7 @@ def main():
     ap.add_argument("--n_jobs", type=int, default=-1)
     args = ap.parse_args()
 
-    if args.n_jobs:
+    if args.n_jobs != 0:
         os.environ["TINYML_N_JOBS"] = str(args.n_jobs)
 
     df_meta, X, y, groups, w = load_clean_dataset(
@@ -111,44 +110,45 @@ def main():
 
     y_score = result["estimator"].predict_proba(splits["X_test"])[:, 1]
     test_meta = df_meta.iloc[splits["test_idx"]].reset_index(drop=True)
-    result["test_policy_metrics"] = evaluate_threshold_policy(test_meta, splits["y_test"].to_numpy(), y_score, result["threshold_policy"])
+    result["test_policy_metrics"] = evaluate_threshold_policy(
+        test_meta,
+        splits["y_test"].to_numpy(),
+        y_score,
+        result["threshold_policy"],
+    )
+
     full_load_col = "device_family" if "device_family" in df_meta.columns else ("parsed_load_type" if "parsed_load_type" in df_meta.columns else ("load_type" if "load_type" in df_meta.columns else None))
     test_load_col = "device_family" if "device_family" in test_meta.columns else ("parsed_load_type" if "parsed_load_type" in test_meta.columns else ("load_type" if "load_type" in test_meta.columns else None))
     test_device_col = "device_name" if "device_name" in test_meta.columns else None
+
     result["test_per_trial"] = build_subset_metrics_report(test_meta, splits["y_test"].to_numpy(), y_score, result["threshold"], "trial_id")
+    result["test_per_trial_policy"] = build_policy_subset_metrics_report(test_meta, splits["y_test"].to_numpy(), y_score, result["threshold_policy"], "trial_id")
+
     if test_load_col is not None:
         result["test_per_load"] = build_subset_metrics_report(test_meta, splits["y_test"].to_numpy(), y_score, result["threshold"], test_load_col)
+        result["test_per_load_policy"] = build_policy_subset_metrics_report(test_meta, splits["y_test"].to_numpy(), y_score, result["threshold_policy"], test_load_col)
     else:
         result["test_per_load"] = []
+        result["test_per_load_policy"] = []
+
     if test_device_col is not None:
         result["test_per_device"] = build_subset_metrics_report(test_meta, splits["y_test"].to_numpy(), y_score, result["threshold"], test_device_col)
+        result["test_per_device_policy"] = build_policy_subset_metrics_report(test_meta, splits["y_test"].to_numpy(), y_score, result["threshold_policy"], test_device_col)
     else:
         result["test_per_device"] = []
+        result["test_per_device_policy"] = []
+
     if "context_family_code_runtime" in test_meta.columns:
         result["test_per_runtime_context"] = build_subset_metrics_report(test_meta, splits["y_test"].to_numpy(), y_score, result["threshold"], "context_family_code_runtime")
         result["test_per_runtime_context_policy"] = build_policy_subset_metrics_report(test_meta, splits["y_test"].to_numpy(), y_score, result["threshold_policy"], "context_family_code_runtime")
     else:
         result["test_per_runtime_context"] = []
         result["test_per_runtime_context_policy"] = []
-    if test_load_col is not None:
-        result["test_per_load_policy"] = build_policy_subset_metrics_report(test_meta, splits["y_test"].to_numpy(), y_score, result["threshold_policy"], test_load_col)
-    else:
-        result["test_per_load_policy"] = []
-    if test_device_col is not None:
-        result["test_per_device_policy"] = build_policy_subset_metrics_report(test_meta, splits["y_test"].to_numpy(), y_score, result["threshold_policy"], test_device_col)
-    else:
-        result["test_per_device_policy"] = []
-    result["test_per_trial_policy"] = build_policy_subset_metrics_report(test_meta, splits["y_test"].to_numpy(), y_score, result["threshold_policy"], "trial_id")
+
     result["short_burst_sensitivity"] = build_short_burst_report(test_meta, splits["y_test"].to_numpy(), y_score, result["threshold"], max_positive_run_rows=3)
     result["leave_one_trial_out_inventory"] = build_group_inventory_report(df_meta, "trial_id")
-    if full_load_col is not None:
-        result["leave_one_load_type_out_inventory"] = build_group_inventory_report(df_meta, full_load_col)
-    else:
-        result["leave_one_load_type_out_inventory"] = []
-    if "device_name" in df_meta.columns:
-        result["leave_one_device_out_inventory"] = build_group_inventory_report(df_meta, "device_name")
-    else:
-        result["leave_one_device_out_inventory"] = []
+    result["leave_one_load_type_out_inventory"] = build_group_inventory_report(df_meta, full_load_col) if full_load_col is not None else []
+    result["leave_one_device_out_inventory"] = build_group_inventory_report(df_meta, "device_name") if "device_name" in df_meta.columns else []
 
     search_plan = estimate_search_plan(args.n_iter)
     print("Search plan:", search_plan)
@@ -162,10 +162,7 @@ def main():
     print("Test average precision:", result["test_average_precision"])
 
     cm = result["test_confusion_matrix"]
-    print(
-        "Test confusion matrix:\n[[%d %d]\n [%d %d]]"
-        % (cm["tn"], cm["fp"], cm["fn"], cm["tp"])
-    )
+    print("Test confusion matrix:\n[[%d %d]\n [%d %d]]" % (cm["tn"], cm["fp"], cm["fn"], cm["tp"]))
 
     settings = {
         "csv": args.csv,

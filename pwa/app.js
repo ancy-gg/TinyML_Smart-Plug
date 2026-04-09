@@ -313,17 +313,17 @@ function formatSessionStamp(ms) {
 }
 
 function sessionDisplayName(meta, sessionId) {
+  return deviceTitle(pickSessionDevice(meta, sessionId || "session"));
+}
+
+function sessionSecondaryText(meta, sessionId) {
   const trial = Math.max(1, parseInt(meta?.trial_number || 1, 10) || 1);
   const division = titleizeTokenText(normalizeDivisionTagToken(meta?.division_tag || "steady"), "Steady");
   return `Trial ${trial} • ${division}`;
 }
 
-function sessionSecondaryText(meta, sessionId) {
-  return contextDisplayText(meta);
-}
-
 function sessionLoadText(meta) {
-  return contextDisplayText(meta);
+  return familyTitle(pickSessionFamily(meta));
 }
 
 function formatDisplayDateOnly(ms, tz = DISPLAY_TZ) {
@@ -549,7 +549,10 @@ const btnRevertFirmware = el("btnRevertFirmware");
 const btnRelayOn = el("btnRelayOn");
 const btnRelayOff = el("btnRelayOff");
 const relayRocker = el("relayRocker");
+const relayToggle = el("relayToggle");
 const btnFaultCleared = el("btnFaultCleared");
+let INTERNAL_RELAY_TOGGLE_UPDATE = false;
+let relayBusyReleaseTimer = null;
 
 function setHeaderMenuOpen(open) {
   if (!menuTrigger || !headerMenu) return;
@@ -574,6 +577,116 @@ densityButtons.forEach((btn) => btn.addEventListener("click", () => setHeaderMen
 modeButtons.forEach((btn) => btn.addEventListener("click", () => setHeaderMenuOpen(false)));
 
 const CONTROL_PULSE_DEBOUNCE_MS = 1500;
+
+
+function deriveRelayLatchedOn(data = lastLiveData) {
+  if (!data || typeof data !== "object") return false;
+
+  if (pendingDeviceCommand && Number.isFinite(pendingDeviceCommand.localSentMs)) {
+    const pendingAgeMs = Date.now() - pendingDeviceCommand.localSentMs;
+    if (pendingAgeMs >= 0 && pendingAgeMs <= Math.max(2600, CONTROL_PULSE_DEBOUNCE_MS + 1200)) {
+      if (pendingDeviceCommand.kind === "relay_on") return true;
+      if (pendingDeviceCommand.kind === "relay_off") return false;
+    }
+  }
+
+  if (typeof data.relay_latched_on === "boolean") return data.relay_latched_on;
+  const numeric = Number(data.relay_latched_on);
+  if (Number.isFinite(numeric)) return numeric > 0.5;
+
+  const pulseKind = String(data.last_relay_pulse_kind || data.last_control_ack_kind || "").trim().toLowerCase();
+  if (pulseKind === "relay_on") return true;
+  if (pulseKind === "relay_off") return false;
+  return false;
+}
+
+function syncRelayRockerVisualState(data = lastLiveData) {
+  const isOn = deriveRelayLatchedOn(data);
+  relayRocker?.classList.toggle("is-on", isOn);
+  relayRocker?.classList.toggle("is-off", !isOn);
+  if (relayToggle) {
+    INTERNAL_RELAY_TOGGLE_UPDATE = true;
+    relayToggle.checked = isOn;
+    INTERNAL_RELAY_TOGGLE_UPDATE = false;
+  }
+}
+
+function setRelayBusy(isBusy) {
+  if (relayBusyReleaseTimer) {
+    clearTimeout(relayBusyReleaseTimer);
+    relayBusyReleaseTimer = null;
+  }
+  relayRocker?.classList.toggle("is-busy", !!isBusy);
+  if (isBusy) {
+    relayBusyReleaseTimer = setTimeout(() => {
+      relayBusyReleaseTimer = null;
+      relayRocker?.classList.remove("is-busy");
+      updateRelayControls();
+    }, Math.max(1800, CONTROL_PULSE_DEBOUNCE_MS + 300));
+  }
+  updateRelayControls();
+}
+
+async function sendRelayPulse(nextOn) {
+  if (relayControlsLocked()) {
+    syncRelayRockerVisualState(lastLiveData);
+    updateRelayControls();
+    return;
+  }
+  const now = nowWithServerOffsetMs();
+  if (relayToggle?._tspBusyUntil && now < relayToggle._tspBusyUntil) {
+    syncRelayRockerVisualState(lastLiveData);
+    return;
+  }
+
+  const token = `${nextOn ? "relay_on" : "relay_off"}_${Date.now()}`;
+  const payload = nextOn
+    ? {
+        relay_off_token: "",
+        relay_on_token: token,
+        relay_on_requested_at: firebase.database.ServerValue.TIMESTAMP
+      }
+    : {
+        relay_on_token: "",
+        relay_off_token: token,
+        relay_off_requested_at: firebase.database.ServerValue.TIMESTAMP
+      };
+  const requestPath = nextOn ? "/controls/relay_on_requested_at" : "/controls/relay_off_requested_at";
+
+  if (relayToggle) {
+    relayToggle._tspBusyUntil = now + CONTROL_PULSE_DEBOUNCE_MS;
+    relayToggle.disabled = true;
+  }
+  setRelayBusy(true);
+
+  try {
+    await db.ref("/controls").update(payload);
+    let requestMs = null;
+    try {
+      const reqSnap = await db.ref(requestPath).get();
+      const reqNum = Number(reqSnap.val());
+      if (Number.isFinite(reqNum) && reqNum > 0) requestMs = reqNum;
+    } catch (readErr) {
+      console.warn("Failed to read relay request timestamp", readErr);
+    }
+    pendingDeviceCommand = {
+      kind: nextOn ? "relay_on" : "relay_off",
+      token,
+      requestMs,
+      localSentMs: nowWithServerOffsetMs()
+    };
+    toast(nextOn ? "Relay ON pulse sent." : "Relay OFF pulse sent.", "ok");
+  } catch (e) {
+    console.error(e);
+    syncRelayRockerVisualState(lastLiveData);
+    setRelayBusy(false);
+    toast(nextOn ? "Failed to send Relay ON." : "Failed to send Relay OFF.", "err");
+  } finally {
+    setTimeout(() => {
+      if (relayToggle) relayToggle.disabled = relayControlsLocked();
+    }, CONTROL_PULSE_DEBOUNCE_MS);
+  }
+}
 
 async function sendControlPulse(buttonEl, busyText, okText, errText, payload, ackInfo = null) {
   setHeaderMenuOpen(false);
@@ -690,43 +803,16 @@ btnRevertFirmware?.addEventListener("click", async () => {
 });
 
 btnRelayOn?.addEventListener("click", async () => {
-  const token = `relay_on_${Date.now()}`;
-  await sendControlPulse(
-    btnRelayOn,
-    "Sending...",
-    "Relay ON pulse sent.",
-    "Failed to send Relay ON.",
-    {
-      relay_off_token: "",
-      relay_on_token: token,
-      relay_on_requested_at: firebase.database.ServerValue.TIMESTAMP
-    },
-    {
-      kind: "relay_on",
-      token,
-      requestPath: "/controls/relay_on_requested_at"
-    }
-  );
+  await sendRelayPulse(true);
 });
 
 btnRelayOff?.addEventListener("click", async () => {
-  const token = `relay_off_${Date.now()}`;
-  await sendControlPulse(
-    btnRelayOff,
-    "Sending...",
-    "Relay OFF pulse sent.",
-    "Failed to send Relay OFF.",
-    {
-      relay_on_token: "",
-      relay_off_token: token,
-      relay_off_requested_at: firebase.database.ServerValue.TIMESTAMP
-    },
-    {
-      kind: "relay_off",
-      token,
-      requestPath: "/controls/relay_off_requested_at"
-    }
-  );
+  await sendRelayPulse(false);
+});
+
+relayToggle?.addEventListener("change", async () => {
+  if (INTERNAL_RELAY_TOGGLE_UPDATE) return;
+  await sendRelayPulse(!!relayToggle.checked);
 });
 
 btnFaultCleared?.addEventListener("click", async () => {
@@ -1266,9 +1352,11 @@ function relayControlsLocked() {
 
 function updateRelayControls() {
   const locked = relayControlsLocked();
-  relayRocker?.classList.toggle("is-disabled", locked);
-  if (btnRelayOn) btnRelayOn.disabled = locked;
-  if (btnRelayOff) btnRelayOff.disabled = locked;
+  const busy = relayRocker?.classList.contains("is-busy");
+  relayRocker?.classList.toggle("is-disabled", locked || !!busy);
+  if (btnRelayOn) btnRelayOn.disabled = locked || !!busy;
+  if (btnRelayOff) btnRelayOff.disabled = locked || !!busy;
+  if (relayToggle) relayToggle.disabled = locked || !!busy;
   if (btnFaultCleared) btnFaultCleared.disabled = !liveIsFresh();
 }
 
@@ -1492,6 +1580,8 @@ db.ref("live_data").on("value", (snap) => {
   lastReceiptMs = Date.now();
   lastSeenMs = getRecordEpochMs(data) || lastSeenMs || lastReceiptMs;
   lastLiveData = data;
+  syncRelayRockerVisualState(data);
+  if (!data.relay_pulse_active && !pendingDeviceCommand) setRelayBusy(false);
 
   const ackToken = String(data.last_control_ack_token || "").trim();
   const ackKind = String(data.last_control_ack_kind || "").trim();
@@ -1514,6 +1604,7 @@ db.ref("live_data").on("value", (snap) => {
       pendingLoggerStart = null;
     }
   }
+  if (ackToken && (ackKind === "relay_on" || ackKind === "relay_off")) setRelayBusy(false);
 
   const wifi = !!data.wifi_connected;
   const ip = (data.ip || "").toString().trim();
@@ -1901,24 +1992,49 @@ function uploadedCsvDurationSeconds(meta) {
 function isUploadedCsvSession(meta) {
   return !!(meta?.uploaded_csv || String(meta?.load_type || "").trim().toLowerCase() === "uploaded_csv");
 }
+function sessionCaptureStartMs(meta) {
+  const startMs = Number(meta?.capture_start_ms || meta?.first_epoch_ms || meta?.start_ms_device_ack || meta?.start_ms || meta?.requested_ms || 0);
+  return Number.isFinite(startMs) && startMs > 0 ? startMs : 0;
+}
+function sessionCaptureEndMs(meta) {
+  const endMs = Number(meta?.capture_end_ms || meta?.last_epoch_ms || meta?.end_ms || meta?.saved_at_ms || 0);
+  return Number.isFinite(endMs) && endMs > 0 ? endMs : 0;
+}
+function sessionAcquisitionStartMs(meta) {
+  const startMs = Number(meta?.start_ms_device_ack || meta?.start_ms || meta?.requested_ms || 0);
+  return Number.isFinite(startMs) && startMs > 0 ? startMs : 0;
+}
+function sessionAcquisitionEndMs(meta) {
+  const endMs = Number(meta?.end_ms || meta?.saved_at_ms || 0);
+  return Number.isFinite(endMs) && endMs > 0 ? endMs : 0;
+}
+function sessionAcquisitionDurationSec(meta) {
+  const st = sessionAcquisitionStartMs(meta);
+  const en = sessionAcquisitionEndMs(meta);
+  if (st > 0 && en >= st) return Math.max(0, (en - st) / 1000);
+  return null;
+}
 function durationText(meta) {
-  const st = Number(meta?.start_ms_device_ack || meta?.start_ms || 0);
-  const en = Number(meta?.end_ms || 0);
-  const wallSec = (st && en > st) ? ((en - st) / 1000) : null;
-  if (wallSec !== null) return formatDurationSeconds(Math.max(0, wallSec));
-
   const measuredSec = Number(meta?.source_duration_s);
   if (Number.isFinite(measuredSec) && measuredSec > 0) return formatDurationSeconds(measuredSec);
+
+  const acquisitionSec = sessionAcquisitionDurationSec(meta);
+  if (acquisitionSec !== null && acquisitionSec > 0) return formatDurationSeconds(acquisitionSec);
 
   if (isUploadedCsvSession(meta) || meta?.processed_csv) {
     const uploadedDur = uploadedCsvDurationSeconds(meta);
     if (uploadedDur !== null) return formatDurationSeconds(uploadedDur);
   }
 
+  const st = sessionAcquisitionStartMs(meta);
+  const en = sessionAcquisitionEndMs(meta);
   const configuredSec = Number(meta?.duration_s);
+
   if (!st && Number.isFinite(configuredSec) && configuredSec > 0) return formatDurationSeconds(configuredSec);
   if (!st) return "—";
-  return formatDurationSeconds(Math.max(0, (Date.now() - st) / 1000));
+
+  const tailMs = en > 0 ? en : Date.now();
+  return formatDurationSeconds(Math.max(0, (tailMs - st) / 1000));
 }
 
 async function fetchSessionCsv(sessionId) {
@@ -2113,13 +2229,78 @@ async function fetchStoredCsv(path) {
   return header ? `${header}\n${rows.join("\n")}\n` : "";
 }
 
+function mergeDefinedSessionFields(base = {}, patch = {}) {
+  const out = { ...(base || {}) };
+  Object.entries(patch || {}).forEach(([key, value]) => {
+    if (value === undefined || value === null || value === "") return;
+    out[key] = value;
+  });
+  return out;
+}
+
+function deriveSessionMetaFromChunks(sid, chunkSet = {}, kind = "original") {
+  const chunkKeys = Object.keys(chunkSet || {});
+  if (!chunkKeys.length) return null;
+
+  const chunks = chunkKeys.map((key) => chunkSet[key] || {}).filter(Boolean);
+  const sample = chunks.find((chunk) => typeof chunk === "object") || {};
+  const createdVals = chunks.map((chunk) => Number(chunk?.created_at || 0)).filter((v) => Number.isFinite(v) && v > 0);
+  const requestedMs = createdVals.length ? Math.min(...createdVals) : 0;
+  const savedMs = createdVals.length ? Math.max(...createdVals) : requestedMs;
+
+  const parsed = parseDatasetFilenameMeta(sample?.source_file || sid);
+  const firstEpochCandidates = chunks.map((chunk) => Number(chunk?.first_epoch_ms || chunk?.capture_start_ms || 0)).filter((v) => Number.isFinite(v) && v > 0);
+  const lastEpochCandidates = chunks.map((chunk) => Number(chunk?.last_epoch_ms || chunk?.capture_end_ms || 0)).filter((v) => Number.isFinite(v) && v > 0);
+  const sourceDurationCandidates = chunks.map((chunk) => Number(chunk?.meta?.source_duration_s || chunk?.source_duration_s || 0)).filter((v) => Number.isFinite(v) && v > 0);
+  const derived = {
+    requested_ms: requestedMs || Date.now(),
+    saved_at_ms: savedMs || requestedMs || Date.now(),
+    start_ms: requestedMs || 0,
+    end_ms: 0,
+    first_epoch_ms: firstEpochCandidates.length ? Math.min(...firstEpochCandidates) : 0,
+    last_epoch_ms: lastEpochCandidates.length ? Math.max(...lastEpochCandidates) : 0,
+    capture_start_ms: firstEpochCandidates.length ? Math.min(...firstEpochCandidates) : 0,
+    capture_end_ms: lastEpochCandidates.length ? Math.max(...lastEpochCandidates) : 0,
+    source_duration_s: sourceDurationCandidates.length ? Math.max(...sourceDurationCandidates) : 0,
+    source_file: sample?.source_file || buildStructuredDatasetFilename({
+      device_family: sample?.device_family || parsed.deviceFamily || "unknown",
+      device_name: sample?.device_name || parsed.deviceName || canonicalDatasetStem(sid, sid),
+      trial_number: sample?.trial_number || parsed.trial || 1,
+      division_tag: sample?.division_tag || parsed.division || "steady"
+    }, sid),
+    load_type: sample?.device_name || sample?.load_type || parsed.deviceName || canonicalDatasetStem(sid, sid),
+    device_family: sample?.device_family || parsed.deviceFamily || "unknown",
+    device_family_code: Number.isFinite(Number(sample?.device_family_code)) ? Number(sample.device_family_code) : deviceFamilyCodeFromToken(sample?.device_family || parsed.deviceFamily || "unknown"),
+    device_name: sample?.device_name || parsed.deviceName || canonicalDatasetStem(sid, sid),
+    trial_number: Math.max(1, parseInt(sample?.trial_number || parsed.trial || 1, 10) || 1),
+    division_tag: sample?.division_tag || parsed.division || "steady",
+    notes: normalizeNotesText(sample?.notes || ""),
+    trusted_normal_session: Number(sample?.trusted_normal_session || 0) > 0 ? 1 : 0,
+    uploaded_csv: kind !== "processed" ? 1 : 0,
+    processed_csv: kind === "processed" ? 1 : 0,
+    chunk_count: chunks.length,
+  };
+  return derived;
+}
+
+function mergeSessionCollection(metaObj = {}, logObj = {}, kind = "original") {
+  const merged = {};
+  const ids = new Set([...Object.keys(metaObj || {}), ...Object.keys(logObj || {})]);
+  ids.forEach((sid) => {
+    const meta = metaObj?.[sid] || {};
+    const derived = deriveSessionMetaFromChunks(sid, logObj?.[sid] || {}, kind) || {};
+    merged[sid] = mergeDefinedSessionFields(derived, meta);
+  });
+  return merged;
+}
+
 function renderSessionRows(bodyEl, obj, kind = "original") {
   if (!bodyEl) return;
   const ids = Object.keys(obj || {}).sort((a, b) => {
     const av = obj[a] || {};
     const bv = obj[b] || {};
-    const at = Number(av.start_ms_device_ack || av.start_ms || av.saved_at_ms || av.requested_ms || 0);
-    const bt = Number(bv.start_ms_device_ack || bv.start_ms || bv.saved_at_ms || bv.requested_ms || 0);
+    const at = sessionAcquisitionStartMs(av) || Number(av.saved_at_ms || av.requested_ms || 0);
+    const bt = sessionAcquisitionStartMs(bv) || Number(bv.saved_at_ms || bv.requested_ms || 0);
     return at - bt;
   });
   if (!ids.length) {
@@ -2137,8 +2318,8 @@ function renderSessionRows(bodyEl, obj, kind = "original") {
       return `<tr data-session-row="${sid}" class="${activeCls}"><td class="mono">#${itemNo}</td><td><div class="mono session-name-primary">${sessionDisplayName(meta, sid)}</div><div class="muted small mono session-name-secondary">${sessionSecondaryText(meta, sid)}</div></td><td class="mono">${savedMs ? formatDisplayDateOnly(savedMs) : "—"}</td><td class="mono">${savedMs ? formatDisplayTimeOnly(savedMs) : "—"}<div class="muted small mono">${sourceText}</div></td><td class="mono">${durationText(meta)}</td><td class="mono">${sessionLoadText(meta)}</td><td class="session-actions"><button type="button" class="btn btn-small" data-processed-view-sid="${sid}">View</button><button type="button" class="btn btn-small" data-processed-sid="${sid}">Download</button><button type="button" class="btn btn-small btn-danger" data-del-processed-sid="${sid}">Delete</button></td></tr>`;
     }
 
-    const stMs = Number(meta.start_ms_device_ack || meta.start_ms || meta.requested_ms || 0);
-    const enMs = Number(meta.end_ms || 0);
+    const stMs = sessionCaptureStartMs(meta) || sessionAcquisitionStartMs(meta) || Number(meta.requested_ms || 0);
+    const enMs = sessionCaptureEndMs(meta) || sessionAcquisitionEndMs(meta) || Number(meta.end_ms || 0);
     const dateMs = stMs || enMs || Number(meta.requested_ms || 0);
     return `<tr data-session-row="${sid}" class="${activeCls}"><td class="mono">#${itemNo}</td><td><div class="mono session-name-primary">${sessionDisplayName(meta, sid)}</div><div class="muted small mono session-name-secondary">${sessionSecondaryText(meta, sid)}</div></td><td class="mono">${dateMs ? formatDisplayDateOnly(dateMs) : "—"}</td><td class="mono">${stMs ? formatDisplayTimeRange(stMs, enMs, "Pending") : (Number(meta.requested_ms || 0) ? "Pending" : "—")}</td><td class="mono">${durationText(meta)}</td><td class="mono">${sessionLoadText(meta)}</td><td class="session-actions"><button type="button" class="btn btn-small" data-view-sid="${sid}">View</button><button type="button" class="btn btn-small" data-sid="${sid}">Download</button><button type="button" class="btn btn-small btn-danger" data-del-sid="${sid}">Delete</button></td></tr>`;
   }).join("");
@@ -2211,14 +2392,50 @@ function renderSessionRows(bodyEl, obj, kind = "original") {
   applyActiveMlSessionRow();
 }
 
-if (mlSessionBody) db.ref("ml_sessions").limitToLast(80).on("value", (s) => renderSessionRows(mlSessionBody, s.val() || {}, "original"));
-if (mlProcessedBody) db.ref("ml_processed_sessions").limitToLast(80).on("value", (s) => renderSessionRows(mlProcessedBody, s.val() || {}, "processed"));
+let loggerOriginalMetaCache = {};
+let loggerOriginalLogCache = {};
+let loggerProcessedMetaCache = {};
+let loggerProcessedLogCache = {};
+
+function renderLoggerOriginalSessions() {
+  renderSessionRows(mlSessionBody, mergeSessionCollection(loggerOriginalMetaCache, loggerOriginalLogCache, "original"), "original");
+}
+
+function renderLoggerProcessedSessions() {
+  renderSessionRows(mlProcessedBody, mergeSessionCollection(loggerProcessedMetaCache, loggerProcessedLogCache, "processed"), "processed");
+}
+
+if (mlSessionBody) {
+  db.ref("ml_sessions").limitToLast(200).on("value", (s) => {
+    loggerOriginalMetaCache = s.val() || {};
+    renderLoggerOriginalSessions();
+  });
+  db.ref("ml_logs").limitToLast(200).on("value", (s) => {
+    loggerOriginalLogCache = s.val() || {};
+    renderLoggerOriginalSessions();
+  });
+}
+if (mlProcessedBody) {
+  db.ref("ml_processed_sessions").limitToLast(200).on("value", (s) => {
+    loggerProcessedMetaCache = s.val() || {};
+    renderLoggerProcessedSessions();
+  });
+  db.ref("ml_processed_logs").limitToLast(200).on("value", (s) => {
+    loggerProcessedLogCache = s.val() || {};
+    renderLoggerProcessedSessions();
+  });
+}
 
 btnDownloadAllMl?.addEventListener("click", async () => {
   const isProcessed = activeLoggerTab === "processed";
   const metaPath = isProcessed ? "ml_processed_sessions" : "ml_sessions";
-  const sessionsSnap = await db.ref(metaPath).get();
-  const sessions = sessionsSnap.exists() ? sessionsSnap.val() : {};
+  const logPath = isProcessed ? "ml_processed_logs" : "ml_logs";
+  const [sessionsSnap, logsSnap] = await Promise.all([db.ref(metaPath).get(), db.ref(logPath).get()]);
+  const sessions = mergeSessionCollection(
+    sessionsSnap.exists() ? sessionsSnap.val() : {},
+    logsSnap.exists() ? logsSnap.val() : {},
+    isProcessed ? "processed" : "original"
+  );
   const ids = Object.keys(sessions || {});
   if (!ids.length) {
     toast(isProcessed ? "No processed sessions yet." : "No sessions yet.", "err");

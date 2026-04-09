@@ -11,10 +11,10 @@ import joblib
 from tinyml_common import (
     ARC_FEATURES,
     ensure_dir,
+    estimate_search_plan,
     pick_winner,
     save_duel_bundle,
     strip_estimator,
-    estimate_search_plan,
 )
 
 SCRIPT_DIR = Path(__file__).resolve().parent
@@ -76,7 +76,7 @@ def _build_child_command(model_key: str, args, n_jobs: int) -> list[str]:
         "--out_joblib",
         cfg["joblib"],
         "--out_report",
-        cfg["report"],
+        args.rf_out_report if model_key == "rf" else args.et_out_report,
         "--fn_weight",
         str(args.fn_weight),
         "--fp_weight",
@@ -157,17 +157,8 @@ def main():
     ap.add_argument("--max_fpr", type=float, default=0.03)
     ap.add_argument("--min_threshold", type=float, default=0.08)
     ap.add_argument("--n_iter", type=int, default=60)
-    ap.add_argument(
-        "--winner_mode",
-        default="arc_guard",
-        choices=["arc_guard", "safety_composite", "legacy_cv_ap"],
-    )
-    ap.add_argument(
-        "--models",
-        nargs="+",
-        default=["rf", "et"],
-        choices=["rf", "et"],
-    )
+    ap.add_argument("--winner_mode", default="arc_guard", choices=["arc_guard", "safety_composite", "legacy_cv_ap"])
+    ap.add_argument("--models", nargs="+", default=["rf", "et"], choices=["rf", "et"])
     ap.add_argument("--model_n_jobs", type=int, default=0)
     ap.add_argument("--serial_models", action="store_true")
     args = ap.parse_args()
@@ -220,11 +211,7 @@ def main():
                 bufsize=1,
             )
             procs[model_key] = proc
-            thread = threading.Thread(
-                target=_stream_child,
-                args=(model_key, proc, tracker, len(selected_models)),
-                daemon=True,
-            )
+            thread = threading.Thread(target=_stream_child, args=(model_key, proc, tracker, len(selected_models)), daemon=True)
             threads.append(thread)
             thread.start()
 
@@ -264,10 +251,7 @@ def main():
         print("Test accuracy:", result["test_accuracy"])
         print("Test average precision:", result["test_average_precision"])
         cm = result["test_confusion_matrix"]
-        print(
-            "Test confusion matrix:\n[[%d %d]\n [%d %d]]"
-            % (cm["tn"], cm["fp"], cm["fn"], cm["tp"])
-        )
+        print("Test confusion matrix:\n[[%d %d]\n [%d %d]]" % (cm["tn"], cm["fp"], cm["fn"], cm["tp"]))
 
     winner, ranked_results, winner_policy = pick_winner(
         results,

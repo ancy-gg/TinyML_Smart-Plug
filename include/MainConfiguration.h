@@ -13,7 +13,7 @@ static constexpr bool ENABLE_AUTO_ARC_CAPTURE = false;
 // Cloud / OTA configuration
 static constexpr const char* FIREBASE_API_KEY = "AIzaSyAmJlZZszyWPJFgIkTAAl_TbIySys1nvEw";
 static constexpr const char* FIREBASE_DB_URL  = "tinyml-smart-plug-default-rtdb.asia-southeast1.firebasedatabase.app";
-static constexpr const char* FW_VERSION       = "v7.2.0-c-gen1";
+static constexpr const char* FW_VERSION       = "v7.2.2-c-gen1";
 static constexpr const char* OTA_DESIRED_VERSION_PATH = "/ota/desired_version";
 static constexpr const char* OTA_FIRMWARE_URL_PATH    = "/ota/firmware_url";
 
@@ -115,9 +115,12 @@ struct FeatureFrame {
   uint32_t uptime_ms = 0;
   uint32_t frame_start_uptime_ms = 0;
   uint32_t frame_end_uptime_ms = 0;
+  uint32_t feature_compute_end_uptime_ms = 0;
+  uint32_t log_enqueue_uptime_ms = 0;
 
   float frame_dt_ms = 0.0f;
   float compute_time_ms = 0.0f;
+  float timing_skew_ms = 0.0f;
   float vrms   = 0.0f;
   float irms   = 0.0f;
   float temp_c = 0.0f;
@@ -348,10 +351,10 @@ static constexpr uint32_t LOAD_OFF_DETECT_MS = 1200UL;
 static constexpr uint32_t RELAY_ARTIFACT_BLANK_MS = 2500UL;
 static constexpr float    RELAY_ARTIFACT_FORCE_ZERO_A = 0.75f;
 static constexpr uint32_t RELAY_ARTIFACT_SELF_HEAL_MS = 1200UL;
-static constexpr float    MANUAL_RELAY_REARM_MIN_A = 0.90f;
-static constexpr float    MANUAL_RELAY_REARM_RELEASE_A = 0.12f;
-static constexpr uint32_t MANUAL_RELAY_REARM_DEBOUNCE_MS = 1800UL;
-static constexpr uint32_t MANUAL_RELAY_REARM_RELEASE_MS = 1500UL;
+static constexpr float    MANUAL_RELAY_REARM_MIN_A = LOAD_ON_DETECT_A;
+static constexpr float    MANUAL_RELAY_REARM_RELEASE_A = LOAD_OFF_DETECT_A;
+static constexpr uint32_t MANUAL_RELAY_REARM_DEBOUNCE_MS = 5000UL;
+static constexpr uint32_t MANUAL_RELAY_REARM_RELEASE_MS = 1200UL;
 static constexpr uint32_t MANUAL_RELAY_REARM_BLANK_MS = 1400UL;
 
 // =========================
@@ -378,6 +381,7 @@ static constexpr uint16_t ML_LOG_DURATION_S             = 10;
 static constexpr uint16_t ML_LOG_CHUNK_DURATION_S       = 10;
 static constexpr uint16_t ML_LOG_MIN_DURATION_S         = 1;
 static constexpr uint16_t ML_LOG_MAX_DURATION_S         = 7200;
+static constexpr uint32_t ML_LOG_IDLE_ARM_GRACE_MS      = 8000UL;
 static constexpr uint32_t ML_LOG_SETTLE_EXCLUDE_MS      = 1200UL;
 static constexpr uint8_t  ML_LOG_SETTLE_GOOD_FRAMES     = 4;
 static constexpr float    ML_LOG_SETTLE_FRAME_DT_MIN_MS = 70.0f;
