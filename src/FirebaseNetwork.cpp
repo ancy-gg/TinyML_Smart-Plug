@@ -331,9 +331,13 @@ bool FirebaseNetwork::publishRelayPulseEvent(const String& kind, const String& t
   if (kind == "relay_on") {
     json.set("relay_latched_on", true);
     json.set("relay_pulse_active", true);
+    json.set("load_state", "LOAD ON");
+    json.set("device_phase", "LOAD ON");
   } else if (kind == "relay_off") {
     json.set("relay_latched_on", false);
     json.set("relay_pulse_active", true);
+    json.set("load_state", "LOAD OFF");
+    json.set("device_phase", "LOAD OFF");
   }
   return Firebase.RTDB.updateNode(&fbLive, "/live_data", &json);
 }
@@ -638,8 +642,10 @@ bool FirebaseNetwork::serviceLive_() {
   const uint64_t epochMs = nowEpochMs();
   const String iso = nowISO8601Ms();
   const bool mainsPresent = (_live.v >= MAINS_PRESENT_ON_V);
+  const bool loadDetected = (_live.c >= LOAD_ON_DETECT_A);
+  const bool relayClosed = _live.relayLatchedOn;
   const String powerCondition = powerConditionForState(_live.state, _live.v);
-  const String loadState = (_live.c >= LOAD_ON_DETECT_A) ? String("LOAD ON") : String("LOAD OFF");
+  const String loadState = (relayClosed || loadDetected) ? String("LOAD ON") : String("LOAD OFF");
   String devicePhase = loadState;
   if (isTransitionState(_live.state)) devicePhase = _live.state;
   else if (_live.state == "UNPLUGGED") devicePhase = "UNPLUGGED";
@@ -678,6 +684,7 @@ bool FirebaseNetwork::serviceLive_() {
   json.set("power_condition", powerCondition);
   json.set("device_phase", devicePhase);
   json.set("load_state", loadState);
+  json.set("load_detected", loadDetected);
   json.set("fault_latched", _live.faultLatched);
   json.set("web_controls_locked", _live.webControlsLocked);
   json.set("relay_latched_on", _live.relayLatchedOn);

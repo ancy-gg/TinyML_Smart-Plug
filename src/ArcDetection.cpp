@@ -704,6 +704,17 @@ bool ArcDetection::compute(const uint16_t* raw, size_t n, float fs_hz,
       DB_HF_DELTA_CLIP_MIN,
       DB_HF_DELTA_CLIP_MAX);
 
+  const bool cycleNmseSoloArtifact =
+      (out.cycle_nmse >= CYCLE_NMSE_SOLO_ARTIFACT_MIN_PCT) &&
+      (out.irms_a <= CYCLE_NMSE_SOLO_ARTIFACT_MAX_IRMS_A) &&
+      (out.spectral_flux_midhf <= CYCLE_NMSE_SOLO_ARTIFACT_MAX_FLUX_PCT) &&
+      (out.residual_crest_factor <= CYCLE_NMSE_SOLO_ARTIFACT_MAX_RESIDUAL_CF_DB) &&
+      (out.edge_spike_ratio <= CYCLE_NMSE_SOLO_ARTIFACT_MAX_EDGE_DB) &&
+      (out.midband_residual_ratio <= CYCLE_NMSE_SOLO_ARTIFACT_MAX_MIDBAND_DB) &&
+      (out.peak_fluct_cv <= CYCLE_NMSE_SOLO_ARTIFACT_MAX_PEAK_CV_PCT) &&
+      (fabsf(out.hf_energy_delta) <= CYCLE_NMSE_SOLO_ARTIFACT_MAX_HF_DELTA_DB);
+  if (cycleNmseSoloArtifact) out.cycle_nmse = CYCLE_NMSE_SOLO_ARTIFACT_REPLACEMENT_PCT;
+
   out.abs_irms_zscore_vs_baseline = clampf(fabsf(out.irms_a - baselineIrms) / (baselineStd + 1e-6f), 0.0f, 25.0f);
 
   const bool baselineStep = s_baseline.initialized &&

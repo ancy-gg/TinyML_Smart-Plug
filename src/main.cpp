@@ -42,8 +42,13 @@ static volatile bool gStopSenseTask = false;
 static volatile bool gSenseTaskRunning = false;
 static volatile uint32_t gRelayArtifactBlankUntilMs = 0;
 static bool gManualRelayAssumedOn = false;
+static bool gManualRelayConfirmPending = false;
 static uint32_t gManualRelayCandidateSinceMs = 0;
 static uint32_t gManualRelayReleaseSinceMs = 0;
+static uint32_t gManualRelayConfirmedActiveMs = 0;
+static uint32_t gManualRelayConfirmStartedMs = 0;
+static uint32_t gManualRelayCooldownUntilMs = 0;
+static uint32_t gManualRelayWebHoldoffUntilMs = 0;
 
 static void Core0Task(void* pv);
 
@@ -319,8 +324,11 @@ static inline void armRelayArtifactBlank_(uint32_t extraMs = RELAY_ARTIFACT_BLAN
 
 static inline void clearManualRelayAssume_() {
   gManualRelayAssumedOn = false;
+  gManualRelayConfirmPending = false;
   gManualRelayCandidateSinceMs = 0;
   gManualRelayReleaseSinceMs = 0;
+  gManualRelayConfirmedActiveMs = 0;
+  gManualRelayConfirmStartedMs = 0;
 }
 
 static bool restartSensePipelineSoft_() {
@@ -1012,28 +1020,37 @@ void loop() {
   const float irmsRawMeasured = f.irms;
   float irmsRawForLogic = cleanLogicCurrent(irmsRawMeasured, f.current_valid != 0, vRaw, vFast);
 
-  if (protection.relayLatchedOn() || vFast <= MAINS_PRESENT_OFF_V) {
+  if (vFast <= MAINS_PRESENT_OFF_V) {
     clearManualRelayAssume_();
   }
 
+  const uint32_t manualNowMs = millis();
+  const bool manualAssistHoldoffActive = ((int32_t)(gManualRelayWebHoldoffUntilMs - manualNowMs) > 0);
+  const bool manualAssistCooldownActive = ((int32_t)(gManualRelayCooldownUntilMs - manualNowMs) > 0);
   const bool manualRelayRearmSignal =
       (!protection.relayLatchedOn()) &&
+      !manualAssistHoldoffActive &&
+      !manualAssistCooldownActive &&
       (vFast >= MAINS_PRESENT_ON_V) &&
       (f.current_valid != 0) &&
       (irmsRawForLogic >= MANUAL_RELAY_REARM_MIN_A);
 
-  if (!gManualRelayAssumedOn) {
+  if (!gManualRelayConfirmPending) {
     if (manualRelayRearmSignal) {
-      if (gManualRelayCandidateSinceMs == 0) gManualRelayCandidateSinceMs = millis();
-      else if ((millis() - gManualRelayCandidateSinceMs) >= MANUAL_RELAY_REARM_DEBOUNCE_MS) {
+      if (gManualRelayCandidateSinceMs == 0) gManualRelayCandidateSinceMs = manualNowMs;
+      if ((manualNowMs - gManualRelayCandidateSinceMs) >= MANUAL_RELAY_REARM_DEBOUNCE_MS) {
         const bool wasLatched = protection.relayLatchedOn();
         protection.pulseRelayOn();
         const bool pulseSent = protection.relayPulseActive() || (protection.relayLatchedOn() != wasLatched);
         if (pulseSent) {
-          const String localRelayToken = String("relay_on_local_") + String((unsigned long)millis());
+          const String localRelayToken = String("relay_on_local_") + String((unsigned long)manualNowMs);
           gManualRelayAssumedOn = true;
+          gManualRelayConfirmPending = true;
           gManualRelayCandidateSinceMs = 0;
           gManualRelayReleaseSinceMs = 0;
+          gManualRelayConfirmedActiveMs = 0;
+          gManualRelayConfirmStartedMs = manualNowMs;
+          gManualRelayCooldownUntilMs = 0;
           armRelayArtifactBlank_(MANUAL_RELAY_REARM_BLANK_MS);
           (void)network.publishRelayPulseEvent("relay_on", localRelayToken, "physical_confirm");
           notification.notify(SND_RESET_ACK);
@@ -1043,14 +1060,40 @@ void loop() {
       gManualRelayCandidateSinceMs = 0;
     }
   } else {
-    const bool manualRelayKeepAlive =
+    const bool assistCurrentActive =
         (vFast >= MAINS_PRESENT_ON_V) &&
-        (irmsRawForLogic >= MANUAL_RELAY_REARM_RELEASE_A);
-    if (!manualRelayKeepAlive) {
-      if (gManualRelayReleaseSinceMs == 0) gManualRelayReleaseSinceMs = millis();
-      else if ((millis() - gManualRelayReleaseSinceMs) >= MANUAL_RELAY_REARM_RELEASE_MS) clearManualRelayAssume_();
-    } else {
+        (f.current_valid != 0) &&
+        (irmsRawForLogic >= MANUAL_RELAY_REARM_MIN_A);
+    if (assistCurrentActive) {
+      if (gManualRelayConfirmStartedMs == 0) gManualRelayConfirmStartedMs = manualNowMs;
       gManualRelayReleaseSinceMs = 0;
+      const uint32_t activeBase = (gManualRelayCandidateSinceMs != 0) ? gManualRelayCandidateSinceMs : manualNowMs;
+      const uint32_t elapsed = (manualNowMs >= activeBase) ? (manualNowMs - activeBase) : 0;
+      gManualRelayCandidateSinceMs = manualNowMs;
+      gManualRelayConfirmedActiveMs += elapsed;
+      if (gManualRelayConfirmedActiveMs >= MANUAL_RELAY_REARM_CONFIRM_MS) {
+        gManualRelayConfirmPending = false;
+        gManualRelayAssumedOn = false;
+        gManualRelayCandidateSinceMs = 0;
+        gManualRelayReleaseSinceMs = 0;
+        gManualRelayConfirmedActiveMs = MANUAL_RELAY_REARM_CONFIRM_MS;
+      }
+    } else {
+      gManualRelayCandidateSinceMs = 0;
+      if (gManualRelayReleaseSinceMs == 0) gManualRelayReleaseSinceMs = manualNowMs;
+      else if ((manualNowMs - gManualRelayReleaseSinceMs) >= MANUAL_RELAY_REARM_RELEASE_MS) {
+        const bool wasLatched = protection.relayLatchedOn();
+        protection.pulseRelayOff();
+        const bool pulseSent = protection.relayPulseActive() || (protection.relayLatchedOn() != wasLatched);
+        if (pulseSent) {
+          const String localRelayToken = String("relay_off_local_") + String((unsigned long)manualNowMs);
+          (void)network.publishRelayPulseEvent("relay_off", localRelayToken, "physical_rollback");
+          notification.notify(SND_RESET_ACK);
+          armRelayArtifactBlank_();
+        }
+        clearManualRelayAssume_();
+        gManualRelayCooldownUntilMs = manualNowMs + MANUAL_RELAY_REARM_COOLDOWN_MS;
+      }
     }
   }
 
@@ -1365,6 +1408,8 @@ void loop() {
     if (!controlsLocked) {
       if (relayOffRequested) {
         clearManualRelayAssume_();
+        gManualRelayCooldownUntilMs = millis() + MANUAL_RELAY_REARM_COOLDOWN_MS;
+        gManualRelayWebHoldoffUntilMs = millis() + MANUAL_RELAY_WEB_HOLDOFF_MS;
         const bool wasLatched = protection.relayLatchedOn();
         protection.pulseRelayOff();
         const bool pulseSent = protection.relayPulseActive() || (protection.relayLatchedOn() != wasLatched);
@@ -1374,6 +1419,7 @@ void loop() {
         notification.notify(SND_RESET_ACK);
       } else if (relayOnRequested) {
         clearManualRelayAssume_();
+        gManualRelayWebHoldoffUntilMs = millis() + MANUAL_RELAY_WEB_HOLDOFF_MS;
         const bool wasLatched = protection.relayLatchedOn();
         protection.pulseRelayOn();
         const bool pulseSent = protection.relayPulseActive() || (protection.relayLatchedOn() != wasLatched);
@@ -1410,12 +1456,14 @@ void loop() {
 
   if (pendingProtectionTripOff && (int32_t)(millis() - relayActionAtMs) >= 0) {
     clearManualRelayAssume_();
+    gManualRelayCooldownUntilMs = millis() + MANUAL_RELAY_REARM_COOLDOWN_MS;
     protection.pulseRelayOff();
     armRelayArtifactBlank_();
     pendingProtectionTripOff = false;
   }
   if (pendingProtectionAutoOn && (int32_t)(millis() - relayActionAtMs) >= 0) {
     clearManualRelayAssume_();
+    gManualRelayWebHoldoffUntilMs = millis() + MANUAL_RELAY_WEB_HOLDOFF_MS;
     protection.pulseRelayOn();
     armRelayArtifactBlank_(1200UL);
     pendingProtectionAutoOn = false;

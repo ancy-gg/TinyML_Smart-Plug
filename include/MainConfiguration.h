@@ -13,7 +13,7 @@ static constexpr bool ENABLE_AUTO_ARC_CAPTURE = false;
 // Cloud / OTA configuration
 static constexpr const char* FIREBASE_API_KEY = "AIzaSyAmJlZZszyWPJFgIkTAAl_TbIySys1nvEw";
 static constexpr const char* FIREBASE_DB_URL  = "tinyml-smart-plug-default-rtdb.asia-southeast1.firebasedatabase.app";
-static constexpr const char* FW_VERSION       = "v7.2.2-c-gen1";
+static constexpr const char* FW_VERSION       = "v7.2.3-c-gen1";
 static constexpr const char* OTA_DESIRED_VERSION_PATH = "/ota/desired_version";
 static constexpr const char* OTA_FIRMWARE_URL_PATH    = "/ota/firmware_url";
 
@@ -351,11 +351,29 @@ static constexpr uint32_t LOAD_OFF_DETECT_MS = 1200UL;
 static constexpr uint32_t RELAY_ARTIFACT_BLANK_MS = 2500UL;
 static constexpr float    RELAY_ARTIFACT_FORCE_ZERO_A = 0.75f;
 static constexpr uint32_t RELAY_ARTIFACT_SELF_HEAL_MS = 1200UL;
-static constexpr float    MANUAL_RELAY_REARM_MIN_A = LOAD_ON_DETECT_A;
-static constexpr float    MANUAL_RELAY_REARM_RELEASE_A = LOAD_OFF_DETECT_A;
-static constexpr uint32_t MANUAL_RELAY_REARM_DEBOUNCE_MS = 5000UL;
-static constexpr uint32_t MANUAL_RELAY_REARM_RELEASE_MS = 1200UL;
+
+// Local assist when the user manually energizes a load while the MCU still thinks the relay is OFF.
+// The assist should latch quickly for small loads, survive brief charger/SMPS dropouts, and only
+// roll back during the provisional confirmation window if current disappears for long enough.
+static constexpr float    MANUAL_RELAY_REARM_MIN_A = 0.08f;
+static constexpr float    MANUAL_RELAY_REARM_RELEASE_A = 0.05f;
+static constexpr uint32_t MANUAL_RELAY_REARM_DEBOUNCE_MS = 0UL;
+static constexpr uint32_t MANUAL_RELAY_REARM_CONFIRM_MS = 10000UL;
+static constexpr uint32_t MANUAL_RELAY_REARM_RELEASE_MS = 3000UL;
+static constexpr uint32_t MANUAL_RELAY_REARM_COOLDOWN_MS = 2500UL;
+static constexpr uint32_t MANUAL_RELAY_WEB_HOLDOFF_MS = 2200UL;
 static constexpr uint32_t MANUAL_RELAY_REARM_BLANK_MS = 1400UL;
+
+// Guard against isolated low-current NMSE blowups that can hit exactly 100% without any other arc-like evidence.
+static constexpr float    CYCLE_NMSE_SOLO_ARTIFACT_MIN_PCT = 99.0f;
+static constexpr float    CYCLE_NMSE_SOLO_ARTIFACT_MAX_IRMS_A = 0.35f;
+static constexpr float    CYCLE_NMSE_SOLO_ARTIFACT_MAX_FLUX_PCT = 5.0f;
+static constexpr float    CYCLE_NMSE_SOLO_ARTIFACT_MAX_RESIDUAL_CF_DB = 9.5f;
+static constexpr float    CYCLE_NMSE_SOLO_ARTIFACT_MAX_EDGE_DB = -18.0f;
+static constexpr float    CYCLE_NMSE_SOLO_ARTIFACT_MAX_MIDBAND_DB = -24.0f;
+static constexpr float    CYCLE_NMSE_SOLO_ARTIFACT_MAX_PEAK_CV_PCT = 1.2f;
+static constexpr float    CYCLE_NMSE_SOLO_ARTIFACT_MAX_HF_DELTA_DB = 0.9f;
+static constexpr float    CYCLE_NMSE_SOLO_ARTIFACT_REPLACEMENT_PCT = 4.0f;
 
 // =========================
 // Logger / control polling
