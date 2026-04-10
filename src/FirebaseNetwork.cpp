@@ -1111,6 +1111,7 @@ bool FirebaseNetwork::serviceMlUpload_() {
         wallDurationS = float(lastUploaded.epoch_ms - firstUploaded.epoch_ms) / 1000.0f;
       }
       const float measuredDurationS = computeContinuousDurationSeconds_(_buf, _uploadTotalCount);
+      const float preferredDurationS = (wallDurationS > 0.0f) ? wallDurationS : measuredDurationS;
       float fsSum = 0.0f;
       uint32_t fsCount = 0;
       for (uint16_t i = 0; i < _uploadTotalCount; ++i) {
@@ -1131,12 +1132,13 @@ bool FirebaseNetwork::serviceMlUpload_() {
       sessMeta.set("division_tag", _uploadSpec.divisionTag);
       sessMeta.set("notes", _uploadSpec.notes);
       sessMeta.set("trusted_normal_session", (int)_uploadSpec.trustedNormalSession);
-      if (measuredDurationS > 0.0f) sessMeta.set("source_duration_s", measuredDurationS);
+      if (preferredDurationS > 0.0f) sessMeta.set("source_duration_s", preferredDurationS);
+      if (measuredDurationS > 0.0f) sessMeta.set("source_continuous_duration_s", measuredDurationS);
       if (wallDurationS > 0.0f) sessMeta.set("source_wall_duration_s", wallDurationS);
       if (fsCount > 0) sessMeta.set("source_sample_rate_hz", fsSum / float(fsCount));
       if (_uploadTotalCount > 1) {
-        const float meanFrameHz = (measuredDurationS > 0.0f) ? (float(_uploadTotalCount - 1U) / measuredDurationS) :
-                                 ((wallDurationS > 0.0f) ? (float(_uploadTotalCount - 1U) / wallDurationS) : 0.0f);
+        const float meanFrameHz = (preferredDurationS > 0.0f) ? (float(_uploadTotalCount - 1U) / preferredDurationS) :
+                                 ((measuredDurationS > 0.0f) ? (float(_uploadTotalCount - 1U) / measuredDurationS) : 0.0f);
         if (meanFrameHz > 0.0f) sessMeta.set("feature_frame_rate_hz", meanFrameHz);
       }
       String sessPath = "/ml_sessions/";
@@ -1241,6 +1243,18 @@ bool FirebaseNetwork::serviceMlUpload_() {
   path += _uploadSpec.sessionId;
   FirebaseJson json;
   const uint16_t localChunkIndex = (uint16_t)(i0 / ROWS_PER_CHUNK);
+  const Rec& sessionFirstRec = _buf[0];
+  const Rec& sessionLastRec = _buf[_uploadTotalCount - 1];
+  float sessionWallDurationS = 0.0f;
+  if (sessionLastRec.frame_end_uptime_ms > sessionFirstRec.frame_start_uptime_ms) {
+    sessionWallDurationS = float(sessionLastRec.frame_end_uptime_ms - sessionFirstRec.frame_start_uptime_ms) / 1000.0f;
+  } else if (sessionLastRec.frame_start_uptime_ms > sessionFirstRec.frame_start_uptime_ms) {
+    sessionWallDurationS = float(sessionLastRec.frame_start_uptime_ms - sessionFirstRec.frame_start_uptime_ms) / 1000.0f;
+  } else if (sessionLastRec.epoch_ms > sessionFirstRec.epoch_ms) {
+    sessionWallDurationS = float(sessionLastRec.epoch_ms - sessionFirstRec.epoch_ms) / 1000.0f;
+  }
+  const float sessionContinuousDurationS = computeContinuousDurationSeconds_(_buf, _uploadTotalCount);
+  const float sessionPreferredDurationS = (sessionWallDurationS > 0.0f) ? sessionWallDurationS : sessionContinuousDurationS;
 
   json.set("created_at/.sv", "timestamp");
   json.set("count", (int)(i1 - i0));
@@ -1255,6 +1269,9 @@ bool FirebaseNetwork::serviceMlUpload_() {
   json.set("last_uptime_ms", (int)lastRec.uptime_ms);
   json.set("first_frame_start_uptime_ms", (int)firstRec.frame_start_uptime_ms);
   json.set("last_frame_end_uptime_ms", (int)lastRec.frame_end_uptime_ms);
+  if (sessionPreferredDurationS > 0.0f) json.set("source_duration_s", sessionPreferredDurationS);
+  if (sessionWallDurationS > 0.0f) json.set("source_wall_duration_s", sessionWallDurationS);
+  if (sessionContinuousDurationS > 0.0f) json.set("source_continuous_duration_s", sessionContinuousDurationS);
   json.set("final", _uploadFinalFlush && (i1 >= _uploadTotalCount));
   json.set("csv", csv);
   json.set("meta/session_id", _uploadSpec.sessionId);
@@ -1267,6 +1284,9 @@ bool FirebaseNetwork::serviceMlUpload_() {
   json.set("meta/trusted_normal_session", (int)_uploadSpec.trustedNormalSession);
   json.set("meta/label_override", (int)_uploadSpec.labelOverride);
   json.set("meta/duration_s", (int)_uploadSpec.durationS);
+  if (sessionPreferredDurationS > 0.0f) json.set("meta/source_duration_s", sessionPreferredDurationS);
+  if (sessionWallDurationS > 0.0f) json.set("meta/source_wall_duration_s", sessionWallDurationS);
+  if (sessionContinuousDurationS > 0.0f) json.set("meta/source_continuous_duration_s", sessionContinuousDurationS);
   json.set("meta/auto_capture", _uploadAuto);
   json.set("meta/feature_order", "spectral_flux_midhf,residual_crest_factor,edge_spike_ratio,midband_residual_ratio,cycle_nmse,peak_fluct_cv,thd_i,hf_energy_delta,zcv,abs_irms_zscore_vs_baseline");
 

@@ -13,7 +13,7 @@ static constexpr bool ENABLE_AUTO_ARC_CAPTURE = false;
 // Cloud / OTA configuration
 static constexpr const char* FIREBASE_API_KEY = "AIzaSyAmJlZZszyWPJFgIkTAAl_TbIySys1nvEw";
 static constexpr const char* FIREBASE_DB_URL  = "tinyml-smart-plug-default-rtdb.asia-southeast1.firebasedatabase.app";
-static constexpr const char* FW_VERSION       = "v7.2.4-c-gen1";
+static constexpr const char* FW_VERSION       = "v7.2.5-c-gen1";
 static constexpr const char* OTA_DESIRED_VERSION_PATH = "/ota/desired_version";
 static constexpr const char* OTA_FIRMWARE_URL_PATH    = "/ota/firmware_url";
 
