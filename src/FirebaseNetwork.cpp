@@ -38,6 +38,34 @@ String FirebaseNetwork::sanitizeToken(const String& s) {
   return o;
 }
 
+static int8_t deviceFamilyCodeFromToken_(String token) {
+  token.trim();
+  token.toLowerCase();
+  token.replace("-", "_");
+  token.replace(" ", "_");
+  while (token.indexOf("__") >= 0) token.replace("__", "_");
+
+  if (token == "resistive" || token == "resistive_linear" || token == "heater" || token == "heating") {
+    return CONTEXT_FAMILY_RESISTIVE_LINEAR;
+  }
+  if (token == "inductive" || token == "motor" || token == "fan" || token == "inductive_motor") {
+    return CONTEXT_FAMILY_INDUCTIVE_MOTOR;
+  }
+  if (token == "smps" || token == "rectifier" || token == "rectifier_smps" || token == "charger" || token == "adapter") {
+    return CONTEXT_FAMILY_RECTIFIER_SMPS;
+  }
+  if (token == "dimmer" || token == "phase" || token == "dimmer_phase" || token == "phase_angle" || token == "phase_angle_controlled") {
+    return CONTEXT_FAMILY_PHASE_ANGLE_CONTROLLED;
+  }
+  if (token == "universal" || token == "universal_motor" || token == "brush" || token == "brush_universal_motor" || token == "vacuum") {
+    return CONTEXT_FAMILY_BRUSH_UNIVERSAL_MOTOR;
+  }
+  if (token == "mixed" || token == "mixed_unknown" || token == "other" || token == "other_mixed") {
+    return CONTEXT_FAMILY_OTHER_MIXED;
+  }
+  return CONTEXT_FAMILY_UNKNOWN;
+}
+
 void FirebaseNetwork::updateControlToken_(const String& tokenIn, bool& primed, String& cache, String& handled, bool& pendingFlag) {
   String token = tokenIn;
   token.trim();
@@ -946,7 +974,10 @@ void FirebaseNetwork::ingestLog(const FeatureFrame& f, FaultState st, int arcCou
   r.relay_blank_active = f.relay_blank_active;
   r.turnon_blank_active = f.turnon_blank_active;
   r.transient_blank_active = f.transient_blank_active;
-  r.device_family_code = f.device_family_code;
+  const int8_t deviceFamilyCode = (f.device_family_code != CONTEXT_FAMILY_UNKNOWN)
+      ? f.device_family_code
+      : deviceFamilyCodeFromToken_(spec.deviceFamily);
+  r.device_family_code = deviceFamilyCode;
   r.context_family_code_runtime = f.context_family_code_runtime;
   r.context_family_code_provisional = f.context_family_code_provisional;
   r.context_family_confidence = f.context_family_confidence;

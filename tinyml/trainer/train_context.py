@@ -1,5 +1,6 @@
 import argparse
 import json
+import warnings
 from pathlib import Path
 
 import numpy as np
@@ -139,8 +140,19 @@ def main():
     ctx_df = build_context_frame(raw_df)
     class_counts = ctx_df["device_family"].value_counts().to_dict()
     valid_classes = [fam for fam in DEVICE_FAMILY_CLASSES if class_counts.get(fam, 0) > 0]
+    missing_classes = [fam for fam in DEVICE_FAMILY_CLASSES if fam not in valid_classes]
+    training_warnings = []
     if len(valid_classes) < 2:
-        raise ValueError("Need at least 2 known device families to train the context model.")
+        msg = (
+            "Context training has fewer than 2 populated known families. "
+            "Proceeding anyway and exporting zero centroids for missing classes."
+        )
+        warnings.warn(msg)
+        training_warnings.append(msg)
+    if missing_classes:
+        msg = "Context training is missing class coverage for: " + ", ".join(missing_classes)
+        warnings.warn(msg)
+        training_warnings.append(msg)
 
     X = ctx_df[CONTEXT_FEATURES].astype(float).to_numpy()
     y = ctx_df["device_family_code"].astype(int).to_numpy()
@@ -171,11 +183,18 @@ def main():
 
     centroids = np.zeros((len(DEVICE_FAMILY_CLASSES), X_train_std.shape[1]), dtype=float)
     centroid_map = {}
+    zero_centroid_labels = []
     for fam_idx, fam_name in enumerate(DEVICE_FAMILY_CLASSES):
         mask = y_train == fam_idx
         if np.any(mask):
             centroids[fam_idx] = X_train_std[mask].mean(axis=0)
+        else:
+            zero_centroid_labels.append(fam_name)
         centroid_map[fam_name] = centroids[fam_idx].tolist()
+    if zero_centroid_labels:
+        msg = "Exporting zero centroids for classes with no training rows: " + ", ".join(zero_centroid_labels)
+        warnings.warn(msg)
+        training_warnings.append(msg)
 
     proba = prototype_predict_proba(X_test_std, centroids)
     pred = np.argmax(proba, axis=1)
@@ -226,6 +245,10 @@ def main():
         "train_rows": int(len(train_idx)),
         "test_rows": int(len(test_idx)),
         "class_counts": {k: int(v) for k, v in class_counts.items()},
+        "valid_classes": valid_classes,
+        "missing_classes": missing_classes,
+        "export_zero_centroid_classes": zero_centroid_labels,
+        "warnings": training_warnings,
         "accuracy": float(accuracy_score(y_test, pred)),
         "balanced_accuracy": float(balanced_accuracy_score(y_test, pred)),
         "accuracy_with_unknown_gate": float(np.mean(pred_with_unknown == y_test)) if len(y_test) else 0.0,

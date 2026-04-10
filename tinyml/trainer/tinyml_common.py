@@ -444,13 +444,19 @@ def normalize_feature_names(df: pd.DataFrame) -> pd.DataFrame:
         df["thd_i"] = DB_THD_CLIP[0]
 
     fam_series = df.get("device_family", pd.Series("unknown", index=df.index)).astype(str).map(_normalize_device_family_name)
+    fam_series = pd.Series(fam_series, index=df.index, dtype=object)
     if "device_family_code" in df.columns:
         fam_code = pd.to_numeric(df["device_family_code"], errors="coerce").apply(_coerce_device_family_code).astype(int)
         fam_from_code = fam_code.map(lambda c: DEVICE_FAMILY_NAME_FROM_CODE.get(int(c), "unknown"))
-        fam_series = np.where(pd.Series(fam_series, index=df.index) == "unknown", fam_from_code, fam_series)
+        known_from_text = fam_series.map(lambda name: DEVICE_FAMILY_CODE_MAP.get(str(name), DEVICE_FAMILY_UNKNOWN_CODE)).astype(int)
+        repair_mask = (fam_code == DEVICE_FAMILY_UNKNOWN_CODE) & (known_from_text >= 0)
+        if repair_mask.any():
+            fam_code.loc[repair_mask] = known_from_text.loc[repair_mask]
+        fam_from_code = fam_code.map(lambda c: DEVICE_FAMILY_NAME_FROM_CODE.get(int(c), "unknown"))
+        fam_series = fam_series.where(fam_series != "unknown", fam_from_code)
         df["device_family_code"] = fam_code
     else:
-        df["device_family_code"] = pd.Series(fam_series, index=df.index).map(lambda name: DEVICE_FAMILY_CODE_MAP.get(name, DEVICE_FAMILY_UNKNOWN_CODE)).astype(int)
+        df["device_family_code"] = fam_series.map(lambda name: DEVICE_FAMILY_CODE_MAP.get(str(name), DEVICE_FAMILY_UNKNOWN_CODE)).astype(int)
 
     df["device_family"] = pd.Series(fam_series, index=df.index).astype(str)
     if "device_name" in df.columns:
@@ -2504,6 +2510,24 @@ def export_context_header(
     stds = [max(1e-9, float(x)) for x in stds]
     centroids = {str(k): [float(v) for v in vals] for k, vals in dict(centroids).items()}
 
+    missing_centroid_labels = [label for label in class_labels if label not in centroids]
+    near_zero_centroid_labels = []
+    for label in class_labels:
+        arr = centroids.get(label, [0.0] * len(feature_names))
+        if len(arr) == len(feature_names) and float(np.max(np.abs(np.asarray(arr, dtype=float)))) <= 1e-9:
+            near_zero_centroid_labels.append(label)
+    if missing_centroid_labels:
+        warnings.warn(
+            "Context header export is filling missing centroids with zeros for: " + ", ".join(missing_centroid_labels),
+            RuntimeWarning,
+        )
+    warned_zero = [label for label in near_zero_centroid_labels if label not in missing_centroid_labels]
+    if warned_zero:
+        warnings.warn(
+            "Context header export found near-zero centroids for: " + ", ".join(warned_zero),
+            RuntimeWarning,
+        )
+
     with open(out_header, "w", encoding="utf-8") as f:
         f.write("#pragma once\n")
         f.write(f"// Auto-generated context family prototype model: {model_name}\n")
@@ -2518,6 +2542,13 @@ def export_context_header(
         for i, name in enumerate(feature_names):
             f.write(f"// [{i}] {name}\n")
         f.write("\n#include <math.h>\n\n")
+        if missing_centroid_labels or near_zero_centroid_labels:
+            f.write("// WARNING: this exported context model has incomplete class coverage.\n")
+            if missing_centroid_labels:
+                f.write("// Missing centroids filled with zeros: " + ", ".join(missing_centroid_labels) + "\n")
+            if near_zero_centroid_labels:
+                f.write("// Near-zero centroids: " + ", ".join(near_zero_centroid_labels) + "\n")
+            f.write("\n")
         f.write(f"static const float context_means[{len(feature_names)}] = {{{', '.join(c_float_literal(v) for v in means)}}};\n")
         f.write(f"static const float context_stds[{len(feature_names)}] = {{{', '.join(c_float_literal(v) for v in stds)}}};\n")
         centroid_symbols = []
@@ -2666,7 +2697,7 @@ def export_header(
         f.write("}\n\n")
         f.write(c_code)
 
-    norm_out = out_header.replace("\", "/")
+    norm_out = out_header.replace("\\", "/")
     marker = "/tinyml/model/"
     if marker in norm_out:
         compat_path = os.path.join(norm_out.split(marker, 1)[0], "tinyml", os.path.basename(out_header))
@@ -2675,7 +2706,7 @@ def export_header(
             with open(compat_path, "w", encoding="utf-8") as shim:
                 shim.write("#pragma once\n")
                 shim.write(f"// Compatibility shim that forwards to model/{os.path.basename(out_header)}\n")
-                shim.write(f"#include "model/{os.path.basename(out_header)}"\n")
+                shim.write(f"#include \"model/{os.path.basename(out_header)}\"\n")
 
 
 def save_model_bundle(
