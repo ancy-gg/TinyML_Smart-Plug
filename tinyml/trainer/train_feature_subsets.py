@@ -1,4 +1,5 @@
 import argparse
+from concurrent.futures import ThreadPoolExecutor
 import itertools
 import json
 import os
@@ -21,10 +22,10 @@ from tinyml_common import (
     evaluate_binary_scores,
     load_clean_dataset,
     make_group_splits,
-    estimate_search_plan,
     model_size_estimate,
     select_threshold_cost,
     train_one_model,
+    estimate_search_plan,
 )
 from train_context import build_context_frame, prototype_predict_proba, weighted_standardize
 
@@ -102,7 +103,7 @@ def _make_progress_tracker(args) -> dict:
 
     total_steps = 1  # global kickoff
     if arc_task_enabled:
-        total_steps += 5  # arc load + ready + stage transitions/finalize
+        total_steps += 5  # arc load + ready + staged transitions/finalization
         total_steps += int(arc_prescreen_steps + arc_shortlist_steps + arc_final_steps)
     if context_task_enabled:
         total_steps += 2  # context load + context ready
@@ -175,363 +176,7 @@ def _progress_child_callback(tracker: dict | None, base_current: int, local_offs
 # Arc sweep helpers
 # ----------------------------
 
-def _sort_model_row(row: dict):
-    return (
-        int(row.get("validation_fn", 10**9)),
-        int(row.get("validation_fp", 10**9)),
-        0 if int(row.get("validation_fn", 10**9)) == 0 else 1,
-        -float(row.get("validation_recall", 0.0)),
-        -float(row.get("validation_precision", 0.0)),
-        float(row.get("validation_fpr", 1.0)),
-        -float(row.get("test_accuracy", 0.0)),
-        -float(row.get("test_average_precision", 0.0)),
-        int(row.get("feature_count", 10**9)),
-        str(row.get("feature_combo", "")),
-    )
-
-
-def _sort_combined_row(row: dict):
-    return (
-        int(row.get("combined_validation_fn", 10**9)),
-        int(row.get("combined_validation_fp", 10**9)),
-        0 if int(row.get("combined_validation_fn", 10**9)) == 0 else 1,
-        -float(row.get("combined_validation_recall_mean", 0.0)),
-        -float(row.get("combined_validation_precision_mean", 0.0)),
-        float(row.get("combined_validation_fpr_mean", 1.0)),
-        int(row.get("combined_test_fn", 10**9)),
-        int(row.get("combined_test_fp", 10**9)),
-        -float(row.get("combined_test_accuracy_mean", 0.0)),
-        -float(row.get("combined_test_average_precision_mean", 0.0)),
-        int(row.get("feature_count", 10**9)),
-        str(row.get("feature_combo", "")),
-    )
-
-
-def _build_arc_model_summary(prefix: str, combo: list[str], result: dict) -> dict:
-    cm = result.get("test_confusion_matrix", {}) or {}
-    val_cm = result.get("validation_threshold_result", {}) or {}
-    return {
-        f"{prefix}_model_name": result.get("model_name"),
-        f"{prefix}_threshold": float(result.get("threshold", 0.5)),
-        f"{prefix}_threshold_source": str(result.get("threshold_source", "")),
-        f"{prefix}_threshold_constraints_met": bool(result.get("threshold_constraints_met", False)),
-        f"{prefix}_estimated_node_count": int(result.get("estimated_node_count", 0)),
-        f"{prefix}_validation_cost": float(val_cm.get("cost", 0.0)),
-        f"{prefix}_validation_tn": int(val_cm.get("tn", 0)),
-        f"{prefix}_validation_fp": int(val_cm.get("fp", 0)),
-        f"{prefix}_validation_fn": int(val_cm.get("fn", 0)),
-        f"{prefix}_validation_tp": int(val_cm.get("tp", 0)),
-        f"{prefix}_validation_recall": float(result.get("validation_recall", 0.0)),
-        f"{prefix}_validation_precision": float(result.get("validation_precision", 0.0)),
-        f"{prefix}_validation_specificity": float(result.get("validation_specificity", 0.0)),
-        f"{prefix}_validation_fpr": float(result.get("validation_fpr", 1.0)),
-        f"{prefix}_validation_average_precision": float(result.get("validation_average_precision", 0.0)),
-        f"{prefix}_validation_balanced_accuracy": float(result.get("validation_balanced_accuracy", 0.0)),
-        f"{prefix}_test_tn": int(cm.get("tn", 0)),
-        f"{prefix}_test_fp": int(cm.get("fp", 0)),
-        f"{prefix}_test_fn": int(cm.get("fn", 0)),
-        f"{prefix}_test_tp": int(cm.get("tp", 0)),
-        f"{prefix}_test_recall": float(result.get("test_recall", 0.0)),
-        f"{prefix}_test_precision": float(result.get("test_precision", 0.0)),
-        f"{prefix}_test_specificity": float(result.get("test_specificity", 0.0)),
-        f"{prefix}_test_fpr": float(result.get("test_fpr", 1.0)),
-        f"{prefix}_test_average_precision": float(result.get("test_average_precision", 0.0)),
-        f"{prefix}_test_balanced_accuracy": float(result.get("test_balanced_accuracy", 0.0)),
-        f"{prefix}_test_accuracy": float(result.get("test_accuracy", 0.0)),
-    }
-
-
-def run_arc_dual_sweep(args, tracker: dict | None = None) -> tuple[dict, pd.DataFrame]:
-    feature_pool = [str(x).strip() for x in (args.features or ARC_SWEEP_FEATURES) if str(x).strip() in ARC_SWEEP_FEATURES]
-    if tracker is not None:
-        tracker["arc_feature_pool"] = list(feature_pool)
-    feature_count_min = max(1, int(args.feature_count_min))
-    feature_count_max = min(len(feature_pool), int(args.feature_count_max or len(feature_pool)))
-    if feature_count_max < feature_count_min:
-        feature_count_max = feature_count_min
-
-    if tracker is not None:
-        _progress_advance(tracker, 1, {
-            "task": "arc",
-            "stage": "load_dataset",
-            "message": "Loading arc dataset and building grouped splits",
-            "feature_pool_size": len(feature_pool),
-        })
-
-    full_feature_names = list(feature_pool) + list(ARC_CONTEXT_FEATURES)
-    df_meta, X_all, y, groups, w = load_clean_dataset(
-        args.arc_csv,
-        include_invalid=args.include_invalid,
-        feature_names=full_feature_names,
-    )
-    splits = make_group_splits(X_all, y, groups)
-    train_idx = splits["train_idx"]
-    val_idx = splits["val_idx"]
-    train_full_idx = splits["train_full_idx"]
-    X_train_full = splits["X_train_full"]
-    y_train_full = splits["y_train_full"]
-    X_test_full = splits["X_test"]
-    y_test = splits["y_test"]
-
-    total = sum(1 for k in range(feature_count_min, feature_count_max + 1) for _ in itertools.combinations(feature_pool, k))
-    if args.max_combinations and args.max_combinations > 0:
-        total = min(total, int(args.max_combinations))
-
-    print("Arc subset sweep task: dual-model")
-    print("Arc feature pool:", feature_pool)
-    print("Arc feature pool size:", len(feature_pool))
-    print("Arc total combinations:", total)
-    print("Arc sweep n_iter per model:", args.n_iter)
-    print("CV split summary:", splits.get("cv_group_summary", {}))
-
-    if tracker is not None:
-        tracker["arc_combo_count"] = int(total)
-        _progress_advance(tracker, 1, {
-            "task": "arc",
-            "stage": "ready",
-            "message": f"Arc sweep ready: {total} combos, {tracker.get('arc_model_steps', 0)} inner steps/model",
-            "feature_pool_size": len(feature_pool),
-            "combo_total": int(total),
-        })
-
-    rows = []
-    rf_rows = []
-    et_rows = []
-    combo_counter = 0
-    stop = False
-
-    for feature_count in range(feature_count_min, feature_count_max + 1):
-        for combo in itertools.combinations(feature_pool, feature_count):
-            combo_counter += 1
-            if args.max_combinations and args.max_combinations > 0 and combo_counter > int(args.max_combinations):
-                stop = True
-                break
-
-            combo = list(combo)
-            selected_cols = combo + list(ARC_CONTEXT_FEATURES)
-            combo_key = "|".join(combo)
-            print(f"\n=== Arc combo {combo_counter}/{total}: {combo_key} ===")
-
-            combo_base_current = int(tracker.get("current", 0)) if tracker is not None else 0
-            if tracker is not None:
-                _progress_advance(tracker, 1, {
-                    "task": "arc",
-                    "stage": "combo_setup",
-                    "message": f"Arc combo {combo_counter}/{total} setup",
-                    "combo_index": int(combo_counter),
-                    "combo_total": int(total),
-                    "feature_combo": combo_key,
-                    "feature_count": int(feature_count),
-                })
-                combo_base_current = int(tracker.get("current", 0))
-
-            rf_result = train_one_model(
-                model_key="rf",
-                X_train=X_train_full.iloc[train_idx][selected_cols],
-                y_train=y_train_full.iloc[train_idx],
-                groups_train=splits["groups_train_full"].iloc[train_idx],
-                w_train=w[train_full_idx][train_idx],
-                X_val=X_train_full.iloc[val_idx][selected_cols],
-                y_val=y_train_full.iloc[val_idx],
-                X_test=X_test_full[selected_cols],
-                y_test=y_test,
-                fn_weight=args.fn_weight,
-                fp_weight=args.fp_weight,
-                min_recall=args.min_recall,
-                n_iter=args.n_iter,
-                min_precision=args.min_precision,
-                max_fpr=args.max_fpr,
-                min_threshold=args.min_threshold,
-                progress_callback=_progress_child_callback(
-                    tracker,
-                    combo_base_current,
-                    0,
-                    int(tracker.get("arc_model_steps", estimate_search_plan(int(args.n_iter)).get("progress_steps", 1))) if tracker is not None else estimate_search_plan(int(args.n_iter)).get("progress_steps", 1),
-                    "arc",
-                    combo_counter,
-                    total,
-                    combo_key,
-                ),
-            )
-            et_result = train_one_model(
-                model_key="et",
-                X_train=X_train_full.iloc[train_idx][selected_cols],
-                y_train=y_train_full.iloc[train_idx],
-                groups_train=splits["groups_train_full"].iloc[train_idx],
-                w_train=w[train_full_idx][train_idx],
-                X_val=X_train_full.iloc[val_idx][selected_cols],
-                y_val=y_train_full.iloc[val_idx],
-                X_test=X_test_full[selected_cols],
-                y_test=y_test,
-                fn_weight=args.fn_weight,
-                fp_weight=args.fp_weight,
-                min_recall=args.min_recall,
-                n_iter=args.n_iter,
-                min_precision=args.min_precision,
-                max_fpr=args.max_fpr,
-                min_threshold=args.min_threshold,
-                progress_callback=_progress_child_callback(
-                    tracker,
-                    combo_base_current,
-                    int(tracker.get("arc_model_steps", estimate_search_plan(int(args.n_iter)).get("progress_steps", 1))) if tracker is not None else estimate_search_plan(int(args.n_iter)).get("progress_steps", 1),
-                    int(tracker.get("arc_model_steps", estimate_search_plan(int(args.n_iter)).get("progress_steps", 1))) if tracker is not None else estimate_search_plan(int(args.n_iter)).get("progress_steps", 1),
-                    "arc",
-                    combo_counter,
-                    total,
-                    combo_key,
-                ),
-            )
-
-            rf_row = {
-                "model_key": "rf",
-                "feature_count": int(feature_count),
-                "feature_combo": combo_key,
-                "features": combo,
-                "full_feature_names": selected_cols,
-                "validation_fn": int(rf_result.get("validation_threshold_result", {}).get("fn", 0)),
-                "validation_fp": int(rf_result.get("validation_threshold_result", {}).get("fp", 0)),
-                "validation_recall": float(rf_result.get("validation_recall", 0.0)),
-                "validation_precision": float(rf_result.get("validation_precision", 0.0)),
-                "validation_fpr": float(rf_result.get("validation_fpr", 1.0)),
-                "validation_average_precision": float(rf_result.get("validation_average_precision", 0.0)),
-                "test_fn": int(rf_result.get("test_confusion_matrix", {}).get("fn", 0)),
-                "test_fp": int(rf_result.get("test_confusion_matrix", {}).get("fp", 0)),
-                "test_recall": float(rf_result.get("test_recall", 0.0)),
-                "test_precision": float(rf_result.get("test_precision", 0.0)),
-                "test_fpr": float(rf_result.get("test_fpr", 1.0)),
-                "test_average_precision": float(rf_result.get("test_average_precision", 0.0)),
-                "test_accuracy": float(rf_result.get("test_accuracy", 0.0)),
-                "estimated_node_count": int(rf_result.get("estimated_node_count", 0)),
-            }
-            et_row = {
-                "model_key": "et",
-                "feature_count": int(feature_count),
-                "feature_combo": combo_key,
-                "features": combo,
-                "full_feature_names": selected_cols,
-                "validation_fn": int(et_result.get("validation_threshold_result", {}).get("fn", 0)),
-                "validation_fp": int(et_result.get("validation_threshold_result", {}).get("fp", 0)),
-                "validation_recall": float(et_result.get("validation_recall", 0.0)),
-                "validation_precision": float(et_result.get("validation_precision", 0.0)),
-                "validation_fpr": float(et_result.get("validation_fpr", 1.0)),
-                "validation_average_precision": float(et_result.get("validation_average_precision", 0.0)),
-                "test_fn": int(et_result.get("test_confusion_matrix", {}).get("fn", 0)),
-                "test_fp": int(et_result.get("test_confusion_matrix", {}).get("fp", 0)),
-                "test_recall": float(et_result.get("test_recall", 0.0)),
-                "test_precision": float(et_result.get("test_precision", 0.0)),
-                "test_fpr": float(et_result.get("test_fpr", 1.0)),
-                "test_average_precision": float(et_result.get("test_average_precision", 0.0)),
-                "test_accuracy": float(et_result.get("test_accuracy", 0.0)),
-                "estimated_node_count": int(et_result.get("estimated_node_count", 0)),
-            }
-            rf_rows.append(rf_row)
-            et_rows.append(et_row)
-
-            combined = {
-                "feature_count": int(feature_count),
-                "feature_combo": combo_key,
-                "features": combo,
-                "full_feature_names": selected_cols,
-                "combined_validation_fn": int(rf_row["validation_fn"] + et_row["validation_fn"]),
-                "combined_validation_fp": int(rf_row["validation_fp"] + et_row["validation_fp"]),
-                "combined_test_fn": int(rf_row["test_fn"] + et_row["test_fn"]),
-                "combined_test_fp": int(rf_row["test_fp"] + et_row["test_fp"]),
-                "combined_validation_recall_mean": float((rf_row["validation_recall"] + et_row["validation_recall"]) / 2.0),
-                "combined_validation_precision_mean": float((rf_row["validation_precision"] + et_row["validation_precision"]) / 2.0),
-                "combined_validation_fpr_mean": float((rf_row["validation_fpr"] + et_row["validation_fpr"]) / 2.0),
-                "combined_test_recall_mean": float((rf_row["test_recall"] + et_row["test_recall"]) / 2.0),
-                "combined_test_precision_mean": float((rf_row["test_precision"] + et_row["test_precision"]) / 2.0),
-                "combined_test_accuracy_mean": float((rf_row["test_accuracy"] + et_row["test_accuracy"]) / 2.0),
-                "combined_test_average_precision_mean": float((rf_row["test_average_precision"] + et_row["test_average_precision"]) / 2.0),
-                "combined_estimated_node_count": int(rf_row["estimated_node_count"] + et_row["estimated_node_count"]),
-            }
-            combined.update(_build_arc_model_summary("rf", combo, rf_result))
-            combined.update(_build_arc_model_summary("et", combo, et_result))
-            rows.append(combined)
-            if tracker is not None:
-                _progress_advance(tracker, 1, {
-                    "task": "arc",
-                    "stage": "combo_done",
-                    "message": f"Arc combo {combo_counter}/{total} done | FN(sum)={combined['combined_validation_fn']} FP(sum)={combined['combined_validation_fp']}",
-                    "combo_index": int(combo_counter),
-                    "combo_total": int(total),
-                    "feature_combo": combo_key,
-                    "feature_count": int(feature_count),
-                })
-            else:
-                emit_progress(combo_counter, total, {
-                    "task": "arc",
-                    "stage": "combo_done",
-                    "message": f"Arc combo {combo_counter}/{total} done | FN(sum)={combined['combined_validation_fn']} FP(sum)={combined['combined_validation_fp']}",
-                    "feature_combo": combo_key,
-                    "feature_count": int(feature_count),
-                })
-        if stop:
-            break
-
-    results_df = pd.DataFrame(rows)
-    rf_best = sorted(rf_rows, key=_sort_model_row)[0] if rf_rows else {}
-    et_best = sorted(et_rows, key=_sort_model_row)[0] if et_rows else {}
-    combined_best = sorted(rows, key=_sort_combined_row)[0] if rows else {}
-
-    best_by_feature_count = []
-    for feature_count in range(feature_count_min, feature_count_max + 1):
-        bucket_rows = [r for r in rows if int(r.get("feature_count", 0)) == int(feature_count)]
-        if not bucket_rows:
-            continue
-        bucket_rf = [r for r in rf_rows if int(r.get("feature_count", 0)) == int(feature_count)]
-        bucket_et = [r for r in et_rows if int(r.get("feature_count", 0)) == int(feature_count)]
-        best_by_feature_count.append({
-            "feature_count": int(feature_count),
-            "best_combined": sorted(bucket_rows, key=_sort_combined_row)[0],
-            "best_rf": sorted(bucket_rf, key=_sort_model_row)[0] if bucket_rf else {},
-            "best_et": sorted(bucket_et, key=_sort_model_row)[0] if bucket_et else {},
-        })
-
-    report = {
-        "task": "arc_dual_model",
-        "models": ["rf", "et"],
-        "feature_pool_role": "arc_base_features",
-        "feature_pool": feature_pool,
-        "feature_pool_size": len(feature_pool),
-        "context_inputs_fixed": list(ARC_CONTEXT_FEATURES),
-        "context_input_count": len(ARC_CONTEXT_FEATURES),
-        "total_combinations": int(total),
-        "all_results_csv": args.out_csv,
-        "recommended_arc_base_features_global": list(combined_best.get("features", [])),
-        "recommended_features_global": list(combined_best.get("features", [])),
-        "recommended_by_model": {
-            "rf": list(rf_best.get("features", [])),
-            "et": list(et_best.get("features", [])),
-        },
-        "overall_best_combined_tradeoff": combined_best,
-        "overall_best_rf": rf_best,
-        "overall_best_et": et_best,
-        "best_by_feature_count": best_by_feature_count,
-        "split_summary": splits.get("cv_group_summary", {}),
-        "settings": {
-            "arc_csv": args.arc_csv,
-            "include_invalid": args.include_invalid,
-            "fn_weight": args.fn_weight,
-            "fp_weight": args.fp_weight,
-            "min_recall": args.min_recall,
-            "min_precision": args.min_precision,
-            "max_fpr": args.max_fpr,
-            "min_threshold": args.min_threshold,
-            "n_iter": args.n_iter,
-            "feature_count_min": feature_count_min,
-            "feature_count_max": feature_count_max,
-            "max_combinations": int(args.max_combinations),
-        },
-    }
-    return report, results_df
-
-
-# ----------------------------
-# Optimized staged arc sweep overrides
-# ----------------------------
-
-def _arc_row_int(row: dict, *keys: str, default: int = 0) -> int:
+def _row_int(row: dict, *keys: str, default: int = 0) -> int:
     for key in keys:
         if key in row and row.get(key) is not None:
             try:
@@ -541,7 +186,7 @@ def _arc_row_int(row: dict, *keys: str, default: int = 0) -> int:
     return int(default)
 
 
-def _arc_row_float(row: dict, *keys: str, default: float = 0.0) -> float:
+def _row_float(row: dict, *keys: str, default: float = 0.0) -> float:
     for key in keys:
         if key in row and row.get(key) is not None:
             try:
@@ -551,22 +196,180 @@ def _arc_row_float(row: dict, *keys: str, default: float = 0.0) -> float:
     return float(default)
 
 
-def _sort_arc_candidate_row(row: dict):
-    val_fn = _arc_row_int(row, "validation_fn", "combined_validation_fn", default=10**9)
-    val_fp = _arc_row_int(row, "validation_fp", "combined_validation_fp", default=10**9)
-    test_fn = _arc_row_int(row, "test_fn", "combined_test_fn", default=10**9)
-    test_fp = _arc_row_int(row, "test_fp", "combined_test_fp", default=10**9)
+def _row_bool(row: dict, *keys: str, default: bool = False) -> bool:
+    for key in keys:
+        if key in row and row.get(key) is not None:
+            try:
+                return bool(row.get(key))
+            except Exception:
+                pass
+    return bool(default)
+
+
+def _validation_accuracy(tn: int, fp: int, fn: int, tp: int) -> float:
+    total = max(1, int(tn) + int(fp) + int(fn) + int(tp))
+    return float((int(tn) + int(tp)) / total)
+
+
+def _sort_model_row_fn_first(row: dict):
     return (
-        val_fn,
-        val_fp,
-        test_fn,
-        test_fp,
-        0 if val_fn == 0 else 1,
-        -_arc_row_float(row, "validation_recall", "combined_validation_recall_mean", default=0.0),
-        -_arc_row_float(row, "validation_precision", "combined_validation_precision_mean", default=0.0),
+        _row_int(row, "validation_fn", default=10**9),
+        _row_int(row, "validation_fp", default=10**9),
+        0 if _row_int(row, "validation_fn", default=10**9) == 0 else 1,
+        -_row_float(row, "validation_recall", default=0.0),
+        -_row_float(row, "validation_precision", default=0.0),
+        _row_float(row, "validation_fpr", default=1.0),
+        -_row_float(row, "test_accuracy", default=0.0),
+        -_row_float(row, "test_average_precision", default=0.0),
+        _row_int(row, "feature_count", default=10**9),
+        str(row.get("feature_combo", "")),
+    )
+
+
+def _sort_combined_row_fn_first(row: dict):
+    return (
+        _row_int(row, "combined_validation_fn", default=10**9),
+        _row_int(row, "combined_validation_fp", default=10**9),
+        0 if _row_int(row, "combined_validation_fn", default=10**9) == 0 else 1,
+        -_row_float(row, "combined_validation_recall_mean", default=0.0),
+        -_row_float(row, "combined_validation_precision_mean", default=0.0),
+        _row_float(row, "combined_validation_fpr_mean", default=1.0),
+        _row_int(row, "combined_test_fn", default=10**9),
+        _row_int(row, "combined_test_fp", default=10**9),
+        -_row_float(row, "combined_test_accuracy_mean", default=0.0),
+        -_row_float(row, "combined_test_average_precision_mean", default=0.0),
+        _row_int(row, "feature_count", default=10**9),
+        str(row.get("feature_combo", "")),
+    )
+
+
+def _sort_model_row_validation_cost(row: dict):
+    return (
+        0 if _row_bool(row, "threshold_constraints_met", default=False) else 1,
+        _row_float(row, "validation_cost", default=float("inf")),
+        _row_int(row, "validation_fp", default=10**9),
+        _row_int(row, "validation_fn", default=10**9),
+        -_row_float(row, "validation_balanced_accuracy", default=0.0),
+        -_row_float(row, "validation_accuracy", default=0.0),
+        -_row_float(row, "test_balanced_accuracy", default=0.0),
+        -_row_float(row, "test_accuracy", default=0.0),
+        _row_int(row, "feature_count", default=10**9),
+        str(row.get("feature_combo", "")),
+    )
+
+
+def _sort_combined_row_validation_cost(row: dict):
+    return (
+        -_row_int(row, "combined_validation_constraints_met_count", default=0),
+        _row_float(row, "combined_validation_cost", default=float("inf")),
+        _row_int(row, "combined_validation_fp", default=10**9),
+        _row_int(row, "combined_validation_fn", default=10**9),
+        -_row_float(row, "combined_validation_balanced_accuracy_mean", default=0.0),
+        -_row_float(row, "combined_validation_accuracy_mean", default=0.0),
+        -_row_float(row, "combined_test_balanced_accuracy_mean", default=0.0),
+        -_row_float(row, "combined_test_accuracy_mean", default=0.0),
+        _row_int(row, "feature_count", default=10**9),
+        str(row.get("feature_combo", "")),
+    )
+
+
+def _sort_model_row_accuracy(row: dict):
+    return (
+        -_row_float(row, "validation_balanced_accuracy", default=0.0),
+        -_row_float(row, "validation_accuracy", default=0.0),
+        -_row_float(row, "test_accuracy", default=0.0),
+        -_row_float(row, "test_balanced_accuracy", default=0.0),
+        _row_float(row, "validation_cost", default=float("inf")),
+        _row_int(row, "validation_fn", default=10**9),
+        _row_int(row, "validation_fp", default=10**9),
+        _row_int(row, "feature_count", default=10**9),
+        str(row.get("feature_combo", "")),
+    )
+
+
+def _sort_combined_row_accuracy(row: dict):
+    return (
+        -_row_float(row, "combined_validation_balanced_accuracy_mean", default=0.0),
+        -_row_float(row, "combined_validation_accuracy_mean", default=0.0),
+        -_row_float(row, "combined_test_accuracy_mean", default=0.0),
+        -_row_float(row, "combined_test_balanced_accuracy_mean", default=0.0),
+        _row_float(row, "combined_validation_cost", default=float("inf")),
+        _row_int(row, "combined_validation_fn", default=10**9),
+        _row_int(row, "combined_validation_fp", default=10**9),
+        _row_int(row, "feature_count", default=10**9),
+        str(row.get("feature_combo", "")),
+    )
+
+
+def _sort_model_row_practical(row: dict):
+    return (
+        0 if _row_bool(row, "threshold_constraints_met", default=False) else 1,
+        -_row_float(row, "validation_balanced_accuracy", default=0.0),
+        -_row_float(row, "validation_accuracy", default=0.0),
+        _row_float(row, "validation_fpr", default=1.0),
+        _row_int(row, "validation_fp", default=10**9),
+        _row_int(row, "validation_fn", default=10**9),
+        -_row_float(row, "validation_precision", default=0.0),
+        -_row_float(row, "validation_recall", default=0.0),
+        -_row_float(row, "test_balanced_accuracy", default=0.0),
+        -_row_float(row, "test_accuracy", default=0.0),
+        _row_int(row, "feature_count", default=10**9),
+        str(row.get("feature_combo", "")),
+    )
+
+
+def _sort_combined_row_practical(row: dict):
+    return (
+        -_row_int(row, "combined_validation_constraints_met_count", default=0),
+        -_row_float(row, "combined_validation_balanced_accuracy_mean", default=0.0),
+        -_row_float(row, "combined_validation_accuracy_mean", default=0.0),
+        _row_float(row, "combined_validation_fpr_mean", default=1.0),
+        _row_int(row, "combined_validation_fp", default=10**9),
+        _row_int(row, "combined_validation_fn", default=10**9),
+        -_row_float(row, "combined_validation_precision_mean", default=0.0),
+        -_row_float(row, "combined_validation_recall_mean", default=0.0),
+        -_row_float(row, "combined_test_balanced_accuracy_mean", default=0.0),
+        -_row_float(row, "combined_test_accuracy_mean", default=0.0),
+        _row_int(row, "feature_count", default=10**9),
+        str(row.get("feature_combo", "")),
+    )
+
+
+# Default ranking now follows the practical validation tradeoff:
+# prefer low FPR/FP and strong balanced accuracy without sacrificing recall.
+def _sort_model_row(row: dict):
+    return _sort_model_row_practical(row)
+
+
+def _sort_combined_row(row: dict):
+    return _sort_combined_row_practical(row)
+
+
+def _arc_row_int(row: dict, *keys: str, default: int = 0) -> int:
+    return _row_int(row, *keys, default=default)
+
+
+def _arc_row_float(row: dict, *keys: str, default: float = 0.0) -> float:
+    return _row_float(row, *keys, default=default)
+
+
+def _sort_arc_candidate_row(row: dict):
+    val_constraints = _arc_row_int(
+        row,
+        "combined_validation_constraints_met_count",
+        default=1 if _row_bool(row, "threshold_constraints_met", default=False) else 0,
+    )
+    return (
+        -val_constraints,
+        -_arc_row_float(row, "validation_balanced_accuracy", "combined_validation_balanced_accuracy_mean", default=0.0),
+        -_arc_row_float(row, "validation_accuracy", "combined_validation_accuracy_mean", default=0.0),
         _arc_row_float(row, "validation_fpr", "combined_validation_fpr_mean", default=1.0),
+        _arc_row_int(row, "validation_fp", "combined_validation_fp", default=10**9),
+        _arc_row_int(row, "validation_fn", "combined_validation_fn", default=10**9),
+        -_arc_row_float(row, "validation_precision", "combined_validation_precision_mean", default=0.0),
+        -_arc_row_float(row, "validation_recall", "combined_validation_recall_mean", default=0.0),
+        -_arc_row_float(row, "test_balanced_accuracy", "combined_test_balanced_accuracy_mean", default=0.0),
         -_arc_row_float(row, "test_accuracy", "combined_test_accuracy_mean", default=0.0),
-        -_arc_row_float(row, "test_average_precision", "combined_test_average_precision_mean", default=0.0),
         _arc_row_int(row, "feature_count", default=10**9),
         str(row.get("feature_combo", "")),
     )
@@ -702,6 +505,53 @@ def _failed_arc_model_result(model_key: str, model_name: str, y_val, y_test, min
     }
 
 
+def _safe_train_arc_model(
+    model_key: str,
+    X_train,
+    y_train,
+    groups_train,
+    w_train,
+    X_val,
+    y_val,
+    X_test,
+    y_test,
+    n_iter: int,
+    args,
+    progress_callback=None,
+) -> dict:
+    model_name = "RandomForest" if model_key == "rf" else "ExtraTrees"
+    try:
+        return train_one_model(
+            model_key=model_key,
+            X_train=X_train,
+            y_train=y_train,
+            groups_train=groups_train,
+            w_train=w_train,
+            X_val=X_val,
+            y_val=y_val,
+            X_test=X_test,
+            y_test=y_test,
+            fn_weight=args.fn_weight,
+            fp_weight=args.fp_weight,
+            min_recall=args.min_recall,
+            n_iter=n_iter,
+            min_precision=args.min_precision,
+            max_fpr=args.max_fpr,
+            min_threshold=args.min_threshold,
+            progress_callback=progress_callback,
+        )
+    except Exception as exc:
+        return _failed_arc_model_result(
+            model_key=model_key,
+            model_name=model_name,
+            y_val=y_val,
+            y_test=y_test,
+            min_threshold=args.min_threshold,
+            error_text=str(exc),
+            strategy=f"{model_key}_arc_subset_failure",
+        )
+
+
 def _run_arc_et_prescreen(
     X_train,
     y_train,
@@ -808,53 +658,6 @@ def _run_arc_et_prescreen(
         )
 
 
-def _safe_train_arc_model(
-    model_key: str,
-    X_train,
-    y_train,
-    groups_train,
-    w_train,
-    X_val,
-    y_val,
-    X_test,
-    y_test,
-    n_iter: int,
-    args,
-    progress_callback=None,
-) -> dict:
-    model_name = "RandomForest" if model_key == "rf" else "ExtraTrees"
-    try:
-        return train_one_model(
-            model_key=model_key,
-            X_train=X_train,
-            y_train=y_train,
-            groups_train=groups_train,
-            w_train=w_train,
-            X_val=X_val,
-            y_val=y_val,
-            X_test=X_test,
-            y_test=y_test,
-            fn_weight=args.fn_weight,
-            fp_weight=args.fp_weight,
-            min_recall=args.min_recall,
-            n_iter=n_iter,
-            min_precision=args.min_precision,
-            max_fpr=args.max_fpr,
-            min_threshold=args.min_threshold,
-            progress_callback=progress_callback,
-        )
-    except Exception as exc:
-        return _failed_arc_model_result(
-            model_key=model_key,
-            model_name=model_name,
-            y_val=y_val,
-            y_test=y_test,
-            min_threshold=args.min_threshold,
-            error_text=str(exc),
-            strategy=f"{model_key}_arc_subset_failure",
-        )
-
-
 def _build_arc_model_row_optimized(stage: str, combo: list[str], selected_cols: list[str], result: dict, extra: dict | None = None) -> dict:
     row = {
         "task": "arc",
@@ -864,6 +667,7 @@ def _build_arc_model_row_optimized(stage: str, combo: list[str], selected_cols: 
         "feature_combo": "|".join(combo),
         "features": list(combo),
         "full_feature_names": list(selected_cols),
+        "validation_accuracy": float(result.get("validation_accuracy", 0.0)),
         "validation_fn": int(result.get("validation_threshold_result", {}).get("fn", 0)),
         "validation_fp": int(result.get("validation_threshold_result", {}).get("fp", 0)),
         "validation_recall": float(result.get("validation_recall", 0.0)),
@@ -871,6 +675,7 @@ def _build_arc_model_row_optimized(stage: str, combo: list[str], selected_cols: 
         "validation_fpr": float(result.get("validation_fpr", 1.0)),
         "validation_average_precision": float(result.get("validation_average_precision", 0.0)),
         "validation_balanced_accuracy": float(result.get("validation_balanced_accuracy", 0.0)),
+        "validation_cost": float((result.get("validation_threshold_result", {}) or {}).get("cost", 0.0)),
         "test_fn": int(result.get("test_confusion_matrix", {}).get("fn", 0)),
         "test_fp": int(result.get("test_confusion_matrix", {}).get("fp", 0)),
         "test_recall": float(result.get("test_recall", 0.0)),
@@ -900,16 +705,22 @@ def _build_arc_combined_row_optimized(stage: str, combo: list[str], selected_col
         "feature_combo": "|".join(combo),
         "features": list(combo),
         "full_feature_names": list(selected_cols),
+        "combined_validation_cost": float(rf_row["validation_cost"] + et_row["validation_cost"]),
+        "combined_validation_constraints_met_count": int(int(bool(rf_row["threshold_constraints_met"])) + int(bool(et_row["threshold_constraints_met"]))),
+        "combined_validation_constraints_all_met": bool(rf_row["threshold_constraints_met"] and et_row["threshold_constraints_met"]),
         "combined_validation_fn": int(rf_row["validation_fn"] + et_row["validation_fn"]),
         "combined_validation_fp": int(rf_row["validation_fp"] + et_row["validation_fp"]),
         "combined_test_fn": int(rf_row["test_fn"] + et_row["test_fn"]),
         "combined_test_fp": int(rf_row["test_fp"] + et_row["test_fp"]),
+        "combined_validation_accuracy_mean": float((rf_row["validation_accuracy"] + et_row["validation_accuracy"]) / 2.0),
+        "combined_validation_balanced_accuracy_mean": float((rf_row["validation_balanced_accuracy"] + et_row["validation_balanced_accuracy"]) / 2.0),
         "combined_validation_recall_mean": float((rf_row["validation_recall"] + et_row["validation_recall"]) / 2.0),
         "combined_validation_precision_mean": float((rf_row["validation_precision"] + et_row["validation_precision"]) / 2.0),
         "combined_validation_fpr_mean": float((rf_row["validation_fpr"] + et_row["validation_fpr"]) / 2.0),
         "combined_test_recall_mean": float((rf_row["test_recall"] + et_row["test_recall"]) / 2.0),
         "combined_test_precision_mean": float((rf_row["test_precision"] + et_row["test_precision"]) / 2.0),
         "combined_test_accuracy_mean": float((rf_row["test_accuracy"] + et_row["test_accuracy"]) / 2.0),
+        "combined_test_balanced_accuracy_mean": float((rf_row["test_balanced_accuracy"] + et_row["test_balanced_accuracy"]) / 2.0),
         "combined_test_average_precision_mean": float((rf_row["test_average_precision"] + et_row["test_average_precision"]) / 2.0),
         "combined_estimated_node_count": int(rf_row["estimated_node_count"] + et_row["estimated_node_count"]),
     }
@@ -918,6 +729,566 @@ def _build_arc_combined_row_optimized(stage: str, combo: list[str], selected_col
     if extra:
         combined.update(extra)
     return combined
+
+
+def _build_arc_model_summary(prefix: str, combo: list[str], result: dict) -> dict:
+    cm = result.get("test_confusion_matrix", {}) or {}
+    val_cm = result.get("validation_threshold_result", {}) or {}
+    return {
+        f"{prefix}_model_name": result.get("model_name"),
+        f"{prefix}_threshold": float(result.get("threshold", 0.5)),
+        f"{prefix}_threshold_source": str(result.get("threshold_source", "")),
+        f"{prefix}_threshold_constraints_met": bool(result.get("threshold_constraints_met", False)),
+        f"{prefix}_estimated_node_count": int(result.get("estimated_node_count", 0)),
+        f"{prefix}_validation_cost": float(val_cm.get("cost", 0.0)),
+        f"{prefix}_validation_tn": int(val_cm.get("tn", 0)),
+        f"{prefix}_validation_fp": int(val_cm.get("fp", 0)),
+        f"{prefix}_validation_fn": int(val_cm.get("fn", 0)),
+        f"{prefix}_validation_tp": int(val_cm.get("tp", 0)),
+        f"{prefix}_validation_recall": float(result.get("validation_recall", 0.0)),
+        f"{prefix}_validation_precision": float(result.get("validation_precision", 0.0)),
+        f"{prefix}_validation_specificity": float(result.get("validation_specificity", 0.0)),
+        f"{prefix}_validation_fpr": float(result.get("validation_fpr", 1.0)),
+        f"{prefix}_validation_average_precision": float(result.get("validation_average_precision", 0.0)),
+        f"{prefix}_validation_balanced_accuracy": float(result.get("validation_balanced_accuracy", 0.0)),
+        f"{prefix}_test_tn": int(cm.get("tn", 0)),
+        f"{prefix}_test_fp": int(cm.get("fp", 0)),
+        f"{prefix}_test_fn": int(cm.get("fn", 0)),
+        f"{prefix}_test_tp": int(cm.get("tp", 0)),
+        f"{prefix}_test_recall": float(result.get("test_recall", 0.0)),
+        f"{prefix}_test_precision": float(result.get("test_precision", 0.0)),
+        f"{prefix}_test_specificity": float(result.get("test_specificity", 0.0)),
+        f"{prefix}_test_fpr": float(result.get("test_fpr", 1.0)),
+        f"{prefix}_test_average_precision": float(result.get("test_average_precision", 0.0)),
+        f"{prefix}_test_balanced_accuracy": float(result.get("test_balanced_accuracy", 0.0)),
+        f"{prefix}_test_accuracy": float(result.get("test_accuracy", 0.0)),
+    }
+
+
+def run_arc_dual_sweep(args, tracker: dict | None = None) -> tuple[dict, pd.DataFrame]:
+    feature_pool = [str(x).strip() for x in (args.features or ARC_SWEEP_FEATURES) if str(x).strip() in ARC_SWEEP_FEATURES]
+    if tracker is not None:
+        tracker["arc_feature_pool"] = list(feature_pool)
+    feature_count_min = max(1, int(args.feature_count_min))
+    feature_count_max = min(len(feature_pool), int(args.feature_count_max or len(feature_pool)))
+    if feature_count_max < feature_count_min:
+        feature_count_max = feature_count_min
+
+    if tracker is not None:
+        _progress_advance(tracker, 1, {
+            "task": "arc",
+            "stage": "load_dataset",
+            "message": "Loading arc dataset and building grouped splits",
+            "feature_pool_size": len(feature_pool),
+        })
+
+    full_feature_names = list(feature_pool) + list(ARC_CONTEXT_FEATURES)
+    df_meta, X_all, y, groups, w = load_clean_dataset(
+        args.arc_csv,
+        include_invalid=args.include_invalid,
+        feature_names=full_feature_names,
+    )
+    splits = make_group_splits(X_all, y, groups)
+    train_idx = splits["train_idx"]
+    val_idx = splits["val_idx"]
+    train_full_idx = splits["train_full_idx"]
+    X_train_full = splits["X_train_full"]
+    y_train_full = splits["y_train_full"]
+    X_test_full = splits["X_test"]
+    y_test = splits["y_test"]
+
+    X_train_base = X_train_full.iloc[train_idx]
+    y_train_base = y_train_full.iloc[train_idx]
+    groups_train_base = splits["groups_train_full"].iloc[train_idx]
+    w_train_base = np.asarray(w[train_full_idx][train_idx]).astype(float)
+    X_val_base = X_train_full.iloc[val_idx]
+    y_val_base = y_train_full.iloc[val_idx]
+
+    combos = _arc_feature_combinations(
+        feature_pool=feature_pool,
+        feature_count_min=feature_count_min,
+        feature_count_max=feature_count_max,
+        max_combinations=int(args.max_combinations),
+    )
+    total = int(len(combos))
+    budget_minutes = float(getattr(args, "arc_time_budget_minutes", 0.0))
+    budget_seconds = (budget_minutes * 60.0) if budget_minutes > 0 else 0.0
+    shard_size = max(1, int(getattr(args, "arc_shard_size", 128)))
+    keep_per_shard = max(1, int(getattr(args, "arc_keep_per_shard", 1)))
+    shortlist_size = max(1, int(getattr(args, "arc_shortlist_size", 18)))
+    finalist_count = max(1, int(getattr(args, "arc_finalist_count", 6)))
+    arc_shortlist_n_iter = max(1, int(getattr(args, "arc_shortlist_n_iter", max(1, int(round(int(args.n_iter) * 0.25))))))
+    shards = _chunk_arc_combinations(combos, shard_size)
+    shard_count = len(shards)
+    use_combined_rankings = False
+
+    print("Arc subset sweep task: staged dual-model")
+    print("Arc feature pool:", feature_pool)
+    print("Arc feature pool size:", len(feature_pool))
+    print("Arc total combinations:", total)
+    print("Arc strategy: ET prescreen -> ET shortlist -> RF+ET finalists (parallel)")
+    print("Arc sweep n_iter per final model:", args.n_iter)
+    print("Arc shortlist n_iter:", arc_shortlist_n_iter)
+    print("Arc time budget minutes:", budget_minutes)
+    print("CV split summary:", splits.get("cv_group_summary", {}))
+
+    if tracker is not None:
+        tracker["arc_combo_count"] = int(total)
+        _progress_advance(tracker, 1, {
+            "task": "arc",
+            "stage": "ready",
+            "message": (
+                f"Arc staged sweep ready: {total} combos | {shard_count} ET prescreen shards | "
+                f"{tracker.get('arc_final_count_estimate', 0)} finalist duels"
+            ),
+            "feature_pool_size": len(feature_pool),
+            "combo_total": int(total),
+            "shard_total": int(shard_count),
+        })
+
+    rows = []
+    prescreen_rows = []
+    prescreen_survivors = []
+    shortlist_rows = []
+    rf_rows = []
+    et_rows = []
+    final_rows = []
+    budget_hit = False
+    budget_stop_stage = ""
+    arc_started_at = time.monotonic()
+    combo_counter = 0
+
+    for shard_index, shard_combos in enumerate(shards, start=1):
+        deadline_hit, elapsed, remaining = _arc_budget_state(arc_started_at, budget_seconds)
+        if deadline_hit:
+            budget_hit = True
+            budget_stop_stage = "prescreen_et"
+            break
+        shard_rows = []
+        for combo in shard_combos:
+            deadline_hit, elapsed, remaining = _arc_budget_state(arc_started_at, budget_seconds)
+            if deadline_hit:
+                budget_hit = True
+                budget_stop_stage = "prescreen_et"
+                break
+            combo_counter += 1
+            selected_cols = list(combo) + list(ARC_CONTEXT_FEATURES)
+            combo_key = "|".join(combo)
+            result = _run_arc_et_prescreen(
+                X_train=X_train_base[selected_cols],
+                y_train=y_train_base,
+                w_train=w_train_base,
+                X_val=X_val_base[selected_cols],
+                y_val=y_val_base,
+                X_test=X_test_full[selected_cols],
+                y_test=y_test,
+                args=args,
+            )
+            row = _build_arc_model_row_optimized(
+                stage="prescreen_et",
+                combo=list(combo),
+                selected_cols=selected_cols,
+                result=result,
+                extra={
+                    "combo_index": int(combo_counter),
+                    "combo_total": int(total),
+                    "shard_index": int(shard_index),
+                    "shard_total": int(shard_count),
+                    "elapsed_seconds": float(elapsed),
+                    "remaining_budget_seconds": None if remaining is None else float(remaining),
+                },
+            )
+            prescreen_rows.append(row)
+            rows.append(row)
+            shard_rows.append(row)
+            message = (
+                f"Arc prescreen shard {shard_index}/{max(1, shard_count)} | combo {combo_counter}/{max(1, total)} | "
+                f"Val BalAcc={row.get('validation_balanced_accuracy', 0.0):.4f} FPR={row.get('validation_fpr', 1.0):.4f} "
+                f"FN={row['validation_fn']} FP={row['validation_fp']}"
+            )
+            if tracker is not None:
+                _progress_advance(tracker, 1, {
+                    "task": "arc",
+                    "stage": "prescreen_combo",
+                    "message": message,
+                    "combo_index": int(combo_counter),
+                    "combo_total": int(total),
+                    "feature_combo": combo_key,
+                    "feature_count": int(len(combo)),
+                    "shard_index": int(shard_index),
+                    "shard_total": int(shard_count),
+                })
+            else:
+                emit_progress(combo_counter, max(1, total), {
+                    "task": "arc",
+                    "stage": "prescreen_combo",
+                    "message": message,
+                    "feature_combo": combo_key,
+                    "feature_count": int(len(combo)),
+                })
+        kept = _select_diverse_arc_rows(shard_rows, keep_total=keep_per_shard, per_feature_count=1)
+        prescreen_survivors.extend(kept)
+        if budget_hit:
+            break
+
+    shortlist_seed_rows = _select_diverse_arc_rows(
+        prescreen_survivors,
+        keep_total=shortlist_size,
+        per_feature_count=1,
+    )
+
+    if tracker is not None:
+        _progress_advance(tracker, 1, {
+            "task": "arc",
+            "stage": "shortlist_ready",
+            "message": (
+                f"Arc ET shortlist: {len(shortlist_seed_rows)} combos chosen from {len(prescreen_rows)} prescreened"
+                + (" (budget stop)" if budget_hit else "")
+            ),
+            "combo_total": int(len(shortlist_seed_rows)),
+        })
+
+    shortlist_plan_steps = int((tracker or {}).get("arc_shortlist_steps", estimate_search_plan(int(arc_shortlist_n_iter)).get("progress_steps", 1)))
+    for shortlist_index, seed_row in enumerate(shortlist_seed_rows, start=1):
+        deadline_hit, elapsed, remaining = _arc_budget_state(arc_started_at, budget_seconds)
+        if deadline_hit:
+            budget_hit = True
+            budget_stop_stage = "shortlist_et"
+            break
+        combo = list(seed_row.get("features", []))
+        selected_cols = combo + list(ARC_CONTEXT_FEATURES)
+        combo_key = "|".join(combo)
+        combo_base_current = int(tracker.get("current", 0)) if tracker is not None else 0
+        result = _safe_train_arc_model(
+            model_key="et",
+            X_train=X_train_base[selected_cols],
+            y_train=y_train_base,
+            groups_train=groups_train_base,
+            w_train=w_train_base,
+            X_val=X_val_base[selected_cols],
+            y_val=y_val_base,
+            X_test=X_test_full[selected_cols],
+            y_test=y_test,
+            n_iter=arc_shortlist_n_iter,
+            args=args,
+            progress_callback=_progress_child_callback(
+                tracker,
+                combo_base_current,
+                0,
+                shortlist_plan_steps,
+                "arc",
+                shortlist_index,
+                len(shortlist_seed_rows),
+                combo_key,
+            ),
+        )
+        row = _build_arc_model_row_optimized(
+            stage="shortlist_et",
+            combo=combo,
+            selected_cols=selected_cols,
+            result=result,
+            extra={
+                "shortlist_index": int(shortlist_index),
+                "shortlist_total": int(len(shortlist_seed_rows)),
+                "seed_stage": "prescreen_et",
+                "elapsed_seconds": float(elapsed),
+                "remaining_budget_seconds": None if remaining is None else float(remaining),
+            },
+        )
+        shortlist_rows.append(row)
+        rows.append(row)
+        if tracker is not None:
+            _progress_set(tracker, combo_base_current + shortlist_plan_steps, {
+                "task": "arc",
+                "stage": "shortlist_done",
+                "message": (
+                    f"Arc shortlist {shortlist_index}/{len(shortlist_seed_rows)} done | "
+                    f"Val BalAcc={row.get('validation_balanced_accuracy', 0.0):.4f} FPR={row.get('validation_fpr', 1.0):.4f} "
+                    f"FN={row['validation_fn']} FP={row['validation_fp']}"
+                ),
+                "combo_index": int(shortlist_index),
+                "combo_total": int(len(shortlist_seed_rows)),
+                "feature_combo": combo_key,
+                "feature_count": int(len(combo)),
+            })
+
+    finalist_seed_rows = _select_diverse_arc_rows(
+        shortlist_rows if shortlist_rows else prescreen_rows,
+        keep_total=finalist_count,
+        per_feature_count=1,
+    )
+
+    if tracker is not None:
+        _progress_advance(tracker, 1, {
+            "task": "arc",
+            "stage": "finalists_ready",
+            "message": (
+                f"Arc full-depth finalists: {len(finalist_seed_rows)} combos"
+                + (" from shortlist" if shortlist_rows else " from prescreen")
+            ),
+            "combo_total": int(len(finalist_seed_rows)),
+        })
+
+    final_model_steps = int((tracker or {}).get("arc_final_model_steps", estimate_search_plan(int(args.n_iter)).get("progress_steps", 1)))
+    for finalist_index, seed_row in enumerate(finalist_seed_rows, start=1):
+        deadline_hit, elapsed, remaining = _arc_budget_state(arc_started_at, budget_seconds)
+        if deadline_hit:
+            budget_hit = True
+            budget_stop_stage = "final_duel"
+            break
+        combo = list(seed_row.get("features", []))
+        selected_cols = combo + list(ARC_CONTEXT_FEATURES)
+        combo_key = "|".join(combo)
+        print(f"\n=== Arc finalist {finalist_index}/{len(finalist_seed_rows)}: {combo_key} ===")
+        combo_base_current = int(tracker.get("current", 0)) if tracker is not None else 0
+        rf_callback = _progress_child_callback(tracker, combo_base_current, 0, final_model_steps, "arc", finalist_index, len(finalist_seed_rows), combo_key)
+        et_callback = _progress_child_callback(tracker, combo_base_current, final_model_steps, final_model_steps, "arc", finalist_index, len(finalist_seed_rows), combo_key)
+        with ThreadPoolExecutor(max_workers=2) as executor:
+            rf_future = executor.submit(
+                _safe_train_arc_model,
+                "rf",
+                X_train_base[selected_cols],
+                y_train_base,
+                groups_train_base,
+                w_train_base,
+                X_val=X_val_base[selected_cols],
+                y_val=y_val_base,
+                X_test=X_test_full[selected_cols],
+                y_test=y_test,
+                n_iter=int(args.n_iter),
+                args=args,
+                progress_callback=rf_callback,
+            )
+            et_future = executor.submit(
+                _safe_train_arc_model,
+                "et",
+                X_train_base[selected_cols],
+                y_train_base,
+                groups_train_base,
+                w_train_base,
+                X_val=X_val_base[selected_cols],
+                y_val=y_val_base,
+                X_test=X_test_full[selected_cols],
+                y_test=y_test,
+                n_iter=int(args.n_iter),
+                args=args,
+                progress_callback=et_callback,
+            )
+            rf_result = rf_future.result()
+            et_result = et_future.result()
+        rf_row = _build_arc_model_row_optimized("final_rf", combo, selected_cols, rf_result, {
+            "finalist_index": int(finalist_index),
+            "finalist_total": int(len(finalist_seed_rows)),
+            "elapsed_seconds": float(elapsed),
+            "remaining_budget_seconds": None if remaining is None else float(remaining),
+        })
+        et_row = _build_arc_model_row_optimized("final_et", combo, selected_cols, et_result, {
+            "finalist_index": int(finalist_index),
+            "finalist_total": int(len(finalist_seed_rows)),
+            "elapsed_seconds": float(elapsed),
+            "remaining_budget_seconds": None if remaining is None else float(remaining),
+        })
+        combined = _build_arc_combined_row_optimized(
+            stage="final_duel",
+            combo=combo,
+            selected_cols=selected_cols,
+            rf_result=rf_result,
+            et_result=et_result,
+            extra={
+                "finalist_index": int(finalist_index),
+                "finalist_total": int(len(finalist_seed_rows)),
+                "elapsed_seconds": float(elapsed),
+                "remaining_budget_seconds": None if remaining is None else float(remaining),
+            },
+        )
+        rf_rows.append(rf_row)
+        et_rows.append(et_row)
+        final_rows.append(combined)
+        rows.extend([rf_row, et_row, combined])
+        use_combined_rankings = True
+        if tracker is not None:
+            _progress_set(tracker, combo_base_current + (2 * final_model_steps) + 1, {
+                "task": "arc",
+                "stage": "final_combo_done",
+                "message": (
+                    f"Arc finalist {finalist_index}/{len(finalist_seed_rows)} done | "
+                    f"Val BalAcc={combined.get('combined_validation_balanced_accuracy_mean', 0.0):.4f} "
+                    f"FPR={combined.get('combined_validation_fpr_mean', 1.0):.4f} "
+                    f"FN(sum)={combined['combined_validation_fn']} FP(sum)={combined['combined_validation_fp']}"
+                ),
+                "combo_index": int(finalist_index),
+                "combo_total": int(len(finalist_seed_rows)),
+                "feature_combo": combo_key,
+                "feature_count": int(len(combo)),
+            })
+
+    results_df = pd.DataFrame(rows)
+
+    deepest_rows = final_rows if final_rows else (shortlist_rows if shortlist_rows else prescreen_rows)
+    et_best_source = et_rows if et_rows else (shortlist_rows if shortlist_rows else prescreen_rows)
+
+    ranking_policies = {
+        "practical": {
+            "label": "Practical accuracy",
+            "combined_sort": _sort_combined_row_practical,
+            "model_sort": _sort_model_row_practical,
+        },
+        "validation_cost": {
+            "label": "Balanced validation cost",
+            "combined_sort": _sort_combined_row_validation_cost,
+            "model_sort": _sort_model_row_validation_cost,
+        },
+        "fn_first": {
+            "label": "FN-first",
+            "combined_sort": _sort_combined_row_fn_first,
+            "model_sort": _sort_model_row_fn_first,
+        },
+        "accuracy": {
+            "label": "Accuracy-first",
+            "combined_sort": _sort_combined_row_accuracy,
+            "model_sort": _sort_model_row_accuracy,
+        },
+    }
+
+    ranking_sections = {}
+    for rank_key, cfg in ranking_policies.items():
+        candidate_sort = cfg["combined_sort"] if use_combined_rankings else cfg["model_sort"]
+        combined_best = sorted(deepest_rows, key=candidate_sort)[0] if deepest_rows else {}
+        rf_best = sorted(rf_rows, key=cfg["model_sort"])[0] if rf_rows else {}
+        et_best = sorted(et_best_source, key=cfg["model_sort"])[0] if et_best_source else {}
+        best_by_feature_count = []
+        for feature_count in range(feature_count_min, feature_count_max + 1):
+            bucket_rows = [r for r in deepest_rows if int(r.get("feature_count", 0)) == int(feature_count)]
+            if not bucket_rows:
+                continue
+            bucket_rf = [r for r in rf_rows if int(r.get("feature_count", 0)) == int(feature_count)]
+            bucket_et = [r for r in et_best_source if int(r.get("feature_count", 0)) == int(feature_count)]
+            best_by_feature_count.append({
+                "feature_count": int(feature_count),
+                "best_combined": sorted(bucket_rows, key=candidate_sort)[0],
+                "best_rf": sorted(bucket_rf, key=cfg["model_sort"])[0] if bucket_rf else {},
+                "best_et": sorted(bucket_et, key=cfg["model_sort"])[0] if bucket_et else {},
+            })
+        ranking_sections[rank_key] = {
+            "label": cfg["label"],
+            "overall_best_combined": combined_best,
+            "overall_best_rf": rf_best,
+            "overall_best_et": et_best,
+            "best_by_feature_count": best_by_feature_count,
+        }
+
+    practical_section = ranking_sections.get("practical", {})
+    combined_best = practical_section.get("overall_best_combined", {}) or {}
+    rf_best = practical_section.get("overall_best_rf", {}) or {}
+    et_best = practical_section.get("overall_best_et", {}) or {}
+    best_by_feature_count = practical_section.get("best_by_feature_count", []) or []
+
+    report = {
+        "task": "arc_dual_model_staged",
+        "models": ["rf", "et"],
+        "feature_pool_role": "arc_base_features",
+        "feature_pool": feature_pool,
+        "feature_pool_size": len(feature_pool),
+        "context_inputs_fixed": list(ARC_CONTEXT_FEATURES),
+        "context_input_count": len(ARC_CONTEXT_FEATURES),
+        "strategy": "fast_et_prescreen_then_et_shortlist_then_parallel_rf_et_finalists",
+        "parallel_final_models": True,
+        "total_combinations": int(total),
+        "screened_combinations": int(len(prescreen_rows)),
+        "prescreen_survivor_count": int(len(prescreen_survivors)),
+        "shortlist_seed_count": int(len(shortlist_seed_rows)),
+        "shortlist_evaluated_count": int(len(shortlist_rows)),
+        "finalist_seed_count": int(len(finalist_seed_rows)),
+        "finalist_evaluated_count": int(len(final_rows)),
+        "budget_minutes": float(budget_minutes),
+        "budget_hit": bool(budget_hit),
+        "budget_stop_stage": str(budget_stop_stage),
+        "all_results_csv": args.out_csv,
+        "ranking_policy_default": "practical",
+        "ranking_sections": ranking_sections,
+        "recommended_arc_base_features_global": list(combined_best.get("features", [])),
+        "recommended_features_global": list(combined_best.get("features", [])),
+        "recommended_by_model": {
+            "rf": list(rf_best.get("features", [])),
+            "et": list(et_best.get("features", [])),
+        },
+        "overall_best_combined_tradeoff": combined_best,
+        "overall_best_practical": ranking_sections.get("practical", {}).get("overall_best_combined", {}) or {},
+        "overall_best_validation_cost": ranking_sections.get("validation_cost", {}).get("overall_best_combined", {}) or {},
+        "overall_best_fn_first": ranking_sections.get("fn_first", {}).get("overall_best_combined", {}) or {},
+        "overall_best_accuracy": ranking_sections.get("accuracy", {}).get("overall_best_combined", {}) or {},
+        "overall_best_rf": rf_best,
+        "overall_best_et": et_best,
+        "best_by_feature_count": best_by_feature_count,
+        "best_by_feature_count_practical": ranking_sections.get("practical", {}).get("best_by_feature_count", []) or [],
+        "best_by_feature_count_validation_cost": ranking_sections.get("validation_cost", {}).get("best_by_feature_count", []) or [],
+        "best_by_feature_count_fn_first": ranking_sections.get("fn_first", {}).get("best_by_feature_count", []) or [],
+        "best_by_feature_count_accuracy": ranking_sections.get("accuracy", {}).get("best_by_feature_count", []) or [],
+        "stage_summaries": [
+            {
+                "stage": "prescreen_et",
+                "description": "Single-pass fast ET prescreen across all requested combos",
+                "model": "et",
+                "scanned_combinations": int(len(prescreen_rows)),
+                "shard_size": int(shard_size),
+                "shard_count": int(shard_count),
+                "keep_per_shard": int(keep_per_shard),
+                "selected_count": int(len(shortlist_seed_rows)),
+            },
+            {
+                "stage": "shortlist_et",
+                "description": "Deeper ET rerank of prescreen survivors",
+                "model": "et",
+                "n_iter": int(arc_shortlist_n_iter),
+                "candidate_count": int(len(shortlist_seed_rows)),
+                "evaluated_count": int(len(shortlist_rows)),
+            },
+            {
+                "stage": "final_duel",
+                "description": "Full-depth RF + ET evaluation on the strongest finalists",
+                "models": ["rf", "et"],
+                "parallel_models": True,
+                "n_iter": int(args.n_iter),
+                "candidate_count": int(len(finalist_seed_rows)),
+                "evaluated_count": int(len(final_rows)),
+            },
+        ],
+        "split_summary": splits.get("cv_group_summary", {}),
+        "settings": {
+            "arc_csv": args.arc_csv,
+            "include_invalid": args.include_invalid,
+            "fn_weight": args.fn_weight,
+            "fp_weight": args.fp_weight,
+            "min_recall": args.min_recall,
+            "min_precision": args.min_precision,
+            "max_fpr": args.max_fpr,
+            "min_threshold": args.min_threshold,
+            "n_iter": args.n_iter,
+            "n_jobs": getattr(args, "n_jobs", 1),
+            "feature_count_min": feature_count_min,
+            "feature_count_max": feature_count_max,
+            "max_combinations": int(args.max_combinations),
+            "arc_time_budget_minutes": float(budget_minutes),
+            "arc_shard_size": int(shard_size),
+            "arc_keep_per_shard": int(keep_per_shard),
+            "arc_shortlist_size": int(shortlist_size),
+            "arc_finalist_count": int(finalist_count),
+            "arc_prescreen_trees": int(getattr(args, "arc_prescreen_trees", 64)),
+            "arc_prescreen_max_depth": int(getattr(args, "arc_prescreen_max_depth", 8)),
+            "arc_shortlist_n_iter": int(arc_shortlist_n_iter),
+        },
+    }
+    if tracker is not None:
+        _progress_advance(tracker, 1, {
+            "task": "arc",
+            "stage": "arc_done",
+            "message": (
+                f"Arc staged sweep complete | screened {len(prescreen_rows)} combos | "
+                f"shortlisted {len(shortlist_rows)} | finalists {len(final_rows)}"
+            ),
+            "combo_total": int(total),
+        })
+    return report, results_df
 
 
 # ----------------------------
@@ -1133,480 +1504,6 @@ def run_context_sweep(args, tracker: dict | None = None) -> tuple[dict, pd.DataF
             "feature_count_min": feature_count_min,
             "feature_count_max": feature_count_max,
             "max_combinations": int(args.context_max_combinations),
-        },
-    }
-    return report, results_df
-
-
-def run_arc_dual_sweep(args, tracker: dict | None = None) -> tuple[dict, pd.DataFrame]:
-    feature_pool = [str(x).strip() for x in (args.features or ARC_SWEEP_FEATURES) if str(x).strip() in ARC_SWEEP_FEATURES]
-    if tracker is not None:
-        tracker["arc_feature_pool"] = list(feature_pool)
-    feature_count_min = max(1, int(args.feature_count_min))
-    feature_count_max = min(len(feature_pool), int(args.feature_count_max or len(feature_pool)))
-    if feature_count_max < feature_count_min:
-        feature_count_max = feature_count_min
-
-    arc_shortlist_n_iter = max(1, int(args.arc_shortlist_n_iter))
-    budget_seconds = max(0.0, float(args.arc_time_budget_minutes) * 60.0)
-    shard_size = max(1, int(args.arc_shard_size))
-    keep_per_shard = max(1, int(args.arc_keep_per_shard))
-    shortlist_size = max(1, int(args.arc_shortlist_size))
-    finalist_count = max(1, int(args.arc_finalist_count))
-
-    if tracker is not None:
-        _progress_advance(tracker, 1, {
-            "task": "arc",
-            "stage": "load_dataset",
-            "message": "Loading arc dataset and building grouped splits",
-            "feature_pool_size": len(feature_pool),
-        })
-
-    full_feature_names = list(feature_pool) + list(ARC_CONTEXT_FEATURES)
-    df_meta, X_all, y, groups, w = load_clean_dataset(
-        args.arc_csv,
-        include_invalid=args.include_invalid,
-        feature_names=full_feature_names,
-    )
-    splits = make_group_splits(X_all, y, groups)
-    train_idx = splits["train_idx"]
-    val_idx = splits["val_idx"]
-    train_full_idx = splits["train_full_idx"]
-    X_train_full = splits["X_train_full"]
-    y_train_full = splits["y_train_full"]
-    X_test_full = splits["X_test"]
-    y_test = splits["y_test"]
-
-    X_train_base = X_train_full.iloc[train_idx]
-    y_train_base = y_train_full.iloc[train_idx]
-    groups_train_base = splits["groups_train_full"].iloc[train_idx]
-    w_train_base = w[train_full_idx][train_idx]
-    X_val_base = X_train_full.iloc[val_idx]
-    y_val_base = y_train_full.iloc[val_idx]
-    combos = _arc_feature_combinations(
-        feature_pool,
-        feature_count_min=feature_count_min,
-        feature_count_max=feature_count_max,
-        max_combinations=int(args.max_combinations),
-    )
-    total = int(len(combos))
-    shard_count = int(math.ceil(total / shard_size)) if total else 0
-
-    print("Arc subset sweep task: staged-arc-search")
-    print("Arc feature pool:", feature_pool)
-    print("Arc feature pool size:", len(feature_pool))
-    print("Arc total combinations:", total)
-    print("Arc prescreen strategy: ET-only fast single-pass")
-    print("Arc shortlist ET n_iter:", arc_shortlist_n_iter)
-    print("Arc final RF/ET n_iter:", args.n_iter)
-    print("Arc shard size:", shard_size)
-    print("Arc keep per shard:", keep_per_shard)
-    print("Arc shortlist size:", shortlist_size)
-    print("Arc finalist count:", finalist_count)
-    print("Arc time budget minutes:", args.arc_time_budget_minutes)
-    print("Arc sweep n_jobs:", args.n_jobs)
-    print("CV split summary:", splits.get("cv_group_summary", {}))
-
-    if tracker is not None:
-        tracker["arc_combo_count"] = int(total)
-        _progress_advance(tracker, 1, {
-            "task": "arc",
-            "stage": "ready",
-            "message": (
-                f"Arc staged sweep ready: {total} combos | prescreen ET shards={shard_count} | "
-                f"shortlist={shortlist_size} | finalists={finalist_count} | budget={args.arc_time_budget_minutes} min"
-            ),
-            "feature_pool_size": len(feature_pool),
-            "combo_total": int(total),
-        })
-
-    rows = []
-    prescreen_rows = []
-    shortlist_rows = []
-    rf_rows = []
-    et_rows = []
-    final_rows = []
-    prescreen_survivors = []
-    budget_hit = False
-    budget_stop_stage = ""
-    arc_started_at = time.monotonic()
-
-    if tracker is not None:
-        _progress_advance(tracker, 1, {
-            "task": "arc",
-            "stage": "prescreen_ready",
-            "message": f"Arc ET prescreen starting across {shard_count} shards",
-            "combo_total": int(total),
-            "shard_total": int(shard_count),
-        })
-
-    combo_counter = 0
-    for shard_index, shard in enumerate(_chunk_arc_combinations(combos, shard_size), start=1):
-        shard_rows = []
-        for combo in shard:
-            deadline_hit, elapsed, remaining = _arc_budget_state(arc_started_at, budget_seconds)
-            if deadline_hit:
-                budget_hit = True
-                budget_stop_stage = "prescreen_et"
-                break
-            combo_counter += 1
-            selected_cols = list(combo) + list(ARC_CONTEXT_FEATURES)
-            combo_key = "|".join(combo)
-            result = _run_arc_et_prescreen(
-                X_train=X_train_base[selected_cols],
-                y_train=y_train_base,
-                w_train=w_train_base,
-                X_val=X_val_base[selected_cols],
-                y_val=y_val_base,
-                X_test=X_test_full[selected_cols],
-                y_test=y_test,
-                args=args,
-            )
-            row = _build_arc_model_row_optimized(
-                stage="prescreen_et",
-                combo=list(combo),
-                selected_cols=selected_cols,
-                result=result,
-                extra={
-                    "combo_index": int(combo_counter),
-                    "combo_total": int(total),
-                    "shard_index": int(shard_index),
-                    "shard_total": int(shard_count),
-                    "elapsed_seconds": float(elapsed),
-                    "remaining_budget_seconds": None if remaining is None else float(remaining),
-                },
-            )
-            prescreen_rows.append(row)
-            rows.append(row)
-            shard_rows.append(row)
-            message = (
-                f"Arc prescreen shard {shard_index}/{max(1, shard_count)} | combo {combo_counter}/{max(1, total)} | "
-                f"Val FN={row['validation_fn']} FP={row['validation_fp']}"
-            )
-            if tracker is not None:
-                _progress_advance(tracker, 1, {
-                    "task": "arc",
-                    "stage": "prescreen_combo",
-                    "message": message,
-                    "combo_index": int(combo_counter),
-                    "combo_total": int(total),
-                    "feature_combo": combo_key,
-                    "feature_count": int(len(combo)),
-                    "shard_index": int(shard_index),
-                    "shard_total": int(shard_count),
-                })
-            else:
-                emit_progress(combo_counter, max(1, total), {
-                    "task": "arc",
-                    "stage": "prescreen_combo",
-                    "message": message,
-                    "feature_combo": combo_key,
-                    "feature_count": int(len(combo)),
-                })
-        kept = _select_diverse_arc_rows(shard_rows, keep_total=keep_per_shard, per_feature_count=1)
-        prescreen_survivors.extend(kept)
-        if budget_hit:
-            break
-
-    shortlist_seed_rows = _select_diverse_arc_rows(
-        prescreen_survivors,
-        keep_total=shortlist_size,
-        per_feature_count=1,
-    )
-
-    if tracker is not None:
-        _progress_advance(tracker, 1, {
-            "task": "arc",
-            "stage": "shortlist_ready",
-            "message": (
-                f"Arc ET shortlist: {len(shortlist_seed_rows)} combos chosen from {len(prescreen_rows)} prescreened"
-                + (" (budget stop)" if budget_hit else "")
-            ),
-            "combo_total": int(len(shortlist_seed_rows)),
-        })
-
-    shortlist_plan_steps = int((tracker or {}).get("arc_shortlist_steps", estimate_search_plan(int(arc_shortlist_n_iter)).get("progress_steps", 1)))
-    for shortlist_index, seed_row in enumerate(shortlist_seed_rows, start=1):
-        deadline_hit, elapsed, remaining = _arc_budget_state(arc_started_at, budget_seconds)
-        if deadline_hit:
-            budget_hit = True
-            budget_stop_stage = "shortlist_et"
-            break
-        combo = list(seed_row.get("features", []))
-        selected_cols = combo + list(ARC_CONTEXT_FEATURES)
-        combo_key = "|".join(combo)
-        combo_base_current = int(tracker.get("current", 0)) if tracker is not None else 0
-        result = _safe_train_arc_model(
-            model_key="et",
-            X_train=X_train_base[selected_cols],
-            y_train=y_train_base,
-            groups_train=groups_train_base,
-            w_train=w_train_base,
-            X_val=X_val_base[selected_cols],
-            y_val=y_val_base,
-            X_test=X_test_full[selected_cols],
-            y_test=y_test,
-            n_iter=arc_shortlist_n_iter,
-            args=args,
-            progress_callback=_progress_child_callback(
-                tracker,
-                combo_base_current,
-                0,
-                shortlist_plan_steps,
-                "arc",
-                shortlist_index,
-                len(shortlist_seed_rows),
-                combo_key,
-            ),
-        )
-        row = _build_arc_model_row_optimized(
-            stage="shortlist_et",
-            combo=combo,
-            selected_cols=selected_cols,
-            result=result,
-            extra={
-                "shortlist_index": int(shortlist_index),
-                "shortlist_total": int(len(shortlist_seed_rows)),
-                "seed_stage": "prescreen_et",
-                "elapsed_seconds": float(elapsed),
-                "remaining_budget_seconds": None if remaining is None else float(remaining),
-            },
-        )
-        shortlist_rows.append(row)
-        rows.append(row)
-        if tracker is not None:
-            _progress_set(tracker, combo_base_current + shortlist_plan_steps, {
-                "task": "arc",
-                "stage": "shortlist_done",
-                "message": f"Arc shortlist {shortlist_index}/{len(shortlist_seed_rows)} done | Val FN={row['validation_fn']} FP={row['validation_fp']}",
-                "combo_index": int(shortlist_index),
-                "combo_total": int(len(shortlist_seed_rows)),
-                "feature_combo": combo_key,
-                "feature_count": int(len(combo)),
-            })
-
-    finalist_seed_rows = _select_diverse_arc_rows(
-        shortlist_rows if shortlist_rows else prescreen_rows,
-        keep_total=finalist_count,
-        per_feature_count=1,
-    )
-
-    if tracker is not None:
-        _progress_advance(tracker, 1, {
-            "task": "arc",
-            "stage": "finalists_ready",
-            "message": (
-                f"Arc full-depth finalists: {len(finalist_seed_rows)} combos"
-                + (" from shortlist" if shortlist_rows else " from prescreen")
-            ),
-            "combo_total": int(len(finalist_seed_rows)),
-        })
-
-    final_model_steps = int((tracker or {}).get("arc_final_model_steps", estimate_search_plan(int(args.n_iter)).get("progress_steps", 1)))
-    for finalist_index, seed_row in enumerate(finalist_seed_rows, start=1):
-        deadline_hit, elapsed, remaining = _arc_budget_state(arc_started_at, budget_seconds)
-        if deadline_hit:
-            budget_hit = True
-            budget_stop_stage = "final_duel"
-            break
-        combo = list(seed_row.get("features", []))
-        selected_cols = combo + list(ARC_CONTEXT_FEATURES)
-        combo_key = "|".join(combo)
-        print(f"\n=== Arc finalist {finalist_index}/{len(finalist_seed_rows)}: {combo_key} ===")
-        combo_base_current = int(tracker.get("current", 0)) if tracker is not None else 0
-
-        rf_result = _safe_train_arc_model(
-            model_key="rf",
-            X_train=X_train_base[selected_cols],
-            y_train=y_train_base,
-            groups_train=groups_train_base,
-            w_train=w_train_base,
-            X_val=X_val_base[selected_cols],
-            y_val=y_val_base,
-            X_test=X_test_full[selected_cols],
-            y_test=y_test,
-            n_iter=int(args.n_iter),
-            args=args,
-            progress_callback=_progress_child_callback(
-                tracker,
-                combo_base_current,
-                0,
-                final_model_steps,
-                "arc",
-                finalist_index,
-                len(finalist_seed_rows),
-                combo_key,
-            ),
-        )
-        et_result = _safe_train_arc_model(
-            model_key="et",
-            X_train=X_train_base[selected_cols],
-            y_train=y_train_base,
-            groups_train=groups_train_base,
-            w_train=w_train_base,
-            X_val=X_val_base[selected_cols],
-            y_val=y_val_base,
-            X_test=X_test_full[selected_cols],
-            y_test=y_test,
-            n_iter=int(args.n_iter),
-            args=args,
-            progress_callback=_progress_child_callback(
-                tracker,
-                combo_base_current,
-                final_model_steps,
-                final_model_steps,
-                "arc",
-                finalist_index,
-                len(finalist_seed_rows),
-                combo_key,
-            ),
-        )
-
-        rf_row = _build_arc_model_row_optimized("final_rf", combo, selected_cols, rf_result, {
-            "finalist_index": int(finalist_index),
-            "finalist_total": int(len(finalist_seed_rows)),
-            "elapsed_seconds": float(elapsed),
-            "remaining_budget_seconds": None if remaining is None else float(remaining),
-        })
-        et_row = _build_arc_model_row_optimized("final_et", combo, selected_cols, et_result, {
-            "finalist_index": int(finalist_index),
-            "finalist_total": int(len(finalist_seed_rows)),
-            "elapsed_seconds": float(elapsed),
-            "remaining_budget_seconds": None if remaining is None else float(remaining),
-        })
-        combined = _build_arc_combined_row_optimized(
-            stage="final_duel",
-            combo=combo,
-            selected_cols=selected_cols,
-            rf_result=rf_result,
-            et_result=et_result,
-            extra={
-                "finalist_index": int(finalist_index),
-                "finalist_total": int(len(finalist_seed_rows)),
-                "elapsed_seconds": float(elapsed),
-                "remaining_budget_seconds": None if remaining is None else float(remaining),
-            },
-        )
-        rf_rows.append(rf_row)
-        et_rows.append(et_row)
-        final_rows.append(combined)
-        rows.extend([rf_row, et_row, combined])
-        if tracker is not None:
-            _progress_set(tracker, combo_base_current + (2 * final_model_steps) + 1, {
-                "task": "arc",
-                "stage": "final_combo_done",
-                "message": (
-                    f"Arc finalist {finalist_index}/{len(finalist_seed_rows)} done | "
-                    f"Val FN(sum)={combined['combined_validation_fn']} FP(sum)={combined['combined_validation_fp']}"
-                ),
-                "combo_index": int(finalist_index),
-                "combo_total": int(len(finalist_seed_rows)),
-                "feature_combo": combo_key,
-                "feature_count": int(len(combo)),
-            })
-
-    results_df = pd.DataFrame(rows)
-    deepest_rows = final_rows if final_rows else (shortlist_rows if shortlist_rows else prescreen_rows)
-    rf_best = sorted(rf_rows, key=_sort_arc_candidate_row)[0] if rf_rows else {}
-    et_best_source = et_rows if et_rows else (shortlist_rows if shortlist_rows else prescreen_rows)
-    et_best = sorted(et_best_source, key=_sort_arc_candidate_row)[0] if et_best_source else {}
-    combined_best = sorted(deepest_rows, key=_sort_arc_candidate_row)[0] if deepest_rows else {}
-
-    best_by_feature_count = []
-    for feature_count in range(feature_count_min, feature_count_max + 1):
-        bucket_rows = [r for r in deepest_rows if int(r.get("feature_count", 0)) == int(feature_count)]
-        if not bucket_rows:
-            continue
-        bucket_rf = [r for r in rf_rows if int(r.get("feature_count", 0)) == int(feature_count)]
-        bucket_et = [r for r in et_best_source if int(r.get("feature_count", 0)) == int(feature_count)]
-        best_by_feature_count.append({
-            "feature_count": int(feature_count),
-            "best_combined": sorted(bucket_rows, key=_sort_arc_candidate_row)[0],
-            "best_rf": sorted(bucket_rf, key=_sort_arc_candidate_row)[0] if bucket_rf else {},
-            "best_et": sorted(bucket_et, key=_sort_arc_candidate_row)[0] if bucket_et else {},
-        })
-
-    report = {
-        "task": "arc_dual_model_staged",
-        "models": ["rf", "et"],
-        "feature_pool_role": "arc_base_features",
-        "feature_pool": feature_pool,
-        "feature_pool_size": len(feature_pool),
-        "context_inputs_fixed": list(ARC_CONTEXT_FEATURES),
-        "context_input_count": len(ARC_CONTEXT_FEATURES),
-        "strategy": "fast_et_prescreen_then_et_shortlist_then_rf_et_finalists",
-        "total_combinations": int(total),
-        "screened_combinations": int(len(prescreen_rows)),
-        "prescreen_survivor_count": int(len(prescreen_survivors)),
-        "shortlist_seed_count": int(len(shortlist_seed_rows)),
-        "shortlist_evaluated_count": int(len(shortlist_rows)),
-        "finalist_seed_count": int(len(finalist_seed_rows)),
-        "finalist_evaluated_count": int(len(final_rows)),
-        "budget_minutes": float(args.arc_time_budget_minutes),
-        "budget_hit": bool(budget_hit),
-        "budget_stop_stage": str(budget_stop_stage),
-        "all_results_csv": args.out_csv,
-        "recommended_arc_base_features_global": list(combined_best.get("features", [])),
-        "recommended_features_global": list(combined_best.get("features", [])),
-        "recommended_by_model": {
-            "rf": list(rf_best.get("features", [])),
-            "et": list(et_best.get("features", [])),
-        },
-        "overall_best_combined_tradeoff": combined_best,
-        "overall_best_rf": rf_best,
-        "overall_best_et": et_best,
-        "best_by_feature_count": best_by_feature_count,
-        "stage_summaries": [
-            {
-                "stage": "prescreen_et",
-                "description": "Single-pass fast ET prescreen across all requested combos",
-                "model": "et",
-                "scanned_combinations": int(len(prescreen_rows)),
-                "shard_size": int(shard_size),
-                "shard_count": int(shard_count),
-                "keep_per_shard": int(keep_per_shard),
-                "selected_count": int(len(shortlist_seed_rows)),
-            },
-            {
-                "stage": "shortlist_et",
-                "description": "Deeper ET re-rank of prescreen survivors",
-                "model": "et",
-                "n_iter": int(arc_shortlist_n_iter),
-                "candidate_count": int(len(shortlist_seed_rows)),
-                "evaluated_count": int(len(shortlist_rows)),
-            },
-            {
-                "stage": "final_duel",
-                "description": "Full-depth RF + ET evaluation on the strongest finalists",
-                "models": ["rf", "et"],
-                "n_iter": int(args.n_iter),
-                "candidate_count": int(len(finalist_seed_rows)),
-                "evaluated_count": int(len(final_rows)),
-            },
-        ],
-        "split_summary": splits.get("cv_group_summary", {}),
-        "settings": {
-            "arc_csv": args.arc_csv,
-            "include_invalid": args.include_invalid,
-            "fn_weight": args.fn_weight,
-            "fp_weight": args.fp_weight,
-            "min_recall": args.min_recall,
-            "min_precision": args.min_precision,
-            "max_fpr": args.max_fpr,
-            "min_threshold": args.min_threshold,
-            "n_iter": args.n_iter,
-            "n_jobs": args.n_jobs,
-            "feature_count_min": feature_count_min,
-            "feature_count_max": feature_count_max,
-            "max_combinations": int(args.max_combinations),
-            "arc_time_budget_minutes": float(args.arc_time_budget_minutes),
-            "arc_shard_size": int(shard_size),
-            "arc_keep_per_shard": int(keep_per_shard),
-            "arc_shortlist_size": int(shortlist_size),
-            "arc_finalist_count": int(finalist_count),
-            "arc_prescreen_trees": int(args.arc_prescreen_trees),
-            "arc_prescreen_max_depth": int(args.arc_prescreen_max_depth),
-            "arc_shortlist_n_iter": int(arc_shortlist_n_iter),
         },
     }
     return report, results_df

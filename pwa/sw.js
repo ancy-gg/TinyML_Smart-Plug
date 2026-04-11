@@ -1,4 +1,4 @@
-const BUILD_VERSION = "Web-v8.6.6";
+const BUILD_VERSION = "Web-v8.6.7";
 const CACHE_NAME = `tsp-shell-${BUILD_VERSION}`;
 const APP_SHELL = [
   "./",
@@ -6,6 +6,7 @@ const APP_SHELL = [
   "./guide.html",
   "./guide.js",
   "./styles.css",
+  "./feature-meta.js",
   "./app.js",
   "./session.js",
   "./manifest.json",

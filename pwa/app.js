@@ -1531,25 +1531,11 @@ btnRefreshNow?.addEventListener("click", () => window.location.reload());
 updateInstallHelp();
 
 function formatFeatureValue(key, value) {
+  const schema = window.TinyMLFeatureSchema;
+  if (schema?.formatFeatureValue) return schema.formatFeatureValue(key, value, "—");
   const n = Number(value);
   if (!Number.isFinite(n)) return "—";
-  const decimals = {
-    abs_irms_zscore_vs_baseline: 2,
-    delta_irms_abs: 3,
-    halfcycle_asymmetry: 2,
-    cycle_nmse: 2,
-    delta_hf_energy: 2,
-    v_sag_pct: 2,
-    midband_residual_ratio: 2,
-    zcv: 3,
-    spectral_flux_midhf: 2,
-    peak_fluct_cv: 2,
-    residual_crest_factor: 2,
-    thd_i: 2,
-    hf_energy_delta: 2,
-    edge_spike_ratio: 2,
-  }[key] ?? 3;
-  return n.toFixed(decimals);
+  return n.toFixed(3);
 }
 
 function updateLiveDom(data) {

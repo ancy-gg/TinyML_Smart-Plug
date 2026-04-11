@@ -208,7 +208,7 @@ static constexpr uint16_t N_SAMP       = 1024;
 static constexpr float    MAINS_F0_HZ  = 60.0f;
 
 // Pace feature generation to a stable latest-frame cadence instead of free-running.
-static constexpr float    FEATURE_TARGET_CADENCE_HZ = 10.0f;
+static constexpr float    FEATURE_TARGET_CADENCE_HZ = 15.0f;
 static constexpr uint32_t FEATURE_FRAME_PERIOD_US = (uint32_t)(1000000.0f / FEATURE_TARGET_CADENCE_HZ + 0.5f);
 static constexpr float    FEATURE_FRAME_PERIOD_MS = 1000.0f / FEATURE_TARGET_CADENCE_HZ;
 
@@ -286,16 +286,16 @@ static constexpr uint32_t FAULT_NET_QUIET_MS = 2350UL;
 static constexpr uint32_t OLED_RENDER_INTERVAL_MS = 33UL;
 
 // Sensing pipeline / timing quality
-static constexpr uint8_t  FEATURE_FRAME_QUEUE_LEN        = 12;
+static constexpr uint8_t  FEATURE_FRAME_QUEUE_LEN        = 18;
 static constexpr uint32_t FEATURE_TIMING_GRACE_MS        = 1500UL;
-static constexpr float    FRAME_DT_BAD_EARLY_MS          = 70.0f;
-static constexpr float    FRAME_DT_BAD_LATE_MS           = 170.0f;
-static constexpr float    FRAME_DT_JITTER_BAD_MS         = 48.0f;
+static constexpr float    FRAME_DT_BAD_EARLY_MS          = FEATURE_FRAME_PERIOD_MS * 0.70f;
+static constexpr float    FRAME_DT_BAD_LATE_MS           = FEATURE_FRAME_PERIOD_MS * 1.70f;
+static constexpr float    FRAME_DT_JITTER_BAD_MS         = FEATURE_FRAME_PERIOD_MS * 0.48f;
 static constexpr float    FRAME_COMPUTE_BAD_MS           = 65.0f;
 static constexpr float    FS_ERR_BAD_HZ                  = 3200.0f;
 
 
-static constexpr int   ARC_RUNTIME_FEATURE_SPACE_VERSION = 5;
+static constexpr int   ARC_RUNTIME_FEATURE_SPACE_VERSION = 6;
 static constexpr float DB_RATIO_EPS                 = 1e-6f;
 static constexpr float DB_POWER_RATIO_EPS           = 1e-6f;
 static constexpr float DB_RATIO_CLIP_MIN            = -80.0f;
@@ -396,7 +396,7 @@ static constexpr uint32_t ARC_TRANSIENT_BLANK_MS         = 900UL;
 static constexpr float    ARC_TRANSIENT_STEP_A           = 0.60f;
 static constexpr float    ARC_TRANSIENT_STEP_FRAC        = 0.22f;
 
-static constexpr uint32_t FEAT_STALE_MS                 = 350UL;
+static constexpr uint32_t FEAT_STALE_MS                 = (uint32_t)(FEATURE_FRAME_PERIOD_MS * 4.0f + 0.5f);
 static constexpr uint32_t SENSOR_BOOT_SETTLE_MS         = 450UL;
 static constexpr uint32_t PROTECTION_INHIBIT_MS         = 5000UL;
 static constexpr uint32_t ML_CONTROL_POLL_MS            = 3000UL;

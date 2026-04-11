@@ -129,26 +129,128 @@ static inline uint32_t contextFrameMs_(const FeatureFrame& f) {
   return (uint32_t)(dtMs + 0.5f);
 }
 
-static inline float contextFeatureAverageById_(int featureId, float denom) {
+static inline float frameComputedFeatureById_(const FeatureFrame& f, int featureId) {
   switch (featureId) {
-    case TINYML_FEATURE_ABS_IRMS_ZSCORE_VS_BASELINE: return gContext.sumAbsIrmsZ / denom;
-    case TINYML_FEATURE_DELTA_IRMS_ABS: return gContext.sumDeltaIrmsAbs / denom;
-    case TINYML_FEATURE_HALFCYCLE_ASYMMETRY: return gContext.sumHalfcycleAsymmetry / denom;
-    case TINYML_FEATURE_SUSPICIOUS_RUN_ENERGY: return gContext.sumSuspiciousRunEnergy / denom;
-    case TINYML_FEATURE_DELTA_HF_ENERGY: return gContext.sumDeltaHfEnergy / denom;
-    case TINYML_FEATURE_DELTA_FLUX: return gContext.sumDeltaFlux / denom;
-    case TINYML_FEATURE_MIDBAND_RESIDUAL_RATIO: return gContext.sumMidband / denom;
-    case TINYML_FEATURE_ZCV: return gContext.sumZcv / denom;
-    case TINYML_FEATURE_SPECTRAL_FLUX_MIDHF: return gContext.sumSpectralFlux / denom;
-    case TINYML_FEATURE_PEAK_FLUCT_CV: return gContext.sumPeak / denom;
-    case TINYML_FEATURE_RESIDUAL_CREST_FACTOR: return gContext.sumResidualCf / denom;
-    case TINYML_FEATURE_THD_I: return gContext.sumThd / denom;
-    case TINYML_FEATURE_HF_ENERGY_DELTA: return gContext.sumHf / denom;
-    case TINYML_FEATURE_EDGE_SPIKE_RATIO: return gContext.sumEdge / denom;
-    case TINYML_FEATURE_V_SAG_PCT: return gContext.sumVSagPct / denom;
-    case TINYML_FEATURE_CYCLE_NMSE: return gContext.sumNmse / denom;
+    case TINYML_FEATURE_ABS_IRMS_ZSCORE_VS_BASELINE: return f.abs_irms_zscore_vs_baseline;
+    case TINYML_FEATURE_DELTA_IRMS_ABS: return f.delta_irms_abs;
+    case TINYML_FEATURE_HALFCYCLE_ASYMMETRY: return f.halfcycle_asymmetry;
+    case TINYML_FEATURE_SUSPICIOUS_RUN_ENERGY: return f.suspicious_run_energy;
+    case TINYML_FEATURE_DELTA_HF_ENERGY: return f.delta_hf_energy;
+    case TINYML_FEATURE_DELTA_FLUX: return f.delta_flux;
+    case TINYML_FEATURE_MIDBAND_RESIDUAL_RATIO: return f.midband_residual_ratio;
+    case TINYML_FEATURE_ZCV: return f.zcv;
+    case TINYML_FEATURE_SPECTRAL_FLUX_MIDHF: return f.spectral_flux_midhf;
+    case TINYML_FEATURE_PEAK_FLUCT_CV: return f.peak_fluct_cv;
+    case TINYML_FEATURE_RESIDUAL_CREST_FACTOR: return f.residual_crest_factor;
+    case TINYML_FEATURE_THD_I: return f.thd_i;
+    case TINYML_FEATURE_HF_ENERGY_DELTA: return f.hf_energy_delta;
+    case TINYML_FEATURE_EDGE_SPIKE_RATIO: return f.edge_spike_ratio;
+    case TINYML_FEATURE_V_SAG_PCT: return f.v_sag_pct;
+    case TINYML_FEATURE_CYCLE_NMSE: return f.cycle_nmse;
     default: return 0.0f;
   }
+}
+
+static inline void setFrameComputedFeatureById_(FeatureFrame& f, int featureId, float value) {
+  switch (featureId) {
+    case TINYML_FEATURE_ABS_IRMS_ZSCORE_VS_BASELINE: f.abs_irms_zscore_vs_baseline = value; break;
+    case TINYML_FEATURE_DELTA_IRMS_ABS: f.delta_irms_abs = value; break;
+    case TINYML_FEATURE_HALFCYCLE_ASYMMETRY: f.halfcycle_asymmetry = value; break;
+    case TINYML_FEATURE_SUSPICIOUS_RUN_ENERGY: f.suspicious_run_energy = value; break;
+    case TINYML_FEATURE_DELTA_HF_ENERGY: f.delta_hf_energy = value; break;
+    case TINYML_FEATURE_DELTA_FLUX: f.delta_flux = value; break;
+    case TINYML_FEATURE_MIDBAND_RESIDUAL_RATIO: f.midband_residual_ratio = value; break;
+    case TINYML_FEATURE_ZCV: f.zcv = value; break;
+    case TINYML_FEATURE_SPECTRAL_FLUX_MIDHF: f.spectral_flux_midhf = value; break;
+    case TINYML_FEATURE_PEAK_FLUCT_CV: f.peak_fluct_cv = value; break;
+    case TINYML_FEATURE_RESIDUAL_CREST_FACTOR: f.residual_crest_factor = value; break;
+    case TINYML_FEATURE_THD_I: f.thd_i = value; break;
+    case TINYML_FEATURE_HF_ENERGY_DELTA: f.hf_energy_delta = value; break;
+    case TINYML_FEATURE_EDGE_SPIKE_RATIO: f.edge_spike_ratio = value; break;
+    case TINYML_FEATURE_V_SAG_PCT: f.v_sag_pct = value; break;
+    case TINYML_FEATURE_CYCLE_NMSE: f.cycle_nmse = value; break;
+    default: break;
+  }
+}
+
+static inline float arcResultComputedFeatureById_(const ArcDetectionResult& out, int featureId) {
+  switch (featureId) {
+    case TINYML_FEATURE_ABS_IRMS_ZSCORE_VS_BASELINE: return out.abs_irms_zscore_vs_baseline;
+    case TINYML_FEATURE_DELTA_IRMS_ABS: return out.delta_irms_abs;
+    case TINYML_FEATURE_HALFCYCLE_ASYMMETRY: return out.halfcycle_asymmetry;
+    case TINYML_FEATURE_SUSPICIOUS_RUN_ENERGY: return out.suspicious_run_energy;
+    case TINYML_FEATURE_DELTA_HF_ENERGY: return out.delta_hf_energy;
+    case TINYML_FEATURE_DELTA_FLUX: return out.delta_flux;
+    case TINYML_FEATURE_MIDBAND_RESIDUAL_RATIO: return out.midband_residual_ratio;
+    case TINYML_FEATURE_ZCV: return out.zcv;
+    case TINYML_FEATURE_SPECTRAL_FLUX_MIDHF: return out.spectral_flux_midhf;
+    case TINYML_FEATURE_PEAK_FLUCT_CV: return out.peak_fluct_cv;
+    case TINYML_FEATURE_RESIDUAL_CREST_FACTOR: return out.residual_crest_factor;
+    case TINYML_FEATURE_THD_I: return out.thd_i;
+    case TINYML_FEATURE_HF_ENERGY_DELTA: return out.hf_energy_delta;
+    case TINYML_FEATURE_EDGE_SPIKE_RATIO: return out.edge_spike_ratio;
+    case TINYML_FEATURE_V_SAG_PCT: return out.v_sag_pct;
+    case TINYML_FEATURE_CYCLE_NMSE: return out.cycle_nmse;
+    default: return 0.0f;
+  }
+}
+
+static inline void copyComputedFeaturesToFrame_(FeatureFrame& f, const ArcDetectionResult& out) {
+  for (uint8_t i = 0; i < TINYML_COMPUTED_FEATURE_COUNT; ++i) {
+    const int featureId = TINYML_RUNTIME_EXPORT_FEATURE_IDS[i];
+    setFrameComputedFeatureById_(f, featureId,
+                                 tinymlClampFeatureValue(featureId, arcResultComputedFeatureById_(out, featureId)));
+  }
+}
+
+static inline void zeroComputedFeatures_(FeatureFrame& f) {
+  for (uint8_t i = 0; i < TINYML_COMPUTED_FEATURE_COUNT; ++i) {
+    const int featureId = TINYML_RUNTIME_EXPORT_FEATURE_IDS[i];
+    setFrameComputedFeatureById_(f, featureId, 0.0f);
+  }
+}
+
+static inline void sanitizeFeatureFrame_(FeatureFrame& f) {
+  for (uint8_t i = 0; i < TINYML_COMPUTED_FEATURE_COUNT; ++i) {
+    const int featureId = TINYML_RUNTIME_EXPORT_FEATURE_IDS[i];
+    setFrameComputedFeatureById_(f, featureId,
+                                 tinymlClampFeatureValue(featureId, frameComputedFeatureById_(f, featureId)));
+  }
+  if (!isfinite(f.vrms) || f.vrms < 0.0f) f.vrms = 0.0f;
+  else if (f.vrms > 400.0f) f.vrms = 400.0f;
+  if (!isfinite(f.irms) || f.irms < 0.0f) f.irms = 0.0f;
+  else if (f.irms > 40.0f) f.irms = 40.0f;
+  if (!isfinite(f.temp_c)) f.temp_c = 0.0f;
+  if (!isfinite(f.adc_fs_hz) || f.adc_fs_hz < 0.0f) f.adc_fs_hz = 0.0f;
+  if (!isfinite(f.fs_err_hz) || f.fs_err_hz < 0.0f) f.fs_err_hz = fabsf(FS_INTENDED_HZ);
+  f.context_family_confidence =
+      tinymlClampFeatureValue(TINYML_FEATURE_CONTEXT_FAMILY_CONFIDENCE, f.context_family_confidence);
+  f.context_family_confidence_provisional =
+      tinymlClampFeatureValue(TINYML_FEATURE_CONTEXT_FAMILY_CONFIDENCE, f.context_family_confidence_provisional);
+}
+
+static inline float contextFeatureAverageById_(int featureId, float denom) {
+  float value = 0.0f;
+  switch (featureId) {
+    case TINYML_FEATURE_ABS_IRMS_ZSCORE_VS_BASELINE: value = gContext.sumAbsIrmsZ / denom; break;
+    case TINYML_FEATURE_DELTA_IRMS_ABS: value = gContext.sumDeltaIrmsAbs / denom; break;
+    case TINYML_FEATURE_HALFCYCLE_ASYMMETRY: value = gContext.sumHalfcycleAsymmetry / denom; break;
+    case TINYML_FEATURE_SUSPICIOUS_RUN_ENERGY: value = gContext.sumSuspiciousRunEnergy / denom; break;
+    case TINYML_FEATURE_DELTA_HF_ENERGY: value = gContext.sumDeltaHfEnergy / denom; break;
+    case TINYML_FEATURE_DELTA_FLUX: value = gContext.sumDeltaFlux / denom; break;
+    case TINYML_FEATURE_MIDBAND_RESIDUAL_RATIO: value = gContext.sumMidband / denom; break;
+    case TINYML_FEATURE_ZCV: value = gContext.sumZcv / denom; break;
+    case TINYML_FEATURE_SPECTRAL_FLUX_MIDHF: value = gContext.sumSpectralFlux / denom; break;
+    case TINYML_FEATURE_PEAK_FLUCT_CV: value = gContext.sumPeak / denom; break;
+    case TINYML_FEATURE_RESIDUAL_CREST_FACTOR: value = gContext.sumResidualCf / denom; break;
+    case TINYML_FEATURE_THD_I: value = gContext.sumThd / denom; break;
+    case TINYML_FEATURE_HF_ENERGY_DELTA: value = gContext.sumHf / denom; break;
+    case TINYML_FEATURE_EDGE_SPIKE_RATIO: value = gContext.sumEdge / denom; break;
+    case TINYML_FEATURE_V_SAG_PCT: value = gContext.sumVSagPct / denom; break;
+    case TINYML_FEATURE_CYCLE_NMSE: value = gContext.sumNmse / denom; break;
+    default: value = 0.0f; break;
+  }
+  return tinymlClampFeatureValue(featureId, value);
 }
 
 static inline void fillContextModelInput_(double* dst) {
@@ -882,21 +984,12 @@ static void Core0Task(void* pv) {
       f.irms = out.irms_a;
       f.current_valid = 1;
       f.feat_valid = out.feat_valid ? 1 : 0;
-      f.spectral_flux_midhf = out.spectral_flux_midhf;
-      f.residual_crest_factor = out.residual_crest_factor;
-      f.edge_spike_ratio = out.edge_spike_ratio;
-      f.midband_residual_ratio = out.midband_residual_ratio;
-      f.cycle_nmse = out.cycle_nmse;
-      f.peak_fluct_cv = out.peak_fluct_cv;
-      f.thd_i = out.thd_i;
-      f.hf_energy_delta = out.hf_energy_delta;
-      f.zcv = out.zcv;
-      f.abs_irms_zscore_vs_baseline = out.abs_irms_zscore_vs_baseline;
-      f.halfcycle_asymmetry = out.halfcycle_asymmetry;
+      copyComputedFeaturesToFrame_(f, out);
     } else {
       f.current_valid = 0;
       f.feat_valid = 0;
       f.irms = 0.0f;
+      zeroComputedFeatures_(f);
     }
 
     const bool sampleRateWarnBad =
@@ -1077,11 +1170,7 @@ void loop() {
     if ((millis() - lastFeatRxMs) > FEAT_STALE_MS) {
       f.irms = 0.0f; f.current_valid = 0; f.feat_valid = 0; f.model_pred = 0; f.adc_fs_hz = 0.0f;
       f.fs_err_hz = fabsf(FS_INTENDED_HZ); f.sampling_quality_bad = 1;
-      f.spectral_flux_midhf = f.residual_crest_factor = f.edge_spike_ratio = 0.0f;
-      f.midband_residual_ratio = f.cycle_nmse = f.peak_fluct_cv = 0.0f;
-      f.thd_i = f.hf_energy_delta = f.zcv = f.abs_irms_zscore_vs_baseline = 0.0f;
-      f.delta_irms_abs = f.delta_hf_energy = f.delta_flux = f.v_sag_pct = 0.0f;
-      f.halfcycle_asymmetry = 0.0f;
+      zeroComputedFeatures_(f);
       f.invalid_loaded_flag = 0; f.invalid_off_flag = 1;
       f.relay_blank_active = 0; f.turnon_blank_active = 0; f.transient_blank_active = 0;
       lastF = f;
@@ -1202,16 +1291,7 @@ void loop() {
     f.current_valid = 0;
     f.feat_valid = 0;
     f.model_pred = 0;
-    f.spectral_flux_midhf = 0.0f;
-    f.residual_crest_factor = 0.0f;
-    f.edge_spike_ratio = 0.0f;
-    f.midband_residual_ratio = 0.0f;
-    f.cycle_nmse = 0.0f;
-    f.peak_fluct_cv = 0.0f;
-    f.thd_i = 0.0f;
-    f.hf_energy_delta = 0.0f;
-    f.zcv = 0.0f;
-    f.abs_irms_zscore_vs_baseline = 0.0f;
+    zeroComputedFeatures_(f);
   }
 
   static uint32_t lowIrmsSinceMs = 0;
@@ -1297,11 +1377,16 @@ void loop() {
   f.delta_hf_energy = fabsf(f.hf_energy_delta - prevHfDelta);
   f.delta_flux = fabsf(f.spectral_flux_midhf - prevFlux);
   f.v_sag_pct = (healthyVoltageBaseline > 10.0f) ? fmaxf(0.0f, ((healthyVoltageBaseline - vFast) / healthyVoltageBaseline) * 100.0f) : 0.0f;
+  // Hold the temporal energy feature at the exact value consumed this frame so
+  // runtime contexting, arc inference, logging, and retraining see the same input.
+  f.suspicious_run_energy =
+      tinymlClampFeatureValue(TINYML_FEATURE_SUSPICIOUS_RUN_ENERGY, suspiciousRunEnergy);
   f.invalid_loaded_flag = invalidWhileLoaded ? 1 : 0;
   f.invalid_off_flag = invalidOff ? 1 : 0;
   f.relay_blank_active = relayArtifactBlankActive ? 1 : 0;
   f.turnon_blank_active = arcTurnOnBlankActive ? 1 : 0;
   f.transient_blank_active = arcTransientBlankActive ? 1 : 0;
+  sanitizeFeatureFrame_(f);
 
   if (invalidWhileLoaded) {
     if (invalidBurstSinceMs == 0) invalidBurstSinceMs = millis();
@@ -1404,6 +1489,7 @@ void loop() {
 
   updateContextTracker_(f, vFast, irmsRawForLogic, arcBlankActive || relayArtifactBlankActive);
   applyContextToFrame_(f);
+  sanitizeFeatureFrame_(f);
 
   int rawPred = 0;
   if (!faultClearSuppressActive && mlArcEligible) {
@@ -1466,8 +1552,10 @@ void loop() {
   int pred = 0;
   if (!faultClearSuppressActive && !arcBlankActive) {
     const bool leakyArmed = (arcLeakyScore >= ARC_LEAKY_SCORE_FIRE);
-    const bool sustainedSuspicion = (suspiciousRunLen >= 2U) || (suspiciousRunEnergy >= 1.70f) || leakyArmed;
-    const bool hardContextBurst = fallbackArcEvent || (softFallbackArcEvent && (suspiciousRunEnergy >= 1.20f || leakyArmed));
+    // Keep logging suspicious_run_energy for future dataset analysis, but do not
+    // let its direct magnitude force a live arc decision path.
+    const bool sustainedSuspicion = (suspiciousRunLen >= 2U) || leakyArmed;
+    const bool hardContextBurst = fallbackArcEvent || (softFallbackArcEvent && leakyArmed);
     const bool temporalBurst =
         temporalKick &&
         ((arcLeakyScore >= ARC_LEAKY_SCORE_STRONG) || (invalidLoadedRunLen >= 3U) || (restrikeCountShort >= 2U));
@@ -1476,7 +1564,6 @@ void loop() {
 
   f.suspicious_run_len = suspiciousRunLen;
   f.invalid_loaded_run_len = invalidLoadedRunLen;
-  f.suspicious_run_energy = suspiciousRunEnergy;
   f.restrike_count_short = restrikeCountShort;
   f.model_pred = (uint8_t)pred;
 

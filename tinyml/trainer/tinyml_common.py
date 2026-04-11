@@ -113,13 +113,35 @@ TARGET = "label_arc"
 CONTEXT_TARGET = "device_family_code"
 GROUP_COL_CANDIDATES = ["trial_id", "session_id", "section_id", "session", "sid"]
 
-DB_FEATURE_SPACE_VERSION = 5
+DB_FEATURE_SPACE_VERSION = 6
 DB_RATIO_FLOOR = 1e-6
 DB_POWER_RATIO_FLOOR = 1e-6
 DB_RATIO_CLIP = (-80.0, 20.0)
 DB_RESIDUAL_CF_CLIP = (-20.0, 40.0)
 DB_THD_CLIP = (0.0, 200.0)
 DB_HF_CLIP = (-18.0, 18.0)
+
+FEATURE_CLIP_BOUNDS = {
+    "spectral_flux_midhf": (0.0, 200.0),
+    "residual_crest_factor": DB_RESIDUAL_CF_CLIP,
+    "edge_spike_ratio": DB_RATIO_CLIP,
+    "midband_residual_ratio": DB_RATIO_CLIP,
+    "cycle_nmse": (0.0, 200.0),
+    "peak_fluct_cv": (0.0, 300.0),
+    "thd_i": DB_THD_CLIP,
+    "hf_energy_delta": DB_HF_CLIP,
+    "zcv": (0.0, 10.0),
+    "abs_irms_zscore_vs_baseline": (0.0, 25.0),
+    "suspicious_run_energy": (0.0, 20.0),
+    "delta_irms_abs": (0.0, 15.0),
+    "delta_hf_energy": (0.0, 24.0),
+    "delta_flux": (0.0, 200.0),
+    "halfcycle_asymmetry": (0.0, 200.0),
+    "v_sag_pct": (0.0, 100.0),
+    "context_family_confidence": (0.0, 1.0),
+    "v_rms": (0.0, 400.0),
+    "i_rms": (0.0, 40.0),
+}
 
 DB_ARC_THRESHOLDS = {
     "residual_crest_factor": 12.568,
@@ -731,28 +753,7 @@ def clean_df(df: pd.DataFrame, include_invalid: bool = False, feature_names=None
         x = df[feature_names].replace([np.inf, -np.inf], np.nan)
         df = df.loc[x.notna().all(axis=1)].copy()
 
-    clip_bounds = {
-        "spectral_flux_midhf": (0.0, 200.0),
-        "residual_crest_factor": DB_RESIDUAL_CF_CLIP,
-        "edge_spike_ratio": DB_RATIO_CLIP,
-        "midband_residual_ratio": DB_RATIO_CLIP,
-        "cycle_nmse": (0.0, 200.0),
-        "peak_fluct_cv": (0.0, 300.0),
-        "thd_i": DB_THD_CLIP,
-        "hf_energy_delta": DB_HF_CLIP,
-        "zcv": (0.0, 10.0),
-        "abs_irms_zscore_vs_baseline": (0.0, 25.0),
-        "suspicious_run_energy": (0.0, 20.0),
-        "delta_irms_abs": (0.0, 15.0),
-        "delta_hf_energy": (0.0, 24.0),
-        "delta_flux": (0.0, 200.0),
-        "halfcycle_asymmetry": (0.0, 200.0),
-        "v_sag_pct": (0.0, 100.0),
-        "context_family_confidence": (0.0, 1.0),
-        "v_rms": (0.0, 400.0),
-        "i_rms": (0.0, 40.0),
-    }
-    for c, (lo, hi) in clip_bounds.items():
+    for c, (lo, hi) in FEATURE_CLIP_BOUNDS.items():
         if c in df.columns:
             df[c] = df[c].clip(lo, hi)
 
@@ -829,9 +830,9 @@ def select_threshold_cost(
         over_fpr = max(0.0, row["fpr"] - float(max_fpr))
         penalty = (
             row["cost"]
-            + (miss_recall * max(1.0, float(fn_weight)) * 1000.0)
-            + (miss_precision * max(1.0, float(fp_weight)) * 1000.0)
-            + (over_fpr * max(1.0, float(fp_weight)) * 1000.0)
+            + (miss_recall * max(1.0, float(fn_weight)) * 800.0)
+            + (miss_precision * max(1.0, max(float(fp_weight) * 12.0, float(fn_weight) * 0.45)) * 1200.0)
+            + (over_fpr * max(1.0, max(float(fp_weight) * 18.0, float(fn_weight) * 0.35)) * 1400.0)
         )
         row["fallback_penalty"] = float(penalty)
         fallback.append(row)
@@ -841,8 +842,9 @@ def select_threshold_cost(
             feasible,
             key=lambda r: (
                 r["cost"],
-                r["fn"],
+                r["fpr"],
                 r["fp"],
+                r["fn"],
                 -r["precision"],
                 -r["recall"],
                 -r["thr"],
@@ -856,8 +858,9 @@ def select_threshold_cost(
             fallback,
             key=lambda r: (
                 r["fallback_penalty"],
-                r["fn"],
+                r["fpr"],
                 r["fp"],
+                r["fn"],
                 -r["precision"],
                 -r["recall"],
                 -r["thr"],
@@ -1765,27 +1768,27 @@ def _cv_candidate_metrics(
     constraints_met_rate = float(np.mean(constraint_scores)) if constraint_scores else 0.0
     missing_class_rate = float(missing_class_folds / max(1, len(ap_scores)))
 
-    cost_unit = max(1.0, float(fn_weight) + (5.0 * float(fp_weight)))
+    cost_unit = max(1.0, (0.65 * float(fn_weight)) + (12.0 * float(fp_weight)))
     cost_penalty = float(np.tanh(raw_cost_mean / cost_unit)) if np.isfinite(raw_cost_mean) else 1.0
     fpr_penalty = max(0.0, fpr_mean - float(max_fpr))
     recall_shortfall = max(0.0, float(min_recall) - recall_mean)
     precision_shortfall = max(0.0, float(min_precision) - precision_mean)
 
     search_score = (
-        (0.22 * ap_mean)
-        + (0.22 * recall_mean)
-        + (0.16 * precision_mean)
-        + (0.14 * bal_mean)
-        + (0.08 * specificity_mean)
-        + (0.06 * f1_mean)
+        (0.12 * ap_mean)
+        + (0.14 * recall_mean)
+        + (0.18 * precision_mean)
+        + (0.18 * bal_mean)
+        + (0.16 * specificity_mean)
+        + (0.05 * f1_mean)
         + (0.05 * roc_mean)
-        + (0.15 * constraints_met_rate)
-        - (0.04 * ap_std)
-        - (0.04 * cost_penalty)
-        - (0.10 * fpr_penalty)
-        - (0.12 * recall_shortfall)
-        - (0.08 * precision_shortfall)
-        - (0.10 * missing_class_rate)
+        + (0.14 * constraints_met_rate)
+        - (0.03 * ap_std)
+        - (0.08 * cost_penalty)
+        - (0.24 * fpr_penalty)
+        - (0.10 * recall_shortfall)
+        - (0.16 * precision_shortfall)
+        - (0.08 * missing_class_rate)
     )
 
     return {

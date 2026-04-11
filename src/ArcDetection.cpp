@@ -209,6 +209,44 @@ void ArcDetection::setContext(int8_t family, float confidence) {
   s_ctxConfidence = clampf(confidence, 0.0f, 1.0f);
 }
 
+static inline void sanitizeArcDetectionResult_(ArcDetectionResult& out) {
+  if (!isfinite(out.fs_hz) || out.fs_hz < 0.0f) out.fs_hz = 0.0f;
+  if (!isfinite(out.irms_a) || out.irms_a < 0.0f) out.irms_a = 0.0f;
+
+  out.abs_irms_zscore_vs_baseline =
+      tinymlClampFeatureValue(TINYML_FEATURE_ABS_IRMS_ZSCORE_VS_BASELINE, out.abs_irms_zscore_vs_baseline);
+  out.delta_irms_abs =
+      tinymlClampFeatureValue(TINYML_FEATURE_DELTA_IRMS_ABS, out.delta_irms_abs);
+  out.halfcycle_asymmetry =
+      tinymlClampFeatureValue(TINYML_FEATURE_HALFCYCLE_ASYMMETRY, out.halfcycle_asymmetry);
+  out.suspicious_run_energy =
+      tinymlClampFeatureValue(TINYML_FEATURE_SUSPICIOUS_RUN_ENERGY, out.suspicious_run_energy);
+  out.delta_hf_energy =
+      tinymlClampFeatureValue(TINYML_FEATURE_DELTA_HF_ENERGY, out.delta_hf_energy);
+  out.delta_flux =
+      tinymlClampFeatureValue(TINYML_FEATURE_DELTA_FLUX, out.delta_flux);
+  out.midband_residual_ratio =
+      tinymlClampFeatureValue(TINYML_FEATURE_MIDBAND_RESIDUAL_RATIO, out.midband_residual_ratio);
+  out.zcv =
+      tinymlClampFeatureValue(TINYML_FEATURE_ZCV, out.zcv);
+  out.spectral_flux_midhf =
+      tinymlClampFeatureValue(TINYML_FEATURE_SPECTRAL_FLUX_MIDHF, out.spectral_flux_midhf);
+  out.peak_fluct_cv =
+      tinymlClampFeatureValue(TINYML_FEATURE_PEAK_FLUCT_CV, out.peak_fluct_cv);
+  out.residual_crest_factor =
+      tinymlClampFeatureValue(TINYML_FEATURE_RESIDUAL_CREST_FACTOR, out.residual_crest_factor);
+  out.thd_i =
+      tinymlClampFeatureValue(TINYML_FEATURE_THD_I, out.thd_i);
+  out.hf_energy_delta =
+      tinymlClampFeatureValue(TINYML_FEATURE_HF_ENERGY_DELTA, out.hf_energy_delta);
+  out.edge_spike_ratio =
+      tinymlClampFeatureValue(TINYML_FEATURE_EDGE_SPIKE_RATIO, out.edge_spike_ratio);
+  out.v_sag_pct =
+      tinymlClampFeatureValue(TINYML_FEATURE_V_SAG_PCT, out.v_sag_pct);
+  out.cycle_nmse =
+      tinymlClampFeatureValue(TINYML_FEATURE_CYCLE_NMSE, out.cycle_nmse);
+}
+
 static inline bool shouldSkipHarmonicBin(int k, bool haveFund, int k1, int half) {
   if (!haveFund || k1 <= 0) return false;
   for (int h = 1; h <= 24; ++h) {
@@ -768,6 +806,7 @@ bool ArcDetection::compute(const uint16_t* raw, size_t n, float fs_hz,
   }
   s_baseline.lastIrms = out.irms_a;
 
+  sanitizeArcDetectionResult_(out);
   out.feat_valid = true;
   return true;
 }
@@ -806,29 +845,46 @@ struct ArcModelFeatureSnapshot {
 
 static inline float arcFeatureValueById_(const ArcModelFeatureSnapshot& x, int featureId) {
   switch (featureId) {
-    case TINYML_FEATURE_ABS_IRMS_ZSCORE_VS_BASELINE: return x.abs_irms_zscore_vs_baseline;
-    case TINYML_FEATURE_DELTA_IRMS_ABS: return x.delta_irms_abs;
-    case TINYML_FEATURE_HALFCYCLE_ASYMMETRY: return x.halfcycle_asymmetry;
-    case TINYML_FEATURE_SUSPICIOUS_RUN_ENERGY: return x.suspicious_run_energy;
-    case TINYML_FEATURE_DELTA_HF_ENERGY: return x.delta_hf_energy;
-    case TINYML_FEATURE_DELTA_FLUX: return x.delta_flux;
-    case TINYML_FEATURE_MIDBAND_RESIDUAL_RATIO: return x.midband_residual_ratio;
-    case TINYML_FEATURE_ZCV: return x.zcv;
-    case TINYML_FEATURE_SPECTRAL_FLUX_MIDHF: return x.spectral_flux_midhf;
-    case TINYML_FEATURE_PEAK_FLUCT_CV: return x.peak_fluct_cv;
-    case TINYML_FEATURE_RESIDUAL_CREST_FACTOR: return x.residual_crest_factor;
-    case TINYML_FEATURE_THD_I: return x.thd_i;
-    case TINYML_FEATURE_HF_ENERGY_DELTA: return x.hf_energy_delta;
-    case TINYML_FEATURE_EDGE_SPIKE_RATIO: return x.edge_spike_ratio;
-    case TINYML_FEATURE_V_SAG_PCT: return x.v_sag_pct;
-    case TINYML_FEATURE_CYCLE_NMSE: return x.cycle_nmse;
+    case TINYML_FEATURE_ABS_IRMS_ZSCORE_VS_BASELINE:
+      return tinymlClampFeatureValue(featureId, x.abs_irms_zscore_vs_baseline);
+    case TINYML_FEATURE_DELTA_IRMS_ABS:
+      return tinymlClampFeatureValue(featureId, x.delta_irms_abs);
+    case TINYML_FEATURE_HALFCYCLE_ASYMMETRY:
+      return tinymlClampFeatureValue(featureId, x.halfcycle_asymmetry);
+    case TINYML_FEATURE_SUSPICIOUS_RUN_ENERGY:
+      return tinymlClampFeatureValue(featureId, x.suspicious_run_energy);
+    case TINYML_FEATURE_DELTA_HF_ENERGY:
+      return tinymlClampFeatureValue(featureId, x.delta_hf_energy);
+    case TINYML_FEATURE_DELTA_FLUX:
+      return tinymlClampFeatureValue(featureId, x.delta_flux);
+    case TINYML_FEATURE_MIDBAND_RESIDUAL_RATIO:
+      return tinymlClampFeatureValue(featureId, x.midband_residual_ratio);
+    case TINYML_FEATURE_ZCV:
+      return tinymlClampFeatureValue(featureId, x.zcv);
+    case TINYML_FEATURE_SPECTRAL_FLUX_MIDHF:
+      return tinymlClampFeatureValue(featureId, x.spectral_flux_midhf);
+    case TINYML_FEATURE_PEAK_FLUCT_CV:
+      return tinymlClampFeatureValue(featureId, x.peak_fluct_cv);
+    case TINYML_FEATURE_RESIDUAL_CREST_FACTOR:
+      return tinymlClampFeatureValue(featureId, x.residual_crest_factor);
+    case TINYML_FEATURE_THD_I:
+      return tinymlClampFeatureValue(featureId, x.thd_i);
+    case TINYML_FEATURE_HF_ENERGY_DELTA:
+      return tinymlClampFeatureValue(featureId, x.hf_energy_delta);
+    case TINYML_FEATURE_EDGE_SPIKE_RATIO:
+      return tinymlClampFeatureValue(featureId, x.edge_spike_ratio);
+    case TINYML_FEATURE_V_SAG_PCT:
+      return tinymlClampFeatureValue(featureId, x.v_sag_pct);
+    case TINYML_FEATURE_CYCLE_NMSE:
+      return tinymlClampFeatureValue(featureId, x.cycle_nmse);
     case TINYML_FEATURE_CTX_FAMILY_RESISTIVE_LINEAR: return (x.ctxFamily == FAMILY_RESISTIVE_LINEAR) ? 1.0f : 0.0f;
     case TINYML_FEATURE_CTX_FAMILY_INDUCTIVE_MOTOR: return (x.ctxFamily == FAMILY_INDUCTIVE_MOTOR) ? 1.0f : 0.0f;
     case TINYML_FEATURE_CTX_FAMILY_RECTIFIER_SMPS: return (x.ctxFamily == FAMILY_RECTIFIER_SMPS) ? 1.0f : 0.0f;
     case TINYML_FEATURE_CTX_FAMILY_PHASE_ANGLE_CONTROLLED: return (x.ctxFamily == FAMILY_PHASE_ANGLE_CONTROLLED) ? 1.0f : 0.0f;
     case TINYML_FEATURE_CTX_FAMILY_BRUSH_UNIVERSAL_MOTOR: return (x.ctxFamily == FAMILY_BRUSH_UNIVERSAL_MOTOR) ? 1.0f : 0.0f;
     case TINYML_FEATURE_CTX_FAMILY_OTHER_MIXED: return (x.ctxFamily == FAMILY_OTHER_MIXED) ? 1.0f : 0.0f;
-    case TINYML_FEATURE_CONTEXT_FAMILY_CONFIDENCE: return clampf(x.ctxConfidence, 0.0f, 1.0f);
+    case TINYML_FEATURE_CONTEXT_FAMILY_CONFIDENCE:
+      return tinymlClampFeatureValue(featureId, x.ctxConfidence);
     default: return 0.0f;
   }
 }
@@ -1153,7 +1209,6 @@ int ArcDetection::predict(float spectral_flux_midhf, float residual_crest_factor
   if (hf_energy_delta >= ARC_SIG_HF_ENERGY_DELTA) score += 0.7f;
   if (zcv >= ARC_SIG_ZCV) score += 0.5f;
   if (abs_irms_zscore_vs_baseline >= ARC_SIG_IRMS_ZSCORE) score += 1.0f;
-  if (suspicious_run_energy >= 1.60f) score += 0.8f;
   if (delta_irms_abs >= 0.12f) score += 0.8f;
   if (delta_hf_energy >= 0.70f) score += 0.8f;
   if (delta_flux >= 4.0f) score += 0.7f;

@@ -212,7 +212,7 @@ def main():
     ap.add_argument("--max_fpr", type=float, default=0.03)
     ap.add_argument("--min_threshold", type=float, default=0.08)
     ap.add_argument("--n_iter", type=int, default=60)
-    ap.add_argument("--winner_mode", default="arc_guard", choices=["arc_guard", "safety_composite", "legacy_cv_ap"])
+    ap.add_argument("--winner_mode", default="safety_composite", choices=["arc_guard", "safety_composite", "legacy_cv_ap"])
     ap.add_argument("--models", nargs="+", default=["rf", "et"], choices=["rf", "et"])
     ap.add_argument("--model_n_jobs", type=int, default=0)
     ap.add_argument("--serial_models", action="store_true")

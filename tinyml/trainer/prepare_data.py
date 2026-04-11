@@ -98,13 +98,35 @@ FILENAME_PREFIX_TOKENS = {
     "log",
 }
 
-DB_FEATURE_SPACE_VERSION = 5
+DB_FEATURE_SPACE_VERSION = 6
 DB_RATIO_FLOOR = 1e-6
 DB_POWER_RATIO_FLOOR = 1e-6
 DB_RATIO_CLIP = (-80.0, 20.0)
 DB_RESIDUAL_CF_CLIP = (-20.0, 40.0)
 DB_THD_CLIP = (0.0, 200.0)
 DB_HF_CLIP = (-18.0, 18.0)
+
+FEATURE_CLIP_BOUNDS = {
+    "spectral_flux_midhf": (0.0, 200.0),
+    "residual_crest_factor": DB_RESIDUAL_CF_CLIP,
+    "edge_spike_ratio": DB_RATIO_CLIP,
+    "midband_residual_ratio": DB_RATIO_CLIP,
+    "cycle_nmse": (0.0, 200.0),
+    "peak_fluct_cv": (0.0, 300.0),
+    "thd_i": DB_THD_CLIP,
+    "hf_energy_delta": DB_HF_CLIP,
+    "zcv": (0.0, 10.0),
+    "abs_irms_zscore_vs_baseline": (0.0, 25.0),
+    "suspicious_run_energy": (0.0, 20.0),
+    "delta_irms_abs": (0.0, 15.0),
+    "delta_hf_energy": (0.0, 24.0),
+    "delta_flux": (0.0, 200.0),
+    "halfcycle_asymmetry": (0.0, 200.0),
+    "v_sag_pct": (0.0, 100.0),
+    "context_family_confidence": (0.0, 1.0),
+    "v_rms": (0.0, 400.0),
+    "i_rms": (0.0, 40.0),
+}
 
 DB_ARC_THRESHOLDS = {
     "residual_crest_factor": 12.568,
@@ -1122,19 +1144,7 @@ def clean_dataset(df: pd.DataFrame, augment_unknown_context: bool = False) -> tu
     if "adc_fs_hz" in df.columns:
         df = df[df["adc_fs_hz"] > 0].copy()
 
-    clip_bounds = {
-        "spectral_flux_midhf": (0.0, 200.0),
-        "residual_crest_factor": DB_RESIDUAL_CF_CLIP,
-        "edge_spike_ratio": DB_RATIO_CLIP,
-        "midband_residual_ratio": DB_RATIO_CLIP,
-        "cycle_nmse": (0.0, 200.0),
-        "peak_fluct_cv": (0.0, 300.0),
-        "thd_i": DB_THD_CLIP,
-        "hf_energy_delta": DB_HF_CLIP,
-        "zcv": (0.0, 10.0),
-        "abs_irms_zscore_vs_baseline": (0.0, 25.0),
-    }
-    for c, (lo, hi) in clip_bounds.items():
+    for c, (lo, hi) in FEATURE_CLIP_BOUNDS.items():
         if c in df.columns:
             df[c] = df[c].clip(lo, hi)
 

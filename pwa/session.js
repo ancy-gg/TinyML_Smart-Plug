@@ -14,6 +14,7 @@
 
   if (!firebase.apps?.length) firebase.initializeApp(firebaseConfig);
   const db = firebase.database();
+  const FEATURE_SCHEMA = window.TinyMLFeatureSchema || null;
 
   const $ = (id) => document.getElementById(id);
 
@@ -1046,6 +1047,8 @@
   }
 
   function normalizeHeaderName(name) {
+    const schemaKey = FEATURE_SCHEMA?.normalizeFeatureKey?.(name);
+    if (schemaKey) return schemaKey;
     const raw = String(name || "").trim();
     const slug = raw.toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_+|_+$/g, "");
     const aliases = {
@@ -1089,7 +1092,7 @@
     return aliases[slug] || slug || raw;
   }
 
-const PREFERRED_EXPORT_HEADER_ORDER = [
+const PREFERRED_EXPORT_HEADER_ORDER = FEATURE_SCHEMA?.csvHeaderOrder || [
   "epoch_ms",
   "uptime_ms",
   "frame_start_uptime_ms",
@@ -1556,7 +1559,7 @@ function orderCsvHeaders(headers) {
   let ARC_IDXS = [];
   let statsVisible = false;
 
-  const SERIES_META = {
+  const SERIES_META = FEATURE_SCHEMA?.featureMetaByKey || {
     spectral_flux_midhf: { label: "Spectral Flux (Mid/HF)", unit: "%", decimals: 2 },
     residual_crest_factor: { label: "Residual Crest Factor", unit: "dB", decimals: 2 },
     edge_spike_ratio: { label: "Edge Spike Ratio", unit: "dB", decimals: 2 },

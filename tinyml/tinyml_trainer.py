@@ -8,12 +8,10 @@ import time
 from pathlib import Path
 import tkinter as tk
 from tkinter import filedialog, messagebox, ttk
-
 try:
     import pandas as pd
 except Exception:
     pd = None
-
 try:
     from trainer.tinyml_common import (
         ALL_COMPUTED_FEATURES,
@@ -65,10 +63,7 @@ except Exception:
         "residual_crest_factor",
         "peak_fluct_cv",
     ]
-
 SUBSET_SWEEP_SEARCH_DEPTH = 24
-
-
 APP_BG = "#26282d"
 CARD_BG = "#2f3339"
 CARD_BG_2 = "#343941"
@@ -77,7 +72,6 @@ MUTED = "#c8b989"
 ACCENT = "#c7b27a"
 BORDER = "#434851"
 LOG_BG = "#22252a"
-
 DISPLAY_METRICS = [
     ("Model", "model_name"),
     ("Configured n_iter", ("settings", "n_iter")),
@@ -125,8 +119,6 @@ DISPLAY_METRICS = [
     ("Mean score (pos)", ("test_score_summary", "mean_score_pos")),
     ("Mean score (neg)", ("test_score_summary", "mean_score_neg")),
 ]
-
-
 class TinyMLTrainerGUI(tk.Tk):
     def __init__(self):
         super().__init__()
@@ -135,11 +127,9 @@ class TinyMLTrainerGUI(tk.Tk):
         self.minsize(980, 680)
         self.resizable(True, True)
         self.configure(bg=APP_BG)
-
         self.proc = None
         self.log_queue = queue.Queue()
         self.paths_visible = False
-
         default_project_root = Path(__file__).resolve().parent.parent
         self.project_root = tk.StringVar(value=str(default_project_root))
         self.python_exe = tk.StringVar(value=sys.executable)
@@ -185,7 +175,7 @@ class TinyMLTrainerGUI(tk.Tk):
         self.min_threshold_goal = tk.StringVar(value="0.08")
         self.auto_max_val_fn = tk.StringVar(value="0")
         self.auto_max_val_fp = tk.StringVar(value="5")
-        self.winner_mode = tk.StringVar(value="Arc-first")
+        self.winner_mode = tk.StringVar(value="Balanced")
         self.auto_escalate = tk.BooleanVar(value=True)
         self.current_workflow = None
         self.status_text = tk.StringVar(value="Ready")
@@ -197,6 +187,9 @@ class TinyMLTrainerGUI(tk.Tk):
         self._progress_payload = None
         self._process_started_at = None
         self._last_eta_seconds = None
+        self._progress_rate_ema = None
+        self._last_progress_sample = None
+        self._last_progress_stage = None
         self.elapsed_text = tk.StringVar(value="Elapsed: —")
         self.eta_text = tk.StringVar(value="ETA: —")
         self._root_canvas = None
@@ -207,7 +200,6 @@ class TinyMLTrainerGUI(tk.Tk):
         self.context_feature_summary_text = tk.StringVar(value="")
         self.arc_feature_selection_dirty = False
         self.context_feature_selection_dirty = False
-
         self._adaptive_labels = []
         self._build_styles()
         self._build_ui()
@@ -216,14 +208,12 @@ class TinyMLTrainerGUI(tk.Tk):
         self.after(120, self._drain_logs)
         self.after(500, self._tick_runtime_clock)
         self.refresh_views()
-
     def _build_styles(self):
         style = ttk.Style(self)
         try:
             style.theme_use("clam")
         except Exception:
             pass
-
         style.configure("TFrame", background=APP_BG)
         style.configure(
             "Title.TLabel",
@@ -277,40 +267,32 @@ class TinyMLTrainerGUI(tk.Tk):
             lightcolor=ACCENT,
             darkcolor=ACCENT,
         )
-
     def _build_ui(self):
         self.columnconfigure(0, weight=1)
         self.rowconfigure(0, weight=1)
-
         shell = tk.Frame(self, bg=APP_BG)
         shell.grid(row=0, column=0, sticky="nsew")
         shell.columnconfigure(0, weight=1)
         shell.rowconfigure(0, weight=1)
-
         self._root_canvas = tk.Canvas(shell, bg=APP_BG, highlightthickness=0, bd=0)
         self._root_canvas.grid(row=0, column=0, sticky="nsew")
         root_scroll = ttk.Scrollbar(shell, orient="vertical", command=self._root_canvas.yview)
         root_scroll.grid(row=0, column=1, sticky="ns")
         self._root_canvas.configure(yscrollcommand=root_scroll.set)
-
         outer = ttk.Frame(self._root_canvas, padding=16)
         self._root_canvas_window = self._root_canvas.create_window((0, 0), window=outer, anchor="nw")
         outer.bind("<Configure>", lambda _e: self._root_canvas.configure(scrollregion=self._root_canvas.bbox("all")))
         self._root_canvas.bind("<Configure>", self._on_root_canvas_resize)
-
         outer.columnconfigure(0, weight=1)
         outer.rowconfigure(2, weight=1)
-
         top = ttk.Frame(outer)
         top.grid(row=0, column=0, sticky="ew")
         top.columnconfigure(1, weight=1)
-
         ttk.Label(top, text="TinyML Trainer", style="Title.TLabel").grid(
             row=0, column=0, sticky="w"
         )
         self.paths_btn = ttk.Button(top, text="Show Paths", command=self.toggle_paths)
         self.paths_btn.grid(row=0, column=1, sticky="e")
-
         self.paths_card = tk.Frame(
             outer,
             bg=CARD_BG,
@@ -339,7 +321,6 @@ class TinyMLTrainerGUI(tk.Tk):
         self._path_row(self.paths_card, 16, "Arc subset sweep CSV", self.subset_csv)
         self._path_row(self.paths_card, 17, "Context subset sweep report", self.context_subset_report)
         self._path_row(self.paths_card, 18, "Context subset sweep CSV", self.context_subset_csv)
-
         main_card = tk.Frame(
             outer,
             bg=CARD_BG,
@@ -351,14 +332,11 @@ class TinyMLTrainerGUI(tk.Tk):
         main_card.grid(row=2, column=0, sticky="nsew", pady=(14, 0))
         main_card.columnconfigure(0, weight=1)
         main_card.rowconfigure(6, weight=1)
-
         self._card_label(main_card, "Actions", 0)
-
         actions = ttk.Frame(main_card)
         actions.grid(row=1, column=0, sticky="ew", pady=(0, 12))
         for i in range(8):
             actions.columnconfigure(i, weight=1)
-
         self._btn(actions, "Cleaner", self.run_cleaner, 0, 0)
         self._btn(actions, "Random Forest Only", self.run_rf_only, 0, 1)
         self._btn(actions, "Extra Trees Only", self.run_et_only, 0, 2)
@@ -367,91 +345,65 @@ class TinyMLTrainerGUI(tk.Tk):
         self._btn(actions, "Subset Sweep", self.run_subset_sweep, 0, 5)
         self._btn(actions, "Refresh", self.refresh_views, 0, 6)
         self._btn(actions, "Clear Output", self.clear_output, 0, 7)
-
         options = tk.Frame(main_card, bg=CARD_BG_2, highlightthickness=1, highlightbackground=BORDER, padx=10, pady=10)
         options.grid(row=2, column=0, sticky="ew", pady=(0, 12))
         for i in range(6):
             options.columnconfigure(i, weight=1)
-
         tk.Label(options, text="Search tries", bg=CARD_BG_2, fg=MUTED, font=("Segoe UI", 9)).grid(row=0, column=0, sticky="w")
         ttk.Entry(options, textvariable=self.search_iters, width=10).grid(row=1, column=0, sticky="ew", padx=(0, 8), pady=(4, 8))
-
         tk.Label(options, text="Max tries", bg=CARD_BG_2, fg=MUTED, font=("Segoe UI", 9)).grid(row=0, column=1, sticky="w")
         ttk.Entry(options, textvariable=self.max_search_iters, width=10).grid(row=1, column=1, sticky="ew", padx=(0, 8), pady=(4, 8))
-
         tk.Label(options, text="Growth x", bg=CARD_BG_2, fg=MUTED, font=("Segoe UI", 9)).grid(row=0, column=2, sticky="w")
         ttk.Entry(options, textvariable=self.iter_growth, width=10).grid(row=1, column=2, sticky="ew", padx=(0, 8), pady=(4, 8))
-
         ttk.Checkbutton(options, text="Auto increase tries", variable=self.auto_escalate).grid(row=1, column=3, sticky="w", padx=(0, 8), pady=(4, 8))
-
         tk.Label(options, text="Winner style", bg=CARD_BG_2, fg=MUTED, font=("Segoe UI", 9)).grid(row=0, column=4, sticky="w")
         ttk.Combobox(options, textvariable=self.winner_mode, values=["Arc-first", "Balanced", "Legacy"], state="readonly", width=18).grid(row=1, column=4, sticky="ew", pady=(4, 8))
-
         tk.Label(options, text="Min recall", bg=CARD_BG_2, fg=MUTED, font=("Segoe UI", 9)).grid(row=2, column=0, sticky="w")
         ttk.Entry(options, textvariable=self.min_recall_goal, width=10).grid(row=3, column=0, sticky="ew", padx=(0, 8), pady=(4, 0))
-
         tk.Label(options, text="Min precision", bg=CARD_BG_2, fg=MUTED, font=("Segoe UI", 9)).grid(row=2, column=1, sticky="w")
         ttk.Entry(options, textvariable=self.min_precision_goal, width=10).grid(row=3, column=1, sticky="ew", padx=(0, 8), pady=(4, 0))
-
         tk.Label(options, text="Max FPR", bg=CARD_BG_2, fg=MUTED, font=("Segoe UI", 9)).grid(row=2, column=2, sticky="w")
         ttk.Entry(options, textvariable=self.max_fpr_goal, width=10).grid(row=3, column=2, sticky="ew", padx=(0, 8), pady=(4, 0))
-
         tk.Label(options, text="Min threshold", bg=CARD_BG_2, fg=MUTED, font=("Segoe UI", 9)).grid(row=2, column=3, sticky="w")
         ttk.Entry(options, textvariable=self.min_threshold_goal, width=10).grid(row=3, column=3, sticky="ew", padx=(0, 8), pady=(4, 0))
-
         fpfn = tk.Frame(options, bg=CARD_BG_2)
         fpfn.grid(row=3, column=4, sticky="ew")
         tk.Label(fpfn, text="Target val FN ≤", bg=CARD_BG_2, fg=MUTED, font=("Segoe UI", 9)).pack(side="left")
         ttk.Entry(fpfn, textvariable=self.auto_max_val_fn, width=5).pack(side="left", padx=(6, 8))
         tk.Label(fpfn, text="FP ≤", bg=CARD_BG_2, fg=MUTED, font=("Segoe UI", 9)).pack(side="left")
         ttk.Entry(fpfn, textvariable=self.auto_max_val_fp, width=5).pack(side="left", padx=(6, 0))
-
         tk.Label(options, text="Subset task", bg=CARD_BG_2, fg=MUTED, font=("Segoe UI", 9)).grid(row=4, column=0, sticky="w", pady=(10, 0))
         ttk.Combobox(options, textvariable=self.subset_task, values=["Arc + Context", "Arc Only", "Context Only"], state="readonly", width=18).grid(row=5, column=0, sticky="ew", padx=(0, 8), pady=(4, 0))
-
         tk.Label(options, text="Arc subset min", bg=CARD_BG_2, fg=MUTED, font=("Segoe UI", 9)).grid(row=4, column=1, sticky="w", pady=(10, 0))
         ttk.Entry(options, textvariable=self.arc_subset_feature_min, width=10).grid(row=5, column=1, sticky="ew", padx=(0, 8), pady=(4, 0))
-
         tk.Label(options, text="Arc subset max", bg=CARD_BG_2, fg=MUTED, font=("Segoe UI", 9)).grid(row=4, column=2, sticky="w", pady=(10, 0))
         ttk.Entry(options, textvariable=self.arc_subset_feature_max, width=10).grid(row=5, column=2, sticky="ew", padx=(0, 8), pady=(4, 0))
-
         tk.Label(options, text="Arc max combos (0=all)", bg=CARD_BG_2, fg=MUTED, font=("Segoe UI", 9)).grid(row=4, column=3, sticky="w", pady=(10, 0))
         ttk.Entry(options, textvariable=self.arc_subset_max_combinations, width=10).grid(row=5, column=3, sticky="ew", padx=(0, 8), pady=(4, 0))
-
         tk.Label(options, text="Context subset min", bg=CARD_BG_2, fg=MUTED, font=("Segoe UI", 9)).grid(row=6, column=1, sticky="w", pady=(10, 0))
         ttk.Entry(options, textvariable=self.context_subset_feature_min, width=10).grid(row=7, column=1, sticky="ew", padx=(0, 8), pady=(4, 0))
-
         tk.Label(options, text="Context subset max", bg=CARD_BG_2, fg=MUTED, font=("Segoe UI", 9)).grid(row=6, column=2, sticky="w", pady=(10, 0))
         ttk.Entry(options, textvariable=self.context_subset_feature_max, width=10).grid(row=7, column=2, sticky="ew", padx=(0, 8), pady=(4, 0))
-
         tk.Label(options, text="Context max combos (0=all)", bg=CARD_BG_2, fg=MUTED, font=("Segoe UI", 9)).grid(row=6, column=3, sticky="w", pady=(10, 0))
         ttk.Entry(options, textvariable=self.context_subset_max_combinations, width=10).grid(row=7, column=3, sticky="ew", padx=(0, 8), pady=(4, 0))
-
         tk.Label(options, text="Arc budget min", bg=CARD_BG_2, fg=MUTED, font=("Segoe UI", 9)).grid(row=8, column=0, sticky="w", pady=(10, 0))
         ttk.Entry(options, textvariable=self.arc_subset_time_budget_minutes, width=10).grid(row=9, column=0, sticky="ew", padx=(0, 8), pady=(4, 0))
-
-        tk.Label(options, text="Arc shard size", bg=CARD_BG_2, fg=MUTED, font=("Segoe UI", 9)).grid(row=8, column=1, sticky="w", pady=(10, 0))
+        tk.Label(options, text="Shard size", bg=CARD_BG_2, fg=MUTED, font=("Segoe UI", 9)).grid(row=8, column=1, sticky="w", pady=(10, 0))
         ttk.Entry(options, textvariable=self.arc_subset_shard_size, width=10).grid(row=9, column=1, sticky="ew", padx=(0, 8), pady=(4, 0))
-
-        tk.Label(options, text="Arc keep/shard", bg=CARD_BG_2, fg=MUTED, font=("Segoe UI", 9)).grid(row=8, column=2, sticky="w", pady=(10, 0))
+        tk.Label(options, text="Keep / shard", bg=CARD_BG_2, fg=MUTED, font=("Segoe UI", 9)).grid(row=8, column=2, sticky="w", pady=(10, 0))
         ttk.Entry(options, textvariable=self.arc_subset_keep_per_shard, width=10).grid(row=9, column=2, sticky="ew", padx=(0, 8), pady=(4, 0))
-
-        tk.Label(options, text="Arc ET shortlist", bg=CARD_BG_2, fg=MUTED, font=("Segoe UI", 9)).grid(row=8, column=3, sticky="w", pady=(10, 0))
+        tk.Label(options, text="Shortlist size", bg=CARD_BG_2, fg=MUTED, font=("Segoe UI", 9)).grid(row=8, column=3, sticky="w", pady=(10, 0))
         ttk.Entry(options, textvariable=self.arc_subset_shortlist_size, width=10).grid(row=9, column=3, sticky="ew", padx=(0, 8), pady=(4, 0))
-
-        tk.Label(options, text="Arc finalists", bg=CARD_BG_2, fg=MUTED, font=("Segoe UI", 9)).grid(row=8, column=4, sticky="w", pady=(10, 0))
+        tk.Label(options, text="Finalists", bg=CARD_BG_2, fg=MUTED, font=("Segoe UI", 9)).grid(row=8, column=4, sticky="w", pady=(10, 0))
         ttk.Entry(options, textvariable=self.arc_subset_finalist_count, width=10).grid(row=9, column=4, sticky="ew", padx=(0, 8), pady=(4, 0))
-
-        tk.Label(options, text="Subset n_jobs", bg=CARD_BG_2, fg=MUTED, font=("Segoe UI", 9)).grid(row=8, column=5, sticky="w", pady=(10, 0))
-        ttk.Entry(options, textvariable=self.subset_n_jobs, width=10).grid(row=9, column=5, sticky="ew", padx=(0, 0), pady=(4, 0))
-
+        tk.Label(options, text="Sweep n_jobs", bg=CARD_BG_2, fg=MUTED, font=("Segoe UI", 9)).grid(row=8, column=5, sticky="w", pady=(10, 0))
+        ttk.Entry(options, textvariable=self.subset_n_jobs, width=10).grid(row=9, column=5, sticky="ew", pady=(4, 0))
         subset_note = tk.Label(
             options,
             text=(
-                f"Arc subset sweep uses the locked {len(ARC_SWEEP_FEATURES)}-feature arc base pool. "
+                f"Arc subset sweep now runs in stages: fast ET prescreen over the arc pool, deeper ET shortlist, then parallel RF + ET finalists. "
                 f"Context subset sweep uses the locked {len(CONTEXT_SWEEP_FEATURES)}-feature start-only pool. "
-                f"Arc sweep now does a true ET-only prescreen, shards combos, re-ranks a shortlist with deeper ET search, "
-                f"then runs full-depth RF+ET only on the strongest finalists. Full arc depth remains {SUBSET_SWEEP_SEARCH_DEPTH}; context repeats stay {SUBSET_SWEEP_SEARCH_DEPTH}."
+                f"Subset inner depth is fixed at {SUBSET_SWEEP_SEARCH_DEPTH}; shortlist depth is auto-reduced for speed."
             ),
             bg=CARD_BG_2,
             fg=MUTED,
@@ -461,18 +413,14 @@ class TinyMLTrainerGUI(tk.Tk):
         )
         subset_note.grid(row=10, column=0, columnspan=6, sticky="ew", pady=(10, 0))
         self._adaptive_labels.append((subset_note, 0.78, 440))
-
-        self.workflow_scope_text = tk.StringVar(value="RF / ET / King train on the selected arc base features below, then append the fixed 7 runtime context inputs at export/runtime. Context training uses the selected context-only features below on start-only data. Cleaner rebuilds the datasets only. Subset Sweep can run Arc, Context, or both without changing the full 16-feature CSV schema, and the arc path now uses staged ET prescreening before full RF+ET finalist evaluation.")
+        self.workflow_scope_text = tk.StringVar(value="RF / ET / King train on the selected arc base features below, then append the fixed 7 runtime context inputs at export/runtime. Context training uses the selected context-only features below on start-only data. Cleaner rebuilds the datasets only. Subset Sweep can run Arc, Context, or both; for Arc it now budgets time, shards prescreen work, and reranks finalists without changing the full CSV schema.")
         scope_label = tk.Label(options, textvariable=self.workflow_scope_text, bg=CARD_BG_2, fg=MUTED, justify="left", anchor="w", wraplength=1180)
         scope_label.grid(row=11, column=0, columnspan=6, sticky="ew", pady=(10, 0))
         self._adaptive_labels.append((scope_label, 0.78, 440))
-
         self._build_feature_selection_card(main_card, 3)
-
         status = tk.Frame(main_card, bg=CARD_BG)
         status.grid(row=4, column=0, sticky="ew", pady=(0, 8))
         status.columnconfigure(3, weight=1)
-
         tk.Label(status, text="Status", bg=CARD_BG, fg=MUTED, font=("Segoe UI", 10)).grid(
             row=0, column=0, sticky="w"
         )
@@ -483,11 +431,9 @@ class TinyMLTrainerGUI(tk.Tk):
             fg=ACCENT,
             font=("Segoe UI", 11, "bold"),
         ).grid(row=0, column=1, sticky="w", padx=(8, 18))
-
         ttk.Button(status, text="Stop", command=self.stop_running).grid(
             row=0, column=2, sticky="e"
         )
-
         tk.Label(status, text="Progress", bg=CARD_BG, fg=MUTED, font=("Segoe UI", 9)).grid(
             row=1, column=0, sticky="w", pady=(10, 0)
         )
@@ -513,14 +459,12 @@ class TinyMLTrainerGUI(tk.Tk):
             anchor="e",
             width=8,
         ).grid(row=1, column=3, sticky="e", pady=(10, 0))
-
         tk.Label(status, textvariable=self.elapsed_text, bg=CARD_BG, fg=MUTED, font=("Segoe UI", 9)).grid(
             row=2, column=1, sticky="w", padx=(8, 0), pady=(6, 0)
         )
         tk.Label(status, textvariable=self.eta_text, bg=CARD_BG, fg=MUTED, font=("Segoe UI", 9)).grid(
             row=2, column=2, sticky="w", padx=(8, 0), pady=(6, 0)
         )
-
         tk.Label(status, text="Last command", bg=CARD_BG, fg=MUTED, font=("Segoe UI", 9)).grid(
             row=3, column=0, sticky="w", pady=(10, 0)
         )
@@ -536,31 +480,24 @@ class TinyMLTrainerGUI(tk.Tk):
         )
         self.command_label.grid(row=3, column=1, columnspan=3, sticky="ew", padx=(8, 0), pady=(10, 0))
         self._adaptive_labels.append((self.command_label, 0.74, 380))
-
         self.pb = ttk.Progressbar(main_card, mode="determinate", maximum=100.0, value=0.0)
         self.pb.grid(row=5, column=0, sticky="ew", pady=(0, 12))
-
         notebook = ttk.Notebook(main_card)
         notebook.grid(row=6, column=0, sticky="nsew", pady=(0, 0))
-
         logs_tab = ttk.Frame(notebook, padding=10)
         data_tab = ttk.Frame(notebook, padding=10)
         reports_tab = ttk.Frame(notebook, padding=10)
-
         notebook.add(logs_tab, text="Live Logs")
         notebook.add(data_tab, text="Dataset")
         notebook.add(reports_tab, text="Reports")
-
         self._build_logs_tab(logs_tab)
         self._build_data_tab(data_tab)
         self._build_reports_tab(reports_tab)
-
     def _on_root_canvas_resize(self, event=None):
         if self._root_canvas is None or self._root_canvas_window is None:
             return
         width = max(100, int(getattr(event, "width", self._root_canvas.winfo_width())))
         self._root_canvas.itemconfigure(self._root_canvas_window, width=width)
-
     def clear_output(self):
         try:
             self.log_text.delete("1.0", "end")
@@ -571,7 +508,6 @@ class TinyMLTrainerGUI(tk.Tk):
         self.last_command.set("—")
         self.status_text.set("Ready")
         self._reset_progress()
-
     def _card_label(self, parent, text, row):
         tk.Label(
             parent,
@@ -580,7 +516,6 @@ class TinyMLTrainerGUI(tk.Tk):
             fg=TEXT,
             font=("Segoe UI", 11, "bold"),
         ).grid(row=row, column=0, columnspan=3, sticky="w", pady=(0, 10))
-
     def _path_row(self, parent, row, label, var, browse_dir=False, browse_file=False):
         tk.Label(parent, text=label, bg=CARD_BG, fg=MUTED, font=("Segoe UI", 9)).grid(
             row=row, column=0, sticky="w", pady=4
@@ -595,12 +530,10 @@ class TinyMLTrainerGUI(tk.Tk):
             ttk.Button(parent, text="Browse", command=lambda: self._browse_file(var)).grid(
                 row=row, column=2, sticky="ew", pady=4
             )
-
     def _btn(self, parent, text, cmd, row, col):
         ttk.Button(parent, text=text, command=cmd).grid(
             row=row, column=col, sticky="ew", padx=4, pady=4
         )
-
     def _build_feature_selection_card(self, parent, row):
         card = tk.Frame(
             parent,
@@ -636,7 +569,6 @@ class TinyMLTrainerGUI(tk.Tk):
             summary_var=self.context_feature_summary_text,
             role="context",
         )
-
     def _build_feature_selector_panel(self, parent, row, column, title, note, feature_pool, feature_vars, summary_var, role):
         panel = tk.Frame(
             parent,
@@ -648,27 +580,22 @@ class TinyMLTrainerGUI(tk.Tk):
         )
         panel.grid(row=row, column=column, sticky="nsew", padx=(0, 8) if column == 0 else (8, 0))
         panel.columnconfigure(0, weight=1)
-
         tk.Label(panel, text=title, bg=CARD_BG_2, fg=TEXT, font=("Segoe UI", 10, "bold")).grid(row=0, column=0, sticky="w")
         note_label = tk.Label(panel, text=note, bg=CARD_BG_2, fg=MUTED, justify="left", anchor="w", wraplength=520)
         note_label.grid(row=1, column=0, sticky="ew", pady=(4, 8))
         self._adaptive_labels.append((note_label, 0.34, 280))
-
         btn_row = tk.Frame(panel, bg=CARD_BG_2)
         btn_row.grid(row=2, column=0, sticky="ew", pady=(0, 8))
         ttk.Button(btn_row, text="Use Sweep Recommendation", command=lambda r=role: self._apply_recommended_features(r)).pack(side="left", padx=(0, 6))
         ttk.Button(btn_row, text="Select All", command=lambda r=role: self._set_selected_feature_names(r, self._feature_pool(r), mark_dirty=True)).pack(side="left", padx=(0, 6))
         ttk.Button(btn_row, text="Clear", command=lambda r=role: self._set_selected_feature_names(r, [], allow_empty=True, mark_dirty=True)).pack(side="left")
-
         summary_label = tk.Label(panel, textvariable=summary_var, bg=CARD_BG_2, fg=MUTED, justify="left", anchor="w", wraplength=520)
         summary_label.grid(row=3, column=0, sticky="ew", pady=(0, 8))
         self._adaptive_labels.append((summary_label, 0.34, 280))
-
         grid = tk.Frame(panel, bg=CARD_BG_2)
         grid.grid(row=4, column=0, sticky="ew")
         for idx in range(2):
             grid.columnconfigure(idx, weight=1)
-
         for idx, feature_name in enumerate(feature_pool):
             ttk.Checkbutton(
                 grid,
@@ -676,21 +603,16 @@ class TinyMLTrainerGUI(tk.Tk):
                 variable=feature_vars[feature_name],
                 command=lambda r=role: self._on_feature_selection_changed(r),
             ).grid(row=idx // 2, column=idx % 2, sticky="w", padx=(0, 8), pady=2)
-
     def _feature_pool(self, role):
         return list(ARC_SWEEP_FEATURES if role == "arc" else CONTEXT_SWEEP_FEATURES)
-
     def _feature_var_map(self, role):
         return self.arc_feature_vars if role == "arc" else self.context_feature_vars
-
     def _feature_summary_var(self, role):
         return self.arc_feature_summary_text if role == "arc" else self.context_feature_summary_text
-
     def _selected_feature_names(self, role):
         pool = self._feature_pool(role)
         var_map = self._feature_var_map(role)
         return [name for name in pool if bool(var_map[name].get())]
-
     def _set_selected_feature_names(self, role, feature_names, allow_empty=False, mark_dirty=False):
         pool = self._feature_pool(role)
         wanted = {str(x).strip() for x in (feature_names or []) if str(x).strip() in pool}
@@ -703,14 +625,12 @@ class TinyMLTrainerGUI(tk.Tk):
         else:
             self.context_feature_selection_dirty = bool(mark_dirty)
         self._refresh_feature_selection_summary(role)
-
     def _on_feature_selection_changed(self, role):
         if role == "arc":
             self.arc_feature_selection_dirty = True
         else:
             self.context_feature_selection_dirty = True
         self._refresh_feature_selection_summary(role)
-
     def _refresh_feature_selection_summary(self, role=None):
         roles = [role] if role else ["arc", "context"]
         for active_role in roles:
@@ -727,7 +647,6 @@ class TinyMLTrainerGUI(tk.Tk):
             else:
                 summary = f"{prefix} No features selected. Select at least one feature before training. {detail}"
             self._feature_summary_var(active_role).set(summary)
-
     def _extract_feature_list(self, payload, *keys):
         if not isinstance(payload, dict):
             return []
@@ -738,7 +657,6 @@ class TinyMLTrainerGUI(tk.Tk):
                 if out:
                     return out
         return []
-
     def _recommended_feature_names(self, role):
         if role == "arc":
             candidates = [
@@ -772,13 +690,11 @@ class TinyMLTrainerGUI(tk.Tk):
                 ),
             ]
             pool = set(CONTEXT_SWEEP_FEATURES)
-
         for payload, keys in candidates:
             names = [name for name in self._extract_feature_list(payload, *keys) if name in pool]
             if names:
                 return names
         return []
-
     def _auto_apply_feature_recommendations(self, force=False):
         for role in ("arc", "context"):
             selected = self._selected_feature_names(role)
@@ -789,7 +705,6 @@ class TinyMLTrainerGUI(tk.Tk):
                     self._set_selected_feature_names(role, recommended, allow_empty=False, mark_dirty=False)
                 elif force:
                     self._set_selected_feature_names(role, self._feature_pool(role), allow_empty=False, mark_dirty=False)
-
     def _apply_recommended_features(self, role):
         recommended = self._recommended_feature_names(role)
         if recommended:
@@ -797,23 +712,19 @@ class TinyMLTrainerGUI(tk.Tk):
         else:
             self._set_selected_feature_names(role, self._feature_pool(role), allow_empty=False, mark_dirty=False)
         self._refresh_feature_selection_summary(role)
-
     def _explicit_feature_args(self, role):
         selected = self._selected_feature_names(role)
         if not selected:
             label = "arc base" if role == "arc" else "context"
             raise ValueError(f"Select at least one {label} feature before starting training.")
         return ["--features", *selected]
-
     def _build_logs_tab(self, parent):
         parent.columnconfigure(0, weight=1)
         parent.rowconfigure(0, weight=1)
-
         frame = tk.Frame(parent, bg=CARD_BG, highlightthickness=1, highlightbackground=BORDER)
         frame.grid(row=0, column=0, sticky="nsew")
         frame.columnconfigure(0, weight=1)
         frame.rowconfigure(0, weight=1)
-
         self.log_text = tk.Text(
             frame,
             wrap="word",
@@ -829,18 +740,15 @@ class TinyMLTrainerGUI(tk.Tk):
         log_scroll = ttk.Scrollbar(frame, orient="vertical", command=self.log_text.yview)
         log_scroll.grid(row=0, column=1, sticky="ns")
         self.log_text.configure(yscrollcommand=log_scroll.set)
-
     def _build_data_tab(self, parent):
         parent.columnconfigure(0, weight=1)
         parent.rowconfigure(2, weight=1)
-
         self.dataset_summary = tk.StringVar(value="No dataset loaded.")
         self.dataset_summary_label = tk.Label(
             parent, textvariable=self.dataset_summary, bg=APP_BG, fg=MUTED, justify="left", anchor="w", wraplength=1120
         )
         self.dataset_summary_label.grid(row=0, column=0, sticky="ew", pady=(0, 10))
         self._adaptive_labels.append((self.dataset_summary_label, 0.78, 420))
-
         cleaner_card = tk.Frame(parent, bg=CARD_BG, highlightthickness=1, highlightbackground=BORDER, padx=10, pady=10)
         cleaner_card.grid(row=1, column=0, sticky="ew", pady=(0, 10))
         cleaner_card.columnconfigure(0, weight=1)
@@ -848,12 +756,10 @@ class TinyMLTrainerGUI(tk.Tk):
         self.cleaner_summary_label = tk.Label(cleaner_card, textvariable=self.cleaner_summary_text, bg=CARD_BG, fg=MUTED, justify="left", anchor="w", wraplength=1200)
         self.cleaner_summary_label.grid(row=1, column=0, sticky="ew", pady=(6, 0))
         self._adaptive_labels.append((self.cleaner_summary_label, 0.76, 420))
-
         frame = tk.Frame(parent, bg=CARD_BG, highlightthickness=1, highlightbackground=BORDER)
         frame.grid(row=2, column=0, sticky="nsew")
         frame.columnconfigure(0, weight=1)
         frame.rowconfigure(0, weight=1)
-
         cols = ("feature", "mean", "std", "min", "max")
         self.dataset_tree = ttk.Treeview(frame, columns=cols, show="headings")
         for c, w in zip(cols, (240, 140, 140, 140, 140)):
@@ -863,14 +769,11 @@ class TinyMLTrainerGUI(tk.Tk):
         dataset_scroll = ttk.Scrollbar(frame, orient="vertical", command=self.dataset_tree.yview)
         dataset_scroll.grid(row=0, column=1, sticky="ns")
         self.dataset_tree.configure(yscrollcommand=dataset_scroll.set)
-
     def _build_reports_tab(self, parent):
         parent.columnconfigure(0, weight=1)
         parent.rowconfigure(0, weight=1)
-
         sub = ttk.Notebook(parent)
         sub.grid(row=0, column=0, sticky="nsew")
-
         self.prepare_tab = ttk.Frame(sub, padding=10)
         self.duel_compare_tab = ttk.Frame(sub, padding=10)
         self.rf_tab = ttk.Frame(sub, padding=10)
@@ -878,7 +781,6 @@ class TinyMLTrainerGUI(tk.Tk):
         self.duel_tab = ttk.Frame(sub, padding=10)
         self.context_tab = ttk.Frame(sub, padding=10)
         self.subset_tab = ttk.Frame(sub, padding=10)
-
         sub.add(self.prepare_tab, text="Prepare Report")
         sub.add(self.duel_compare_tab, text="Benchmark Overview")
         sub.add(self.rf_tab, text="Random Forest Report")
@@ -886,7 +788,6 @@ class TinyMLTrainerGUI(tk.Tk):
         sub.add(self.duel_tab, text="King Report")
         sub.add(self.context_tab, text="Context Report")
         sub.add(self.subset_tab, text="Subset Sweep Report")
-
         self._build_prepare_report_subtab(self.prepare_tab)
         self._build_compare_subtab(self.duel_compare_tab)
         self._build_single_report_subtab(self.rf_tab, prefix="rf")
@@ -894,15 +795,12 @@ class TinyMLTrainerGUI(tk.Tk):
         self._build_single_report_subtab(self.duel_tab, prefix="duel")
         self._build_single_report_subtab(self.context_tab, prefix="context")
         self._build_subset_report_subtab(self.subset_tab)
-
     def _build_subset_report_subtab(self, parent):
         parent.columnconfigure(0, weight=1)
         parent.rowconfigure(1, weight=1)
         parent.rowconfigure(3, weight=1)
-
         self.subset_summary = tk.StringVar(value="No subset sweep report loaded.")
         tk.Label(parent, textvariable=self.subset_summary, bg=APP_BG, fg=MUTED, justify="left", anchor="w", wraplength=1120).grid(row=0, column=0, sticky="ew", pady=(0, 10))
-
         frame1 = tk.Frame(parent, bg=CARD_BG, highlightthickness=1, highlightbackground=BORDER)
         frame1.grid(row=1, column=0, sticky="nsew", pady=(0, 10))
         frame1.columnconfigure(0, weight=1)
@@ -916,7 +814,6 @@ class TinyMLTrainerGUI(tk.Tk):
         subset_metric_scroll = ttk.Scrollbar(frame1, orient="vertical", command=self.subset_metric_tree.yview)
         subset_metric_scroll.grid(row=0, column=1, sticky="ns")
         self.subset_metric_tree.configure(yscrollcommand=subset_metric_scroll.set)
-
         frame2 = tk.Frame(parent, bg=CARD_BG, highlightthickness=1, highlightbackground=BORDER)
         frame2.grid(row=3, column=0, sticky="nsew")
         frame2.columnconfigure(0, weight=1)
@@ -974,15 +871,12 @@ class TinyMLTrainerGUI(tk.Tk):
         subset_best_h_scroll = ttk.Scrollbar(frame2, orient="horizontal", command=self.subset_best_tree.xview)
         subset_best_h_scroll.grid(row=1, column=0, sticky="ew")
         self.subset_best_tree.configure(yscrollcommand=subset_best_v_scroll.set, xscrollcommand=subset_best_h_scroll.set)
-
     def _build_prepare_report_subtab(self, parent):
         parent.columnconfigure(0, weight=1)
         parent.rowconfigure(1, weight=1)
         parent.rowconfigure(3, weight=1)
-
         self.prepare_summary = tk.StringVar(value="No prepare report loaded.")
         tk.Label(parent, textvariable=self.prepare_summary, bg=APP_BG, fg=MUTED, justify="left").grid(row=0, column=0, sticky="w", pady=(0, 10))
-
         frame1 = tk.Frame(parent, bg=CARD_BG, highlightthickness=1, highlightbackground=BORDER)
         frame1.grid(row=1, column=0, sticky="nsew", pady=(0, 10))
         frame1.columnconfigure(0, weight=1)
@@ -996,7 +890,6 @@ class TinyMLTrainerGUI(tk.Tk):
         prep_metric_scroll = ttk.Scrollbar(frame1, orient="vertical", command=self.prepare_metric_tree.yview)
         prep_metric_scroll.grid(row=0, column=1, sticky="ns")
         self.prepare_metric_tree.configure(yscrollcommand=prep_metric_scroll.set)
-
         frame2 = tk.Frame(parent, bg=CARD_BG, highlightthickness=1, highlightbackground=BORDER)
         frame2.grid(row=3, column=0, sticky="nsew")
         frame2.columnconfigure(0, weight=1)
@@ -1009,22 +902,18 @@ class TinyMLTrainerGUI(tk.Tk):
         prep_feature_scroll = ttk.Scrollbar(frame2, orient="vertical", command=self.prepare_feature_tree.yview)
         prep_feature_scroll.grid(row=0, column=1, sticky="ns")
         self.prepare_feature_tree.configure(yscrollcommand=prep_feature_scroll.set)
-
     def _build_compare_subtab(self, parent):
         parent.columnconfigure(0, weight=1)
         parent.rowconfigure(1, weight=1)
         parent.rowconfigure(3, weight=1)
-
         self.compare_summary = tk.StringVar(value="No reports loaded.")
         tk.Label(parent, textvariable=self.compare_summary, bg=APP_BG, fg=MUTED, justify="left").grid(
             row=0, column=0, sticky="w", pady=(0, 10)
         )
-
         frame1 = tk.Frame(parent, bg=CARD_BG, highlightthickness=1, highlightbackground=BORDER)
         frame1.grid(row=1, column=0, sticky="nsew", pady=(0, 10))
         frame1.columnconfigure(0, weight=1)
         frame1.rowconfigure(0, weight=1)
-
         cols = (
             "rank",
             "model",
@@ -1101,12 +990,10 @@ class TinyMLTrainerGUI(tk.Tk):
         benchmark_h_scroll = ttk.Scrollbar(frame1, orient="horizontal", command=self.benchmark_tree.xview)
         benchmark_h_scroll.grid(row=1, column=0, sticky="ew")
         self.benchmark_tree.configure(yscrollcommand=benchmark_v_scroll.set, xscrollcommand=benchmark_h_scroll.set)
-
         frame2 = tk.Frame(parent, bg=CARD_BG, highlightthickness=1, highlightbackground=BORDER)
         frame2.grid(row=3, column=0, sticky="nsew")
         frame2.columnconfigure(0, weight=1)
         frame2.rowconfigure(0, weight=1)
-
         cols2 = ("feature", "rf", "et", "leader")
         self.importance_tree = ttk.Treeview(frame2, columns=cols2, show="headings")
         for c, w in zip(cols2, (240, 180, 180, 160)):
@@ -1116,28 +1003,22 @@ class TinyMLTrainerGUI(tk.Tk):
         importance_scroll = ttk.Scrollbar(frame2, orient="vertical", command=self.importance_tree.yview)
         importance_scroll.grid(row=0, column=1, sticky="ns")
         self.importance_tree.configure(yscrollcommand=importance_scroll.set)
-
     def _build_single_report_subtab(self, parent, prefix):
         parent.columnconfigure(0, weight=1)
         parent.rowconfigure(1, weight=1)
-
         summary_var = tk.StringVar(value="No report loaded.")
         setattr(self, f"{prefix}_summary", summary_var)
-
         tk.Label(parent, textvariable=summary_var, bg=APP_BG, fg=MUTED, justify="left").grid(
             row=0, column=0, sticky="w", pady=(0, 10)
         )
-
         notebook = ttk.Notebook(parent)
         setattr(self, f"{prefix}_notebook", notebook)
         notebook.grid(row=1, column=0, sticky="nsew")
-
         overview_tab = ttk.Frame(notebook, padding=10)
         class_tab = ttk.Frame(notebook, padding=10)
         cm_tab = ttk.Frame(notebook, padding=10)
         params_tab = ttk.Frame(notebook, padding=10)
         fi_tab = ttk.Frame(notebook, padding=10)
-
         notebook.add(overview_tab, text="Overview")
         notebook.add(class_tab, text="Classification Report")
         notebook.add(cm_tab, text="Confusion Matrix")
@@ -1148,7 +1029,6 @@ class TinyMLTrainerGUI(tk.Tk):
         setattr(self, f"{prefix}_cm_tab", cm_tab)
         setattr(self, f"{prefix}_params_tab", params_tab)
         setattr(self, f"{prefix}_fi_tab", fi_tab)
-
         overview_tab.columnconfigure(0, weight=1)
         overview_tab.rowconfigure(0, weight=1)
         class_tab.columnconfigure(0, weight=1)
@@ -1159,7 +1039,6 @@ class TinyMLTrainerGUI(tk.Tk):
         params_tab.rowconfigure(0, weight=1)
         fi_tab.columnconfigure(0, weight=1)
         fi_tab.rowconfigure(0, weight=1)
-
         metric_tree = ttk.Treeview(overview_tab, columns=("metric", "value"), show="headings")
         metric_tree.heading("metric", text="Metric")
         metric_tree.heading("value", text="Value")
@@ -1170,7 +1049,6 @@ class TinyMLTrainerGUI(tk.Tk):
         metric_scroll.grid(row=0, column=1, sticky="ns")
         metric_tree.configure(yscrollcommand=metric_scroll.set)
         setattr(self, f"{prefix}_metric_tree", metric_tree)
-
         class_tree = ttk.Treeview(
             class_tab,
             columns=("label", "precision", "recall", "f1", "support"),
@@ -1184,7 +1062,6 @@ class TinyMLTrainerGUI(tk.Tk):
         class_scroll.grid(row=0, column=1, sticky="ns")
         class_tree.configure(yscrollcommand=class_scroll.set)
         setattr(self, f"{prefix}_class_tree", class_tree)
-
         cm_tree = ttk.Treeview(cm_tab, columns=("label", "pred0", "pred1"), show="headings")
         cm_tree.heading("label", text="Actual \\ Pred")
         cm_tree.heading("pred0", text="Pred 0")
@@ -1197,7 +1074,6 @@ class TinyMLTrainerGUI(tk.Tk):
         cm_scroll.grid(row=0, column=1, sticky="ns")
         cm_tree.configure(yscrollcommand=cm_scroll.set)
         setattr(self, f"{prefix}_cm_tree", cm_tree)
-
         param_tree = ttk.Treeview(params_tab, columns=("param", "value"), show="headings")
         param_tree.heading("param", text="Parameter")
         param_tree.heading("value", text="Value")
@@ -1208,7 +1084,6 @@ class TinyMLTrainerGUI(tk.Tk):
         param_scroll.grid(row=0, column=1, sticky="ns")
         param_tree.configure(yscrollcommand=param_scroll.set)
         setattr(self, f"{prefix}_param_tree", param_tree)
-
         fi_tree = ttk.Treeview(fi_tab, columns=("rank", "feature", "importance"), show="headings")
         fi_tree.heading("rank", text="Rank")
         fi_tree.heading("feature", text="Feature")
@@ -1221,8 +1096,6 @@ class TinyMLTrainerGUI(tk.Tk):
         fi_scroll.grid(row=0, column=1, sticky="ns")
         fi_tree.configure(yscrollcommand=fi_scroll.set)
         setattr(self, f"{prefix}_fi_tree", fi_tree)
-
-
     def _get_int(self, value, default, minimum=None):
         try:
             if hasattr(value, "get"):
@@ -1233,7 +1106,6 @@ class TinyMLTrainerGUI(tk.Tk):
         if minimum is not None:
             out = max(int(minimum), out)
         return out
-
     def _get_float(self, value, default, minimum=None, maximum=None):
         try:
             if hasattr(value, "get"):
@@ -1246,7 +1118,6 @@ class TinyMLTrainerGUI(tk.Tk):
         if maximum is not None:
             out = min(float(maximum), out)
         return out
-
     def _trainer_script_var_for_kind(self, kind):
         if kind == "rf":
             return self.rf_script
@@ -1257,7 +1128,6 @@ class TinyMLTrainerGUI(tk.Tk):
         if kind == "subset":
             return self.subset_script
         return self.duel_script
-
     def _arc_training_flags(self, n_iter):
         return [
             "--n_iter", str(int(n_iter)),
@@ -1266,10 +1136,8 @@ class TinyMLTrainerGUI(tk.Tk):
             "--max_fpr", f"{self._get_float(self.max_fpr_goal, 0.03, 0.0, 1.0):.6f}",
             "--min_threshold", f"{self._get_float(self.min_threshold_goal, 0.08, 0.0, 0.99):.6f}",
         ]
-
     def _context_training_flags(self, n_iter):
         return ["--n_iter", str(int(n_iter))]
-
     def _subset_training_flags(self):
         task_label = (self.subset_task.get() or "Arc + Context").strip().lower()
         if "context" in task_label and "arc" in task_label:
@@ -1281,15 +1149,10 @@ class TinyMLTrainerGUI(tk.Tk):
         arc_feature_min = self._get_int(self.arc_subset_feature_min, 1, 1)
         arc_feature_max = self._get_int(self.arc_subset_feature_max, len(ARC_SWEEP_FEATURES), arc_feature_min)
         arc_max_combos = self._get_int(self.arc_subset_max_combinations, 0, 0)
-        arc_budget_minutes = self._get_float(self.arc_subset_time_budget_minutes, 60.0, 0.0, 24.0 * 7.0 * 60.0)
-        arc_shard_size = self._get_int(self.arc_subset_shard_size, 128, 1)
-        arc_keep_per_shard = self._get_int(self.arc_subset_keep_per_shard, 1, 1)
-        arc_shortlist_size = self._get_int(self.arc_subset_shortlist_size, 18, 1)
-        arc_finalist_count = self._get_int(self.arc_subset_finalist_count, 6, 1)
-        subset_n_jobs = self._get_int(self.subset_n_jobs, 1, -1)
         ctx_feature_min = self._get_int(self.context_subset_feature_min, 1, 1)
         ctx_feature_max = self._get_int(self.context_subset_feature_max, len(CONTEXT_SWEEP_FEATURES), ctx_feature_min)
         ctx_max_combos = self._get_int(self.context_subset_max_combinations, 0, 0)
+        shortlist_depth = max(1, int(round(float(SUBSET_SWEEP_SEARCH_DEPTH) * 0.25)))
         return [
             "--task", task,
             "--out_report", str(self._project_path(self.subset_report.get())),
@@ -1297,17 +1160,17 @@ class TinyMLTrainerGUI(tk.Tk):
             "--context_out_report", str(self._project_path(self.context_subset_report.get())),
             "--context_out_csv", str(self._project_path(self.context_subset_csv.get())),
             "--n_iter", str(SUBSET_SWEEP_SEARCH_DEPTH),
+            "--n_jobs", str(self._get_int(self.subset_n_jobs, 1, 0)),
             "--context_repeats", str(SUBSET_SWEEP_SEARCH_DEPTH),
             "--feature_count_min", str(arc_feature_min),
             "--feature_count_max", str(arc_feature_max),
             "--max_combinations", str(arc_max_combos),
-            "--n_jobs", str(subset_n_jobs),
-            "--arc_time_budget_minutes", f"{arc_budget_minutes:.3f}",
-            "--arc_shard_size", str(arc_shard_size),
-            "--arc_keep_per_shard", str(arc_keep_per_shard),
-            "--arc_shortlist_size", str(arc_shortlist_size),
-            "--arc_finalist_count", str(arc_finalist_count),
-            "--arc_shortlist_n_iter", str(max(1, int(round(SUBSET_SWEEP_SEARCH_DEPTH * 0.25)))),
+            "--arc_time_budget_minutes", f"{self._get_float(self.arc_subset_time_budget_minutes, 60.0, 0.0, None):.6f}",
+            "--arc_shard_size", str(self._get_int(self.arc_subset_shard_size, 128, 1)),
+            "--arc_keep_per_shard", str(self._get_int(self.arc_subset_keep_per_shard, 1, 1)),
+            "--arc_shortlist_size", str(self._get_int(self.arc_subset_shortlist_size, 18, 1)),
+            "--arc_finalist_count", str(self._get_int(self.arc_subset_finalist_count, 6, 1)),
+            "--arc_shortlist_n_iter", str(shortlist_depth),
             "--context_feature_count_min", str(ctx_feature_min),
             "--context_feature_count_max", str(ctx_feature_max),
             "--context_max_combinations", str(ctx_max_combos),
@@ -1316,21 +1179,18 @@ class TinyMLTrainerGUI(tk.Tk):
             "--max_fpr", f"{self._get_float(self.max_fpr_goal, 0.03, 0.0, 1.0):.6f}",
             "--min_threshold", f"{self._get_float(self.min_threshold_goal, 0.08, 0.0, 0.99):.6f}",
         ]
-
     def _winner_mode_arg(self):
-        label = (self.winner_mode.get() or "Arc-first").strip()
+        label = (self.winner_mode.get() or "Balanced").strip()
         return {
             "Arc-first": "arc_guard",
             "Balanced": "safety_composite",
             "Legacy": "legacy_cv_ap",
-        }.get(label, "arc_guard")
-
+        }.get(label, "safety_composite")
     def _build_training_command(self, kind, n_iter):
         cmd = [
             self.python_exe.get(),
             str(self._project_path(self._trainer_script_var_for_kind(kind).get())),
         ]
-
         if kind == "rf":
             cmd.extend([
                 "--csv", str(self._project_path(self.cleaned_csv.get())),
@@ -1340,7 +1200,6 @@ class TinyMLTrainerGUI(tk.Tk):
             cmd.extend(self._arc_training_flags(n_iter))
             cmd.extend(self._explicit_feature_args("arc"))
             return cmd
-
         if kind == "et":
             cmd.extend([
                 "--csv", str(self._project_path(self.cleaned_csv.get())),
@@ -1350,7 +1209,6 @@ class TinyMLTrainerGUI(tk.Tk):
             cmd.extend(self._arc_training_flags(n_iter))
             cmd.extend(self._explicit_feature_args("arc"))
             return cmd
-
         if kind == "duel":
             cmd.extend([
                 "--csv", str(self._project_path(self.cleaned_csv.get())),
@@ -1363,7 +1221,6 @@ class TinyMLTrainerGUI(tk.Tk):
             cmd.extend(self._arc_training_flags(n_iter))
             cmd.extend(self._explicit_feature_args("arc"))
             return cmd
-
         if kind == "context":
             cmd.extend([
                 "--csv", str(self._project_path(self.context_csv.get())),
@@ -1373,17 +1230,19 @@ class TinyMLTrainerGUI(tk.Tk):
             cmd.extend(self._context_training_flags(n_iter))
             cmd.extend(self._explicit_feature_args("context"))
             return cmd
-
         if kind == "subset":
+            context_features = self._selected_feature_names("context")
+            if not context_features:
+                raise ValueError("Select at least one context feature before starting the subset sweep.")
             cmd.extend([
                 "--arc_csv", str(self._project_path(self.cleaned_csv.get())),
                 "--context_csv", str(self._project_path(self.context_csv.get())),
             ])
             cmd.extend(self._subset_training_flags())
+            cmd.extend(self._explicit_feature_args("arc"))
+            cmd.extend(["--context_features", *context_features])
             return cmd
-
         return cmd
-
     def _load_training_report_target(self, kind):
         if kind == "rf":
             payload = self._read_json(self.rf_report) or self._get_duel_result_by_key("rf") or {}
@@ -1397,37 +1256,30 @@ class TinyMLTrainerGUI(tk.Tk):
             return self._read_json(self.subset_report) or {}
         payload = self._read_json(self.duel_report) or {}
         return payload.get("winner") or payload
-
     def _next_iteration_value(self, current_n_iter, max_n_iter, growth):
         nxt = int(round(float(current_n_iter) * float(growth)))
         if nxt <= int(current_n_iter):
             nxt = int(current_n_iter) + max(8, int(current_n_iter) // 2)
         return min(int(max_n_iter), max(int(current_n_iter) + 1, nxt))
-
     def _evaluate_escalation_need(self, kind):
         if kind not in {"rf", "et", "duel"}:
             return False, "workflow does not use auto-escalation"
         target = self._load_training_report_target(kind)
         if not target:
             return True, "no report was produced"
-
         reasons = []
         min_recall = self._get_float(self.min_recall_goal, 0.98, 0.0, 1.0)
         min_precision = self._get_float(self.min_precision_goal, 0.90, 0.0, 1.0)
         max_val_fn = self._get_int(self.auto_max_val_fn, 0, 0)
         max_val_fp = self._get_int(self.auto_max_val_fp, 5, 0)
-
         constraints_met = target.get("threshold_constraints_met")
         if constraints_met is False:
             reasons.append("threshold constraints not met")
-
         holdout_recall = self._get_float(target.get("holdout_validation_recall", target.get("validation_recall", 0.0)), 0.0, 0.0, 1.0)
         holdout_precision = self._get_float(target.get("holdout_validation_precision", target.get("validation_precision", 0.0)), 0.0, 0.0, 1.0)
-
         val = target.get("validation_threshold_result", {}) or {}
         val_fn = self._get_int(val.get("fn", 10**9), 10**9, 0)
         val_fp = self._get_int(val.get("fp", 10**9), 10**9, 0)
-
         if holdout_recall < min_recall:
             reasons.append(f"holdout recall {holdout_recall:.4f} < {min_recall:.4f}")
         if holdout_precision < min_precision:
@@ -1436,20 +1288,16 @@ class TinyMLTrainerGUI(tk.Tk):
             reasons.append(f"validation FN {val_fn} > target {max_val_fn}")
         if val_fp > max_val_fp:
             reasons.append(f"validation FP {val_fp} > target {max_val_fp}")
-
         return (len(reasons) > 0), "; ".join(reasons)
-
     def _start_training_workflow(self, kind):
         if self.proc is not None:
             messagebox.showwarning("Busy", "Another process is already running.")
             return
-
         base_n_iter = self._get_int(self.search_iters, 120, 1)
         max_n_iter = self._get_int(self.max_search_iters, max(base_n_iter, 240), 1)
         growth = self._get_float(self.iter_growth, 2.0, 1.1, 8.0)
         if max_n_iter < base_n_iter:
             max_n_iter = base_n_iter
-
         workflow = {
             "kind": kind,
             "current_n_iter": base_n_iter,
@@ -1460,7 +1308,6 @@ class TinyMLTrainerGUI(tk.Tk):
         }
         self.current_workflow = workflow
         self._launch_training_attempt(workflow)
-
     def _launch_training_attempt(self, workflow):
         kind = workflow["kind"]
         current_n_iter = workflow["current_n_iter"]
@@ -1485,22 +1332,18 @@ class TinyMLTrainerGUI(tk.Tk):
             cmd,
             on_finish=lambda rc, wf=workflow: self._after_training_attempt(wf, rc),
         )
-
     def _after_training_attempt(self, workflow, rc):
         if self.current_workflow is not workflow:
             return
         if rc != 0:
             self.current_workflow = None
             return
-
         if not workflow.get("auto_escalate"):
             self.current_workflow = None
             return
-
         should_retry, reason = self._evaluate_escalation_need(workflow["kind"])
         current_n_iter = int(workflow["current_n_iter"])
         max_n_iter = int(workflow["max_n_iter"])
-
         if should_retry and current_n_iter < max_n_iter:
             next_n_iter = self._next_iteration_value(current_n_iter, max_n_iter, workflow["growth"])
             if next_n_iter > current_n_iter:
@@ -1514,7 +1357,6 @@ class TinyMLTrainerGUI(tk.Tk):
                 self.progress_text.set(f"Retrying because {reason}")
                 self.after(150, lambda wf=workflow: self._launch_training_attempt(wf))
                 return
-
         self.current_workflow = None
         if should_retry:
             self.log(
@@ -1526,7 +1368,6 @@ class TinyMLTrainerGUI(tk.Tk):
                 f"\nAuto-escalation stop condition met for {workflow['kind']} at "
                 f"n_iter={current_n_iter}.\n"
             )
-
     def toggle_paths(self):
         self.paths_visible = not self.paths_visible
         if self.paths_visible:
@@ -1535,17 +1376,14 @@ class TinyMLTrainerGUI(tk.Tk):
         else:
             self.paths_card.grid_forget()
             self.paths_btn.config(text="Show Paths")
-
     def _browse_root(self):
         path = filedialog.askdirectory(initialdir=self.project_root.get() or os.getcwd())
         if path:
             self.project_root.set(path)
-
     def _browse_file(self, var):
         path = filedialog.askopenfilename(initialdir=self.project_root.get() or os.getcwd())
         if path:
             var.set(path)
-
     def _format_cleaner_summary(self, data):
         if not data:
             return "Cleaner summary unavailable."
@@ -1564,19 +1402,18 @@ class TinyMLTrainerGUI(tk.Tk):
             f"Conflict groups: {conflict.get('mixed_groups', 0)} | Prefer trusted normal: {conflict.get('prefer_trusted_normal', 0)} | Prefer stronger normal: {conflict.get('prefer_more_trusted_normal', 0)} | Keep stronger arc: {conflict.get('keep_more_trusted_arc', 0)} | Dropped ambiguous: {conflict.get('drop_ambiguous', 0)}\n"
             f"Labels: {data.get('label_counts', {})} | Sources: {data.get('source_counts', {})} | Policies kept: {policy}"
         )
-
-
-
     def _reset_progress(self):
         self._progress_payload = None
         self._last_eta_seconds = None
+        self._progress_rate_ema = None
+        self._last_progress_sample = None
+        self._last_progress_stage = None
         self.pb.configure(mode="determinate", maximum=100.0)
         self.pb["value"] = 0.0
         self.progress_text.set("Idle")
         self.progress_percent_text.set("0%")
         self.elapsed_text.set("Elapsed: —")
         self.eta_text.set("ETA: —")
-
     def _fmt_duration(self, seconds):
         try:
             seconds = int(round(float(seconds)))
@@ -1586,7 +1423,6 @@ class TinyMLTrainerGUI(tk.Tk):
         h, rem = divmod(seconds, 3600)
         m, s = divmod(rem, 60)
         return f"{h:d}:{m:02d}:{s:02d}" if h else f"{m:02d}:{s:02d}"
-
     def _tick_runtime_clock(self):
         try:
             if self.proc is not None and self._process_started_at is not None:
@@ -1601,7 +1437,6 @@ class TinyMLTrainerGUI(tk.Tk):
                 self.eta_text.set("ETA: —")
         finally:
             self.after(500, self._tick_runtime_clock)
-
     def _update_progress(self, payload):
         payload = dict(payload or {})
         current = payload.get("current", 0)
@@ -1613,25 +1448,48 @@ class TinyMLTrainerGUI(tk.Tk):
             return
         if total <= 0:
             return
-
         pct = max(0.0, min(100.0, (current / total) * 100.0))
         self._progress_payload = payload
-        if self._process_started_at is not None and current > 0:
-            elapsed = max(0.0, time.monotonic() - self._process_started_at)
-            remaining = max(0.0, elapsed * ((total - current) / max(current, 1.0)))
-            self._last_eta_seconds = remaining
+        stage_key = str(payload.get("stage", "")).strip().lower()
+        now = time.monotonic()
+        if self._process_started_at is not None:
+            elapsed = max(0.0, now - self._process_started_at)
             self.elapsed_text.set(f"Elapsed: {self._fmt_duration(elapsed)}")
-            self.eta_text.set(f"ETA: {self._fmt_duration(remaining)}")
+            if self._last_progress_stage != stage_key:
+                self._progress_rate_ema = None
+                self._last_progress_sample = (now, current)
+                self._last_progress_stage = stage_key
+            elif self._last_progress_sample is None:
+                self._last_progress_sample = (now, current)
+            else:
+                dt = max(0.0, now - float(self._last_progress_sample[0]))
+                delta = max(0.0, current - float(self._last_progress_sample[1]))
+                if dt >= 0.20 and delta > 0:
+                    inst_rate = delta / dt
+                    if self._progress_rate_ema is None:
+                        self._progress_rate_ema = inst_rate
+                    else:
+                        self._progress_rate_ema = (0.65 * float(self._progress_rate_ema)) + (0.35 * inst_rate)
+                    self._last_progress_sample = (now, current)
+                elif dt >= 2.0:
+                    self._last_progress_sample = (now, current)
+            if current >= total:
+                self._last_eta_seconds = 0.0
+            elif self._progress_rate_ema is not None and float(self._progress_rate_ema) > 0:
+                remaining = max(0.0, (total - current) / float(self._progress_rate_ema))
+                self._last_eta_seconds = remaining
+                self.eta_text.set(f"ETA: {self._fmt_duration(remaining)}")
+            else:
+                self._last_eta_seconds = None
+                self.eta_text.set("ETA: estimatingâ€¦")
         self.pb.configure(mode="determinate", maximum=100.0)
         self.pb["value"] = pct
-
         task_name = str(payload.get("task", "")).strip()
         model_name = str(payload.get("model_name", "")).strip()
         stage = str(payload.get("stage", "")).strip().replace("_", " ").title()
         message = str(payload.get("message", "")).strip()
         combo_index = payload.get("combo_index")
         combo_total = payload.get("combo_total")
-
         pieces = []
         if task_name:
             pieces.append(task_name.replace("_", " ").title())
@@ -1648,18 +1506,15 @@ class TinyMLTrainerGUI(tk.Tk):
                 pass
         if not pieces:
             pieces.append(f"Step {int(current)}/{int(total)}")
-
         if self._last_eta_seconds is not None and current < total:
             pieces.append(f"ETA {self._fmt_duration(self._last_eta_seconds)}")
         self.progress_text.set(" • ".join(pieces))
         self.progress_percent_text.set(f"{pct:0.1f}%")
-
         stage_key = str(payload.get("stage", "")).strip().lower()
         if payload.get("all_models_done"):
             self.status_text.set("Finished")
         elif stage_key in {"done", "workflow_done"}:
             self.status_text.set("Finalizing…")
-
     def _handle_progress_line(self, msg):
         prefix = "[[PROGRESS]] "
         if not msg.startswith(prefix):
@@ -1672,11 +1527,9 @@ class TinyMLTrainerGUI(tk.Tk):
             return True
         self._update_progress(data)
         return True
-
     def _show_cleaner_summary_dialog(self, data):
         if not data:
             return
-
         win = tk.Toplevel(self)
         win.title("Cleaner Summary")
         win.configure(bg=APP_BG)
@@ -1684,10 +1537,8 @@ class TinyMLTrainerGUI(tk.Tk):
         win.grab_set()
         win.geometry("760x440")
         win.minsize(680, 380)
-
         outer = tk.Frame(win, bg=APP_BG, padx=16, pady=16)
         outer.pack(fill="both", expand=True)
-
         card = tk.Frame(
             outer,
             bg=CARD_BG,
@@ -1697,7 +1548,6 @@ class TinyMLTrainerGUI(tk.Tk):
             pady=14,
         )
         card.pack(fill="both", expand=True)
-
         tk.Label(
             card,
             text="Latest Cleaner Summary",
@@ -1705,7 +1555,6 @@ class TinyMLTrainerGUI(tk.Tk):
             fg=TEXT,
             font=("Segoe UI", 12, "bold"),
         ).pack(anchor="w")
-
         summary = tk.Text(
             card,
             wrap="word",
@@ -1720,11 +1569,9 @@ class TinyMLTrainerGUI(tk.Tk):
         summary.pack(fill="both", expand=True, pady=(10, 12))
         summary.insert("1.0", self._format_cleaner_summary(data))
         summary.configure(state="disabled")
-
         btn_row = tk.Frame(card, bg=CARD_BG)
         btn_row.pack(fill="x")
         ttk.Button(btn_row, text="Close", command=win.destroy).pack(side="right")
-
     def _handle_cleaner_summary_line(self, msg):
         prefix = "__CLEANER_SUMMARY__ "
         if not msg.startswith(prefix):
@@ -1741,8 +1588,6 @@ class TinyMLTrainerGUI(tk.Tk):
         pretty = self._format_cleaner_summary(data)
         self.log_queue.put("\n[Cleaner Summary]\n" + pretty + "\n")
         return True
-
-
     def _drain_logs(self):
         try:
             while True:
@@ -1756,10 +1601,8 @@ class TinyMLTrainerGUI(tk.Tk):
         except queue.Empty:
             pass
         self.after(120, self._drain_logs)
-
     def log(self, msg):
         self.log_queue.put(msg)
-
     def _on_window_resize(self, _event=None):
         width = max(680, self.winfo_width())
         for label, frac, floor in getattr(self, "_adaptive_labels", []):
@@ -1767,13 +1610,11 @@ class TinyMLTrainerGUI(tk.Tk):
                 label.configure(wraplength=max(int(width * frac), int(floor)))
             except Exception:
                 pass
-
     def _project_path(self, rel_or_abs):
         p = Path(rel_or_abs)
         if p.is_absolute():
             return p
         return Path(self.project_root.get()) / rel_or_abs
-
     def _finalize_subprocess(self, rc, cmd, on_finish=None):
         elapsed = None
         if self._process_started_at is not None:
@@ -1794,22 +1635,29 @@ class TinyMLTrainerGUI(tk.Tk):
             self._show_cleaner_summary_dialog(self._pending_cleaner_summary)
         self._process_started_at = None
         self._last_eta_seconds = None
+        self._progress_rate_ema = None
+        self._last_progress_sample = None
+        self._last_progress_stage = None
         if on_finish is not None:
             on_finish(rc)
         self.refresh_views()
-
     def _handle_subprocess_failure(self, message):
         self.status_text.set("Failed")
         self.progress_text.set(f"Failed: {message}")
+        self._process_started_at = None
+        self._last_eta_seconds = None
+        self._progress_rate_ema = None
+        self._last_progress_sample = None
+        self._last_progress_stage = None
         self.refresh_views()
-
     def _start_subprocess(self, cmd, on_finish=None):
         if self.proc is not None:
             messagebox.showwarning("Busy", "Another process is already running.")
             return
-
         self._reset_progress()
         self._process_started_at = time.monotonic()
+        self._last_progress_sample = (self._process_started_at, 0.0)
+        self._last_progress_stage = ""
         self.status_text.set("Running…")
         self.progress_text.set("Starting process…")
         self.progress_percent_text.set("0%")
@@ -1820,7 +1668,6 @@ class TinyMLTrainerGUI(tk.Tk):
         self.eta_text.set("ETA: estimating…")
         self.log("\n" + "=" * 100 + "\n")
         self.log("Running: " + " ".join(cmd) + "\n\n")
-
         def worker():
             try:
                 self.proc = subprocess.Popen(
@@ -1841,9 +1688,7 @@ class TinyMLTrainerGUI(tk.Tk):
                 self.after(0, lambda message=str(e): self._handle_subprocess_failure(message))
             finally:
                 self.proc = None
-
         threading.Thread(target=worker, daemon=True).start()
-
     def stop_running(self):
         self.current_workflow = None
         if self.proc is None:
@@ -1855,7 +1700,6 @@ class TinyMLTrainerGUI(tk.Tk):
             self.progress_text.set("Stopping process…")
         except Exception as e:
             self.log(f"\nStop failed: {e}\n")
-
     def run_cleaner(self):
         self.current_workflow = None
         self.workflow_scope_text.set("Running Cleaner. This workflow rebuilds the prepared arc/context datasets and cleaner report only; it does not change the selected final-training feature lists.")
@@ -1868,31 +1712,21 @@ class TinyMLTrainerGUI(tk.Tk):
             "--context_output", str(self._project_path(self.context_csv.get())),
             "--out_report", str(self._project_path(self.prepare_report.get())),
         ])
-
     def run_rf_only(self):
         self.workflow_scope_text.set("Running Random Forest on the currently selected arc base features. Export/runtime metadata will keep those base inputs explicit and append the fixed 7 context inputs automatically.")
         self._start_training_workflow("rf")
-
     def run_et_only(self):
         self.workflow_scope_text.set("Running Extra Trees on the currently selected arc base features. Export/runtime metadata will keep those base inputs explicit and append the fixed 7 context inputs automatically.")
         self._start_training_workflow("et")
-
     def run_duel(self):
         self.workflow_scope_text.set("Running King Training on the currently selected arc base features. RF and ET benchmark the same selected arc inputs, then the winner export carries explicit input metadata for firmware assembly.")
         self._start_training_workflow("duel")
-
     def run_context(self):
         self.workflow_scope_text.set("Running Context Trainer on the currently selected context-only features using start-data rows from load_context.csv. Exported context metadata will drive firmware-side input ordering.")
         self._start_training_workflow("context")
-
     def run_subset_sweep(self):
-        self.workflow_scope_text.set(
-            f"Running Subset Sweep. Arc sweep now does a fast ET-only prescreen over the locked 12-feature arc pool, "
-            f"keeps the strongest shard winners, re-ranks a smaller ET shortlist, then runs full-depth RF+ET only on the top finalists. "
-            f"Context sweep still uses the locked 10-feature start-data pool at {SUBSET_SWEEP_SEARCH_DEPTH} repeats per combo."
-        )
+        self.workflow_scope_text.set(f"Running Subset Sweep. Arc sweep uses the locked 12-feature arc pool and evaluates RF + ET together at depth {SUBSET_SWEEP_SEARCH_DEPTH} per model. Context sweep uses the locked 10-feature start-data pool and runs separately at {SUBSET_SWEEP_SEARCH_DEPTH} repeats per combo.")
         self._start_training_workflow("subset")
-
     def refresh_views(self):
         self._refresh_dataset_view()
         self._refresh_prepare_report()
@@ -1903,26 +1737,21 @@ class TinyMLTrainerGUI(tk.Tk):
         self._refresh_single_report("context")
         self._refresh_subset_report()
         self._auto_apply_feature_recommendations(force=False)
-
     def _refresh_dataset_view(self):
         for row in self.dataset_tree.get_children():
             self.dataset_tree.delete(row)
-
         if pd is None:
             self.dataset_summary.set("pandas is not installed. Dataset view unavailable.")
             return
-
         csv_path = self._project_path(self.cleaned_csv.get())
         if not csv_path.exists():
             self.dataset_summary.set(f"Dataset not found: {csv_path}")
             return
-
         try:
             df = pd.read_csv(csv_path)
         except Exception as e:
             self.dataset_summary.set(f"Failed to read dataset: {e}")
             return
-
         rows = len(df)
         trainable = int(df["rf_train_row"].sum()) if "rf_train_row" in df.columns else rows
         label_counts = df["label_arc"].value_counts().to_dict() if "label_arc" in df.columns else {}
@@ -1946,13 +1775,10 @@ class TinyMLTrainerGUI(tk.Tk):
             f"Source counts: {source_counts}\n"
             f"Conflict policies: {conflict_policy_counts}"
         )
-
-
         feature_cols = list(ALL_COMPUTED_FEATURES)
         present = [c for c in feature_cols if c in df.columns]
         if not present:
             return
-
         stats = df[present].describe().T[["mean", "std", "min", "max"]]
         for feat, row in stats.iterrows():
             self.dataset_tree.insert(
@@ -1966,7 +1792,6 @@ class TinyMLTrainerGUI(tk.Tk):
                     f"{row['max']:.6f}",
                 ),
             )
-
     def _read_json(self, path_var):
         path = self._project_path(path_var.get())
         if not path.exists():
@@ -1975,14 +1800,12 @@ class TinyMLTrainerGUI(tk.Tk):
             return json.loads(path.read_text(encoding="utf-8"))
         except Exception:
             return None
-
     def _get_duel_result_by_key(self, model_key):
         duel = self._read_json(self.duel_report) or {}
         for item in duel.get("all_results", []) or []:
             if item.get("model_key") == model_key:
                 return item
         return None
-
     def _resolve_report_payload(self, prefix):
         if prefix == "rf":
             standalone = self._read_json(self.rf_report)
@@ -1992,7 +1815,6 @@ class TinyMLTrainerGUI(tk.Tk):
             if duel_item:
                 return duel_item, "From King training benchmark"
             return None, "No report loaded."
-
         if prefix == "et":
             standalone = self._read_json(self.et_report)
             if standalone:
@@ -2001,30 +1823,25 @@ class TinyMLTrainerGUI(tk.Tk):
             if duel_item:
                 return duel_item, "From King training benchmark"
             return None, "No report loaded."
-
         if prefix == "context":
             report = self._read_json(self.context_report)
             if report:
                 return report, "Standalone context-family report"
             return None, "No report loaded."
-
         duel = self._read_json(self.duel_report)
         if duel:
             return duel, "King training benchmark report"
         return None, "No report loaded."
-
     def _refresh_prepare_report(self):
         if not hasattr(self, "prepare_metric_tree"):
             return
         for tree in (self.prepare_metric_tree, self.prepare_feature_tree):
             for row in tree.get_children():
                 tree.delete(row)
-
         report = self._read_json(self.prepare_report)
         if not report:
             self.prepare_summary.set("No prepare report loaded.")
             return
-
         summary = report.get("summary", {}) or {}
         outputs = report.get("outputs", {}) or {}
         split_checks = report.get("split_checks", {}) or {}
@@ -2036,7 +1853,6 @@ class TinyMLTrainerGUI(tk.Tk):
             f"Rows before/after: {summary.get('rows_before_cleaning', '—')} → {summary.get('rows_after_cleaning_with_augmentation', summary.get('rows_after_cleaning', '—'))}\n"
             f"Arc rows: {summary.get('arc_training_rows', '—')} | Context rows: {summary.get('load_context_rows', '—')} | Duration: {self._fmt_duration(timing.get('duration_seconds', summary.get('duration_seconds', 0.0)))}"
         )
-
         metrics = [
             ("Input file count", self._pick(report, ("input_files", "count"))),
             ("Rows before cleaning", summary.get("rows_before_cleaning")),
@@ -2062,7 +1878,6 @@ class TinyMLTrainerGUI(tk.Tk):
         ]
         for label, value in metrics:
             self.prepare_metric_tree.insert("", "end", values=(label, self._fmt(value)))
-
         feature_stats = report.get("feature_stats", {}) or {}
         for dataset_name in ("arc_training", "load_context"):
             for row in feature_stats.get(dataset_name, []) or []:
@@ -2071,17 +1886,14 @@ class TinyMLTrainerGUI(tk.Tk):
                     "end",
                     values=(dataset_name, row.get("feature", "—"), self._fmt(row.get("mean")), self._fmt(row.get("std")), self._fmt(row.get("min")), self._fmt(row.get("max"))),
                 )
-
     def _refresh_compare_view(self):
         for row in self.benchmark_tree.get_children():
             self.benchmark_tree.delete(row)
         for row in self.importance_tree.get_children():
             self.importance_tree.delete(row)
-
         duel = self._read_json(self.duel_report) or {}
         duel_results = duel.get("all_results", []) or []
         duel_winner_name = (duel.get("winner") or {}).get("model_name")
-
         benchmark_rows = []
         if duel_results:
             for item in duel_results:
@@ -2093,11 +1905,9 @@ class TinyMLTrainerGUI(tk.Tk):
                 benchmark_rows.append((rf, "Standalone"))
             if et:
                 benchmark_rows.append((et, "Standalone"))
-
         if not benchmark_rows:
             self.compare_summary.set("No reports loaded.")
             return
-
         ordered = sorted(
             benchmark_rows,
             key=lambda pair: (
@@ -2107,13 +1917,11 @@ class TinyMLTrainerGUI(tk.Tk):
                 pair[0].get("estimated_node_count") or 10**9,
             ),
         )
-
         self.compare_summary.set(
             f"Benchmark rows shown: {len(ordered)}\n"
             f"King report loaded: {'yes' if duel else 'no'}\n"
             f"Winner: {duel_winner_name or (ordered[0][0].get('model_name') if ordered else '—')}\n"
         )
-
         for idx, (report, source) in enumerate(ordered, start=1):
             cm = report.get("test_confusion_matrix", {})
             is_winner = report.get("model_name") == duel_winner_name if duel_winner_name else idx == 1
@@ -2143,7 +1951,6 @@ class TinyMLTrainerGUI(tk.Tk):
                     "YES" if is_winner else "",
                 ),
             )
-
         rf = self._get_duel_result_by_key("rf") or self._read_json(self.rf_report) or {}
         et = self._get_duel_result_by_key("et") or self._read_json(self.et_report) or {}
         rf_imp = rf.get("feature_importances", {})
@@ -2160,20 +1967,17 @@ class TinyMLTrainerGUI(tk.Tk):
                 "end",
                 values=(feat, self._fmt(rv), self._fmt(ev), leader),
             )
-
     def _refresh_subset_report(self):
         if not hasattr(self, "subset_metric_tree"):
             return
         for tree in (self.subset_metric_tree, self.subset_best_tree):
             for row in tree.get_children():
                 tree.delete(row)
-
         report = self._read_json(self.subset_report)
         context_report = self._read_json(self.context_subset_report)
         if not report and not context_report:
             self.subset_summary.set("No subset sweep report loaded.")
             return
-
         settings = (report or {}).get("settings", {}) or {}
         context_settings = (context_report or {}).get("settings", {}) or {}
         arc_src = self._project_path(self.subset_report.get())
@@ -2196,7 +2000,6 @@ class TinyMLTrainerGUI(tk.Tk):
                 f"Total combinations: {context_report.get('total_combinations', '—')}\n"
                 f"CSV: {context_report.get('all_results_csv', self._project_path(self.context_subset_csv.get()))}"
             )
-
         metrics = [
             ("Arc task", report.get("task") if report else "—"),
             ("Arc feature pool size", report.get("feature_pool_size") if report else "—"),
@@ -2212,7 +2015,6 @@ class TinyMLTrainerGUI(tk.Tk):
         ]
         for label, value in metrics:
             self.subset_metric_tree.insert("", "end", values=(label, self._fmt(value)))
-
         buckets = []
         if report:
             buckets.extend([
@@ -2226,7 +2028,6 @@ class TinyMLTrainerGUI(tk.Tk):
             buckets.append(("Context overall best", context_report.get("overall_best_tradeoff") or {}))
             for entry in context_report.get("best_by_feature_count", []) or []:
                 buckets.append((f"Context best count={entry.get('feature_count', '—')}", entry.get("best_overall") or {}))
-
         for bucket, row in buckets:
             combo = row.get("feature_combo") or "|".join(row.get("features", []) or [])
             self.subset_best_tree.insert(
@@ -2244,7 +2045,6 @@ class TinyMLTrainerGUI(tk.Tk):
                     combo,
                 ),
             )
-
     def _refresh_single_report(self, prefix):
         summary_var = getattr(self, f"{prefix}_summary")
         metric_tree = getattr(self, f"{prefix}_metric_tree")
@@ -2253,16 +2053,13 @@ class TinyMLTrainerGUI(tk.Tk):
         param_tree = getattr(self, f"{prefix}_param_tree")
         fi_tree = getattr(self, f"{prefix}_fi_tree")
         notebook = getattr(self, f"{prefix}_notebook", None)
-
         for tree in (metric_tree, class_tree, cm_tree, param_tree, fi_tree):
             for row in tree.get_children():
                 tree.delete(row)
-
         report, source_note = self._resolve_report_payload(prefix)
         if not report:
             summary_var.set(source_note)
             return
-
         if prefix == "duel":
             winner = report.get("winner", {})
             all_results = report.get("all_results", []) or []
@@ -2287,7 +2084,6 @@ class TinyMLTrainerGUI(tk.Tk):
                     f"Model: {target.get('model_name', '—')}\n"
                     f"Threshold: {self._fmt(target.get('threshold', '—'))}"
                 )
-
         if prefix == "context":
             if notebook is not None:
                 notebook.tab(getattr(self, f"{prefix}_class_tab"), text="Per-class Metrics")
@@ -2308,14 +2104,12 @@ class TinyMLTrainerGUI(tk.Tk):
             ]
             for label, value in context_metrics:
                 metric_tree.insert("", "end", values=(label, self._fmt(value)))
-
             class_tree.configure(columns=("family", "rows", "precision", "recall", "f1", "accuracy", "conf", "unknown"))
             for c, title, width in [("family", "Family", 180), ("rows", "Rows", 80), ("precision", "Precision", 100), ("recall", "Recall", 100), ("f1", "F1", 100), ("accuracy", "Accuracy", 100), ("conf", "Mean conf", 110), ("unknown", "Unknown rate", 110)]:
                 class_tree.heading(c, text=title)
                 class_tree.column(c, width=width, anchor="center")
             for row in target.get("per_class", []) or []:
                 class_tree.insert("", "end", values=(row.get("family", "—"), self._fmt(row.get("rows")), self._fmt(row.get("precision")), self._fmt(row.get("recall")), self._fmt(row.get("f1")), self._fmt(row.get("accuracy")), self._fmt(row.get("mean_confidence")), self._fmt(row.get("unknown_rate"))))
-
             labels = target.get("class_labels", []) or []
             matrix = target.get("confusion_matrix", []) or []
             cm_cols = tuple(["label"] + [f"c{i}" for i in range(len(labels))])
@@ -2336,7 +2130,6 @@ class TinyMLTrainerGUI(tk.Tk):
                 notebook.add(getattr(self, f"{prefix}_fi_tab"), text="Feature Importances") if str(getattr(self, f"{prefix}_fi_tab")) not in notebook.tabs() else None
             for label, key in DISPLAY_METRICS:
                 metric_tree.insert("", "end", values=(label, self._fmt(self._pick(target, key))))
-
             class_report = target.get("test_classification_report", {}) or {}
             for label in ["0", "1", "macro avg", "weighted avg"]:
                 row = class_report.get(label)
@@ -2373,19 +2166,15 @@ class TinyMLTrainerGUI(tk.Tk):
             for row in target.get("test_per_runtime_context", []) or []:
                 cmg = row.get("confusion_matrix", {}) or {}
                 cm_tree.insert("", "end", values=(f"Ctx {row.get('group', '—')}", f"TN={cmg.get('tn', '—')} FP={cmg.get('fp', '—')}", f"FN={cmg.get('fn', '—')} TP={cmg.get('tp', '—')}"))
-
         params = target.get("best_params", {}) or {}
         for name in sorted(params):
             param_tree.insert("", "end", values=(name, self._fmt(params[name])))
-
         fi = target.get("feature_importances", {}) or {}
         for idx, (feat, value) in enumerate(sorted(fi.items(), key=lambda kv: float(kv[1]), reverse=True), start=1):
             fi_tree.insert("", "end", values=(idx, feat, self._fmt(value)))
-
     def _feature_list_text(self, feature_names):
         names = [str(x).strip() for x in (feature_names or []) if str(x).strip()]
         return ", ".join(names) if names else "â€”"
-
     def _arc_base_features_from_payload(self, payload):
         names = self._extract_feature_list(
             payload,
@@ -2395,7 +2184,6 @@ class TinyMLTrainerGUI(tk.Tk):
             ("winner", "feature_names"),
         )
         return [name for name in names if name in ARC_SWEEP_FEATURES]
-
     def _arc_context_inputs_from_payload(self, payload):
         names = self._extract_feature_list(payload, "arc_context_feature_names", ("winner", "arc_context_feature_names"))
         if names:
@@ -2403,33 +2191,28 @@ class TinyMLTrainerGUI(tk.Tk):
         base_names = set(self._arc_base_features_from_payload(payload))
         all_names = self._extract_feature_list(payload, "feature_names", ("winner", "feature_names"))
         return [name for name in all_names if name not in base_names]
-
     def _refresh_prepare_report(self):
         if not hasattr(self, "prepare_metric_tree"):
             return
         for tree in (self.prepare_metric_tree, self.prepare_feature_tree):
             for row in tree.get_children():
                 tree.delete(row)
-
         report = self._read_json(self.prepare_report)
         if not report:
             self.prepare_summary.set("No prepare report loaded.")
             return
-
         summary = report.get("summary", {}) or {}
         outputs = report.get("outputs", {}) or {}
         split_checks = report.get("split_checks", {}) or {}
         elapsed_seconds = float(report.get("elapsed_seconds", summary.get("elapsed_seconds", 0.0)) or 0.0)
         arc_rows = outputs.get("arc_training_rows", summary.get("arc_training_rows", "â€”"))
         context_rows = outputs.get("load_context_rows", summary.get("load_context_rows", "â€”"))
-
         self.prepare_summary.set(
             f"Source: {self._project_path(self.prepare_report.get())}\n"
             f"Rows before/after: {summary.get('rows_before_cleaning', 'â€”')} â†’ {summary.get('rows_after_cleaning_with_augmentation', summary.get('rows_after_cleaning', 'â€”'))}\n"
             f"Arc rows: {arc_rows} | Context rows: {context_rows} | Duration: {self._fmt_duration(elapsed_seconds)}\n"
             f"Arc sweep features available: {summary.get('arc_feature_count_available', 'â€”')} / {len(ARC_SWEEP_FEATURES)} | Context sweep features available: {summary.get('context_feature_count_available', 'â€”')} / {len(CONTEXT_SWEEP_FEATURES)}"
         )
-
         metrics = [
             ("Source CSV count", report.get("source_csv_count")),
             ("Full computed feature count", len(report.get("feature_names", []) or [])),
@@ -2454,7 +2237,6 @@ class TinyMLTrainerGUI(tk.Tk):
         ]
         for label, value in metrics:
             self.prepare_metric_tree.insert("", "end", values=(label, self._fmt(value)))
-
         feature_stats = {
             "arc_training": report.get("arc_training_feature_stats", {}) or {},
             "load_context": report.get("load_context_feature_stats", {}) or {},
@@ -2469,17 +2251,14 @@ class TinyMLTrainerGUI(tk.Tk):
                     "end",
                     values=(dataset_name, feature_name, self._fmt(row.get("mean")), self._fmt(row.get("std")), self._fmt(row.get("min")), self._fmt(row.get("max"))),
                 )
-
     def _refresh_compare_view(self):
         for row in self.benchmark_tree.get_children():
             self.benchmark_tree.delete(row)
         for row in self.importance_tree.get_children():
             self.importance_tree.delete(row)
-
         duel = self._read_json(self.duel_report) or {}
         duel_results = duel.get("all_results", []) or []
         duel_winner_name = (duel.get("winner") or {}).get("model_name")
-
         benchmark_rows = []
         if duel_results:
             for item in duel_results:
@@ -2491,25 +2270,25 @@ class TinyMLTrainerGUI(tk.Tk):
                 benchmark_rows.append((rf, "Standalone"))
             if et:
                 benchmark_rows.append((et, "Standalone"))
-
         if not benchmark_rows:
             self.compare_summary.set("No reports loaded.")
             return
-
         ordered = sorted(
             benchmark_rows,
             key=lambda pair: (
-                self._get_int(self._pick(pair[0], ("validation_threshold_result", "fn")), 10**9, 0),
-                self._get_int(self._pick(pair[0], ("validation_threshold_result", "fp")), 10**9, 0),
-                -self._get_float(pair[0].get("holdout_validation_recall", pair[0].get("validation_recall", 0.0)), 0.0, 0.0, 1.0),
+                0 if pair[0].get("threshold_constraints_met") else 1,
+                -self._get_float(pair[0].get("validation_balanced_accuracy", 0.0), 0.0, 0.0, 1.0),
+                self._get_float(pair[0].get("validation_fpr", 1.0), 1.0, 0.0, 1.0),
                 -self._get_float(pair[0].get("holdout_validation_precision", pair[0].get("validation_precision", 0.0)), 0.0, 0.0, 1.0),
+                -self._get_float(pair[0].get("holdout_validation_recall", pair[0].get("validation_recall", 0.0)), 0.0, 0.0, 1.0),
+                self._get_int(self._pick(pair[0], ("validation_threshold_result", "fp")), 10**9, 0),
+                self._get_int(self._pick(pair[0], ("validation_threshold_result", "fn")), 10**9, 0),
                 self._get_int(self._pick(pair[0], ("test_confusion_matrix", "fn")), 10**9, 0),
                 self._get_int(self._pick(pair[0], ("test_confusion_matrix", "fp")), 10**9, 0),
                 -(pair[0].get("cv_best_average_precision") or float("-inf")),
                 pair[0].get("estimated_node_count") or 10**9,
             ),
         )
-
         lead_features = self._arc_base_features_from_payload(duel.get("winner") or ordered[0][0])
         self.compare_summary.set(
             f"Benchmark rows shown: {len(ordered)}\n"
@@ -2517,7 +2296,6 @@ class TinyMLTrainerGUI(tk.Tk):
             f"Winner: {duel_winner_name or (ordered[0][0].get('model_name') if ordered else 'â€”')}\n"
             f"Winner arc base features ({len(lead_features)}): {self._feature_list_text(lead_features)}"
         )
-
         for idx, (report, source) in enumerate(ordered, start=1):
             cm = report.get("test_confusion_matrix", {})
             is_winner = report.get("model_name") == duel_winner_name if duel_winner_name else idx == 1
@@ -2547,7 +2325,6 @@ class TinyMLTrainerGUI(tk.Tk):
                     "YES" if is_winner else "",
                 ),
             )
-
         rf = self._get_duel_result_by_key("rf") or self._read_json(self.rf_report) or {}
         et = self._get_duel_result_by_key("et") or self._read_json(self.et_report) or {}
         rf_imp = rf.get("feature_importances", {})
@@ -2560,7 +2337,6 @@ class TinyMLTrainerGUI(tk.Tk):
             else:
                 leader = "Random Forest" if rv > ev else "Extra Trees"
             self.importance_tree.insert("", "end", values=(feat, self._fmt(rv), self._fmt(ev), leader))
-
     def _subset_metric_cells(self, role, row):
         if role == "context":
             return (
@@ -2574,91 +2350,119 @@ class TinyMLTrainerGUI(tk.Tk):
                 self._fmt(row.get("mean_confidence")),
             )
         return (
+            "Val BalAcc",
+            self._fmt(row.get("validation_balanced_accuracy", row.get("combined_validation_balanced_accuracy_mean"))),
+            "Val FPR",
+            self._fmt(row.get("validation_fpr", row.get("combined_validation_fpr_mean"))),
             "Val FN",
             self._fmt(row.get("validation_fn", row.get("combined_validation_fn"))),
             "Val FP",
             self._fmt(row.get("validation_fp", row.get("combined_validation_fp"))),
-            "Test FN",
-            self._fmt(row.get("test_fn", row.get("combined_test_fn"))),
-            "Test FP",
-            self._fmt(row.get("test_fp", row.get("combined_test_fp"))),
         )
-
     def _refresh_subset_report(self):
         if not hasattr(self, "subset_metric_tree"):
             return
         for tree in (self.subset_metric_tree, self.subset_best_tree):
             for row in tree.get_children():
                 tree.delete(row)
-
         arc_report = self._read_json(self.subset_report)
         context_report = self._read_json(self.context_subset_report)
         if not arc_report and not context_report:
             self.subset_summary.set("No subset sweep report loaded.")
             return
-
         arc_settings = (arc_report or {}).get("settings", {}) or {}
         context_settings = (context_report or {}).get("settings", {}) or {}
         arc_src = self._project_path(self.subset_report.get())
         ctx_src = self._project_path(self.context_subset_report.get())
-
         summary_lines = []
         if arc_report:
             summary_lines.append(f"Arc report: {arc_src}")
             summary_lines.append(
-                f"Arc pool ({arc_report.get('feature_pool_size', 'â€”')}): {self._feature_list_text(arc_report.get('feature_pool', []))}"
+                f"Arc pool ({arc_report.get('feature_pool_size', '—')}): {self._feature_list_text(arc_report.get('feature_pool', []))}"
             )
             summary_lines.append(
-                f"Recommended arc base features ({len(arc_report.get('recommended_arc_base_features_global', []) or [])}): "
+                f"Arc strategy: {arc_report.get('strategy', 'dual search')} | "
+                f"screened {arc_report.get('screened_combinations', arc_report.get('total_combinations', 'â€”'))}/"
+                f"{arc_report.get('total_combinations', 'â€”')} combos | "
+                f"budget {arc_report.get('budget_minutes', 'â€”')} min"
+                + (" | budget stop hit" if arc_report.get("budget_hit") else "")
+            )
+            summary_lines.append(
+                f"Default recommendation / practical ranking ({len(arc_report.get('recommended_arc_base_features_global', []) or [])}): "
                 f"{self._feature_list_text(arc_report.get('recommended_arc_base_features_global') or arc_report.get('recommended_features_global') or [])}"
+            )
+            summary_lines.append(
+                f"FN-first recommendation: {self._feature_list_text(((arc_report.get('overall_best_fn_first') or {}).get('features', [])))}"
+            )
+            summary_lines.append(
+                f"Accuracy-first recommendation: {self._feature_list_text(((arc_report.get('overall_best_accuracy') or {}).get('features', [])))}"
             )
         if context_report:
             summary_lines.append(f"Context report: {ctx_src}")
             summary_lines.append(
-                f"Context pool ({context_report.get('feature_pool_size', 'â€”')}): {self._feature_list_text(context_report.get('feature_pool', []))}"
+                f"Context pool ({context_report.get('feature_pool_size', '—')}): {self._feature_list_text(context_report.get('feature_pool', []))}"
             )
             summary_lines.append(
                 f"Recommended context features ({len(context_report.get('recommended_context_features', []) or [])}): "
                 f"{self._feature_list_text(context_report.get('recommended_context_features') or context_report.get('recommended_features') or [])}"
             )
         self.subset_summary.set("\n".join(summary_lines))
-
         metrics = [
-            ("Arc task", arc_report.get("task") if arc_report else "â€”"),
-            ("Arc feature pool role", arc_report.get("feature_pool_role") if arc_report else "â€”"),
-            ("Arc total combinations", arc_report.get("total_combinations") if arc_report else "â€”"),
-            ("Arc feature count range", f"{arc_settings.get('feature_count_min', 'â€”')}..{arc_settings.get('feature_count_max', 'â€”')}" if arc_report else "â€”"),
-            ("Arc max combinations", arc_settings.get("max_combinations") if arc_report else "â€”"),
-            ("Arc search depth", arc_settings.get("n_iter") if arc_report else "â€”"),
-            ("Arc fixed context inputs", self._feature_list_text((arc_report or {}).get("context_inputs_fixed", [])) if arc_report else "â€”"),
-            ("Arc recommended base features", self._feature_list_text((arc_report or {}).get("recommended_arc_base_features_global", []) or (arc_report or {}).get("recommended_features_global", [])) if arc_report else "â€”"),
-            ("Context task", context_report.get("task") if context_report else "â€”"),
-            ("Context feature pool role", context_report.get("feature_pool_role") if context_report else "â€”"),
-            ("Context total combinations", context_report.get("total_combinations") if context_report else "â€”"),
-            ("Context feature count range", f"{context_settings.get('feature_count_min', 'â€”')}..{context_settings.get('feature_count_max', 'â€”')}" if context_report else "â€”"),
-            ("Context max combinations", context_settings.get("max_combinations") if context_report else "â€”"),
-            ("Context repeats", context_settings.get("context_repeats") if context_report else "â€”"),
-            ("Context recommended features", self._feature_list_text((context_report or {}).get("recommended_context_features", []) or (context_report or {}).get("recommended_features", [])) if context_report else "â€”"),
+            ("Arc task", arc_report.get("task") if arc_report else "—"),
+            ("Arc feature pool role", arc_report.get("feature_pool_role") if arc_report else "—"),
+            ("Arc total combinations", arc_report.get("total_combinations") if arc_report else "—"),
+            ("Arc screened combinations", arc_report.get("screened_combinations") if arc_report else "—"),
+            ("Arc feature count range", f"{arc_settings.get('feature_count_min', '—')}..{arc_settings.get('feature_count_max', '—')}" if arc_report else "—"),
+            ("Arc max combinations", arc_settings.get("max_combinations") if arc_report else "—"),
+            ("Arc final depth", arc_settings.get("n_iter") if arc_report else "—"),
+            ("Arc ET shortlist depth", arc_settings.get("arc_shortlist_n_iter") if arc_report else "—"),
+            ("Arc shard size", arc_settings.get("arc_shard_size") if arc_report else "—"),
+            ("Arc keep per shard", arc_settings.get("arc_keep_per_shard") if arc_report else "—"),
+            ("Arc shortlist size", arc_settings.get("arc_shortlist_size") if arc_report else "—"),
+            ("Arc finalist count", arc_settings.get("arc_finalist_count") if arc_report else "—"),
+            ("Arc budget min", arc_report.get("budget_minutes") if arc_report else "—"),
+            ("Arc budget stop", arc_report.get("budget_stop_stage") if arc_report and arc_report.get("budget_hit") else "No"),
+            ("Arc ranking default", (arc_report or {}).get("ranking_policy_default", "practical") if arc_report else "—"),
+            ("Arc fixed context inputs", self._feature_list_text((arc_report or {}).get("context_inputs_fixed", [])) if arc_report else "—"),
+            ("Arc recommended base features", self._feature_list_text((arc_report or {}).get("recommended_arc_base_features_global", []) or (arc_report or {}).get("recommended_features_global", [])) if arc_report else "—"),
+            ("Arc practical features", self._feature_list_text(((arc_report or {}).get("overall_best_practical") or {}).get("features", [])) if arc_report else "—"),
+            ("Arc FN-first features", self._feature_list_text(((arc_report or {}).get("overall_best_fn_first") or {}).get("features", [])) if arc_report else "—"),
+            ("Arc accuracy-first features", self._feature_list_text(((arc_report or {}).get("overall_best_accuracy") or {}).get("features", [])) if arc_report else "—"),
+            ("Context task", context_report.get("task") if context_report else "—"),
+            ("Context feature pool role", context_report.get("feature_pool_role") if context_report else "—"),
+            ("Context total combinations", context_report.get("total_combinations") if context_report else "—"),
+            ("Context feature count range", f"{context_settings.get('feature_count_min', '—')}..{context_settings.get('feature_count_max', '—')}" if context_report else "—"),
+            ("Context max combinations", context_settings.get("max_combinations") if context_report else "—"),
+            ("Context repeats", context_settings.get("context_repeats") if context_report else "—"),
+            ("Context recommended features", self._feature_list_text((context_report or {}).get("recommended_context_features", []) or (context_report or {}).get("recommended_features", [])) if context_report else "—"),
         ]
         for label, value in metrics:
             self.subset_metric_tree.insert("", "end", values=(label, self._fmt(value)))
-
         buckets = []
         if arc_report:
             buckets.extend(
                 [
                     ("Arc overall best combined", arc_report.get("overall_best_combined_tradeoff") or {}, "arc"),
+                    ("Arc overall best by practical ranking", arc_report.get("overall_best_practical") or arc_report.get("overall_best_combined_tradeoff") or {}, "arc"),
+                    ("Arc overall best by validation cost", arc_report.get("overall_best_validation_cost") or arc_report.get("overall_best_combined_tradeoff") or {}, "arc"),
+                    ("Arc overall best by FN-first", arc_report.get("overall_best_fn_first") or {}, "arc"),
+                    ("Arc overall best by accuracy", arc_report.get("overall_best_accuracy") or {}, "arc"),
                     ("Arc best RF", arc_report.get("overall_best_rf") or {}, "arc"),
                     ("Arc best ET", arc_report.get("overall_best_et") or {}, "arc"),
                 ]
             )
-            for entry in arc_report.get("best_by_feature_count", []) or []:
-                buckets.append((f"Arc best count={entry.get('feature_count', 'â€”')}", entry.get("best_combined") or {}, "arc"))
+            for entry in arc_report.get("best_by_feature_count_practical", []) or []:
+                buckets.append((f"Arc practical count={entry.get('feature_count', 'â€”')}", entry.get("best_combined") or {}, "arc"))
+            for entry in arc_report.get("best_by_feature_count_validation_cost", []) or arc_report.get("best_by_feature_count", []) or []:
+                buckets.append((f"Arc val-cost count={entry.get('feature_count', '—')}", entry.get("best_combined") or {}, "arc"))
+            for entry in arc_report.get("best_by_feature_count_fn_first", []) or []:
+                buckets.append((f"Arc FN-first count={entry.get('feature_count', '—')}", entry.get("best_combined") or {}, "arc"))
+            for entry in arc_report.get("best_by_feature_count_accuracy", []) or []:
+                buckets.append((f"Arc accuracy count={entry.get('feature_count', '—')}", entry.get("best_combined") or {}, "arc"))
         if context_report:
             buckets.append(("Context overall best", context_report.get("overall_best_tradeoff") or {}, "context"))
             for entry in context_report.get("best_by_feature_count", []) or []:
-                buckets.append((f"Context best count={entry.get('feature_count', 'â€”')}", entry.get("best_overall") or {}, "context"))
-
+                buckets.append((f"Context best count={entry.get('feature_count', '—')}", entry.get("best_overall") or {}, "context"))
         for bucket, row, role in buckets:
             metric_cells = self._subset_metric_cells(role, row)
             combo = row.get("feature_combo") or "|".join(row.get("features", []) or [])
@@ -2679,7 +2483,6 @@ class TinyMLTrainerGUI(tk.Tk):
                     combo,
                 ),
             )
-
     def _refresh_single_report(self, prefix):
         summary_var = getattr(self, f"{prefix}_summary")
         metric_tree = getattr(self, f"{prefix}_metric_tree")
@@ -2688,16 +2491,13 @@ class TinyMLTrainerGUI(tk.Tk):
         param_tree = getattr(self, f"{prefix}_param_tree")
         fi_tree = getattr(self, f"{prefix}_fi_tree")
         notebook = getattr(self, f"{prefix}_notebook", None)
-
         for tree in (metric_tree, class_tree, cm_tree, param_tree, fi_tree):
             for row in tree.get_children():
                 tree.delete(row)
-
         report, source_note = self._resolve_report_payload(prefix)
         if not report:
             summary_var.set(source_note)
             return
-
         if prefix == "duel":
             winner = report.get("winner", {})
             all_results = report.get("all_results", []) or []
@@ -2730,7 +2530,6 @@ class TinyMLTrainerGUI(tk.Tk):
                     f"Validation FN/FP: {self._fmt(val.get('fn', 'â€”'))} / {self._fmt(val.get('fp', 'â€”'))} | Test FN/FP: {self._fmt(test.get('fn', 'â€”'))} / {self._fmt(test.get('fp', 'â€”'))}\n"
                     f"Selected arc base features ({len(arc_base)}): {self._feature_list_text(arc_base)}"
                 )
-
         if prefix == "context":
             if notebook is not None:
                 notebook.tab(getattr(self, f"{prefix}_class_tab"), text="Per-class Metrics")
@@ -2755,14 +2554,12 @@ class TinyMLTrainerGUI(tk.Tk):
             ]
             for label, value in context_metrics:
                 metric_tree.insert("", "end", values=(label, self._fmt(value)))
-
             class_tree.configure(columns=("family", "rows", "precision", "recall", "f1", "accuracy", "conf", "unknown"))
             for c, title, width in [("family", "Family", 180), ("rows", "Rows", 80), ("precision", "Precision", 100), ("recall", "Recall", 100), ("f1", "F1", 100), ("accuracy", "Accuracy", 100), ("conf", "Mean conf", 110), ("unknown", "Unknown rate", 110)]:
                 class_tree.heading(c, text=title)
                 class_tree.column(c, width=width, anchor="center")
             for row in target.get("per_class", []) or []:
                 class_tree.insert("", "end", values=(row.get("family", "â€”"), self._fmt(row.get("rows")), self._fmt(row.get("precision")), self._fmt(row.get("recall")), self._fmt(row.get("f1")), self._fmt(row.get("accuracy")), self._fmt(row.get("mean_confidence")), self._fmt(row.get("unknown_rate"))))
-
             labels = target.get("class_labels", []) or []
             matrix = target.get("confusion_matrix", []) or []
             cm_cols = tuple(["label"] + [f"c{i}" for i in range(len(labels))])
@@ -2778,7 +2575,6 @@ class TinyMLTrainerGUI(tk.Tk):
                 values = [f"Actual {fam}"] + [int(row_vals[j]) if j < len(row_vals) else 0 for j in range(len(labels))]
                 cm_tree.insert("", "end", values=tuple(values))
             return
-
         if notebook is not None:
             params_tab = getattr(self, f"{prefix}_params_tab")
             fi_tab = getattr(self, f"{prefix}_fi_tab")
@@ -2786,7 +2582,6 @@ class TinyMLTrainerGUI(tk.Tk):
                 notebook.add(params_tab, text="Best Params")
             if str(fi_tab) not in notebook.tabs():
                 notebook.add(fi_tab, text="Feature Importances")
-
         arc_base = self._arc_base_features_from_payload(target)
         arc_context = self._arc_context_inputs_from_payload(target)
         metric_tree.insert("", "end", values=("Arc base feature count", self._fmt(len(arc_base))))
@@ -2796,12 +2591,10 @@ class TinyMLTrainerGUI(tk.Tk):
         metric_tree.insert("", "end", values=("Model input feature IDs", self._fmt(target.get("model_input_feature_ids", "â€”"))))
         for label, key in DISPLAY_METRICS:
             metric_tree.insert("", "end", values=(label, self._fmt(self._pick(target, key))))
-
         class_tree.configure(columns=("label", "precision", "recall", "metric3", "support"))
         for c, title, width in [("label", "Label / Group", 180), ("precision", "Precision", 120), ("recall", "Recall", 120), ("metric3", "F1 / FPR", 120), ("support", "Support / Rows", 120)]:
             class_tree.heading(c, text=title)
             class_tree.column(c, width=width, anchor="center" if c != "label" else "w")
-
         class_report = target.get("test_classification_report", {}) or {}
         for label in ["0", "1", "macro avg", "weighted avg"]:
             row = class_report.get(label)
@@ -2841,7 +2634,6 @@ class TinyMLTrainerGUI(tk.Tk):
                     self._fmt(row.get("rows")),
                 ),
             )
-
         cm_tree.configure(columns=("label", "pred0", "pred1"))
         cm_tree.heading("label", text="Actual \\ Pred")
         cm_tree.heading("pred0", text="Pred 0")
@@ -2849,7 +2641,6 @@ class TinyMLTrainerGUI(tk.Tk):
         cm_tree.column("label", width=220, anchor="w")
         cm_tree.column("pred0", width=140, anchor="center")
         cm_tree.column("pred1", width=140, anchor="center")
-
         val = target.get("validation_threshold_result", {}) or {}
         cm_tree.insert("", "end", values=("Validation Actual 0", self._fmt(val.get("tn", "â€”")), self._fmt(val.get("fp", "â€”"))))
         cm_tree.insert("", "end", values=("Validation Actual 1", self._fmt(val.get("fn", "â€”")), self._fmt(val.get("tp", "â€”"))))
@@ -2862,126 +2653,12 @@ class TinyMLTrainerGUI(tk.Tk):
         for row in target.get("test_per_runtime_context", []) or []:
             cmg = row.get("confusion_matrix", {}) or {}
             cm_tree.insert("", "end", values=(f"Ctx {row.get('group', 'â€”')}", f"TN={cmg.get('tn', 'â€”')} FP={cmg.get('fp', 'â€”')}", f"FN={cmg.get('fn', 'â€”')} TP={cmg.get('tp', 'â€”')}"))
-
         params = target.get("best_params", {}) or {}
         for name in sorted(params):
             param_tree.insert("", "end", values=(name, self._fmt(params[name])))
-
         fi = target.get("feature_importances", {}) or {}
         for idx, (feat, value) in enumerate(sorted(fi.items(), key=lambda kv: float(kv[1]), reverse=True), start=1):
             fi_tree.insert("", "end", values=(idx, feat, self._fmt(value)))
-
-    def _refresh_subset_report(self):
-        if not hasattr(self, "subset_metric_tree"):
-            return
-        for tree in (self.subset_metric_tree, self.subset_best_tree):
-            for row in tree.get_children():
-                tree.delete(row)
-
-        arc_report = self._read_json(self.subset_report)
-        context_report = self._read_json(self.context_subset_report)
-        if not arc_report and not context_report:
-            self.subset_summary.set("No subset sweep report loaded.")
-            return
-
-        arc_settings = (arc_report or {}).get("settings", {}) or {}
-        context_settings = (context_report or {}).get("settings", {}) or {}
-        arc_src = self._project_path(self.subset_report.get())
-        ctx_src = self._project_path(self.context_subset_report.get())
-
-        summary_lines = []
-        if arc_report:
-            summary_lines.append(f"Arc report: {arc_src}")
-            summary_lines.append(
-                f"Arc pool ({arc_report.get('feature_pool_size', '-')}): {self._feature_list_text(arc_report.get('feature_pool', []))}"
-            )
-            summary_lines.append(
-                f"Arc strategy: {arc_report.get('strategy', 'dual search')} | "
-                f"screened {arc_report.get('screened_combinations', arc_report.get('total_combinations', '-'))}/"
-                f"{arc_report.get('total_combinations', '-')} combos | "
-                f"budget {arc_report.get('budget_minutes', '-')} min"
-                + (" | budget stop hit" if arc_report.get("budget_hit") else "")
-            )
-            summary_lines.append(
-                f"Recommended arc base features ({len(arc_report.get('recommended_arc_base_features_global', []) or [])}): "
-                f"{self._feature_list_text(arc_report.get('recommended_arc_base_features_global') or arc_report.get('recommended_features_global') or [])}"
-            )
-        if context_report:
-            summary_lines.append(f"Context report: {ctx_src}")
-            summary_lines.append(
-                f"Context pool ({context_report.get('feature_pool_size', '-')}): {self._feature_list_text(context_report.get('feature_pool', []))}"
-            )
-            summary_lines.append(
-                f"Recommended context features ({len(context_report.get('recommended_context_features', []) or [])}): "
-                f"{self._feature_list_text(context_report.get('recommended_context_features') or context_report.get('recommended_features') or [])}"
-            )
-        self.subset_summary.set("\n".join(summary_lines))
-
-        metrics = [
-            ("Arc task", arc_report.get("task") if arc_report else "-"),
-            ("Arc feature pool role", arc_report.get("feature_pool_role") if arc_report else "-"),
-            ("Arc total combinations", arc_report.get("total_combinations") if arc_report else "-"),
-            ("Arc screened combinations", arc_report.get("screened_combinations") if arc_report else "-"),
-            ("Arc feature count range", f"{arc_settings.get('feature_count_min', '-')}..{arc_settings.get('feature_count_max', '-')}" if arc_report else "-"),
-            ("Arc max combinations", arc_settings.get("max_combinations") if arc_report else "-"),
-            ("Arc final depth", arc_settings.get("n_iter") if arc_report else "-"),
-            ("Arc ET shortlist depth", arc_settings.get("arc_shortlist_n_iter") if arc_report else "-"),
-            ("Arc shard size", arc_settings.get("arc_shard_size") if arc_report else "-"),
-            ("Arc keep per shard", arc_settings.get("arc_keep_per_shard") if arc_report else "-"),
-            ("Arc shortlist size", arc_settings.get("arc_shortlist_size") if arc_report else "-"),
-            ("Arc finalist count", arc_settings.get("arc_finalist_count") if arc_report else "-"),
-            ("Arc budget min", arc_report.get("budget_minutes") if arc_report else "-"),
-            ("Arc budget stop", arc_report.get("budget_stop_stage") if arc_report and arc_report.get("budget_hit") else "No"),
-            ("Arc fixed context inputs", self._feature_list_text((arc_report or {}).get("context_inputs_fixed", [])) if arc_report else "-"),
-            ("Arc recommended base features", self._feature_list_text((arc_report or {}).get("recommended_arc_base_features_global", []) or (arc_report or {}).get("recommended_features_global", [])) if arc_report else "-"),
-            ("Context task", context_report.get("task") if context_report else "-"),
-            ("Context feature pool role", context_report.get("feature_pool_role") if context_report else "-"),
-            ("Context total combinations", context_report.get("total_combinations") if context_report else "-"),
-            ("Context feature count range", f"{context_settings.get('feature_count_min', '-')}..{context_settings.get('feature_count_max', '-')}" if context_report else "-"),
-            ("Context max combinations", context_settings.get("max_combinations") if context_report else "-"),
-            ("Context repeats", context_settings.get("context_repeats") if context_report else "-"),
-            ("Context recommended features", self._feature_list_text((context_report or {}).get("recommended_context_features", []) or (context_report or {}).get("recommended_features", [])) if context_report else "-"),
-        ]
-        for label, value in metrics:
-            self.subset_metric_tree.insert("", "end", values=(label, self._fmt(value)))
-
-        buckets = []
-        if arc_report:
-            buckets.extend(
-                [
-                    ("Arc overall best combined", arc_report.get("overall_best_combined_tradeoff") or {}, "arc"),
-                    ("Arc best RF", arc_report.get("overall_best_rf") or {}, "arc"),
-                    ("Arc best ET", arc_report.get("overall_best_et") or {}, "arc"),
-                ]
-            )
-            for entry in arc_report.get("best_by_feature_count", []) or []:
-                buckets.append((f"Arc best count={entry.get('feature_count', '-')}", entry.get("best_combined") or {}, "arc"))
-        if context_report:
-            buckets.append(("Context overall best", context_report.get("overall_best_tradeoff") or {}, "context"))
-            for entry in context_report.get("best_by_feature_count", []) or []:
-                buckets.append((f"Context best count={entry.get('feature_count', '-')}", entry.get("best_overall") or {}, "context"))
-
-        for bucket, row, role in buckets:
-            metric_cells = self._subset_metric_cells(role, row)
-            combo = row.get("feature_combo") or "|".join(row.get("features", []) or [])
-            self.subset_best_tree.insert(
-                "",
-                "end",
-                values=(
-                    bucket,
-                    self._fmt(row.get("feature_count")),
-                    metric_cells[0],
-                    metric_cells[1],
-                    metric_cells[2],
-                    metric_cells[3],
-                    metric_cells[4],
-                    metric_cells[5],
-                    metric_cells[6],
-                    metric_cells[7],
-                    combo,
-                ),
-            )
-
     @staticmethod
     def _pick(report, key):
         if not report:
@@ -2994,7 +2671,6 @@ class TinyMLTrainerGUI(tk.Tk):
                 cur = cur.get(k)
             return cur if cur is not None else "—"
         return report.get(key, "—") if isinstance(report, dict) else "—"
-
     @staticmethod
     def _fmt(v):
         if isinstance(v, float):
@@ -3002,7 +2678,5 @@ class TinyMLTrainerGUI(tk.Tk):
                 return "nan"
             return f"{v:.6f}"
         return str(v)
-
-
 if __name__ == "__main__":
     TinyMLTrainerGUI().mainloop()
