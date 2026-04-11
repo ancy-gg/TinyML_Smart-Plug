@@ -1,6 +1,7 @@
 #pragma once
 #include <Arduino.h>
 #include <math.h>
+#include "TinyMLFeatureLayout.h"
 
 #ifndef PROTECTION
 #define PROTECTION 0
@@ -13,7 +14,7 @@ static constexpr bool ENABLE_AUTO_ARC_CAPTURE = false;
 // Cloud / OTA configuration
 static constexpr const char* FIREBASE_API_KEY = "AIzaSyAmJlZZszyWPJFgIkTAAl_TbIySys1nvEw";
 static constexpr const char* FIREBASE_DB_URL  = "tinyml-smart-plug-default-rtdb.asia-southeast1.firebasedatabase.app";
-static constexpr const char* FW_VERSION       = "v7.2.5-c-gen1";
+static constexpr const char* FW_VERSION       = "v7.3.0-c-gen2";
 static constexpr const char* OTA_DESIRED_VERSION_PATH = "/ota/desired_version";
 static constexpr const char* OTA_FIRMWARE_URL_PATH    = "/ota/firmware_url";
 
@@ -125,6 +126,9 @@ struct FeatureFrame {
   float irms   = 0.0f;
   float temp_c = 0.0f;
 
+  // Keep the full computed feature space available for logging, future retraining,
+  // and metadata-driven model input assembly. Exported models decide which subset
+  // they actually consume at inference time.
   float spectral_flux_midhf          = 0.0f;
   float residual_crest_factor        = 0.0f;
   float edge_spike_ratio             = 0.0f;
@@ -313,6 +317,11 @@ static constexpr float ARC_SIG_THD_I               = 22.0f;     // percent THD
 static constexpr float ARC_SIG_HF_ENERGY_DELTA     = 1.500f;    // 10*log10(power ratio), ~1.4x HF rise
 static constexpr float ARC_SIG_ZCV                 = 0.200f;
 static constexpr float ARC_SIG_IRMS_ZSCORE         = 2.35f;
+static constexpr int   ARC_LEAKY_SCORE_STEP        = 7;         // +7 per suspicious 100 ms frame
+static constexpr int   ARC_LEAKY_SCORE_DECAY       = 1;         // -1 per quiet frame
+static constexpr int   ARC_LEAKY_SCORE_FIRE        = 10;        // 2 back-to-back suspicious frames arm the gate
+static constexpr int   ARC_LEAKY_SCORE_STRONG      = 14;        // stronger gate for temporal-only kicks
+static constexpr int   ARC_LEAKY_SCORE_MAX         = 35;        // short memory without long sticky tails
 static constexpr float ARC_SOFT_MIN_IRMS_A         = 0.08f;
 
 static constexpr float BASELINE_STABLE_RESIDUAL_CF_DB    = 9.542f;   // 20*log10(3.0)

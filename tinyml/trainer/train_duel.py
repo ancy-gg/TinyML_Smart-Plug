@@ -9,12 +9,16 @@ from pathlib import Path
 import joblib
 
 from tinyml_common import (
+    ARC_BASE_FEATURES_RANKED,
+    ARC_CONTEXT_FEATURES,
     ARC_FEATURES,
+    ARC_SWEEP_FEATURES,
     ensure_dir,
     estimate_search_plan,
     pick_winner,
     save_duel_bundle,
     strip_estimator,
+    validate_feature_subset,
 )
 
 SCRIPT_DIR = Path(__file__).resolve().parent
@@ -31,6 +35,7 @@ RF_JOBLIB = str(PROJECT_ROOT / "tinyml" / "trainer" / "lib" / "TinyMLTreeEnsembl
 ET_JOBLIB = str(PROJECT_ROOT / "tinyml" / "trainer" / "lib" / "TinyMLTreeEnsemble_ET.joblib")
 RF_HEADER = str(PROJECT_ROOT / "tinyml" / "model" / "TinyMLTreeEnsemble_RF.h")
 ET_HEADER = str(PROJECT_ROOT / "tinyml" / "model" / "TinyMLTreeEnsemble_ET.h")
+DEFAULT_FEATURE_REPORT = str(PROJECT_ROOT / "tinyml" / "benchmark" / "TinyMLFeatureSubsetSweep_report.json")
 
 CHILD_MODEL_CONFIG = {
     "rf": {
@@ -55,6 +60,48 @@ def emit_progress(current: int, total: int, payload: dict) -> None:
     print("[[PROGRESS]] " + json.dumps(payload, sort_keys=True), flush=True)
 
 
+def _load_feature_list_from_report(report_path: str | None, model_key: str) -> list[str] | None:
+    path = Path(report_path or "")
+    if not path.is_file():
+        return None
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except Exception:
+        return None
+    recommended_by_model = payload.get("recommended_by_model") or {}
+    candidates = []
+    if isinstance(recommended_by_model, dict):
+        candidates = recommended_by_model.get(model_key) or []
+    if not candidates:
+        candidates = payload.get("recommended_arc_base_features_global") or []
+    if not candidates:
+        candidates = payload.get("recommended_features_global") or []
+    if not candidates:
+        best = payload.get("overall_best_combined_tradeoff") or {}
+        candidates = best.get("features") or []
+    out = [str(x).strip() for x in candidates if str(x).strip() in ARC_SWEEP_FEATURES]
+    return out or None
+
+
+def resolve_arc_features_by_model(args, model_key: str) -> tuple[list[str], list[str]]:
+    explicit_attr = f"{model_key}_features"
+    report_attr = f"{model_key}_feature_report"
+    common_explicit = [str(x).strip() for x in (getattr(args, "features", None) or []) if str(x).strip() in ARC_SWEEP_FEATURES]
+    explicit = [str(x).strip() for x in getattr(args, explicit_attr, []) if str(x).strip() in ARC_SWEEP_FEATURES]
+    if explicit:
+        base = validate_feature_subset(explicit, allowed_features=ARC_SWEEP_FEATURES, role=f"{model_key} arc training")
+    elif common_explicit:
+        base = validate_feature_subset(common_explicit, allowed_features=ARC_SWEEP_FEATURES, role=f"{model_key} arc training")
+    else:
+        report_path = getattr(args, report_attr, None) or args.feature_report
+        base = (
+            _load_feature_list_from_report(report_path, model_key)
+            or _load_feature_list_from_report(DEFAULT_FEATURE_REPORT, model_key)
+            or list(ARC_SWEEP_FEATURES)
+        )
+    return list(base), list(base) + list(ARC_CONTEXT_FEATURES)
+
+
 def _per_model_n_jobs(model_count: int, override: int) -> int:
     if override is not None and int(override) != 0:
         return int(override)
@@ -66,6 +113,8 @@ def _per_model_n_jobs(model_count: int, override: int) -> int:
 
 def _build_child_command(model_key: str, args, n_jobs: int) -> list[str]:
     cfg = CHILD_MODEL_CONFIG[model_key]
+    selected_base_features, selected_feature_names = resolve_arc_features_by_model(args, model_key)
+    print(f"[{model_key}] Selected arc base features: {selected_base_features}")
     cmd = [
         sys.executable,
         str(SCRIPT_DIR / cfg["script"]),
@@ -96,6 +145,12 @@ def _build_child_command(model_key: str, args, n_jobs: int) -> list[str]:
     ]
     if args.include_invalid:
         cmd.append("--include_invalid")
+    if getattr(args, f"{model_key}_feature_report", None):
+        cmd.extend(["--feature_report", str(getattr(args, f"{model_key}_feature_report"))])
+    elif args.feature_report:
+        cmd.extend(["--feature_report", str(args.feature_report)])
+    if selected_base_features:
+        cmd.extend(["--features", *selected_base_features])
     return cmd
 
 
@@ -161,6 +216,12 @@ def main():
     ap.add_argument("--models", nargs="+", default=["rf", "et"], choices=["rf", "et"])
     ap.add_argument("--model_n_jobs", type=int, default=0)
     ap.add_argument("--serial_models", action="store_true")
+    ap.add_argument("--feature_report", default=None)
+    ap.add_argument("--features", nargs="*", default=None)
+    ap.add_argument("--rf_feature_report", default=None)
+    ap.add_argument("--et_feature_report", default=None)
+    ap.add_argument("--rf_features", nargs="*", default=None)
+    ap.add_argument("--et_features", nargs="*", default=None)
     args = ap.parse_args()
 
     plan = estimate_search_plan(args.n_iter)
@@ -303,6 +364,13 @@ def main():
         "winner_mode": args.winner_mode,
         "parallel_models": bool(not args.serial_models and len(selected_models) > 1),
         "model_n_jobs": per_model_jobs,
+        "feature_report": args.feature_report,
+        "rf_feature_report": args.rf_feature_report,
+        "et_feature_report": args.et_feature_report,
+        "model_features": {
+            str(r.get("model_key", r.get("model_name", ""))): list(r.get("arc_base_feature_names", []) or [])
+            for r in ranked_results
+        },
     }
     save_duel_bundle(
         winner=winner,
@@ -312,7 +380,7 @@ def main():
         out_report=args.out_report,
         settings=settings,
         winner_policy=winner_policy,
-        feature_names=ARC_FEATURES,
+        feature_names=winner.get("feature_names", ARC_FEATURES),
     )
 
     companion_map = {
@@ -325,8 +393,16 @@ def main():
             continue
         ensure_dir(out_path)
         payload = strip_estimator(result)
-        payload["feature_names"] = list(ARC_FEATURES)
-        payload["settings"] = settings
+        payload["feature_names"] = list(result.get("feature_names", ARC_FEATURES))
+        payload["arc_base_feature_names"] = list(result.get("arc_base_feature_names", []) or [])
+        payload["arc_context_feature_names"] = list(result.get("arc_context_feature_names", []) or [])
+        payload["model_input_feature_ids"] = list(result.get("model_input_feature_ids", []) or [])
+        payload["arc_base_feature_ids"] = list(result.get("arc_base_feature_ids", []) or [])
+        payload["settings"] = {
+            **settings,
+            "model": result.get("model_key"),
+            "features": list(result.get("arc_base_feature_names", []) or []),
+        }
         payload["winner_policy"] = winner_policy
         payload["generated_by"] = "train_duel"
         with open(out_path, "w", encoding="utf-8") as f:

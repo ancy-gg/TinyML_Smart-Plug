@@ -64,16 +64,24 @@ struct RuntimeContextTracker {
   uint32_t activeSinceMs = 0;
   uint32_t zeroSinceMs = 0;
   uint32_t stableAccumMs = 0;
-  float sumResidualCf = 0.0f;
-  float sumEdge = 0.0f;
+  float sumAbsIrmsZ = 0.0f;
+  float sumDeltaIrmsAbs = 0.0f;
+  float sumHalfcycleAsymmetry = 0.0f;
+  float sumSuspiciousRunEnergy = 0.0f;
+  float sumDeltaHfEnergy = 0.0f;
+  float sumDeltaFlux = 0.0f;
+  float sumVSagPct = 0.0f;
   float sumMidband = 0.0f;
+  float sumZcv = 0.0f;
+  float sumSpectralFlux = 0.0f;
+  float sumPeak = 0.0f;
+  float sumResidualCf = 0.0f;
   float sumThd = 0.0f;
   float sumHf = 0.0f;
-  float sumZcv = 0.0f;
+  float sumEdge = 0.0f;
   float sumIrms = 0.0f;
   float sumVrms = 0.0f;
   float sumNmse = 0.0f;
-  float sumPeak = 0.0f;
   uint32_t noMainsSinceMs = 0;
 };
 
@@ -121,6 +129,77 @@ static inline uint32_t contextFrameMs_(const FeatureFrame& f) {
   return (uint32_t)(dtMs + 0.5f);
 }
 
+static inline float contextFeatureAverageById_(int featureId, float denom) {
+  switch (featureId) {
+    case TINYML_FEATURE_ABS_IRMS_ZSCORE_VS_BASELINE: return gContext.sumAbsIrmsZ / denom;
+    case TINYML_FEATURE_DELTA_IRMS_ABS: return gContext.sumDeltaIrmsAbs / denom;
+    case TINYML_FEATURE_HALFCYCLE_ASYMMETRY: return gContext.sumHalfcycleAsymmetry / denom;
+    case TINYML_FEATURE_SUSPICIOUS_RUN_ENERGY: return gContext.sumSuspiciousRunEnergy / denom;
+    case TINYML_FEATURE_DELTA_HF_ENERGY: return gContext.sumDeltaHfEnergy / denom;
+    case TINYML_FEATURE_DELTA_FLUX: return gContext.sumDeltaFlux / denom;
+    case TINYML_FEATURE_MIDBAND_RESIDUAL_RATIO: return gContext.sumMidband / denom;
+    case TINYML_FEATURE_ZCV: return gContext.sumZcv / denom;
+    case TINYML_FEATURE_SPECTRAL_FLUX_MIDHF: return gContext.sumSpectralFlux / denom;
+    case TINYML_FEATURE_PEAK_FLUCT_CV: return gContext.sumPeak / denom;
+    case TINYML_FEATURE_RESIDUAL_CREST_FACTOR: return gContext.sumResidualCf / denom;
+    case TINYML_FEATURE_THD_I: return gContext.sumThd / denom;
+    case TINYML_FEATURE_HF_ENERGY_DELTA: return gContext.sumHf / denom;
+    case TINYML_FEATURE_EDGE_SPIKE_RATIO: return gContext.sumEdge / denom;
+    case TINYML_FEATURE_V_SAG_PCT: return gContext.sumVSagPct / denom;
+    case TINYML_FEATURE_CYCLE_NMSE: return gContext.sumNmse / denom;
+    default: return 0.0f;
+  }
+}
+
+static inline void fillContextModelInput_(double* dst) {
+  for (int i = 0; i < CONTEXT_MODEL_INPUT_DIM; ++i) dst[i] = 0.0;
+  const float denom = fmaxf(1.0f, (float)gContext.stableFrames);
+
+#if defined(CONTEXT_MODEL_METADATA_VERSION)
+  for (int i = 0; i < CONTEXT_MODEL_INPUT_DIM; ++i) {
+    dst[i] = (double)contextFeatureAverageById_(context_model_input_feature_ids[i], denom);
+  }
+  return;
+#else
+  if (CONTEXT_MODEL_INPUT_DIM == 10) {
+    const float legacyFeatures[10] = {
+      gContext.sumResidualCf / denom,
+      gContext.sumEdge / denom,
+      gContext.sumMidband / denom,
+      gContext.sumThd / denom,
+      gContext.sumHf / denom,
+      gContext.sumZcv / denom,
+      gContext.sumIrms / denom,
+      gContext.sumVrms / denom,
+      gContext.sumNmse / denom,
+      gContext.sumPeak / denom,
+    };
+    for (int i = 0; i < 10; ++i) dst[i] = (double)legacyFeatures[i];
+    return;
+  }
+
+  const float rankedFeatures[14] = {
+    gContext.sumAbsIrmsZ / denom,
+    gContext.sumDeltaIrmsAbs / denom,
+    gContext.sumHalfcycleAsymmetry / denom,
+    gContext.sumSuspiciousRunEnergy / denom,
+    gContext.sumDeltaHfEnergy / denom,
+    gContext.sumDeltaFlux / denom,
+    gContext.sumMidband / denom,
+    gContext.sumZcv / denom,
+    gContext.sumSpectralFlux / denom,
+    gContext.sumPeak / denom,
+    gContext.sumResidualCf / denom,
+    gContext.sumThd / denom,
+    gContext.sumHf / denom,
+    gContext.sumEdge / denom,
+  };
+  for (int i = 0; i < 14; ++i) dst[i] = (double)rankedFeatures[i];
+#endif
+}
+
+
+
 static inline void evaluateContextPrediction_() {
   if (gContext.stableFrames == 0) {
     gContext.provisionalFamily = CONTEXT_FAMILY_UNKNOWN;
@@ -128,20 +207,10 @@ static inline void evaluateContextPrediction_() {
     return;
   }
 
-  const float denom = fmaxf(1.0f, (float)gContext.stableFrames);
-  double input[10] = {
-    gContext.sumResidualCf / denom,
-    gContext.sumEdge / denom,
-    gContext.sumMidband / denom,
-    gContext.sumThd / denom,
-    gContext.sumHf / denom,
-    gContext.sumZcv / denom,
-    gContext.sumIrms / denom,
-    gContext.sumVrms / denom,
-    gContext.sumNmse / denom,
-    gContext.sumPeak / denom,
-  };
+  double input[CONTEXT_MODEL_INPUT_DIM] = {0};
+  fillContextModelInput_(input);
   double probs[CONTEXT_MODEL_FAMILY_COUNT] = {0};
+
   context_family_predict(input, probs);
   double conf = 0.0;
   int fam = context_family_best(probs, &conf);
@@ -190,16 +259,24 @@ static void updateContextTracker_(const FeatureFrame& f, float vProtect, float i
   if (contextFeatureFrameUsable_(f, vProtect, irmsLogic, arcBlank)) {
     gContext.stableFrames++;
     gContext.stableAccumMs += contextFrameMs_(f);
-    gContext.sumResidualCf += f.residual_crest_factor;
-    gContext.sumEdge += f.edge_spike_ratio;
+    gContext.sumAbsIrmsZ += f.abs_irms_zscore_vs_baseline;
+    gContext.sumDeltaIrmsAbs += f.delta_irms_abs;
+    gContext.sumHalfcycleAsymmetry += f.halfcycle_asymmetry;
+    gContext.sumSuspiciousRunEnergy += f.suspicious_run_energy;
+    gContext.sumDeltaHfEnergy += f.delta_hf_energy;
+    gContext.sumDeltaFlux += f.delta_flux;
+    gContext.sumVSagPct += f.v_sag_pct;
     gContext.sumMidband += f.midband_residual_ratio;
+    gContext.sumZcv += f.zcv;
+    gContext.sumSpectralFlux += f.spectral_flux_midhf;
+    gContext.sumPeak += f.peak_fluct_cv;
+    gContext.sumResidualCf += f.residual_crest_factor;
     gContext.sumThd += f.thd_i;
     gContext.sumHf += f.hf_energy_delta;
-    gContext.sumZcv += f.zcv;
+    gContext.sumEdge += f.edge_spike_ratio;
     gContext.sumIrms += irmsLogic;
     gContext.sumVrms += f.vrms;
     gContext.sumNmse += f.cycle_nmse;
-    gContext.sumPeak += f.peak_fluct_cv;
     evaluateContextPrediction_();
   }
 
@@ -416,16 +493,21 @@ static bool arcEventSignature(const FeatureFrame& f, float irmsLogic) {
   if ((f.feat_valid == 0) || (irmsLogic < ARC_SOFT_MIN_IRMS_A)) return false;
 
   int hits = 0;
-  if (f.spectral_flux_midhf >= ARC_SIG_SPECTRAL_FLUX) hits += 2;
-  if (f.residual_crest_factor >= ARC_SIG_RESIDUAL_CF) hits += 1;
-  if (f.edge_spike_ratio >= ARC_SIG_EDGE_SPIKE_RATIO) hits += 2;
+  if (f.abs_irms_zscore_vs_baseline >= ARC_SIG_IRMS_ZSCORE) hits += 3;
+  if (f.delta_irms_abs >= 0.12f) hits += 2;
+  if (f.halfcycle_asymmetry >= 10.0f) hits += 2;
+  if (f.delta_hf_energy >= 0.70f) hits += 2;
+  if (f.delta_flux >= 4.0f) hits += 2;
   if (f.midband_residual_ratio >= ARC_SIG_MIDBAND_RATIO) hits += 1;
-  if (f.cycle_nmse >= ARC_SIG_CYCLE_NMSE) hits += 1;
+  if (f.zcv >= ARC_SIG_ZCV) hits += 1;
+  if (f.spectral_flux_midhf >= ARC_SIG_SPECTRAL_FLUX) hits += 1;
   if (f.peak_fluct_cv >= ARC_SIG_PEAK_FLUCT) hits += 1;
+  if (f.residual_crest_factor >= ARC_SIG_RESIDUAL_CF) hits += 1;
+  if (f.thd_i >= ARC_SIG_THD_I) hits += 1;
   if (f.hf_energy_delta >= ARC_SIG_HF_ENERGY_DELTA) hits += 1;
-  if (f.abs_irms_zscore_vs_baseline >= ARC_SIG_IRMS_ZSCORE) hits += 1;
+  if (f.edge_spike_ratio >= ARC_SIG_EDGE_SPIKE_RATIO) hits += 1;
 
-  return hits >= 3;
+  return hits >= 5;
 }
 
 static bool softArcBurstEvent(const FeatureFrame& f,
@@ -438,19 +520,27 @@ static bool softArcBurstEvent(const FeatureFrame& f,
   if (vProtect < VOLT_NORMAL_MIN_V || vProtect > VOLT_NORMAL_MAX_V) return false;
 
   int hits = 0;
-  if (f.spectral_flux_midhf >= ARC_SIG_SPECTRAL_FLUX) hits += 2;
-  if (f.edge_spike_ratio >= ARC_SIG_EDGE_SPIKE_RATIO) hits += 2;
+  if (f.abs_irms_zscore_vs_baseline >= ARC_SIG_IRMS_ZSCORE) hits += 3;
+  if (f.delta_irms_abs >= 0.12f) hits += 2;
+  if (f.halfcycle_asymmetry >= 10.0f) hits += 2;
+  if (f.delta_hf_energy >= 0.70f) hits += 2;
+  if (f.delta_flux >= 4.0f) hits += 2;
   if (f.midband_residual_ratio >= ARC_SIG_MIDBAND_RATIO) hits += 1;
-  if (f.cycle_nmse >= ARC_SIG_CYCLE_NMSE) hits += 1;
+  if (f.zcv >= ARC_SIG_ZCV) hits += 1;
+  if (f.spectral_flux_midhf >= ARC_SIG_SPECTRAL_FLUX) hits += 1;
   if (f.peak_fluct_cv >= ARC_SIG_PEAK_FLUCT) hits += 1;
+  if (f.residual_crest_factor >= ARC_SIG_RESIDUAL_CF) hits += 1;
+  if (f.thd_i >= ARC_SIG_THD_I) hits += 1;
   if (f.hf_energy_delta >= ARC_SIG_HF_ENERGY_DELTA) hits += 1;
-  if (f.abs_irms_zscore_vs_baseline >= ARC_SIG_IRMS_ZSCORE) hits += 1;
+  if (f.edge_spike_ratio >= ARC_SIG_EDGE_SPIKE_RATIO) hits += 1;
 
   const bool primaryBurst =
-      (f.spectral_flux_midhf >= ARC_SIG_SPECTRAL_FLUX) ||
-      (f.edge_spike_ratio >= ARC_SIG_EDGE_SPIKE_RATIO);
+      (f.abs_irms_zscore_vs_baseline >= ARC_SIG_IRMS_ZSCORE) ||
+      (f.delta_irms_abs >= 0.12f) ||
+      (f.delta_hf_energy >= 0.70f && f.delta_flux >= 4.0f) ||
+      (f.halfcycle_asymmetry >= 10.0f);
 
-  return primaryBurst && (hits >= 4);
+  return primaryBurst && (hits >= 6);
 }
 
 static bool debouncedMainsPresentForState(float vProtect) {
@@ -1043,7 +1133,8 @@ void loop() {
         protection.pulseRelayOn();
         const bool pulseSent = protection.relayPulseActive() || (protection.relayLatchedOn() != wasLatched);
         if (pulseSent) {
-          const String localRelayToken = String("relay_on_local_") + String((unsigned long)manualNowMs);
+          String localRelayToken("relay_on_local_");
+          localRelayToken += String((uint32_t)manualNowMs);
           gManualRelayAssumedOn = true;
           gManualRelayConfirmPending = true;
           gManualRelayCandidateSinceMs = 0;
@@ -1086,7 +1177,8 @@ void loop() {
         protection.pulseRelayOff();
         const bool pulseSent = protection.relayPulseActive() || (protection.relayLatchedOn() != wasLatched);
         if (pulseSent) {
-          const String localRelayToken = String("relay_off_local_") + String((unsigned long)manualNowMs);
+          String localRelayToken("relay_off_local_");
+          localRelayToken += String((uint32_t)manualNowMs);
           (void)network.publishRelayPulseEvent("relay_off", localRelayToken, "physical_rollback");
           notification.notify(SND_RESET_ACK);
           armRelayArtifactBlank_();
@@ -1169,6 +1261,7 @@ void loop() {
   static uint16_t suspiciousRunLen = 0;
   static uint16_t invalidLoadedRunLen = 0;
   static float suspiciousRunEnergy = 0.0f;
+  static int arcLeakyScore = 0;
   static bool prevSuspiciousFrame = false;
   static uint32_t restrikeTimes[6] = {0,0,0,0,0,0};
   static uint8_t restrikeHead = 0;
@@ -1286,6 +1379,7 @@ void loop() {
     suspiciousRunLen = 0;
     invalidLoadedRunLen = 0;
     suspiciousRunEnergy = 0.0f;
+    arcLeakyScore = 0;
     prevSuspiciousFrame = false;
     memset(restrikeTimes, 0, sizeof(restrikeTimes));
     restrikeHead = 0;
@@ -1323,6 +1417,12 @@ void loop() {
                                 f.hf_energy_delta,
                                 f.zcv,
                                 f.abs_irms_zscore_vs_baseline,
+                                f.suspicious_run_energy,
+                                f.delta_irms_abs,
+                                f.delta_hf_energy,
+                                f.delta_flux,
+                                f.halfcycle_asymmetry,
+                                f.v_sag_pct,
                                 f.vrms,
                                 irmsRawForLogic,
                                 f.temp_c);
@@ -1345,9 +1445,11 @@ void loop() {
   if (suspiciousFrame) {
     if (suspiciousRunLen < 65535U) suspiciousRunLen++;
     suspiciousRunEnergy = fminf(12.0f, suspiciousRunEnergy * 0.82f + 1.10f + (temporalKick ? 0.25f : 0.0f));
+    arcLeakyScore = (arcLeakyScore + ARC_LEAKY_SCORE_STEP > ARC_LEAKY_SCORE_MAX) ? ARC_LEAKY_SCORE_MAX : (arcLeakyScore + ARC_LEAKY_SCORE_STEP);
   } else {
     if (suspiciousRunLen > 0) suspiciousRunLen--;
     suspiciousRunEnergy *= invalidOff ? 0.45f : 0.72f;
+    arcLeakyScore = (arcLeakyScore > ARC_LEAKY_SCORE_DECAY) ? (arcLeakyScore - ARC_LEAKY_SCORE_DECAY) : 0;
   }
 
   if (suspiciousFrame && !prevSuspiciousFrame) {
@@ -1363,9 +1465,12 @@ void loop() {
 
   int pred = 0;
   if (!faultClearSuppressActive && !arcBlankActive) {
-    const bool sustainedSuspicion = (suspiciousRunLen >= 2U) || (suspiciousRunEnergy >= 1.70f);
-    const bool hardContextBurst = fallbackArcEvent || (softFallbackArcEvent && suspiciousRunEnergy >= 1.20f);
-    const bool temporalBurst = temporalKick && ((suspiciousRunEnergy >= 2.40f) || (invalidLoadedRunLen >= 3U) || (restrikeCountShort >= 2U));
+    const bool leakyArmed = (arcLeakyScore >= ARC_LEAKY_SCORE_FIRE);
+    const bool sustainedSuspicion = (suspiciousRunLen >= 2U) || (suspiciousRunEnergy >= 1.70f) || leakyArmed;
+    const bool hardContextBurst = fallbackArcEvent || (softFallbackArcEvent && (suspiciousRunEnergy >= 1.20f || leakyArmed));
+    const bool temporalBurst =
+        temporalKick &&
+        ((arcLeakyScore >= ARC_LEAKY_SCORE_STRONG) || (invalidLoadedRunLen >= 3U) || (restrikeCountShort >= 2U));
     if (hardContextBurst || temporalBurst || (rawPred == 1 && sustainedSuspicion)) pred = 1;
   }
 
@@ -1586,11 +1691,13 @@ void loop() {
     else if (unpluggedLive && st != STATE_ARCING && st != STATE_HEATING) stateStr = "UNPLUGGED";
     else stateStr = String(stateToCstr(st));
     network.requestLiveUpdate(vRms, f.irms, apparentPowerVa, tC,
-                              f.spectral_flux_midhf, f.residual_crest_factor,
-                              f.edge_spike_ratio, f.midband_residual_ratio,
-                              f.cycle_nmse, f.peak_fluct_cv,
-                              f.thd_i, f.hf_energy_delta,
-                              f.zcv, f.abs_irms_zscore_vs_baseline,
+                              f.abs_irms_zscore_vs_baseline, f.delta_irms_abs,
+                              f.halfcycle_asymmetry, f.suspicious_run_energy,
+                              f.delta_hf_energy, f.delta_flux, f.v_sag_pct,
+                              f.midband_residual_ratio, f.zcv,
+                              f.spectral_flux_midhf, f.peak_fluct_cv,
+                              f.residual_crest_factor, f.thd_i,
+                              f.hf_energy_delta, f.edge_spike_ratio,
                               f.model_pred,
                               f.context_family_code_runtime,
                               f.context_family_confidence,

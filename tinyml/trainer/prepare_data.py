@@ -3,12 +3,13 @@ import json
 import glob
 import os
 import re
+import time
 from pathlib import Path
 
 import numpy as np
 import pandas as pd
 
-from tinyml_common import FEATURES, TARGET, ensure_dir, pick_group_column
+from tinyml_common import FEATURES, ARC_SWEEP_FEATURES, CONTEXT_SWEEP_FEATURES, TARGET, ensure_dir, pick_group_column
 
 
 SCRIPT_DIR = Path(__file__).resolve().parent
@@ -18,6 +19,7 @@ PROJECT_ROOT = TINYML_DIR.parent
 DEFAULT_INPUT_GLOB = str(PROJECT_ROOT / "tinyml" / "data" / "raw" / "**" / "*.csv")
 DEFAULT_OUTPUT = str(PROJECT_ROOT / "tinyml" / "data" / "arc_training.csv")
 DEFAULT_CONTEXT_OUTPUT = str(PROJECT_ROOT / "tinyml" / "data" / "load_context.csv")
+DEFAULT_REPORT = str(PROJECT_ROOT / "tinyml" / "benchmark" / "prepare_data_report.json")
 
 REAL_NEG_WEIGHT = 3.5
 REAL_POS_WEIGHT = 5.0
@@ -25,6 +27,10 @@ SCAFFOLD_NEG_WEIGHT = 0.35
 SCAFFOLD_POS_WEIGHT = 0.45
 TRANSIENT_NORMAL_WEIGHT = 2.0
 TRUSTED_NORMAL_WEIGHT = 6.0
+
+SCAFFOLD_MAX_SHARE_OF_REAL = 0.45
+SCAFFOLD_MAX_BUCKET_WEIGHT_NO_REAL = 6.0
+SCAFFOLD_MIN_ROW_WEIGHT = 0.05
 
 DEFAULT_NEG_LABEL_TRUST = 0.95
 DEFAULT_POS_LABEL_TRUST = 0.45
@@ -177,6 +183,79 @@ def device_family_code_from_token(value) -> int:
     if token == "unknown":
         return -1
     return DEVICE_FAMILY_CLASSES.index(token) if token in DEVICE_FAMILY_CLASSES else -1
+
+
+def _series_from_default(index, values, default=0.0, dtype=float) -> pd.Series:
+    if isinstance(values, pd.Series):
+        return pd.to_numeric(values, errors="coerce")
+    return pd.Series(default if values is None else values, index=index, dtype=dtype)
+
+
+def _scaffold_mask(df: pd.DataFrame) -> pd.Series:
+    source = df.get("source_kind", pd.Series("real", index=df.index)).astype(str).str.lower().str.strip()
+    mask = source.eq("scaffold") | source.str.contains("scaffold", na=False)
+    if "is_scaffold" in df.columns:
+        mask |= pd.to_numeric(df["is_scaffold"], errors="coerce").fillna(0).astype(int) == 1
+    return pd.Series(mask, index=df.index, dtype=bool)
+
+
+def apply_scaffold_gap_fill_weights(df: pd.DataFrame) -> tuple[pd.DataFrame, dict]:
+    work = df.copy()
+    if work.empty:
+        return work, {"scaffold_rows": 0, "scaffold_scaled_rows": 0, "scaffold_effective_weight": 0.0}
+
+    work["sample_weight"] = pd.to_numeric(_series_from_default(work.index, work.get("sample_weight", None), default=1.0), errors="coerce").fillna(1.0).clip(SCAFFOLD_MIN_ROW_WEIGHT, 100.0)
+    scaffold_mask = _scaffold_mask(work)
+    work["is_scaffold"] = scaffold_mask.astype(int)
+    work["scaffold_weight_scale"] = pd.to_numeric(_series_from_default(work.index, work.get("scaffold_weight_scale", None), default=1.0), errors="coerce").fillna(1.0)
+    work["scaffold_cap_reason"] = work.get("scaffold_cap_reason", pd.Series("", index=work.index, dtype=object)).astype(str)
+
+    trainable_mask = pd.to_numeric(_series_from_default(work.index, work.get("rf_train_row", None), default=1), errors="coerce").fillna(1).astype(int) == 1
+
+    def _apply(cols: list[str], tag: str):
+        if not cols:
+            return
+        eligible = work.loc[trainable_mask].copy()
+        if eligible.empty:
+            return
+        for _, idx in eligible.groupby(cols, dropna=False, sort=False).indices.items():
+            idx = list(idx)
+            g = work.loc[idx]
+            s_mask = scaffold_mask.loc[idx]
+            if not bool(s_mask.any()):
+                continue
+            real_sum = float(pd.to_numeric(g.loc[~s_mask, "sample_weight"], errors="coerce").fillna(0.0).sum())
+            scaff_sum = float(pd.to_numeric(g.loc[s_mask, "sample_weight"], errors="coerce").fillna(0.0).sum())
+            if scaff_sum <= 0.0:
+                continue
+            if real_sum > 0.0:
+                allowed = max(SCAFFOLD_MIN_ROW_WEIGHT, SCAFFOLD_MAX_SHARE_OF_REAL * real_sum)
+                reason = f"cap_vs_real_{tag}"
+            else:
+                allowed = SCAFFOLD_MAX_BUCKET_WEIGHT_NO_REAL
+                reason = f"gap_fill_only_{tag}"
+            scale = min(1.0, allowed / max(scaff_sum, 1e-9))
+            if scale >= 0.999999:
+                continue
+            s_idx = g.index[s_mask]
+            work.loc[s_idx, "sample_weight"] = np.maximum(SCAFFOLD_MIN_ROW_WEIGHT, pd.to_numeric(work.loc[s_idx, "sample_weight"], errors="coerce").fillna(0.0) * scale)
+            work.loc[s_idx, "scaffold_weight_scale"] = np.minimum(pd.to_numeric(work.loc[s_idx, "scaffold_weight_scale"], errors="coerce").fillna(1.0), scale)
+            empty_reason = work.loc[s_idx, "scaffold_cap_reason"].astype(str).str.len() == 0
+            work.loc[s_idx[empty_reason], "scaffold_cap_reason"] = reason
+
+    family_cols = [c for c in ["device_family", TARGET] if c in work.columns]
+    device_cols = [c for c in ["device_family", "device_name", TARGET] if c in work.columns]
+    _apply(family_cols, "family")
+    _apply(device_cols, "device")
+
+    summary = {
+        "scaffold_rows": int(scaffold_mask.sum()),
+        "scaffold_trainable_rows": int((scaffold_mask & trainable_mask).sum()),
+        "scaffold_scaled_rows": int((scaffold_mask & (pd.to_numeric(work["scaffold_weight_scale"], errors="coerce").fillna(1.0) < 0.999999)).sum()),
+        "scaffold_effective_weight": float(pd.to_numeric(work.loc[scaffold_mask, "sample_weight"], errors="coerce").fillna(0.0).sum()),
+        "real_effective_weight": float(pd.to_numeric(work.loc[~scaffold_mask, "sample_weight"], errors="coerce").fillna(0.0).sum()),
+    }
+    return work, summary
 
 
 def apply_runtime_context_columns(df: pd.DataFrame, runtime_code_col: str = "context_family_code_runtime", confidence_col: str = "context_family_confidence") -> pd.DataFrame:
@@ -350,11 +429,15 @@ def build_unknown_context_augmented_rows(df: pd.DataFrame, target_col: str = TAR
     if "sample_weight" not in work.columns:
         work["sample_weight"] = 1.0
     work["sample_weight"] = pd.to_numeric(work["sample_weight"], errors="coerce").fillna(1.0)
-    labels = pd.to_numeric(work.get(target_col, 0), errors="coerce").fillna(0).astype(int)
+    scaffold_mask = _scaffold_mask(work)
+    labels = pd.to_numeric(_series_from_default(work.index, work.get(target_col, None), default=0), errors="coerce").fillna(0).astype(int)
     neg_mask = labels == 0
     pos_mask = labels == 1
-    work.loc[neg_mask, "sample_weight"] = np.maximum(work.loc[neg_mask, "sample_weight"] * 2.5, 3.0)
-    work.loc[pos_mask, "sample_weight"] = np.maximum(work.loc[pos_mask, "sample_weight"] * 0.35, 0.15)
+    work.loc[neg_mask & ~scaffold_mask, "sample_weight"] = np.maximum(work.loc[neg_mask & ~scaffold_mask, "sample_weight"] * 2.5, 3.0)
+    work.loc[pos_mask & ~scaffold_mask, "sample_weight"] = np.maximum(work.loc[pos_mask & ~scaffold_mask, "sample_weight"] * 0.35, 0.15)
+    work.loc[neg_mask & scaffold_mask, "sample_weight"] = np.maximum(work.loc[neg_mask & scaffold_mask, "sample_weight"] * 0.85, SCAFFOLD_MIN_ROW_WEIGHT)
+    work.loc[pos_mask & scaffold_mask, "sample_weight"] = np.maximum(work.loc[pos_mask & scaffold_mask, "sample_weight"] * 0.20, SCAFFOLD_MIN_ROW_WEIGHT)
+    work.loc[scaffold_mask, "context_runtime_source"] = "augmented_unknown_scaffold"
     return work
 
 
@@ -893,6 +976,8 @@ def attach_training_metadata(df: pd.DataFrame) -> tuple[pd.DataFrame, dict]:
     df["_feature_sig"] = rounded_exact.agg("|".join, axis=1)
     df["_conflict_sig"] = rounded_coarse.agg("|".join, axis=1)
 
+    df, scaffold_summary = apply_scaffold_gap_fill_weights(df)
+
     quality_summary = {
         "invalid_off_rows": int(invalid_off_flag.sum()),
         "invalid_loaded_rows": int(invalid_loaded_flag.sum()),
@@ -901,6 +986,7 @@ def attach_training_metadata(df: pd.DataFrame) -> tuple[pd.DataFrame, dict]:
         "flat_extinguish_positive_rows": int(flat_extinguish_positive.sum()),
         "strong_arc_like_negative_rows": int(strong_arc_like_negative.sum()),
         "soft_arc_like_negative_rows": int(soft_arc_like_negative.sum()),
+        **{str(k): (float(v) if "weight" in str(k) else int(v)) for k, v in scaffold_summary.items()},
     }
     return df, quality_summary
 
@@ -943,9 +1029,9 @@ def resolve_near_duplicate_label_conflicts(df: pd.DataFrame) -> tuple[pd.DataFra
         g["label_trust"] = pd.to_numeric(g["label_trust"], errors="coerce").fillna(0.0)
         g["source_priority"] = pd.to_numeric(g["source_priority"], errors="coerce").fillna(0)
         g["sample_weight"] = pd.to_numeric(g["sample_weight"], errors="coerce").fillna(0.0)
-        g["trusted_normal_session"] = pd.to_numeric(g.get("trusted_normal_session", 0), errors="coerce").fillna(0).astype(int)
-        g["arc_like_score"] = pd.to_numeric(g.get("arc_like_score", 0.0), errors="coerce").fillna(0.0)
-        g["normal_like_score"] = pd.to_numeric(g.get("normal_like_score", 0.0), errors="coerce").fillna(0.0)
+        g["trusted_normal_session"] = pd.to_numeric(_series_from_default(g.index, g.get("trusted_normal_session", None), default=0), errors="coerce").fillna(0).astype(int)
+        g["arc_like_score"] = pd.to_numeric(_series_from_default(g.index, g.get("arc_like_score", None), default=0.0), errors="coerce").fillna(0.0)
+        g["normal_like_score"] = pd.to_numeric(_series_from_default(g.index, g.get("normal_like_score", None), default=0.0), errors="coerce").fillna(0.0)
 
         labels = set(g.loc[g["rf_train_row"] == 1, TARGET].astype(int).tolist())
         if len(labels) <= 1:
@@ -1089,8 +1175,8 @@ def clean_dataset(df: pd.DataFrame, augment_unknown_context: bool = False) -> tu
         df["trusted_normal_session"],
         errors="coerce",
     ).fillna(0).astype(int)
-    df["label_conflict"] = pd.to_numeric(df.get("label_conflict", 0), errors="coerce").fillna(0).astype(int)
-    df["hard_negative"] = pd.to_numeric(df.get("hard_negative", 0), errors="coerce").fillna(0).astype(int)
+    df["label_conflict"] = pd.to_numeric(_series_from_default(df.index, df.get("label_conflict", None), default=0), errors="coerce").fillna(0).astype(int)
+    df["hard_negative"] = pd.to_numeric(_series_from_default(df.index, df.get("hard_negative", None), default=0), errors="coerce").fillna(0).astype(int)
     df["context_runtime_source"] = "metadata_family"
     df["context_augmented"] = 0
 
@@ -1154,15 +1240,149 @@ def clean_dataset(df: pd.DataFrame, augment_unknown_context: bool = False) -> tu
 
 
 
+def reorder_export_columns(df: pd.DataFrame) -> pd.DataFrame:
+    df = df.copy()
+    feature_cols = [c for c in FEATURES if c in df.columns]
+    context_cols = [c for c in df.columns if str(c).startswith("ctx_family_")]
+    if "context_family_confidence" in df.columns and "context_family_confidence" not in context_cols:
+        context_cols.append("context_family_confidence")
+
+    preferred_prefix = [
+        "epoch_ms",
+        "uptime_ms",
+        "frame_start_uptime_ms",
+        "frame_end_uptime_ms",
+        "frame_dt_ms",
+        "trial_id",
+        "section_id",
+        "session_id",
+        "trial_number",
+        "division_tag",
+        "device_family",
+        "device_family_code",
+        "device_name",
+        "parsed_load_family",
+        "parsed_load_type",
+        "load_type",
+        TARGET,
+    ]
+
+    preferred_suffix = [
+        "rf_train_row",
+        "sample_weight",
+        "label_trust",
+        "clean_reason",
+        "clean_quality",
+        "source_kind",
+        "source_priority",
+        "trusted_normal_session",
+        "context_family_code_runtime",
+        "context_runtime_source",
+        "context_augmented",
+        "section_prior",
+        "notes",
+        "_source_file",
+        "_source_folder",
+    ]
+
+    ordered = []
+    seen = set()
+
+    def add(cols):
+        for c in cols:
+            if c in df.columns and c not in seen:
+                ordered.append(c)
+                seen.add(c)
+
+    add(preferred_prefix)
+    add(feature_cols)
+    add(context_cols)
+    add(preferred_suffix)
+    add(list(df.columns))
+    return df.loc[:, ordered]
+
+
+def _value_counts_dict(series: pd.Series) -> dict:
+    if series is None:
+        return {}
+    s = series.fillna("unknown").astype(str)
+    return {str(k): int(v) for k, v in s.value_counts().to_dict().items()}
+
+
+def _numeric_feature_stats(df: pd.DataFrame) -> dict:
+    stats = {}
+    for col in [c for c in FEATURES if c in df.columns]:
+        s = pd.to_numeric(df[col], errors="coerce").replace([np.inf, -np.inf], np.nan).dropna()
+        if s.empty:
+            stats[col] = {"rows": 0, "mean": 0.0, "std": 0.0, "min": 0.0, "max": 0.0}
+        else:
+            stats[col] = {
+                "rows": int(len(s)),
+                "mean": float(s.mean()),
+                "std": float(s.std(ddof=0)),
+                "min": float(s.min()),
+                "max": float(s.max()),
+            }
+    return stats
+
+
+def build_prepare_report(full_df: pd.DataFrame, arc_df: pd.DataFrame, context_df: pd.DataFrame, summary: dict, csv_files, arc_output: str, context_output: str, elapsed_s: float) -> dict:
+    warnings = []
+    arc_divs = sorted(set(arc_df.get("division_tag", pd.Series(dtype=object)).astype(str).str.lower().tolist())) if len(arc_df) else []
+    ctx_divs = sorted(set(context_df.get("division_tag", pd.Series(dtype=object)).astype(str).str.lower().tolist())) if len(context_df) else []
+    if any(d in {"start", "startup"} for d in arc_divs):
+        warnings.append("arc_training_contains_start_rows")
+    if any(d not in {"start", "startup"} for d in ctx_divs if d):
+        warnings.append("load_context_contains_non_start_rows")
+    if len(context_df) == 0:
+        warnings.append("load_context_is_empty")
+    if len(arc_df) == 0:
+        warnings.append("arc_training_is_empty")
+
+    return {
+        "report_type": "prepare_data_report",
+        "feature_names": list(FEATURES),
+        "source_csv_count": int(len(csv_files or [])),
+        "source_csv_files": [str(p) for p in (csv_files or [])],
+        "elapsed_seconds": float(elapsed_s),
+        "elapsed_hms": time.strftime("%H:%M:%S", time.gmtime(max(0.0, float(elapsed_s)))),
+        "summary": dict(summary or {}),
+        "outputs": {
+            "arc_training_path": str(arc_output),
+            "load_context_path": str(context_output),
+            "arc_training_rows": int(len(arc_df)),
+            "load_context_rows": int(len(context_df)),
+        },
+        "split_checks": {
+            "arc_training_division_counts": _value_counts_dict(arc_df.get("division_tag", pd.Series(dtype=object))),
+            "load_context_division_counts": _value_counts_dict(context_df.get("division_tag", pd.Series(dtype=object))),
+            "arc_training_label_counts": {str(k): int(v) for k, v in pd.to_numeric(arc_df.get(TARGET, pd.Series(dtype=float)), errors="coerce").fillna(-1).astype(int).value_counts().to_dict().items()} if TARGET in arc_df.columns else {},
+            "load_context_family_counts": _value_counts_dict(context_df.get("device_family", pd.Series(dtype=object))),
+            "warnings": warnings,
+        },
+        "full_dataset": {
+            "rows": int(len(full_df)),
+            "division_counts": _value_counts_dict(full_df.get("division_tag", pd.Series(dtype=object))),
+            "label_counts": {str(k): int(v) for k, v in pd.to_numeric(full_df.get(TARGET, pd.Series(dtype=float)), errors="coerce").fillna(-1).astype(int).value_counts().to_dict().items()} if TARGET in full_df.columns else {},
+            "device_family_counts": _value_counts_dict(full_df.get("device_family", pd.Series(dtype=object))),
+        },
+        "arc_training_feature_stats": _numeric_feature_stats(arc_df),
+        "load_context_feature_stats": _numeric_feature_stats(context_df),
+    }
+
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--csv_glob", default=DEFAULT_INPUT_GLOB)
     ap.add_argument("--output", default=DEFAULT_OUTPUT)
     ap.add_argument("--arc_output", default=None)
     ap.add_argument("--context_output", default=DEFAULT_CONTEXT_OUTPUT)
+    ap.add_argument("--out_report", default=DEFAULT_REPORT)
     ap.add_argument("--augment_unknown_context", action="store_true")
     args = ap.parse_args()
 
+    t0 = time.time()
     arc_output = args.arc_output or args.output
 
     csv_files = resolve_csv_files(args.csv_glob, arc_output)
@@ -1170,18 +1390,40 @@ def main():
     df, summary = clean_dataset(df, augment_unknown_context=args.augment_unknown_context)
 
     division = df.get("division_tag", pd.Series("steady", index=df.index)).astype(str).str.lower()
-    arc_df = df[division.isin(["steady", "arc"])].copy()
-    context_df = df[division == "start"].copy()
+    arc_df = reorder_export_columns(df[division.isin(["steady", "arc"])].copy())
+    context_df = reorder_export_columns(df[division.isin(["start", "startup"])].copy())
 
     ensure_dir(arc_output)
     arc_df.to_csv(arc_output, index=False)
     ensure_dir(args.context_output)
     context_df.to_csv(args.context_output, index=False)
 
+    elapsed_s = float(time.time() - t0)
     summary["arc_training_rows"] = int(len(arc_df))
     summary["load_context_rows"] = int(len(context_df))
+    summary["arc_feature_count_available"] = int(len([c for c in ARC_SWEEP_FEATURES if c in arc_df.columns]))
+    summary["context_feature_count_available"] = int(len([c for c in CONTEXT_SWEEP_FEATURES if c in context_df.columns]))
     summary["arc_training_path"] = arc_output
     summary["load_context_path"] = args.context_output
+    summary["elapsed_seconds"] = elapsed_s
+    summary["elapsed_hms"] = time.strftime("%H:%M:%S", time.gmtime(max(0.0, elapsed_s)))
+
+    report = build_prepare_report(
+        full_df=df,
+        arc_df=arc_df,
+        context_df=context_df,
+        summary=summary,
+        csv_files=csv_files,
+        arc_output=arc_output,
+        context_output=args.context_output,
+        elapsed_s=elapsed_s,
+    )
+
+    if args.out_report:
+        ensure_dir(args.out_report)
+        with open(args.out_report, "w", encoding="utf-8") as f:
+            json.dump(report, f, indent=2)
+        print("Saved prepare report to:", args.out_report)
 
     print("Saved arc training dataset to:", arc_output)
     print("Saved load context dataset to:", args.context_output)

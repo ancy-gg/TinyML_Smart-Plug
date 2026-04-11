@@ -16,7 +16,12 @@ struct ArcDetectionResult {
   float hf_energy_delta             = 0.0f;
   float zcv                         = 0.0f;
   float abs_irms_zscore_vs_baseline = 0.0f;
+  float suspicious_run_energy       = 0.0f;
+  float delta_irms_abs              = 0.0f;
+  float delta_hf_energy             = 0.0f;
+  float delta_flux                  = 0.0f;
   float halfcycle_asymmetry         = 0.0f;
+  float v_sag_pct                   = 0.0f;
 
   bool feat_valid    = false;
   bool current_valid = false;
@@ -36,6 +41,9 @@ public:
               float cycle_nmse, float peak_fluct_cv,
               float thd_i, float hf_energy_delta,
               float zcv, float abs_irms_zscore_vs_baseline,
+              float suspicious_run_energy, float delta_irms_abs,
+              float delta_hf_energy, float delta_flux,
+              float halfcycle_asymmetry, float v_sag_pct,
               float v_rms, float i_rms, float temp_c) const;
 
   int computeAndPredict(const uint16_t* raw, size_t n, float fs_hz,

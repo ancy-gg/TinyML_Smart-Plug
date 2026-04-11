@@ -1,15 +1,13 @@
 {
   "model_name": "ContextPrototype",
   "feature_names": [
-    "residual_crest_factor",
-    "edge_spike_ratio",
-    "midband_residual_ratio",
-    "thd_i",
+    "delta_irms_abs",
+    "halfcycle_asymmetry",
+    "suspicious_run_energy",
     "hf_energy_delta",
+    "midband_residual_ratio",
+    "abs_irms_zscore_vs_baseline",
     "zcv",
-    "i_rms",
-    "v_rms",
-    "cycle_nmse",
     "peak_fluct_cv"
   ],
   "class_labels": [
@@ -21,25 +19,74 @@
     "other_mixed"
   ],
   "unknown_confidence_threshold": 0.45,
-  "row_count": 11,
-  "train_rows": 8,
-  "test_rows": 3,
+  "row_count": 24,
+  "train_rows": 18,
+  "test_rows": 6,
   "class_counts": {
-    "brush_universal_motor": 6,
-    "resistive_linear": 5
+    "brush_universal_motor": 13,
+    "resistive_linear": 6,
+    "inductive_motor": 5
   },
+  "effective_class_weight": {
+    "resistive_linear": 14.926800000000002,
+    "inductive_motor": 12.370400000000002,
+    "rectifier_smps": 0.0,
+    "phase_angle_controlled": 0.0,
+    "brush_universal_motor": 31.7128,
+    "other_mixed": 0.0
+  },
+  "source_counts": {
+    "real": 24
+  },
+  "real_rows": 24,
+  "scaffold_rows": 0,
+  "valid_classes": [
+    "resistive_linear",
+    "inductive_motor",
+    "brush_universal_motor"
+  ],
+  "missing_classes": [
+    "rectifier_smps",
+    "phase_angle_controlled",
+    "other_mixed"
+  ],
+  "export_zero_centroid_classes": [
+    "rectifier_smps",
+    "phase_angle_controlled",
+    "other_mixed"
+  ],
+  "active_class_mask": [
+    1,
+    1,
+    0,
+    0,
+    1,
+    0
+  ],
+  "warnings": [
+    "Context training is missing class coverage for: rectifier_smps, phase_angle_controlled, other_mixed",
+    "Disabling missing classes during context inference and exporting zero centroids only as placeholders for: rectifier_smps, phase_angle_controlled, other_mixed"
+  ],
   "accuracy": 1.0,
   "balanced_accuracy": 1.0,
-  "accuracy_with_unknown_gate": 0.6666666666666666,
-  "mean_confidence": 0.7450130165604315,
-  "unknown_rate": 0.3333333333333333,
+  "accuracy_with_unknown_gate": 1.0,
+  "mean_confidence": 0.9999999902351148,
+  "unknown_rate": 0.0,
   "confusion_matrix": [
     [
+      2,
+      0,
+      0,
+      0,
+      0,
+      0
+    ],
+    [
+      0,
       1,
       0,
       0,
       0,
-      0,
       0
     ],
     [
@@ -63,15 +110,7 @@
       0,
       0,
       0,
-      0,
-      0
-    ],
-    [
-      0,
-      0,
-      0,
-      0,
-      2,
+      3,
       0
     ],
     [
@@ -87,28 +126,30 @@
     {
       "family": "resistive_linear",
       "family_code": 0,
-      "rows": 1,
+      "rows": 2,
       "accuracy": 1.0,
-      "mean_confidence": 0.23602954607910334,
-      "unknown_rate": 1.0,
+      "mean_confidence": 0.9999999999804062,
+      "unknown_rate": 0.0,
       "precision": 1.0,
       "recall": 1.0,
       "f1": 1.0,
-      "support": 1,
-      "predicted_rows": 1
+      "support": 2,
+      "predicted_rows": 2,
+      "active_in_model": true
     },
     {
       "family": "inductive_motor",
       "family_code": 1,
-      "rows": 0,
-      "accuracy": 0.0,
-      "mean_confidence": 0.0,
+      "rows": 1,
+      "accuracy": 1.0,
+      "mean_confidence": 0.9999999689227531,
       "unknown_rate": 0.0,
-      "precision": 0.0,
-      "recall": 0.0,
-      "f1": 0.0,
-      "support": 0,
-      "predicted_rows": 0
+      "precision": 1.0,
+      "recall": 1.0,
+      "f1": 1.0,
+      "support": 1,
+      "predicted_rows": 1,
+      "active_in_model": true
     },
     {
       "family": "rectifier_smps",
@@ -121,7 +162,8 @@
       "recall": 0.0,
       "f1": 0.0,
       "support": 0,
-      "predicted_rows": 0
+      "predicted_rows": 0,
+      "active_in_model": false
     },
     {
       "family": "phase_angle_controlled",
@@ -134,20 +176,22 @@
       "recall": 0.0,
       "f1": 0.0,
       "support": 0,
-      "predicted_rows": 0
+      "predicted_rows": 0,
+      "active_in_model": false
     },
     {
       "family": "brush_universal_motor",
       "family_code": 4,
-      "rows": 2,
+      "rows": 3,
       "accuracy": 1.0,
-      "mean_confidence": 0.9995047518010955,
+      "mean_confidence": 0.9999999908423743,
       "unknown_rate": 0.0,
       "precision": 1.0,
       "recall": 1.0,
       "f1": 1.0,
-      "support": 2,
-      "predicted_rows": 2
+      "support": 3,
+      "predicted_rows": 3,
+      "active_in_model": true
     },
     {
       "family": "other_mixed",
@@ -160,7 +204,8 @@
       "recall": 0.0,
       "f1": 0.0,
       "support": 0,
-      "predicted_rows": 0
+      "predicted_rows": 0,
+      "active_in_model": false
     }
   ],
   "classification_report": {
@@ -168,13 +213,13 @@
       "precision": 1.0,
       "recall": 1.0,
       "f1-score": 1.0,
-      "support": 1.0
+      "support": 2.0
     },
     "inductive_motor": {
-      "precision": 0.0,
-      "recall": 0.0,
-      "f1-score": 0.0,
-      "support": 0.0
+      "precision": 1.0,
+      "recall": 1.0,
+      "f1-score": 1.0,
+      "support": 1.0
     },
     "rectifier_smps": {
       "precision": 0.0,
@@ -192,7 +237,7 @@
       "precision": 1.0,
       "recall": 1.0,
       "f1-score": 1.0,
-      "support": 2.0
+      "support": 3.0
     },
     "other_mixed": {
       "precision": 0.0,
@@ -202,70 +247,60 @@
     },
     "accuracy": 1.0,
     "macro avg": {
-      "precision": 0.3333333333333333,
-      "recall": 0.3333333333333333,
-      "f1-score": 0.3333333333333333,
-      "support": 3.0
+      "precision": 0.5,
+      "recall": 0.5,
+      "f1-score": 0.5,
+      "support": 6.0
     },
     "weighted avg": {
       "precision": 1.0,
       "recall": 1.0,
       "f1-score": 1.0,
-      "support": 3.0
+      "support": 6.0
     }
   },
   "means": [
-    9.1229982125,
-    -7.511100875,
-    -55.259405134999994,
-    150.27731451078094,
-    16.17268489,
-    0.7851533300000001,
-    5.305094517500001,
-    226.42539999999997,
-    143.34809425,
-    41.4644565
+    0.39322604932904937,
+    6.203655970074971,
+    2.3309450718830727,
+    11.681619834057836,
+    -52.81678497908399,
+    0.9502735433755435,
+    0.521364986958987,
+    0.17574245706545708
   ],
   "stds": [
-    0.9365593257311124,
-    1.2223695751678647,
-    3.518102322758046,
-    30.0490874467317,
-    0.34335115385076853,
-    0.09680956461533699,
-    0.4920922349792147,
-    1.0049470675612735,
-    6.898730874381269,
-    36.12694053443601
+    0.2439577605227876,
+    3.419034483681533,
+    1.3090009503465778,
+    2.0554381346115793,
+    3.743232635357264,
+    0.37124295771395643,
+    0.10316002212604346,
+    0.15983928194378466
   ],
   "centroids": {
     "resistive_linear": [
-      0.7197619136126511,
-      0.17416290402251228,
-      -0.9737056403505855,
-      -0.9974984372964453,
-      -0.9327530762841013,
-      -0.9539218089342572,
-      0.991141919808185,
-      0.27349201651684274,
-      -0.6189099600704362,
-      -0.9416465799968154
+      -0.8057234055587813,
+      1.063479765372617,
+      0.9331052193628144,
+      -0.9180705574825516,
+      -1.6962117906481433,
+      -1.459705580274492,
+      -0.5310297731847529,
+      -0.8950363555693961
     ],
     "inductive_motor": [
-      0.0,
-      0.0,
-      0.0,
-      0.0,
-      0.0,
-      0.0,
-      0.0,
-      0.0,
-      0.0,
-      0.0
+      -1.3592143160071393,
+      1.1213106501507164,
+      -1.7807054084001388,
+      1.769769703682639,
+      0.17163371722351364,
+      -0.11719002200269121,
+      -1.232698355751888,
+      1.1748174282902644
     ],
     "rectifier_smps": [
-      0.0,
-      0.0,
       0.0,
       0.0,
       0.0,
@@ -283,25 +318,19 @@
       0.0,
       0.0,
       0.0,
-      0.0,
-      0.0,
       0.0
     ],
     "brush_universal_motor": [
-      -0.7197619136126521,
-      -0.17416290402251197,
-      0.9737056403505844,
-      0.9974984372964459,
-      0.9327530762840986,
-      0.9539218089342554,
-      -0.9911419198081877,
-      -0.2734920165167932,
-      0.6189099600704351,
-      0.9416465799968157
+      0.8843134892719472,
+      -0.892852720010843,
+      0.34407548603852744,
+      -0.3457729906574863,
+      0.6246840250055311,
+      0.6456145774004396,
+      0.720215828013519,
+      -0.11256636543372925
     ],
     "other_mixed": [
-      0.0,
-      0.0,
       0.0,
       0.0,
       0.0,
@@ -312,12 +341,35 @@
       0.0
     ]
   },
+  "model_input_feature_ids": [
+    1,
+    2,
+    3,
+    12,
+    6,
+    0,
+    7,
+    9
+  ],
   "settings": {
     "csv": "C:\\Disk\\Ancy\\Platform IO\\TinyML_Smart-Plug\\tinyml\\data\\load_context.csv",
     "n_iter": 120,
-    "min_recall": 0.98,
-    "min_precision": 0.95,
-    "max_fpr": 0.01,
-    "min_threshold": 0.08
+    "min_recall": 0.0,
+    "min_precision": 0.0,
+    "max_fpr": 1.0,
+    "min_threshold": 0.0,
+    "unknown_confidence": 0.45,
+    "feature_report": "C:\\Disk\\Ancy\\Platform IO\\TinyML_Smart-Plug\\tinyml\\benchmark\\TinyMLContextFeatureSubsetSweep_report.json",
+    "features": [
+      "delta_irms_abs",
+      "halfcycle_asymmetry",
+      "suspicious_run_energy",
+      "hf_energy_delta",
+      "midband_residual_ratio",
+      "abs_irms_zscore_vs_baseline",
+      "zcv",
+      "peak_fluct_cv"
+    ],
+    "model": "context"
   }
 }

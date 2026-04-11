@@ -1,6 +1,7 @@
 #pragma once
 // Auto-generated context family prototype model: ContextPrototype
-#define CONTEXT_MODEL_INPUT_DIM 10
+#define CONTEXT_MODEL_METADATA_VERSION 1
+#define CONTEXT_MODEL_INPUT_DIM 8
 #define CONTEXT_MODEL_FAMILY_COUNT 6
 #define CONTEXT_UNKNOWN_CONFIDENCE 0.4500f
 
@@ -13,35 +14,39 @@
 #define CONTEXT_FAMILY_OTHER_MIXED 5
 
 // Input Feature Order:
-// [0] residual_crest_factor
-// [1] edge_spike_ratio
-// [2] midband_residual_ratio
-// [3] thd_i
-// [4] hf_energy_delta
-// [5] zcv
-// [6] i_rms
-// [7] v_rms
-// [8] cycle_nmse
-// [9] peak_fluct_cv
+// [0] delta_irms_abs
+// [1] halfcycle_asymmetry
+// [2] suspicious_run_energy
+// [3] hf_energy_delta
+// [4] midband_residual_ratio
+// [5] abs_irms_zscore_vs_baseline
+// [6] zcv
+// [7] peak_fluct_cv
 
 #include <math.h>
 
-static const float context_means[10] = {9.12299821f, -7.51110088f, -55.2594051f, 150.277315f, 16.1726849f, 0.78515333f, 5.30509452f, 226.4254f, 143.348094f, 41.4644565f};
-static const float context_stds[10] = {0.936559326f, 1.22236958f, 3.51810232f, 30.0490874f, 0.343351154f, 0.0968095646f, 0.492092235f, 1.00494707f, 6.89873087f, 36.1269405f};
-static const float context_centroid_resistive_linear[10] = {0.719761914f, 0.174162904f, -0.97370564f, -0.997498437f, -0.932753076f, -0.953921809f, 0.99114192f, 0.273492017f, -0.61890996f, -0.94164658f};
-static const float context_centroid_inductive_motor[10] = {0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f};
-static const float context_centroid_rectifier_smps[10] = {0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f};
-static const float context_centroid_phase_angle_controlled[10] = {0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f};
-static const float context_centroid_brush_universal_motor[10] = {-0.719761914f, -0.174162904f, 0.97370564f, 0.997498437f, 0.932753076f, 0.953921809f, -0.99114192f, -0.273492017f, 0.61890996f, 0.94164658f};
-static const float context_centroid_other_mixed[10] = {0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f};
+// WARNING: this exported context model has incomplete class coverage.
+// Near-zero centroids: rectifier_smps, phase_angle_controlled, other_mixed
+
+static const int context_model_input_feature_ids[CONTEXT_MODEL_INPUT_DIM] = {1, 2, 3, 12, 6, 0, 7, 9};
+static const float context_means[8] = {0.393226049f, 6.20365597f, 2.33094507f, 11.6816198f, -52.816785f, 0.950273543f, 0.521364987f, 0.175742457f};
+static const float context_stds[8] = {0.243957761f, 3.41903448f, 1.30900095f, 2.05543813f, 3.74323264f, 0.371242958f, 0.103160022f, 0.159839282f};
+static const int context_class_active[CONTEXT_MODEL_FAMILY_COUNT] = {1, 1, 0, 0, 1, 0};
+static const float context_centroid_resistive_linear[8] = {-0.805723406f, 1.06347977f, 0.933105219f, -0.918070557f, -1.69621179f, -1.45970558f, -0.531029773f, -0.895036356f};
+static const float context_centroid_inductive_motor[8] = {-1.35921432f, 1.12131065f, -1.78070541f, 1.7697697f, 0.171633717f, -0.117190022f, -1.23269836f, 1.17481743f};
+static const float context_centroid_rectifier_smps[8] = {0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f};
+static const float context_centroid_phase_angle_controlled[8] = {0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f};
+static const float context_centroid_brush_universal_motor[8] = {0.884313489f, -0.89285272f, 0.344075486f, -0.345772991f, 0.624684025f, 0.645614577f, 0.720215828f, -0.112566365f};
+static const float context_centroid_other_mixed[8] = {0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f};
 
 static inline void context_family_predict(double *input, double *output) {
     const float *centroids[] = {context_centroid_resistive_linear, context_centroid_inductive_motor, context_centroid_rectifier_smps, context_centroid_phase_angle_controlled, context_centroid_brush_universal_motor, context_centroid_other_mixed};
     float logits[6];
     float max_logit = -1e30f;
     for (int c = 0; c < 6; ++c) {
+        if (!context_class_active[c]) { logits[c] = -1.0e9f; continue; }
         float d2 = 0.0f;
-        for (int i = 0; i < 10; ++i) {
+        for (int i = 0; i < 8; ++i) {
             const float z = (((float)input[i]) - context_means[i]) / context_stds[i];
             const float d = z - centroids[c][i];
             d2 += d * d;

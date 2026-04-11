@@ -772,6 +772,90 @@ bool ArcDetection::compute(const uint16_t* raw, size_t n, float fs_hz,
   return true;
 }
 
+static inline int arcModelBaseFeatureCount_() {
+#if defined(ARC_MODEL_FEATURE_VERSION) && (ARC_MODEL_FEATURE_VERSION >= 6) && defined(ARC_MODEL_BASE_FEATURE_COUNT)
+  return ARC_MODEL_BASE_FEATURE_COUNT;
+#elif defined(ARC_MODEL_FEATURE_VERSION) && (ARC_MODEL_FEATURE_VERSION >= 5)
+  const int baseCount = ARC_MODEL_INPUT_DIM - 7;
+  if (baseCount == 10 || baseCount == 12 || baseCount == 14 || baseCount == 16) return baseCount;
+#endif
+  return 10;
+}
+
+
+struct ArcModelFeatureSnapshot {
+  float spectral_flux_midhf;
+  float residual_crest_factor;
+  float edge_spike_ratio;
+  float midband_residual_ratio;
+  float cycle_nmse;
+  float peak_fluct_cv;
+  float thd_i;
+  float hf_energy_delta;
+  float zcv;
+  float abs_irms_zscore_vs_baseline;
+  float suspicious_run_energy;
+  float delta_irms_abs;
+  float delta_hf_energy;
+  float delta_flux;
+  float halfcycle_asymmetry;
+  float v_sag_pct;
+  int8_t ctxFamily;
+  float ctxConfidence;
+};
+
+static inline float arcFeatureValueById_(const ArcModelFeatureSnapshot& x, int featureId) {
+  switch (featureId) {
+    case TINYML_FEATURE_ABS_IRMS_ZSCORE_VS_BASELINE: return x.abs_irms_zscore_vs_baseline;
+    case TINYML_FEATURE_DELTA_IRMS_ABS: return x.delta_irms_abs;
+    case TINYML_FEATURE_HALFCYCLE_ASYMMETRY: return x.halfcycle_asymmetry;
+    case TINYML_FEATURE_SUSPICIOUS_RUN_ENERGY: return x.suspicious_run_energy;
+    case TINYML_FEATURE_DELTA_HF_ENERGY: return x.delta_hf_energy;
+    case TINYML_FEATURE_DELTA_FLUX: return x.delta_flux;
+    case TINYML_FEATURE_MIDBAND_RESIDUAL_RATIO: return x.midband_residual_ratio;
+    case TINYML_FEATURE_ZCV: return x.zcv;
+    case TINYML_FEATURE_SPECTRAL_FLUX_MIDHF: return x.spectral_flux_midhf;
+    case TINYML_FEATURE_PEAK_FLUCT_CV: return x.peak_fluct_cv;
+    case TINYML_FEATURE_RESIDUAL_CREST_FACTOR: return x.residual_crest_factor;
+    case TINYML_FEATURE_THD_I: return x.thd_i;
+    case TINYML_FEATURE_HF_ENERGY_DELTA: return x.hf_energy_delta;
+    case TINYML_FEATURE_EDGE_SPIKE_RATIO: return x.edge_spike_ratio;
+    case TINYML_FEATURE_V_SAG_PCT: return x.v_sag_pct;
+    case TINYML_FEATURE_CYCLE_NMSE: return x.cycle_nmse;
+    case TINYML_FEATURE_CTX_FAMILY_RESISTIVE_LINEAR: return (x.ctxFamily == FAMILY_RESISTIVE_LINEAR) ? 1.0f : 0.0f;
+    case TINYML_FEATURE_CTX_FAMILY_INDUCTIVE_MOTOR: return (x.ctxFamily == FAMILY_INDUCTIVE_MOTOR) ? 1.0f : 0.0f;
+    case TINYML_FEATURE_CTX_FAMILY_RECTIFIER_SMPS: return (x.ctxFamily == FAMILY_RECTIFIER_SMPS) ? 1.0f : 0.0f;
+    case TINYML_FEATURE_CTX_FAMILY_PHASE_ANGLE_CONTROLLED: return (x.ctxFamily == FAMILY_PHASE_ANGLE_CONTROLLED) ? 1.0f : 0.0f;
+    case TINYML_FEATURE_CTX_FAMILY_BRUSH_UNIVERSAL_MOTOR: return (x.ctxFamily == FAMILY_BRUSH_UNIVERSAL_MOTOR) ? 1.0f : 0.0f;
+    case TINYML_FEATURE_CTX_FAMILY_OTHER_MIXED: return (x.ctxFamily == FAMILY_OTHER_MIXED) ? 1.0f : 0.0f;
+    case TINYML_FEATURE_CONTEXT_FAMILY_CONFIDENCE: return clampf(x.ctxConfidence, 0.0f, 1.0f);
+    default: return 0.0f;
+  }
+}
+
+static inline float arcPositiveThresholdById_(int featureId) {
+  switch (featureId) {
+    case TINYML_FEATURE_ABS_IRMS_ZSCORE_VS_BASELINE: return ARC_SIG_IRMS_ZSCORE;
+    case TINYML_FEATURE_DELTA_IRMS_ABS: return 0.12f;
+    case TINYML_FEATURE_HALFCYCLE_ASYMMETRY: return 10.0f;
+    case TINYML_FEATURE_SUSPICIOUS_RUN_ENERGY: return 1.60f;
+    case TINYML_FEATURE_DELTA_HF_ENERGY: return 0.70f;
+    case TINYML_FEATURE_DELTA_FLUX: return 4.00f;
+    case TINYML_FEATURE_MIDBAND_RESIDUAL_RATIO: return ARC_SIG_MIDBAND_RATIO;
+    case TINYML_FEATURE_ZCV: return ARC_SIG_ZCV;
+    case TINYML_FEATURE_SPECTRAL_FLUX_MIDHF: return ARC_SIG_SPECTRAL_FLUX;
+    case TINYML_FEATURE_PEAK_FLUCT_CV: return ARC_SIG_PEAK_FLUCT;
+    case TINYML_FEATURE_RESIDUAL_CREST_FACTOR: return ARC_SIG_RESIDUAL_CF;
+    case TINYML_FEATURE_THD_I: return ARC_SIG_THD_I;
+    case TINYML_FEATURE_HF_ENERGY_DELTA: return ARC_SIG_HF_ENERGY_DELTA;
+    case TINYML_FEATURE_EDGE_SPIKE_RATIO: return ARC_SIG_EDGE_SPIKE_RATIO;
+    case TINYML_FEATURE_V_SAG_PCT: return 3.0f;
+    case TINYML_FEATURE_CYCLE_NMSE: return ARC_SIG_CYCLE_NMSE;
+    default: return INFINITY;
+  }
+}
+
+
 static inline void fillArcModelInput_(double* dst,
                                      float spectral_flux_midhf,
                                      float residual_crest_factor,
@@ -783,23 +867,85 @@ static inline void fillArcModelInput_(double* dst,
                                      float hf_energy_delta,
                                      float zcv,
                                      float abs_irms_zscore_vs_baseline,
+                                     float suspicious_run_energy,
+                                     float delta_irms_abs,
+                                     float delta_hf_energy,
+                                     float delta_flux,
+                                     float halfcycle_asymmetry,
+                                     float v_sag_pct,
                                      int8_t ctxFamily,
                                      float ctxConfidence) {
   for (int i = 0; i < ARC_MODEL_INPUT_DIM; ++i) dst[i] = 0.0;
-  dst[0] = (double)spectral_flux_midhf;
-  dst[1] = (double)residual_crest_factor;
-  dst[2] = (double)edge_spike_ratio;
-  dst[3] = (double)midband_residual_ratio;
-  dst[4] = (double)cycle_nmse;
-  dst[5] = (double)peak_fluct_cv;
-  dst[6] = (double)thd_i;
-  dst[7] = (double)hf_energy_delta;
-  dst[8] = (double)zcv;
-  dst[9] = (double)abs_irms_zscore_vs_baseline;
-  if (ctxFamily >= 0 && ctxFamily < FAMILY_COUNT) dst[10 + ctxFamily] = 1.0;
-  dst[16] = (double)clampf(ctxConfidence, 0.0f, 1.0f);
-}
+  const ArcModelFeatureSnapshot snapshot = {
+    spectral_flux_midhf,
+    residual_crest_factor,
+    edge_spike_ratio,
+    midband_residual_ratio,
+    cycle_nmse,
+    peak_fluct_cv,
+    thd_i,
+    hf_energy_delta,
+    zcv,
+    abs_irms_zscore_vs_baseline,
+    suspicious_run_energy,
+    delta_irms_abs,
+    delta_hf_energy,
+    delta_flux,
+    halfcycle_asymmetry,
+    v_sag_pct,
+    ctxFamily,
+    ctxConfidence,
+  };
 
+#if defined(ARC_MODEL_FEATURE_VERSION) && (ARC_MODEL_FEATURE_VERSION >= 6) && defined(ARC_MODEL_BASE_FEATURE_COUNT)
+  for (int i = 0; i < ARC_MODEL_INPUT_DIM; ++i) {
+    dst[i] = (double)arcFeatureValueById_(snapshot, arc_model_input_feature_ids[i]);
+  }
+  return;
+#else
+  const int baseCount = arcModelBaseFeatureCount_();
+
+  if (baseCount == 10) {
+    const float legacyBase[10] = {
+      spectral_flux_midhf,
+      residual_crest_factor,
+      edge_spike_ratio,
+      midband_residual_ratio,
+      cycle_nmse,
+      peak_fluct_cv,
+      thd_i,
+      hf_energy_delta,
+      zcv,
+      abs_irms_zscore_vs_baseline
+    };
+    for (int i = 0; i < 10; ++i) dst[i] = (double)legacyBase[i];
+  } else {
+    const float rankedBase[16] = {
+      abs_irms_zscore_vs_baseline,
+      delta_irms_abs,
+      halfcycle_asymmetry,
+      suspicious_run_energy,
+      delta_hf_energy,
+      delta_flux,
+      midband_residual_ratio,
+      zcv,
+      spectral_flux_midhf,
+      peak_fluct_cv,
+      residual_crest_factor,
+      thd_i,
+      hf_energy_delta,
+      edge_spike_ratio,
+      v_sag_pct,
+      cycle_nmse
+    };
+    const int usableBase = (baseCount < 16) ? baseCount : 16;
+    for (int i = 0; i < usableBase; ++i) dst[i] = (double)rankedBase[i];
+  }
+
+  if (ctxFamily >= 0 && ctxFamily < FAMILY_COUNT) dst[baseCount + ctxFamily] = 1.0;
+  dst[baseCount + FAMILY_COUNT] = (double)clampf(ctxConfidence, 0.0f, 1.0f);
+#endif
+}
 
 static inline float contextAwareArcThreshold_() {
 #if defined(ARC_CONTEXT_CONFIDENCE_MIN) && defined(ARC_THRESHOLD_UNKNOWN)
@@ -816,6 +962,7 @@ static inline float contextAwareArcThreshold_() {
 #endif
 }
 
+
 static inline int unknownContextArcVotes_(float spectral_flux_midhf,
                                           float residual_crest_factor,
                                           float edge_spike_ratio,
@@ -825,27 +972,128 @@ static inline int unknownContextArcVotes_(float spectral_flux_midhf,
                                           float thd_i,
                                           float hf_energy_delta,
                                           float zcv,
-                                          float abs_irms_zscore_vs_baseline) {
+                                          float abs_irms_zscore_vs_baseline,
+                                          float suspicious_run_energy,
+                                          float delta_irms_abs,
+                                          float delta_hf_energy,
+                                          float delta_flux,
+                                          float halfcycle_asymmetry,
+                                          float v_sag_pct) {
+  const ArcModelFeatureSnapshot snapshot = {
+    spectral_flux_midhf,
+    residual_crest_factor,
+    edge_spike_ratio,
+    midband_residual_ratio,
+    cycle_nmse,
+    peak_fluct_cv,
+    thd_i,
+    hf_energy_delta,
+    zcv,
+    abs_irms_zscore_vs_baseline,
+    suspicious_run_energy,
+    delta_irms_abs,
+    delta_hf_energy,
+    delta_flux,
+    halfcycle_asymmetry,
+    v_sag_pct,
+    CONTEXT_FAMILY_UNKNOWN,
+    0.0f,
+  };
+#if defined(ARC_MODEL_FEATURE_VERSION) && (ARC_MODEL_FEATURE_VERSION >= 6) && defined(ARC_MODEL_BASE_FEATURE_COUNT)
   int votes = 0;
-  if (spectral_flux_midhf >= ARC_SIG_SPECTRAL_FLUX) votes++;
-  if (residual_crest_factor >= ARC_SIG_RESIDUAL_CF) votes++;
-  if (edge_spike_ratio >= ARC_SIG_EDGE_SPIKE_RATIO) votes++;
-  if (midband_residual_ratio >= ARC_SIG_MIDBAND_RATIO) votes++;
-  if (cycle_nmse >= ARC_SIG_CYCLE_NMSE) votes++;
-  if (peak_fluct_cv >= ARC_SIG_PEAK_FLUCT) votes++;
-  if (thd_i >= ARC_SIG_THD_I) votes++;
-  if (hf_energy_delta >= ARC_SIG_HF_ENERGY_DELTA) votes++;
-  if (zcv >= ARC_SIG_ZCV) votes++;
-  if (abs_irms_zscore_vs_baseline >= ARC_SIG_IRMS_ZSCORE) votes++;
+  for (int i = 0; i < ARC_MODEL_BASE_FEATURE_COUNT; ++i) {
+    const int featureId = arc_model_base_feature_ids[i];
+    const float threshold = arcPositiveThresholdById_(featureId);
+    if (isfinite(threshold) && arcFeatureValueById_(snapshot, featureId) >= threshold) votes++;
+  }
   return votes;
-}
+#else
+  const int baseCount = arcModelBaseFeatureCount_();
+  int votes = 0;
 
+  if (baseCount == 10) {
+    const float legacyBase[10] = {
+      spectral_flux_midhf,
+      residual_crest_factor,
+      edge_spike_ratio,
+      midband_residual_ratio,
+      cycle_nmse,
+      peak_fluct_cv,
+      thd_i,
+      hf_energy_delta,
+      zcv,
+      abs_irms_zscore_vs_baseline
+    };
+    const float legacyThresholds[10] = {
+      ARC_SIG_SPECTRAL_FLUX,
+      ARC_SIG_RESIDUAL_CF,
+      ARC_SIG_EDGE_SPIKE_RATIO,
+      ARC_SIG_MIDBAND_RATIO,
+      ARC_SIG_CYCLE_NMSE,
+      ARC_SIG_PEAK_FLUCT,
+      ARC_SIG_THD_I,
+      ARC_SIG_HF_ENERGY_DELTA,
+      ARC_SIG_ZCV,
+      ARC_SIG_IRMS_ZSCORE
+    };
+    for (int i = 0; i < 10; ++i) {
+      if (legacyBase[i] >= legacyThresholds[i]) votes++;
+    }
+    return votes;
+  }
+
+  const float rankedBase[16] = {
+    abs_irms_zscore_vs_baseline,
+    delta_irms_abs,
+    halfcycle_asymmetry,
+    suspicious_run_energy,
+    delta_hf_energy,
+    delta_flux,
+    midband_residual_ratio,
+    zcv,
+    spectral_flux_midhf,
+    peak_fluct_cv,
+    residual_crest_factor,
+    thd_i,
+    hf_energy_delta,
+    edge_spike_ratio,
+    v_sag_pct,
+    cycle_nmse
+  };
+  const float rankedThresholds[16] = {
+    ARC_SIG_IRMS_ZSCORE,
+    0.12f,
+    10.0f,
+    1.60f,
+    0.70f,
+    4.00f,
+    ARC_SIG_MIDBAND_RATIO,
+    ARC_SIG_ZCV,
+    ARC_SIG_SPECTRAL_FLUX,
+    ARC_SIG_PEAK_FLUCT,
+    ARC_SIG_RESIDUAL_CF,
+    ARC_SIG_THD_I,
+    ARC_SIG_HF_ENERGY_DELTA,
+    ARC_SIG_EDGE_SPIKE_RATIO,
+    3.0f,
+    ARC_SIG_CYCLE_NMSE
+  };
+  const int usableBase = (baseCount < 16) ? baseCount : 16;
+  for (int i = 0; i < usableBase; ++i) {
+    if (rankedBase[i] >= rankedThresholds[i]) votes++;
+  }
+  return votes;
+#endif
+}
 
 int ArcDetection::predict(float spectral_flux_midhf, float residual_crest_factor,
                           float edge_spike_ratio, float midband_residual_ratio,
                           float cycle_nmse, float peak_fluct_cv,
                           float thd_i, float hf_energy_delta,
                           float zcv, float abs_irms_zscore_vs_baseline,
+                          float suspicious_run_energy, float delta_irms_abs,
+                          float delta_hf_energy, float delta_flux,
+                          float halfcycle_asymmetry, float v_sag_pct,
                           float v_rms, float i_rms, float temp_c) const {
 #if defined(ARC_MODEL_FEATURE_VERSION) && (ARC_MODEL_FEATURE_VERSION >= 5)
   (void)v_rms; (void)i_rms; (void)temp_c;
@@ -861,6 +1109,12 @@ int ArcDetection::predict(float spectral_flux_midhf, float residual_crest_factor
                      hf_energy_delta,
                      zcv,
                      abs_irms_zscore_vs_baseline,
+                     suspicious_run_energy,
+                     delta_irms_abs,
+                     delta_hf_energy,
+                     delta_flux,
+                     halfcycle_asymmetry,
+                     v_sag_pct,
                      s_ctxFamily,
                      s_ctxConfidence);
   double output_probs[2] = {0.0, 0.0};
@@ -877,24 +1131,34 @@ int ArcDetection::predict(float spectral_flux_midhf, float residual_crest_factor
                                               thd_i,
                                               hf_energy_delta,
                                               zcv,
-                                              abs_irms_zscore_vs_baseline);
+                                              abs_irms_zscore_vs_baseline,
+                                              suspicious_run_energy,
+                                              delta_irms_abs,
+                                              delta_hf_energy,
+                                              delta_flux,
+                                              halfcycle_asymmetry,
+                                              v_sag_pct);
     if (votes < ARC_UNKNOWN_MIN_FEATURE_VOTES) return 0;
   }
   return (output_probs[1] >= threshold) ? 1 : 0;
 #else
   (void)v_rms; (void)i_rms; (void)temp_c;
   float score = 0.0f;
-  if (spectral_flux_midhf >= ARC_SIG_SPECTRAL_FLUX) score += 1.3f;
-  if (residual_crest_factor >= ARC_SIG_RESIDUAL_CF) score += 0.9f;
-  if (edge_spike_ratio >= ARC_SIG_EDGE_SPIKE_RATIO) score += 1.4f;
-  if (midband_residual_ratio >= ARC_SIG_MIDBAND_RATIO) score += 1.1f;
-  if (cycle_nmse >= ARC_SIG_CYCLE_NMSE) score += 1.0f;
-  if (peak_fluct_cv >= ARC_SIG_PEAK_FLUCT) score += 0.8f;
-  if (thd_i >= ARC_SIG_THD_I) score += 0.4f;
-  if (hf_energy_delta >= ARC_SIG_HF_ENERGY_DELTA) score += 0.8f;
-  if (zcv >= ARC_SIG_ZCV) score += 0.6f;
-  if (abs_irms_zscore_vs_baseline >= ARC_SIG_IRMS_ZSCORE) score += 0.8f;
-  return (score >= 3.4f) ? 1 : 0;
+  if (spectral_flux_midhf >= ARC_SIG_SPECTRAL_FLUX) score += 1.2f;
+  if (residual_crest_factor >= ARC_SIG_RESIDUAL_CF) score += 0.8f;
+  if (edge_spike_ratio >= ARC_SIG_EDGE_SPIKE_RATIO) score += 0.9f;
+  if (midband_residual_ratio >= ARC_SIG_MIDBAND_RATIO) score += 0.9f;
+  if (peak_fluct_cv >= ARC_SIG_PEAK_FLUCT) score += 0.5f;
+  if (thd_i >= ARC_SIG_THD_I) score += 0.5f;
+  if (hf_energy_delta >= ARC_SIG_HF_ENERGY_DELTA) score += 0.7f;
+  if (zcv >= ARC_SIG_ZCV) score += 0.5f;
+  if (abs_irms_zscore_vs_baseline >= ARC_SIG_IRMS_ZSCORE) score += 1.0f;
+  if (suspicious_run_energy >= 1.60f) score += 0.8f;
+  if (delta_irms_abs >= 0.12f) score += 0.8f;
+  if (delta_hf_energy >= 0.70f) score += 0.8f;
+  if (delta_flux >= 4.0f) score += 0.7f;
+  if (halfcycle_asymmetry >= 10.0f) score += 0.9f;
+  return (score >= 4.0f) ? 1 : 0;
 #endif
 }
 
@@ -921,6 +1185,12 @@ int ArcDetection::computeAndPredict(const uint16_t* raw, size_t n, float fs_hz,
                      out.hf_energy_delta,
                      out.zcv,
                      out.abs_irms_zscore_vs_baseline,
+                     out.suspicious_run_energy,
+                     out.delta_irms_abs,
+                     out.delta_hf_energy,
+                     out.delta_flux,
+                     out.halfcycle_asymmetry,
+                     out.v_sag_pct,
                      s_ctxFamily,
                      s_ctxConfidence);
   double output_probs[2] = {0.0, 0.0};
@@ -937,7 +1207,13 @@ int ArcDetection::computeAndPredict(const uint16_t* raw, size_t n, float fs_hz,
                                               out.thd_i,
                                               out.hf_energy_delta,
                                               out.zcv,
-                                              out.abs_irms_zscore_vs_baseline);
+                                              out.abs_irms_zscore_vs_baseline,
+                                              out.suspicious_run_energy,
+                                              out.delta_irms_abs,
+                                              out.delta_hf_energy,
+                                              out.delta_flux,
+                                              out.halfcycle_asymmetry,
+                                              out.v_sag_pct);
     if (votes < ARC_UNKNOWN_MIN_FEATURE_VOTES) {
       out.model_pred = 0;
       return 0;
@@ -973,6 +1249,12 @@ int ArcDetection::computeAndPredict(const uint16_t* raw, size_t n, float fs_hz,
                                     out.hf_energy_delta,
                                     out.zcv,
                                     out.abs_irms_zscore_vs_baseline,
+                                    out.suspicious_run_energy,
+                                    out.delta_irms_abs,
+                                    out.delta_hf_energy,
+                                    out.delta_flux,
+                                    out.halfcycle_asymmetry,
+                                    out.v_sag_pct,
                                     v_rms, out.irms_a, temp_c);
   return out.model_pred;
 #endif

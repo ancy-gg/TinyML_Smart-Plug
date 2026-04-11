@@ -67,16 +67,21 @@ const iHint  = el("iHint");
 const pHint  = el("pHint");
 const tHint  = el("tHint");
 
-const spectralFluxVal = el("spectralFluxVal");
-const residualCrestVal = el("residualCrestVal");
-const edgeSpikeVal = el("edgeSpikeVal");
-const midbandRatioVal = el("midbandRatioVal");
+const irmsZscoreVal = el("irmsZscoreVal");
+const deltaIrmsVal = el("deltaIrmsVal");
+const halfcycleAsymVal = el("halfcycleAsymVal");
 const cycleNmseVal = el("cycleNmseVal");
+const deltaHfEnergyVal = el("deltaHfEnergyVal");
+const vSagPctVal = el("vSagPctVal");
+const midbandRatioVal = el("midbandRatioVal");
+
+const zcvVal = el("zcvVal");
+const spectralFluxVal = el("spectralFluxVal");
 const peakFluctVal = el("peakFluctVal");
+const residualCrestVal = el("residualCrestVal");
 const thdIVal = el("thdIVal");
 const hfEnergyDeltaVal = el("hfEnergyDeltaVal");
-const zcvVal = el("zcvVal");
-const irmsZscoreVal = el("irmsZscoreVal");
+const edgeSpikeVal = el("edgeSpikeVal");
 
 const alertEnable = el("alertEnable");
 const soundEnable = el("soundEnable");
@@ -103,6 +108,9 @@ const alertLabelRight = el("alertLabelRight");
 const DISPLAY_TZ = "Asia/Manila";
 const STALE_MS = 15000;
 const HISTORY_LIMIT = 1000;
+
+cycleNmseVal?.closest(".feature-card")?.classList.add("hidden");
+deltaHfEnergyVal?.closest(".feature-card")?.classList.add("hidden");
 const MAX_RENDER_ROWS = 180;
 
 const OTA_RELEASE_BASE = "https://github.com/ancy-gg/TinyML_Smart-Plug/releases/download/";
@@ -1007,9 +1015,10 @@ function animateNumber(node) {
 function setLiveZeroes() {
   const zeroMap = [
     [vVal, "0.0"], [iVal, "0.000"], [pVal, "0.0"], [tVal, "0.0"],
-    [spectralFluxVal, "0.000"], [residualCrestVal, "0.000"], [edgeSpikeVal, "0.000"],
-    [midbandRatioVal, "0.000"], [cycleNmseVal, "0.000"], [peakFluctVal, "0.000"],
-    [thdIVal, "0.000"], [hfEnergyDeltaVal, "0.000"], [zcvVal, "0.000"], [irmsZscoreVal, "0.000"]
+    [irmsZscoreVal, "0.000"], [deltaIrmsVal, "0.000"], [halfcycleAsymVal, "0.000"],
+    [vSagPctVal, "0.00"], [midbandRatioVal, "0.000"], [zcvVal, "0.000"], [spectralFluxVal, "0.000"],
+    [peakFluctVal, "0.000"], [residualCrestVal, "0.000"], [thdIVal, "0.000"],
+    [hfEnergyDeltaVal, "0.000"], [edgeSpikeVal, "0.000"]
   ];
   zeroMap.forEach(([node, text]) => { if (node) node.textContent = text; });
 }
@@ -1063,8 +1072,9 @@ function deriveLiveStatus(data) {
 function setLiveUnavailable() {
   const unavailableMap = [
     vVal, iVal, pVal, tVal,
-    spectralFluxVal, residualCrestVal, edgeSpikeVal, midbandRatioVal, cycleNmseVal,
-    peakFluctVal, thdIVal, hfEnergyDeltaVal, zcvVal, irmsZscoreVal
+    irmsZscoreVal, deltaIrmsVal, halfcycleAsymVal, vSagPctVal,
+    midbandRatioVal, zcvVal, spectralFluxVal,
+    peakFluctVal, residualCrestVal, thdIVal, hfEnergyDeltaVal, edgeSpikeVal
   ];
   unavailableMap.forEach((node) => { if (node) node.textContent = "—"; });
 }
@@ -1524,16 +1534,20 @@ function formatFeatureValue(key, value) {
   const n = Number(value);
   if (!Number.isFinite(n)) return "—";
   const decimals = {
-    spectral_flux_midhf: 2,
-    residual_crest_factor: 2,
-    edge_spike_ratio: 2,
-    midband_residual_ratio: 2,
+    abs_irms_zscore_vs_baseline: 2,
+    delta_irms_abs: 3,
+    halfcycle_asymmetry: 2,
     cycle_nmse: 2,
+    delta_hf_energy: 2,
+    v_sag_pct: 2,
+    midband_residual_ratio: 2,
+    zcv: 3,
+    spectral_flux_midhf: 2,
     peak_fluct_cv: 2,
+    residual_crest_factor: 2,
     thd_i: 2,
     hf_energy_delta: 2,
-    zcv: 3,
-    abs_irms_zscore_vs_baseline: 2,
+    edge_spike_ratio: 2,
   }[key] ?? 3;
   return n.toFixed(decimals);
 }
@@ -1543,31 +1557,39 @@ function updateLiveDom(data) {
   const i   = toFixedOrDash(data.current, 3);
   const p   = toFixedOrDash(data.apparent_power, 1);
   const t   = toFixedOrDash(data.temp, 1);
-  const sf  = formatFeatureValue("spectral_flux_midhf", data.spectral_flux_midhf);
-  const rcf = formatFeatureValue("residual_crest_factor", data.residual_crest_factor);
-  const esr = formatFeatureValue("edge_spike_ratio", data.edge_spike_ratio);
+
+  const iz  = formatFeatureValue("abs_irms_zscore_vs_baseline", data.abs_irms_zscore_vs_baseline);
+  const di  = formatFeatureValue("delta_irms_abs", data.delta_irms_abs);
+  const ha  = formatFeatureValue("halfcycle_asymmetry", data.halfcycle_asymmetry);
+  const dfl = formatFeatureValue("v_sag_pct", data.v_sag_pct);
   const mrr = formatFeatureValue("midband_residual_ratio", data.midband_residual_ratio);
-  const cn  = formatFeatureValue("cycle_nmse", data.cycle_nmse);
+
+  const z   = formatFeatureValue("zcv", data.zcv);
+  const sf  = formatFeatureValue("spectral_flux_midhf", data.spectral_flux_midhf);
   const pf  = formatFeatureValue("peak_fluct_cv", data.peak_fluct_cv);
+  const rcf = formatFeatureValue("residual_crest_factor", data.residual_crest_factor);
   const thd = formatFeatureValue("thd_i", data.thd_i);
   const hfd = formatFeatureValue("hf_energy_delta", data.hf_energy_delta);
-  const z   = formatFeatureValue("zcv", data.zcv);
-  const iz  = formatFeatureValue("abs_irms_zscore_vs_baseline", data.abs_irms_zscore_vs_baseline);
+  const esr = formatFeatureValue("edge_spike_ratio", data.edge_spike_ratio);
 
   if (vVal && vVal.textContent !== v) { vVal.textContent = v; animateNumber(vVal); }
   if (iVal && iVal.textContent !== i) { iVal.textContent = i; animateNumber(iVal); }
   if (pVal && pVal.textContent !== p) { pVal.textContent = p; animateNumber(pVal); }
   if (tVal && tVal.textContent !== t) { tVal.textContent = t; animateNumber(tVal); }
-  if (spectralFluxVal && spectralFluxVal.textContent !== sf) { spectralFluxVal.textContent = sf; animateNumber(spectralFluxVal); }
-  if (residualCrestVal && residualCrestVal.textContent !== rcf) { residualCrestVal.textContent = rcf; animateNumber(residualCrestVal); }
-  if (edgeSpikeVal && edgeSpikeVal.textContent !== esr) { edgeSpikeVal.textContent = esr; animateNumber(edgeSpikeVal); }
+
+  if (irmsZscoreVal && irmsZscoreVal.textContent !== iz) { irmsZscoreVal.textContent = iz; animateNumber(irmsZscoreVal); }
+  if (deltaIrmsVal && deltaIrmsVal.textContent !== di) { deltaIrmsVal.textContent = di; animateNumber(deltaIrmsVal); }
+  if (halfcycleAsymVal && halfcycleAsymVal.textContent !== ha) { halfcycleAsymVal.textContent = ha; animateNumber(halfcycleAsymVal); }
+  if (vSagPctVal && vSagPctVal.textContent !== dfl) { vSagPctVal.textContent = dfl; animateNumber(vSagPctVal); }
   if (midbandRatioVal && midbandRatioVal.textContent !== mrr) { midbandRatioVal.textContent = mrr; animateNumber(midbandRatioVal); }
-  if (cycleNmseVal && cycleNmseVal.textContent !== cn) { cycleNmseVal.textContent = cn; animateNumber(cycleNmseVal); }
+
+  if (zcvVal && zcvVal.textContent !== z) { zcvVal.textContent = z; animateNumber(zcvVal); }
+  if (spectralFluxVal && spectralFluxVal.textContent !== sf) { spectralFluxVal.textContent = sf; animateNumber(spectralFluxVal); }
   if (peakFluctVal && peakFluctVal.textContent !== pf) { peakFluctVal.textContent = pf; animateNumber(peakFluctVal); }
+  if (residualCrestVal && residualCrestVal.textContent !== rcf) { residualCrestVal.textContent = rcf; animateNumber(residualCrestVal); }
   if (thdIVal && thdIVal.textContent !== thd) { thdIVal.textContent = thd; animateNumber(thdIVal); }
   if (hfEnergyDeltaVal && hfEnergyDeltaVal.textContent !== hfd) { hfEnergyDeltaVal.textContent = hfd; animateNumber(hfEnergyDeltaVal); }
-  if (zcvVal && zcvVal.textContent !== z) { zcvVal.textContent = z; animateNumber(zcvVal); }
-  if (irmsZscoreVal && irmsZscoreVal.textContent !== iz) { irmsZscoreVal.textContent = iz; animateNumber(irmsZscoreVal); }
+  if (edgeSpikeVal && edgeSpikeVal.textContent !== esr) { edgeSpikeVal.textContent = esr; animateNumber(edgeSpikeVal); }
 
   applyMetricHints(data);
 }

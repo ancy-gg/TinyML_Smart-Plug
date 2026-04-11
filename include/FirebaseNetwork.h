@@ -42,11 +42,13 @@ public:
   bool fetchMlControl(bool& enabled, int& dur, int& labelOv, String& sid, String& load, String& deviceFamily, String& deviceName, int& trialNumber, String& divisionTag, String& notes, bool& trustedNormal, String& requestToken) const;
 
   void requestLiveUpdate(float v, float c, float apparentPower, float t,
-                         float spectral_flux_midhf, float residual_crest_factor,
-                         float edge_spike_ratio, float midband_residual_ratio,
-                         float cycle_nmse, float peak_fluct_cv,
-                         float thd_i, float hf_energy_delta,
-                         float zcv, float abs_irms_zscore_vs_baseline,
+                         float abs_irms_zscore_vs_baseline, float delta_irms_abs,
+                         float halfcycle_asymmetry, float suspicious_run_energy,
+                         float delta_hf_energy, float delta_flux, float v_sag_pct,
+                         float midband_residual_ratio, float zcv,
+                         float spectral_flux_midhf, float peak_fluct_cv,
+                         float residual_crest_factor, float thd_i,
+                         float hf_energy_delta, float edge_spike_ratio,
                          uint8_t model_pred,
                          int8_t contextFamilyCodeRuntime,
                          float contextFamilyConfidence,
@@ -78,11 +80,14 @@ public:
 private:
   struct LiveSnapshot {
     float v = 0.0f, c = 0.0f, apparentPower = 0.0f, t = 0.0f;
-    float spectral_flux_midhf = 0.0f, residual_crest_factor = 0.0f;
-    float edge_spike_ratio = 0.0f, midband_residual_ratio = 0.0f;
-    float cycle_nmse = 0.0f, peak_fluct_cv = 0.0f;
-    float thd_i = 0.0f, hf_energy_delta = 0.0f;
-    float zcv = 0.0f, abs_irms_zscore_vs_baseline = 0.0f;
+    float abs_irms_zscore_vs_baseline = 0.0f, delta_irms_abs = 0.0f;
+    float halfcycle_asymmetry = 0.0f, cycle_nmse = 0.0f;
+    float delta_hf_energy = 0.0f, v_sag_pct = 0.0f;
+    float suspicious_run_energy = 0.0f, delta_flux = 0.0f;
+    float midband_residual_ratio = 0.0f, zcv = 0.0f;
+    float spectral_flux_midhf = 0.0f, peak_fluct_cv = 0.0f;
+    float residual_crest_factor = 0.0f, thd_i = 0.0f;
+    float hf_energy_delta = 0.0f, edge_spike_ratio = 0.0f;
     uint8_t model_pred = 0;
     int8_t contextFamilyCodeRuntime = CONTEXT_FAMILY_UNKNOWN;
     float contextFamilyConfidence = 0.0f;

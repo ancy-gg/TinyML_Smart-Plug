@@ -35,18 +35,60 @@ except Exception:
     StratifiedGroupKFold = None
 
 
-ARC_BASE_FEATURES = [
+ALL_COMPUTED_FEATURES = [
+    "abs_irms_zscore_vs_baseline",
+    "delta_irms_abs",
+    "halfcycle_asymmetry",
+    "suspicious_run_energy",
+    "delta_hf_energy",
+    "delta_flux",
+    "midband_residual_ratio",
+    "zcv",
     "spectral_flux_midhf",
+    "peak_fluct_cv",
+    "residual_crest_factor",
+    "thd_i",
+    "hf_energy_delta",
+    "edge_spike_ratio",
+    "v_sag_pct",
+    "cycle_nmse",
+]
+
+ARC_SWEEP_FEATURES = [
+    "abs_irms_zscore_vs_baseline",
+    "delta_irms_abs",
+    "halfcycle_asymmetry",
+    "spectral_flux_midhf",
+    "peak_fluct_cv",
     "residual_crest_factor",
     "edge_spike_ratio",
     "midband_residual_ratio",
-    "cycle_nmse",
-    "peak_fluct_cv",
-    "thd_i",
-    "hf_energy_delta",
     "zcv",
-    "abs_irms_zscore_vs_baseline",
+    "hf_energy_delta",
+    "thd_i",
+    "v_sag_pct",
 ]
+
+CONTEXT_SWEEP_FEATURES = [
+    "delta_irms_abs",
+    "halfcycle_asymmetry",
+    "suspicious_run_energy",
+    "hf_energy_delta",
+    "midband_residual_ratio",
+    "abs_irms_zscore_vs_baseline",
+    "zcv",
+    "delta_flux",
+    "residual_crest_factor",
+    "peak_fluct_cv",
+]
+
+ARC_PWA_VISIBLE_FEATURES = list(ARC_SWEEP_FEATURES)
+ARC_DEFAULT_BASE_FEATURES = list(ARC_SWEEP_FEATURES)
+CONTEXT_DEFAULT_FEATURES = list(CONTEXT_SWEEP_FEATURES)
+ARC_BASE_FEATURES_RANKED = list(ALL_COMPUTED_FEATURES)
+ARC_ALL_COMPUTED_FEATURES = list(ALL_COMPUTED_FEATURES)
+CONTEXT_ALL_COMPUTED_FEATURES = list(ALL_COMPUTED_FEATURES)
+
 DEVICE_FAMILY_CLASSES = [
     "resistive_linear",
     "inductive_motor",
@@ -59,21 +101,14 @@ DEVICE_FAMILY_UNKNOWN_CODE = -1
 DEVICE_FAMILY_CODE_MAP = {fam: idx for idx, fam in enumerate(DEVICE_FAMILY_CLASSES)}
 DEVICE_FAMILY_NAME_FROM_CODE = {idx: fam for fam, idx in DEVICE_FAMILY_CODE_MAP.items()}
 DEVICE_FAMILY_CODE_MAP_WITH_UNKNOWN = {"unknown": DEVICE_FAMILY_UNKNOWN_CODE, **DEVICE_FAMILY_CODE_MAP}
+
 ARC_CONTEXT_FEATURES = [f"ctx_family_{fam}" for fam in DEVICE_FAMILY_CLASSES] + ["context_family_confidence"]
-ARC_FEATURES = ARC_BASE_FEATURES + ARC_CONTEXT_FEATURES
-CONTEXT_FEATURES = [
-    "residual_crest_factor",
-    "edge_spike_ratio",
-    "midband_residual_ratio",
-    "thd_i",
-    "hf_energy_delta",
-    "zcv",
-    "i_rms",
-    "v_rms",
-    "cycle_nmse",
-    "peak_fluct_cv",
-]
-FEATURES = ARC_BASE_FEATURES
+ARC_FEATURES = list(ARC_DEFAULT_BASE_FEATURES) + list(ARC_CONTEXT_FEATURES)
+CONTEXT_FEATURES = list(CONTEXT_DEFAULT_FEATURES)
+FEATURES = list(ALL_COMPUTED_FEATURES)
+MODEL_INPUT_FEATURE_ORDER = list(ALL_COMPUTED_FEATURES) + list(ARC_CONTEXT_FEATURES)
+MODEL_INPUT_FEATURE_ID_MAP = {name: idx for idx, name in enumerate(MODEL_INPUT_FEATURE_ORDER)}
+
 TARGET = "label_arc"
 CONTEXT_TARGET = "device_family_code"
 GROUP_COL_CANDIDATES = ["trial_id", "session_id", "section_id", "session", "sid"]
@@ -110,11 +145,87 @@ DB_ALIAS_MAP = {
     "hf_energy_delta_db": "hf_energy_delta",
 }
 
+SCAFFOLD_SOURCE_NAMES = {"scaffold", "synthetic", "augmented_scaffold"}
+SCAFFOLD_MAX_SHARE_OF_REAL = 0.45
+SCAFFOLD_MAX_BUCKET_WEIGHT_NO_REAL = 6.0
+SCAFFOLD_MIN_ROW_WEIGHT = 0.05
+SCAFFOLD_MIN_BUCKETS_FOR_DEVICE_CAP = 1
+
+
+def default_feature_names_for_target(target_col: str = TARGET) -> list[str]:
+    return list(CONTEXT_FEATURES if str(target_col) == str(CONTEXT_TARGET) else ARC_FEATURES)
+
+
+def validate_feature_subset(
+    feature_names,
+    *,
+    allowed_features,
+    role: str,
+    allow_empty: bool = False,
+) -> list[str]:
+    allowed = list(allowed_features or [])
+    allowed_set = set(allowed)
+    cleaned = []
+    invalid = []
+    seen = set()
+    for raw in (feature_names or []):
+        name = str(raw).strip()
+        if not name or name in seen:
+            continue
+        seen.add(name)
+        if name not in allowed_set:
+            invalid.append(name)
+            continue
+        cleaned.append(name)
+    if invalid:
+        raise ValueError(f"{role} feature list contains unsupported features: {invalid}")
+    if not cleaned and not allow_empty:
+        raise ValueError(f"{role} feature list must include at least one feature from: {allowed}")
+    return cleaned
+
+
+def feature_ids_for_names(feature_names) -> list[int]:
+    ids = []
+    for name in feature_names or []:
+        key = str(name).strip()
+        if key not in MODEL_INPUT_FEATURE_ID_MAP:
+            raise ValueError(f"Unknown model input feature name: {key}")
+        ids.append(int(MODEL_INPUT_FEATURE_ID_MAP[key]))
+    return ids
+
+
+def split_arc_feature_names(feature_names) -> tuple[list[str], list[str]]:
+    names = [str(x).strip() for x in (feature_names or []) if str(x).strip()]
+    base_names = [name for name in names if name not in ARC_CONTEXT_FEATURES]
+    context_names = [name for name in names if name in ARC_CONTEXT_FEATURES]
+    if context_names and context_names != list(ARC_CONTEXT_FEATURES):
+        raise ValueError(
+            "Arc model inputs must append the 7 fixed runtime context inputs in canonical order: "
+            + ", ".join(ARC_CONTEXT_FEATURES)
+        )
+    return base_names, context_names
+
+
+def describe_feature_subset(feature_names) -> dict:
+    names = [str(x).strip() for x in (feature_names or []) if str(x).strip()]
+    ids = feature_ids_for_names(names)
+    return {
+        "feature_names": names,
+        "feature_ids": ids,
+        "feature_count": len(names),
+    }
+
 
 def _series_from(values) -> pd.Series:
     if isinstance(values, pd.Series):
         return pd.to_numeric(values, errors="coerce")
     return pd.Series(pd.to_numeric(values, errors="coerce"), dtype=float)
+
+
+def _series_from_default(index, values, default=0.0, dtype=float) -> pd.Series:
+    if isinstance(values, pd.Series):
+        return pd.to_numeric(values, errors="coerce")
+    return pd.Series(default if values is None else values, index=index, dtype=dtype)
 
 
 def _ratio_to_db20(values, floor: float = DB_RATIO_FLOOR) -> pd.Series:
@@ -238,6 +349,96 @@ def _db_negative_score(series: pd.Series, neutral_db: float = 0.0, floor_db: flo
     return ((float(neutral_db) - s) / span).clip(0.0, hi)
 
 
+def _scaffold_mask(df: pd.DataFrame) -> pd.Series:
+    source = df.get("source_kind", pd.Series("real", index=df.index)).astype(str).str.lower().str.strip()
+    mask = source.isin(SCAFFOLD_SOURCE_NAMES) | source.str.contains("scaffold", na=False)
+    if "is_scaffold" in df.columns:
+        mask |= pd.to_numeric(df["is_scaffold"], errors="coerce").fillna(0).astype(int) == 1
+    if "context_runtime_source" in df.columns:
+        mask |= df["context_runtime_source"].astype(str).str.lower().str.contains("scaffold", na=False)
+    return pd.Series(mask, index=df.index, dtype=bool)
+
+
+def apply_scaffold_gap_fill_cap(
+    df: pd.DataFrame,
+    *,
+    target_col: str = TARGET,
+    weight_col: str = "sample_weight",
+    trainable_col: str | None = "rf_train_row",
+    bucket_cols: list[str] | None = None,
+) -> pd.DataFrame:
+    work = df.copy()
+    if work.empty:
+        return work
+
+    if weight_col not in work.columns:
+        work[weight_col] = 1.0
+    work[weight_col] = pd.to_numeric(work[weight_col], errors="coerce").fillna(1.0).clip(SCAFFOLD_MIN_ROW_WEIGHT, 100.0)
+
+    if trainable_col and trainable_col in work.columns:
+        trainable_mask = pd.to_numeric(work[trainable_col], errors="coerce").fillna(0).astype(int) == 1
+    else:
+        trainable_mask = pd.Series(True, index=work.index, dtype=bool)
+
+    scaffold_mask = _scaffold_mask(work)
+    work["is_scaffold"] = scaffold_mask.astype(int)
+    work["scaffold_weight_scale"] = 1.0
+    work["scaffold_cap_reason"] = work.get("scaffold_cap_reason", pd.Series("", index=work.index, dtype=object)).astype(str)
+
+    if bucket_cols is None:
+        if target_col == TARGET:
+            bucket_cols = [c for c in ["device_family", "device_name", target_col] if c in work.columns]
+            if not bucket_cols:
+                bucket_cols = [target_col] if target_col in work.columns else []
+        else:
+            bucket_cols = [c for c in ["device_family", target_col] if c in work.columns]
+            if not bucket_cols:
+                bucket_cols = [target_col] if target_col in work.columns else []
+    if not bucket_cols:
+        return work
+
+    def _apply_caps(cols: list[str], tag: str):
+        if not cols:
+            return
+        eligible = work.loc[trainable_mask].copy()
+        if eligible.empty:
+            return
+        grouped = eligible.groupby(cols, dropna=False, sort=False)
+        for _, g in grouped:
+            idx = g.index.tolist()
+            g = work.loc[idx]
+            s_mask = scaffold_mask.loc[idx]
+            if not bool(s_mask.any()):
+                continue
+            real_sum = float(pd.to_numeric(g.loc[~s_mask, weight_col], errors="coerce").fillna(0.0).sum())
+            scaff_sum = float(pd.to_numeric(g.loc[s_mask, weight_col], errors="coerce").fillna(0.0).sum())
+            if scaff_sum <= 0.0:
+                continue
+            if real_sum > 0.0:
+                allowed = max(SCAFFOLD_MIN_ROW_WEIGHT, SCAFFOLD_MAX_SHARE_OF_REAL * real_sum)
+                reason = f"cap_vs_real_{tag}"
+            else:
+                allowed = SCAFFOLD_MAX_BUCKET_WEIGHT_NO_REAL
+                reason = f"gap_fill_only_{tag}"
+            scale = min(1.0, allowed / max(scaff_sum, 1e-9))
+            if scale >= 0.999999:
+                continue
+            s_idx = g.index[s_mask]
+            work.loc[s_idx, weight_col] = np.maximum(SCAFFOLD_MIN_ROW_WEIGHT, pd.to_numeric(work.loc[s_idx, weight_col], errors="coerce").fillna(0.0) * scale)
+            work.loc[s_idx, "scaffold_weight_scale"] = np.minimum(pd.to_numeric(work.loc[s_idx, "scaffold_weight_scale"], errors="coerce").fillna(1.0), scale)
+            empty_reason = work.loc[s_idx, "scaffold_cap_reason"].astype(str).str.len() == 0
+            work.loc[s_idx[empty_reason], "scaffold_cap_reason"] = reason
+
+    family_cols = [c for c in bucket_cols if c != "device_name"]
+    device_cols = bucket_cols if "device_name" in bucket_cols else []
+    _apply_caps(family_cols, "family")
+    if len(device_cols) >= SCAFFOLD_MIN_BUCKETS_FOR_DEVICE_CAP:
+        _apply_caps(device_cols, "device")
+
+    work[weight_col] = pd.to_numeric(work[weight_col], errors="coerce").fillna(1.0).clip(SCAFFOLD_MIN_ROW_WEIGHT, 100.0)
+    return work
+
+
 def augment_unknown_context_rows(df: pd.DataFrame, target_col: str = TARGET) -> pd.DataFrame:
     work = normalize_feature_names(df.copy())
     if work.empty:
@@ -251,11 +452,19 @@ def augment_unknown_context_rows(df: pd.DataFrame, target_col: str = TARGET) -> 
     if "sample_weight" not in work.columns:
         work["sample_weight"] = 1.0
     work["sample_weight"] = pd.to_numeric(work["sample_weight"], errors="coerce").fillna(1.0)
-    labels = pd.to_numeric(work.get(target_col, 0), errors="coerce").fillna(0).astype(int)
+
+    scaffold_mask = _scaffold_mask(work)
+    labels = pd.to_numeric(_series_from_default(work.index, work.get(target_col, None), default=0), errors="coerce").fillna(0).astype(int)
     neg_mask = labels == 0
     pos_mask = labels == 1
-    work.loc[neg_mask, "sample_weight"] = np.maximum(work.loc[neg_mask, "sample_weight"] * 2.5, 3.0)
-    work.loc[pos_mask, "sample_weight"] = np.maximum(work.loc[pos_mask, "sample_weight"] * 0.35, 0.15)
+
+    work.loc[neg_mask & ~scaffold_mask, "sample_weight"] = np.maximum(work.loc[neg_mask & ~scaffold_mask, "sample_weight"] * 2.5, 3.0)
+    work.loc[pos_mask & ~scaffold_mask, "sample_weight"] = np.maximum(work.loc[pos_mask & ~scaffold_mask, "sample_weight"] * 0.35, 0.15)
+
+    work.loc[neg_mask & scaffold_mask, "sample_weight"] = np.maximum(work.loc[neg_mask & scaffold_mask, "sample_weight"] * 0.85, SCAFFOLD_MIN_ROW_WEIGHT)
+    work.loc[pos_mask & scaffold_mask, "sample_weight"] = np.maximum(work.loc[pos_mask & scaffold_mask, "sample_weight"] * 0.20, SCAFFOLD_MIN_ROW_WEIGHT)
+    work.loc[scaffold_mask, "context_runtime_source"] = "augmented_unknown_scaffold"
+    work = apply_scaffold_gap_fill_cap(work, target_col=target_col, trainable_col=None, bucket_cols=[c for c in ["device_family", target_col] if c in work.columns])
     return work
 
 
@@ -273,13 +482,20 @@ def resolve_n_jobs(default: int = -1) -> int:
     return int(value)
 
 
+def estimator_n_jobs(default: int = -1):
+    value = resolve_n_jobs(default)
+    # sklearn/joblib can still allocate a worker pool when n_jobs==1 in some
+    # Windows environments. Use None to force a truly serial fit in that case.
+    return None if int(value) == 1 else int(value)
+
+
 MODEL_CONFIGS = {
     "rf": {
         "pretty_name": "RandomForest",
         "builder": lambda: RandomForestClassifier(
             random_state=42,
             class_weight="balanced_subsample",
-            n_jobs=resolve_n_jobs(-1),
+            n_jobs=estimator_n_jobs(-1),
             bootstrap=True,
             oob_score=False,
         ),
@@ -302,7 +518,7 @@ MODEL_CONFIGS = {
         "builder": lambda: ExtraTreesClassifier(
             random_state=42,
             class_weight="balanced",
-            n_jobs=resolve_n_jobs(-1),
+            n_jobs=estimator_n_jobs(-1),
             bootstrap=False,
         ),
         "param_space": {
@@ -487,7 +703,7 @@ def normalize_feature_names(df: pd.DataFrame) -> pd.DataFrame:
 
 def clean_df(df: pd.DataFrame, include_invalid: bool = False, feature_names=None, target_col: str = TARGET) -> pd.DataFrame:
     df = normalize_feature_names(df.copy())
-    feature_names = list(feature_names or FEATURES)
+    feature_names = list(feature_names or default_feature_names_for_target(target_col))
 
     missing = [c for c in feature_names + [target_col] if c not in df.columns]
     if missing:
@@ -509,7 +725,7 @@ def clean_df(df: pd.DataFrame, include_invalid: bool = False, feature_names=None
         if "rf_train_row" in df.columns and target_col == TARGET:
             df = df[df["rf_train_row"] == 1].copy()
         elif "feat_valid" in df.columns and target_col == TARGET:
-            curv = pd.to_numeric(df.get("current_valid", 1), errors="coerce").fillna(1)
+            curv = pd.to_numeric(_series_from_default(df.index, df.get("current_valid", None), default=1), errors="coerce").fillna(1)
             df = df[(pd.to_numeric(df["feat_valid"], errors="coerce") == 1) & (curv == 1)].copy()
 
         x = df[feature_names].replace([np.inf, -np.inf], np.nan)
@@ -526,6 +742,12 @@ def clean_df(df: pd.DataFrame, include_invalid: bool = False, feature_names=None
         "hf_energy_delta": DB_HF_CLIP,
         "zcv": (0.0, 10.0),
         "abs_irms_zscore_vs_baseline": (0.0, 25.0),
+        "suspicious_run_energy": (0.0, 20.0),
+        "delta_irms_abs": (0.0, 15.0),
+        "delta_hf_energy": (0.0, 24.0),
+        "delta_flux": (0.0, 200.0),
+        "halfcycle_asymmetry": (0.0, 200.0),
+        "v_sag_pct": (0.0, 100.0),
         "context_family_confidence": (0.0, 1.0),
         "v_rms": (0.0, 400.0),
         "i_rms": (0.0, 40.0),
@@ -1120,8 +1342,9 @@ def load_clean_dataset(csv_path: str, include_invalid: bool = False, feature_nam
 
     raw_df = pd.read_csv(csv_path)
     raw_df = normalize_feature_names(raw_df)
-    feature_names = list(feature_names or FEATURES)
+    feature_names = list(feature_names or default_feature_names_for_target(target_col))
     df = clean_df(raw_df, include_invalid=include_invalid, feature_names=feature_names, target_col=target_col)
+    df = apply_scaffold_gap_fill_cap(df, target_col=target_col)
 
     if augment_unknown_context and target_col == TARGET and any(str(name).startswith("ctx_family_") for name in feature_names):
         already_augmented = pd.Series(False, index=df.index)
@@ -1130,6 +1353,7 @@ def load_clean_dataset(csv_path: str, include_invalid: bool = False, feature_nam
         base_aug = df.loc[~already_augmented].copy()
         if not base_aug.empty:
             df = pd.concat([df, augment_unknown_context_rows(base_aug, target_col=target_col)], ignore_index=True, sort=False)
+            df = apply_scaffold_gap_fill_cap(df, target_col=target_col)
 
     if df.empty or df[target_col].nunique() < 2:
         raise ValueError(f"Training requires at least 2 classes in {target_col} from cleaned_data.csv.")
@@ -1308,12 +1532,25 @@ def make_group_splits(X, y, groups, test_size=0.20):
 
 
 def estimate_search_plan(n_iter: int) -> dict:
-    base = max(24, int(n_iter))
-    refine = max(18, int(round(base * 0.90)))
-    finalists = min(8, max(3, int(round(np.sqrt(base)))))
-    robustness_seeds = [42, 314, 2024, 7331]
-    if base >= 96:
-        robustness_seeds.append(9001)
+    base = max(1, int(n_iter))
+    if base <= 1:
+        refine = 0
+        finalists = 1
+        robustness_seeds = [42]
+    elif base <= 3:
+        refine = 1
+        finalists = min(2, base)
+        robustness_seeds = [42]
+    elif base <= 6:
+        refine = max(1, int(round(base * 0.50)))
+        finalists = min(3, max(2, int(round(np.sqrt(base)))))
+        robustness_seeds = [42, 314]
+    else:
+        refine = max(2, int(round(base * 0.75)))
+        finalists = min(8, max(3, int(round(np.sqrt(base)))))
+        robustness_seeds = [42, 314, 2024, 7331]
+        if base >= 96:
+            robustness_seeds.append(9001)
     total_steps = base + refine + (finalists * len(robustness_seeds)) + 1
     return {
         "broad_candidates": int(base),
@@ -2316,6 +2553,234 @@ def build_short_burst_report(meta_df: pd.DataFrame, y_true, y_score, thr: float,
     }
 
 
+def _prepare_meta_binary_frame(meta_df: pd.DataFrame, y_true, y_score) -> tuple[pd.DataFrame, str, str | None]:
+    frame = (meta_df.copy() if meta_df is not None else pd.DataFrame()).reset_index(drop=True)
+    frame["_y_true"] = np.asarray(y_true).astype(int)
+    frame["_y_score"] = np.asarray(y_score).astype(float)
+    session_col = _preferred_meta_col(frame, ["session_id", "section_id", "trial_id"])
+    if session_col is None:
+        session_col = "_session_tmp"
+        frame[session_col] = "all"
+    time_col = _preferred_meta_col(frame, ["frame_start_uptime_ms", "frame_end_uptime_ms", "uptime_ms", "epoch_ms"])
+    if time_col is not None:
+        frame[time_col] = pd.to_numeric(frame[time_col], errors="coerce")
+        frame = frame.sort_values([session_col, time_col], kind="stable").reset_index(drop=True)
+    return frame, session_col, time_col
+
+
+def _positive_runs(labels: np.ndarray) -> list[tuple[int, int]]:
+    runs = []
+    start = None
+    for i, lab in enumerate(np.asarray(labels).astype(int)):
+        if lab == 1 and start is None:
+            start = i
+        end_run = (lab == 0 and start is not None)
+        final_row = (i == len(labels) - 1 and start is not None and lab == 1)
+        if end_run or final_row:
+            end = i if final_row else i - 1
+            runs.append((int(start), int(end)))
+            start = None
+    return runs
+
+
+def _subset_threshold_report(frame: pd.DataFrame, mask, thr: float, *, policy: dict | None = None, extra: dict | None = None) -> dict:
+    mask = np.asarray(mask).astype(bool)
+    if frame is None or len(frame) == 0 or mask.size == 0 or not mask.any():
+        out = {
+            "row_count": 0,
+            "positive_rows": 0,
+            "average_precision": 0.0,
+            "precision": 0.0,
+            "recall": 0.0,
+            "fpr": 0.0,
+            "confusion_matrix": {"tn": 0, "fp": 0, "fn": 0, "tp": 0},
+        }
+        if extra:
+            out.update(extra)
+        return out
+    subset = frame.loc[mask].copy()
+    metrics = evaluate_binary_scores(subset["_y_true"].to_numpy(), subset["_y_score"].to_numpy(), thr)
+    out = {
+        "row_count": int(len(subset)),
+        "positive_rows": int(subset["_y_true"].sum()),
+        "average_precision": float(metrics.get("average_precision", 0.0)),
+        "precision": float(metrics.get("precision", 0.0)),
+        "recall": float(metrics.get("recall", 0.0)),
+        "fpr": float(metrics.get("fpr", 0.0)),
+        "confusion_matrix": metrics.get("confusion_matrix", {}),
+    }
+    if policy is not None:
+        out["policy_metrics"] = evaluate_threshold_policy(subset, subset["_y_true"].to_numpy(), subset["_y_score"].to_numpy(), policy)
+    if extra:
+        out.update(extra)
+    return out
+
+
+def build_short_burst_sweep_report(meta_df: pd.DataFrame, y_true, y_score, thr: float, run_lengths=(1, 2, 3), policy: dict | None = None) -> dict:
+    report = {}
+    for run_len in run_lengths:
+        key = f"run_le_{int(run_len)}"
+        report[key] = build_short_burst_report(meta_df, y_true, y_score, thr, max_positive_run_rows=int(run_len))
+        if policy is not None and report[key].get("row_count", 0) > 0:
+            frame, _, _ = _prepare_meta_binary_frame(meta_df, y_true, y_score)
+            burst_mask = np.zeros(len(frame), dtype=bool)
+            session_col = _preferred_meta_col(frame, ["session_id", "section_id", "trial_id"]) or "_session_tmp"
+            if session_col not in frame.columns:
+                frame[session_col] = "all"
+            time_col = _preferred_meta_col(frame, ["frame_start_uptime_ms", "frame_end_uptime_ms", "uptime_ms", "epoch_ms"])
+            if time_col is not None:
+                frame = frame.sort_values([session_col, time_col], kind="stable").reset_index(drop=True)
+            for _, group in frame.groupby(session_col, sort=False):
+                labels = group["_y_true"].astype(int).to_numpy()
+                idxs = group.index.to_numpy()
+                for start, end in _positive_runs(labels):
+                    if (end - start + 1) <= int(run_len):
+                        burst_mask[idxs[start:end + 1]] = True
+            report[key]["policy_metrics"] = evaluate_threshold_policy(frame.loc[burst_mask], frame.loc[burst_mask, "_y_true"].to_numpy(), frame.loc[burst_mask, "_y_score"].to_numpy(), policy) if burst_mask.any() else {
+                "accuracy": 0.0,
+                "balanced_accuracy": 0.0,
+                "average_precision": 0.0,
+                "roc_auc": 0.0,
+                "precision": 0.0,
+                "recall": 0.0,
+                "f1": 0.0,
+                "specificity": 0.0,
+                "npv": 0.0,
+                "fpr": 0.0,
+                "fnr": 0.0,
+                "confusion_matrix": {"tn": 0, "fp": 0, "fn": 0, "tp": 0},
+                "threshold_mean": 0.0,
+                "threshold_min": 0.0,
+                "threshold_max": 0.0,
+                "row_count": 0,
+                "positive_count": 0,
+                "negative_count": 0,
+            }
+    return report
+
+
+def build_transition_window_report(
+    meta_df: pd.DataFrame,
+    y_true,
+    y_score,
+    thr: float,
+    *,
+    policy: dict | None = None,
+    edge_rows: int = 1,
+    min_delta_irms: float = 0.08,
+    min_delta_hf: float = 0.40,
+    min_delta_flux: float = 2.0,
+) -> dict:
+    frame, session_col, time_col = _prepare_meta_binary_frame(meta_df, y_true, y_score)
+    if len(frame) == 0:
+        return {}
+    i_rms = pd.to_numeric(frame.get("i_rms", pd.Series(0.0, index=frame.index)), errors="coerce").fillna(0.0)
+    frame["_i_rms"] = i_rms
+    frame["_delta_hf_energy"] = pd.to_numeric(frame.get("delta_hf_energy", pd.Series(0.0, index=frame.index)), errors="coerce").fillna(0.0)
+    frame["_delta_flux"] = pd.to_numeric(frame.get("delta_flux", pd.Series(0.0, index=frame.index)), errors="coerce").fillna(0.0)
+
+    sep_mask = np.zeros(len(frame), dtype=bool)
+    rec_mask = np.zeros(len(frame), dtype=bool)
+    comb_mask = np.zeros(len(frame), dtype=bool)
+
+    for _, group in frame.groupby(session_col, sort=False):
+        idxs = group.index.to_numpy()
+        g_irms = group["_i_rms"].to_numpy(dtype=float)
+        g_diff = np.diff(g_irms, prepend=g_irms[0])
+        g_hf = group["_delta_hf_energy"].to_numpy(dtype=float)
+        g_flux = group["_delta_flux"].to_numpy(dtype=float)
+
+        sep_hits = np.where(g_diff <= -float(min_delta_irms))[0]
+        rec_hits = np.where((g_diff >= float(min_delta_irms)) | (g_hf >= float(min_delta_hf)) | (g_flux >= float(min_delta_flux)))[0]
+
+        for hits, mask in ((sep_hits, sep_mask), (rec_hits, rec_mask)):
+            for hit in hits:
+                lo = max(0, int(hit) - int(edge_rows))
+                hi = min(len(idxs), int(hit) + int(edge_rows) + 1)
+                mask[idxs[lo:hi]] = True
+                comb_mask[idxs[lo:hi]] = True
+
+    return {
+        "edge_rows": int(edge_rows),
+        "separation": _subset_threshold_report(frame, sep_mask, thr, policy=policy, extra={"subset": "separation"}),
+        "recontact": _subset_threshold_report(frame, rec_mask, thr, policy=policy, extra={"subset": "recontact"}),
+        "combined": _subset_threshold_report(frame, comb_mask, thr, policy=policy, extra={"subset": "combined"}),
+    }
+
+
+def build_unknown_context_startup_report(
+    meta_df: pd.DataFrame,
+    y_true,
+    y_score,
+    thr: float,
+    *,
+    policy: dict | None = None,
+    startup_rows: int = 50,
+    known_confidence_min: float = 0.45,
+) -> dict:
+    frame, session_col, time_col = _prepare_meta_binary_frame(meta_df, y_true, y_score)
+    if len(frame) == 0:
+        return {}
+    runtime_codes = pd.to_numeric(frame.get("context_family_code_runtime", pd.Series(-1, index=frame.index)), errors="coerce").fillna(-1).astype(int)
+    runtime_conf = pd.to_numeric(frame.get("context_family_confidence", pd.Series(0.0, index=frame.index)), errors="coerce").fillna(0.0).clip(0.0, 1.0)
+    startup_mask = np.zeros(len(frame), dtype=bool)
+    unknown_mask = np.zeros(len(frame), dtype=bool)
+    for _, group in frame.groupby(session_col, sort=False):
+        idxs = group.index.to_numpy()
+        take = idxs[: max(1, int(startup_rows))]
+        startup_mask[take] = True
+        take_codes = runtime_codes.iloc[take].to_numpy(dtype=int)
+        take_conf = runtime_conf.iloc[take].to_numpy(dtype=float)
+        unknown_mask[take] = (take_codes < 0) | (take_conf < float(known_confidence_min))
+    return {
+        "startup_rows": int(startup_rows),
+        "startup_all": _subset_threshold_report(frame, startup_mask, thr, policy=policy, extra={"subset": "startup_all"}),
+        "unknown_only": _subset_threshold_report(frame, unknown_mask, thr, policy=policy, extra={"subset": "unknown_only", "known_confidence_min": float(known_confidence_min)}),
+    }
+
+
+def build_event_level_report(meta_df: pd.DataFrame, y_true, y_score, thr: float, *, policy: dict | None = None) -> dict:
+    frame, session_col, time_col = _prepare_meta_binary_frame(meta_df, y_true, y_score)
+    if len(frame) == 0:
+        return {}
+    if policy is not None:
+        y_pred, _ = apply_threshold_policy(frame, frame["_y_score"].to_numpy(), policy)
+    else:
+        y_pred = (frame["_y_score"].to_numpy() >= float(thr)).astype(int)
+
+    true_events = 0
+    detected_events = 0
+    predicted_events = 0
+    predicted_overlap = 0
+
+    for _, group in frame.groupby(session_col, sort=False):
+        gt = group["_y_true"].to_numpy(dtype=int)
+        gp = np.asarray(y_pred[group.index.to_numpy()], dtype=int)
+        true_runs = _positive_runs(gt)
+        pred_runs = _positive_runs(gp)
+        true_events += len(true_runs)
+        predicted_events += len(pred_runs)
+        for ts, te in true_runs:
+            if any(not (pe < ts or ps > te) for ps, pe in pred_runs):
+                detected_events += 1
+        for ps, pe in pred_runs:
+            if any(not (te < ps or ts > pe) for ts, te in true_runs):
+                predicted_overlap += 1
+
+    event_recall = _safe_rate(detected_events, true_events)
+    event_precision = _safe_rate(predicted_overlap, predicted_events)
+    return {
+        "true_event_count": int(true_events),
+        "detected_event_count": int(detected_events),
+        "missed_event_count": int(max(0, true_events - detected_events)),
+        "predicted_event_count": int(predicted_events),
+        "overlapping_predicted_event_count": int(predicted_overlap),
+        "event_recall": float(event_recall),
+        "event_precision": float(event_precision),
+        "event_f1": float(0.0 if (event_precision + event_recall) <= 0 else (2.0 * event_precision * event_recall / (event_precision + event_recall))),
+    }
+
+
 def strip_estimator(result: dict) -> dict:
     out = dict(result)
     out.pop("estimator", None)
@@ -2491,6 +2956,28 @@ def _export_tree_ensemble_to_c(model, function_name: str = "arc_rf_predict") -> 
     return "\n".join(lines)
 
 
+def _write_model_header_compat_shims(out_header: str) -> None:
+    norm_out = out_header.replace("\\", "/")
+    marker = "/tinyml/model/"
+    if marker not in norm_out:
+        return
+
+    project_root = norm_out.split(marker, 1)[0]
+    header_name = os.path.basename(out_header)
+    compat_targets = {
+        os.path.join(project_root, "tinyml", header_name): f"#include \"model/{header_name}\"\n",
+        os.path.join(project_root, "include", header_name): f"#include \"../tinyml/model/{header_name}\"\n",
+    }
+    for compat_path, include_line in compat_targets.items():
+        if os.path.abspath(compat_path) == os.path.abspath(out_header):
+            continue
+        ensure_dir(compat_path)
+        with open(compat_path, "w", encoding="utf-8") as shim:
+            shim.write("#pragma once\n")
+            shim.write(f"// Compatibility shim that forwards to tinyml/model/{header_name}\n")
+            shim.write(include_line)
+
+
 def export_context_header(
     *,
     out_header: str,
@@ -2499,16 +2986,27 @@ def export_context_header(
     means,
     stds,
     centroids,
+    active_class_mask=None,
     unknown_confidence_threshold: float = 0.45,
     model_name: str = "ContextPrototype",
     function_name: str = "context_family_predict",
 ) -> None:
     ensure_dir(out_header)
-    feature_names = list(feature_names or CONTEXT_FEATURES)
+    feature_names = validate_feature_subset(
+        feature_names or CONTEXT_FEATURES,
+        allowed_features=CONTEXT_ALL_COMPUTED_FEATURES,
+        role="context model",
+    )
+    feature_ids = feature_ids_for_names(feature_names)
     class_labels = [str(x) for x in class_labels]
     means = [float(x) for x in means]
     stds = [max(1e-9, float(x)) for x in stds]
     centroids = {str(k): [float(v) for v in vals] for k, vals in dict(centroids).items()}
+    if active_class_mask is None:
+        active_class_mask = [1] * len(class_labels)
+    active_class_mask = [1 if bool(v) else 0 for v in list(active_class_mask)[:len(class_labels)]]
+    if len(active_class_mask) < len(class_labels):
+        active_class_mask.extend([0] * (len(class_labels) - len(active_class_mask)))
 
     missing_centroid_labels = [label for label in class_labels if label not in centroids]
     near_zero_centroid_labels = []
@@ -2531,6 +3029,7 @@ def export_context_header(
     with open(out_header, "w", encoding="utf-8") as f:
         f.write("#pragma once\n")
         f.write(f"// Auto-generated context family prototype model: {model_name}\n")
+        f.write("#define CONTEXT_MODEL_METADATA_VERSION 1\n")
         f.write(f"#define CONTEXT_MODEL_INPUT_DIM {len(feature_names)}\n")
         f.write(f"#define CONTEXT_MODEL_FAMILY_COUNT {len(class_labels)}\n")
         f.write(f"#define CONTEXT_UNKNOWN_CONFIDENCE {float(unknown_confidence_threshold):.4f}f\n\n")
@@ -2549,8 +3048,14 @@ def export_context_header(
             if near_zero_centroid_labels:
                 f.write("// Near-zero centroids: " + ", ".join(near_zero_centroid_labels) + "\n")
             f.write("\n")
+        f.write(
+            "static const int context_model_input_feature_ids[CONTEXT_MODEL_INPUT_DIM] = {"
+            + ", ".join(str(int(v)) for v in feature_ids)
+            + "};\n"
+        )
         f.write(f"static const float context_means[{len(feature_names)}] = {{{', '.join(c_float_literal(v) for v in means)}}};\n")
         f.write(f"static const float context_stds[{len(feature_names)}] = {{{', '.join(c_float_literal(v) for v in stds)}}};\n")
+        f.write("static const int context_class_active[CONTEXT_MODEL_FAMILY_COUNT] = {" + ", ".join(str(int(v)) for v in active_class_mask) + "};\n")
         centroid_symbols = []
         for label in class_labels:
             arr = centroids.get(label, [0.0] * len(feature_names))
@@ -2566,6 +3071,7 @@ def export_context_header(
         f.write(f"    float logits[{len(class_labels)}];\n")
         f.write("    float max_logit = -1e30f;\n")
         f.write(f"    for (int c = 0; c < {len(class_labels)}; ++c) {{\n")
+        f.write("        if (!context_class_active[c]) { logits[c] = -1.0e9f; continue; }\n")
         f.write("        float d2 = 0.0f;\n")
         f.write(f"        for (int i = 0; i < {len(feature_names)}; ++i) {{\n")
         f.write("            const float z = (((float)input[i]) - context_means[i]) / context_stds[i];\n")
@@ -2591,6 +3097,8 @@ def export_context_header(
         f.write(f"    return (best_v < {float(unknown_confidence_threshold):.4f}) ? CONTEXT_FAMILY_UNKNOWN : best;\n")
         f.write("}\n")
 
+    _write_model_header_compat_shims(out_header)
+
 
 def save_context_bundle(
     *,
@@ -2613,11 +3121,18 @@ def save_context_bundle(
         means=report.get("means", [0.0] * len(report.get("feature_names", CONTEXT_FEATURES))),
         stds=report.get("stds", [1.0] * len(report.get("feature_names", CONTEXT_FEATURES))),
         centroids=report.get("centroids", {}),
+        active_class_mask=report.get("active_class_mask", None),
         unknown_confidence_threshold=float(report.get("unknown_confidence_threshold", 0.45)),
         model_name=str(report.get("model_name", "ContextPrototype")),
     )
     payload = dict(report)
     payload.pop("estimator", None)
+    payload["feature_names"] = validate_feature_subset(
+        payload.get("feature_names", CONTEXT_FEATURES),
+        allowed_features=CONTEXT_ALL_COMPUTED_FEATURES,
+        role="context model",
+    )
+    payload["model_input_feature_ids"] = feature_ids_for_names(payload["feature_names"])
     payload["settings"] = settings
     with open(out_report, "w", encoding="utf-8") as f:
         json.dump(payload, f, indent=2)
@@ -2634,8 +3149,17 @@ def export_header(
 ) -> None:
     ensure_dir(out_header)
     export_backend = "native_tree_ensemble"
-    feature_names = list(feature_names or FEATURES)
+    feature_names = list(feature_names or ARC_FEATURES)
     function_name = str(function_name or "arc_rf_predict")
+    arc_base_feature_names, arc_context_feature_names = split_arc_feature_names(feature_names)
+    if arc_context_feature_names:
+        arc_base_feature_names = validate_feature_subset(
+            arc_base_feature_names,
+            allowed_features=ARC_ALL_COMPUTED_FEATURES,
+            role="arc base",
+        )
+    arc_input_feature_ids = feature_ids_for_names(feature_names)
+    arc_base_feature_ids = feature_ids_for_names(arc_base_feature_names)
 
     model_label = str(model_name or "").strip().lower()
     use_native_export = isinstance(model, (ExtraTreesClassifier, RandomForestClassifier))
@@ -2679,9 +3203,13 @@ def export_header(
     with open(out_header, "w", encoding="utf-8") as f:
         f.write("#pragma once\n")
         f.write(f"// Auto-generated C header from scikit-learn {model_name} ({export_backend})\n")
-        feature_version = 5 if any(str(name).startswith("ctx_family_") for name in feature_names) else 4
+        feature_version = 6 if arc_context_feature_names else 4
         f.write(f"#define ARC_MODEL_FEATURE_VERSION {feature_version}\n")
         f.write(f"#define ARC_MODEL_INPUT_DIM {len(feature_names)}\n")
+        if arc_context_feature_names:
+            f.write(f"#define ARC_MODEL_BASE_FEATURE_COUNT {len(arc_base_feature_names)}\n")
+            f.write(f"#define ARC_MODEL_CONTEXT_FEATURE_COUNT {len(arc_context_feature_names)}\n")
+            f.write(f"#define ARC_MODEL_CONTEXT_INPUT_OFFSET {len(arc_base_feature_names)}\n")
         f.write(f"#define ARC_THRESHOLD {float(default_threshold):.4f}f\n")
         f.write(f"#define ARC_CONTEXT_CONFIDENCE_MIN {known_confidence_min:.4f}f\n")
         f.write(f"#define ARC_THRESHOLD_UNKNOWN {unknown_threshold:.4f}f\n")
@@ -2690,6 +3218,17 @@ def export_header(
         for i, name in enumerate(feature_names):
             f.write(f"// [{i}] {name}\n")
         f.write("\n#include <string.h>\n")
+        if arc_context_feature_names:
+            f.write(
+                "static const int arc_model_input_feature_ids[ARC_MODEL_INPUT_DIM] = {"
+                + ", ".join(str(int(v)) for v in arc_input_feature_ids)
+                + "};\n"
+            )
+            f.write(
+                "static const int arc_model_base_feature_ids[ARC_MODEL_BASE_FEATURE_COUNT] = {"
+                + ", ".join(str(int(v)) for v in arc_base_feature_ids)
+                + "};\n"
+            )
         f.write(f"static const float arc_family_thresholds[{len(family_thresholds)}] = {{{', '.join(c_float_literal(v) for v in family_thresholds)}}};\n")
         f.write("static inline float arc_context_threshold_for_family(int family, float confidence) {\n")
         f.write("    if (family >= 0 && family < (int)(sizeof(arc_family_thresholds)/sizeof(arc_family_thresholds[0])) && confidence >= ARC_CONTEXT_CONFIDENCE_MIN) return arc_family_thresholds[family];\n")
@@ -2697,16 +3236,7 @@ def export_header(
         f.write("}\n\n")
         f.write(c_code)
 
-    norm_out = out_header.replace("\\", "/")
-    marker = "/tinyml/model/"
-    if marker in norm_out:
-        compat_path = os.path.join(norm_out.split(marker, 1)[0], "tinyml", os.path.basename(out_header))
-        if os.path.abspath(compat_path) != os.path.abspath(out_header):
-            ensure_dir(compat_path)
-            with open(compat_path, "w", encoding="utf-8") as shim:
-                shim.write("#pragma once\n")
-                shim.write(f"// Compatibility shim that forwards to model/{os.path.basename(out_header)}\n")
-                shim.write(f"#include \"model/{os.path.basename(out_header)}\"\n")
+    _write_model_header_compat_shims(out_header)
 
 
 def save_model_bundle(
@@ -2730,10 +3260,14 @@ def save_model_bundle(
         model_name=result["model_name"],
         feature_names=feature_names,
         function_name=function_name,
+        threshold_policy=result.get("threshold_policy"),
     )
 
     report = strip_estimator(result)
-    report["feature_names"] = list(feature_names or FEATURES)
+    report["feature_names"] = list(feature_names or ARC_FEATURES)
+    report["arc_base_feature_names"], report["arc_context_feature_names"] = split_arc_feature_names(report["feature_names"])
+    report["model_input_feature_ids"] = feature_ids_for_names(report["feature_names"])
+    report["arc_base_feature_ids"] = feature_ids_for_names(report["arc_base_feature_names"])
     report["settings"] = settings
     with open(out_report, "w", encoding="utf-8") as f:
         json.dump(report, f, indent=2)
@@ -2764,10 +3298,16 @@ def save_duel_bundle(
         threshold_policy=winner.get("threshold_policy"),
     )
 
+    winner_feature_names = list(feature_names or ARC_FEATURES)
+    winner_base_feature_names, winner_context_feature_names = split_arc_feature_names(winner_feature_names)
     report = {
         "winner": strip_estimator(winner),
         "all_results": [strip_estimator(r) for r in results],
-        "feature_names": list(feature_names or FEATURES),
+        "feature_names": winner_feature_names,
+        "arc_base_feature_names": winner_base_feature_names,
+        "arc_context_feature_names": winner_context_feature_names,
+        "model_input_feature_ids": feature_ids_for_names(winner_feature_names),
+        "arc_base_feature_ids": feature_ids_for_names(winner_base_feature_names),
         "winner_policy": winner_policy or {},
         "settings": settings,
     }

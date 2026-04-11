@@ -655,7 +655,7 @@
       });
     });
 
-    return headers;
+    return orderCsvHeaders(headers);
   }
 
   function buildCsvFromRows() {
@@ -1078,10 +1078,97 @@
       thd_i: "thd_i",
       hf_energy_delta: "hf_energy_delta",
       zcv: "zcv",
-      abs_irms_zscore_vs_baseline: "abs_irms_zscore_vs_baseline"
+      abs_irms_zscore_vs_baseline: "abs_irms_zscore_vs_baseline",
+      delta_irms_abs: "delta_irms_abs",
+      halfcycle_asymmetry: "halfcycle_asymmetry",
+      suspicious_run_energy: "suspicious_run_energy",
+      delta_hf_energy: "delta_hf_energy",
+      delta_flux: "delta_flux",
+      v_sag_pct: "v_sag_pct"
     };
     return aliases[slug] || slug || raw;
   }
+
+const PREFERRED_EXPORT_HEADER_ORDER = [
+  "epoch_ms",
+  "uptime_ms",
+  "frame_start_uptime_ms",
+  "frame_end_uptime_ms",
+  "feature_compute_end_uptime_ms",
+  "log_enqueue_uptime_ms",
+  "frame_dt_ms",
+  "compute_time_ms",
+  "timing_skew_ms",
+  "v_rms",
+  "voltage",
+  "i_rms",
+  "current",
+  "temp_c",
+  "temperature",
+
+  "abs_irms_zscore_vs_baseline",
+  "delta_irms_abs",
+  "halfcycle_asymmetry",
+  "cycle_nmse",
+  "v_sag_pct",
+  "suspicious_run_energy",
+  "delta_hf_energy",
+  "delta_flux",
+  "midband_residual_ratio",
+  "zcv",
+  "spectral_flux_midhf",
+  "peak_fluct_cv",
+  "residual_crest_factor",
+  "thd_i",
+  "hf_energy_delta",
+  "edge_spike_ratio",
+
+  "model_pred",
+  "label_arc",
+  "feat_valid",
+  "current_valid",
+  "sampling_quality_bad",
+  "invalid_loaded_flag",
+  "invalid_off_flag",
+  "relay_blank_active",
+  "turnon_blank_active",
+  "transient_blank_active",
+  "suspicious_run_len",
+  "invalid_loaded_run_len",
+  "restrike_count_short",
+
+  "device_family",
+  "device_family_code",
+  "device_name",
+  "trial_number",
+  "division_tag",
+  "notes",
+  "trusted_normal_session",
+  "load_type",
+  "session_id",
+  "context_family_code_runtime",
+  "context_family_code_provisional",
+  "context_family_confidence",
+  "context_family_confidence_provisional",
+  "context_acquiring",
+  "context_latched",
+  "adc_fs_hz",
+  "feature_space_version"
+];
+
+function orderCsvHeaders(headers) {
+  const seen = new Set();
+  const ordered = [];
+  const push = (name) => {
+    const key = String(name || "").trim();
+    if (!key || seen.has(key) || !headers.includes(key)) return;
+    seen.add(key);
+    ordered.push(key);
+  };
+  PREFERRED_EXPORT_HEADER_ORDER.forEach(push);
+  headers.forEach(push);
+  return ordered;
+}
 
   function buildSeriesKeys(rows) {
     if (!rows.length) return [];

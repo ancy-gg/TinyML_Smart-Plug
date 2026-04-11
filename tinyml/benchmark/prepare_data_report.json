@@ -1,0 +1,473 @@
+{
+  "report_type": "prepare_data_report",
+  "feature_names": [
+    "abs_irms_zscore_vs_baseline",
+    "delta_irms_abs",
+    "halfcycle_asymmetry",
+    "suspicious_run_energy",
+    "delta_hf_energy",
+    "delta_flux",
+    "midband_residual_ratio",
+    "zcv",
+    "spectral_flux_midhf",
+    "peak_fluct_cv",
+    "residual_crest_factor",
+    "thd_i",
+    "hf_energy_delta",
+    "edge_spike_ratio",
+    "v_sag_pct",
+    "cycle_nmse"
+  ],
+  "source_csv_count": 70,
+  "source_csv_files": [
+    "C:\\Disk\\Ancy\\Platform IO\\TinyML_Smart-Plug\\tinyml\\data\\raw\\Inductive Motor\\Drill Press\\inductive_motor__drill_press__trial_1__start.csv",
+    "C:\\Disk\\Ancy\\Platform IO\\TinyML_Smart-Plug\\tinyml\\data\\raw\\Inductive Motor\\Drill Press\\inductive_motor__drill_press__trial_1__steady.csv",
+    "C:\\Disk\\Ancy\\Platform IO\\TinyML_Smart-Plug\\tinyml\\data\\raw\\Inductive Motor\\Drill Press\\inductive_motor__drill_press__trial_2__start.csv",
+    "C:\\Disk\\Ancy\\Platform IO\\TinyML_Smart-Plug\\tinyml\\data\\raw\\Inductive Motor\\Drill Press\\inductive_motor__drill_press__trial_2__steady.csv",
+    "C:\\Disk\\Ancy\\Platform IO\\TinyML_Smart-Plug\\tinyml\\data\\raw\\Inductive Motor\\Drill Press\\inductive_motor__drill_press__trial_3__start.csv",
+    "C:\\Disk\\Ancy\\Platform IO\\TinyML_Smart-Plug\\tinyml\\data\\raw\\Inductive Motor\\Drill Press\\inductive_motor__drill_press__trial_3__steady.csv",
+    "C:\\Disk\\Ancy\\Platform IO\\TinyML_Smart-Plug\\tinyml\\data\\raw\\Inductive Motor\\Drill Press\\inductive_motor__drill_press__trial_4__start.csv",
+    "C:\\Disk\\Ancy\\Platform IO\\TinyML_Smart-Plug\\tinyml\\data\\raw\\Inductive Motor\\Drill Press\\inductive_motor__drill_press__trial_4__steady.csv",
+    "C:\\Disk\\Ancy\\Platform IO\\TinyML_Smart-Plug\\tinyml\\data\\raw\\Inductive Motor\\Drill Press\\inductive_motor__drill_press__trial_5__start.csv",
+    "C:\\Disk\\Ancy\\Platform IO\\TinyML_Smart-Plug\\tinyml\\data\\raw\\Inductive Motor\\Drill Press\\inductive_motor__drill_press__trial_5__steady.csv",
+    "C:\\Disk\\Ancy\\Platform IO\\TinyML_Smart-Plug\\tinyml\\data\\raw\\Resistive\\Electric Kettle\\resistive_linear__electric_kettle__trial_1__arc.csv",
+    "C:\\Disk\\Ancy\\Platform IO\\TinyML_Smart-Plug\\tinyml\\data\\raw\\Resistive\\Electric Kettle\\resistive_linear__electric_kettle__trial_1__start.csv",
+    "C:\\Disk\\Ancy\\Platform IO\\TinyML_Smart-Plug\\tinyml\\data\\raw\\Resistive\\Electric Kettle\\resistive_linear__electric_kettle__trial_1__steady.csv",
+    "C:\\Disk\\Ancy\\Platform IO\\TinyML_Smart-Plug\\tinyml\\data\\raw\\Resistive\\Electric Kettle\\resistive_linear__electric_kettle__trial_2__arc.csv",
+    "C:\\Disk\\Ancy\\Platform IO\\TinyML_Smart-Plug\\tinyml\\data\\raw\\Resistive\\Electric Kettle\\resistive_linear__electric_kettle__trial_2__start.csv",
+    "C:\\Disk\\Ancy\\Platform IO\\TinyML_Smart-Plug\\tinyml\\data\\raw\\Resistive\\Electric Kettle\\resistive_linear__electric_kettle__trial_2__steady.csv",
+    "C:\\Disk\\Ancy\\Platform IO\\TinyML_Smart-Plug\\tinyml\\data\\raw\\Resistive\\Electric Kettle\\resistive_linear__electric_kettle__trial_3__steady.csv",
+    "C:\\Disk\\Ancy\\Platform IO\\TinyML_Smart-Plug\\tinyml\\data\\raw\\Resistive\\Electric Kettle\\resistive_linear__electric_kettle__trial_4__arc.csv",
+    "C:\\Disk\\Ancy\\Platform IO\\TinyML_Smart-Plug\\tinyml\\data\\raw\\Resistive\\Electric Kettle\\resistive_linear__electric_kettle__trial_4__steady.csv",
+    "C:\\Disk\\Ancy\\Platform IO\\TinyML_Smart-Plug\\tinyml\\data\\raw\\Resistive\\Electric Kettle\\resistive_linear__electric_kettle__trial_5__arc.csv",
+    "C:\\Disk\\Ancy\\Platform IO\\TinyML_Smart-Plug\\tinyml\\data\\raw\\Resistive\\Electric Kettle\\resistive_linear__electric_kettle__trial_5__steady.csv",
+    "C:\\Disk\\Ancy\\Platform IO\\TinyML_Smart-Plug\\tinyml\\data\\raw\\Resistive\\Electric Kettle\\resistive_linear__electric_kettle__trial_6__arc.csv",
+    "C:\\Disk\\Ancy\\Platform IO\\TinyML_Smart-Plug\\tinyml\\data\\raw\\Resistive\\Electric Kettle\\resistive_linear__electric_kettle__trial_6__start.csv",
+    "C:\\Disk\\Ancy\\Platform IO\\TinyML_Smart-Plug\\tinyml\\data\\raw\\Resistive\\Electric Kettle\\resistive_linear__electric_kettle__trial_6__steady.csv",
+    "C:\\Disk\\Ancy\\Platform IO\\TinyML_Smart-Plug\\tinyml\\data\\raw\\Resistive\\Electric Kettle\\resistive_linear__electric_kettle__trial_7__start.csv",
+    "C:\\Disk\\Ancy\\Platform IO\\TinyML_Smart-Plug\\tinyml\\data\\raw\\Resistive\\Electric Kettle\\resistive_linear__electric_kettle__trial_7__steady.csv",
+    "C:\\Disk\\Ancy\\Platform IO\\TinyML_Smart-Plug\\tinyml\\data\\raw\\Resistive\\Electric Kettle\\resistive_linear__electric_kettle__trial_8__arc.csv",
+    "C:\\Disk\\Ancy\\Platform IO\\TinyML_Smart-Plug\\tinyml\\data\\raw\\Resistive\\Electric Kettle\\resistive_linear__electric_kettle__trial_8__start.csv",
+    "C:\\Disk\\Ancy\\Platform IO\\TinyML_Smart-Plug\\tinyml\\data\\raw\\Resistive\\Electric Kettle\\resistive_linear__electric_kettle__trial_8__steady.csv",
+    "C:\\Disk\\Ancy\\Platform IO\\TinyML_Smart-Plug\\tinyml\\data\\raw\\Resistive\\Electric Kettle\\resistive_linear__electric_kettle__trial_9__arc.csv",
+    "C:\\Disk\\Ancy\\Platform IO\\TinyML_Smart-Plug\\tinyml\\data\\raw\\Resistive\\Electric Kettle\\resistive_linear__electric_kettle__trial_9__start.csv",
+    "C:\\Disk\\Ancy\\Platform IO\\TinyML_Smart-Plug\\tinyml\\data\\raw\\Resistive\\Electric Kettle\\resistive_linear__electric_kettle__trial_9__steady.csv",
+    "C:\\Disk\\Ancy\\Platform IO\\TinyML_Smart-Plug\\tinyml\\data\\raw\\Universal Motor\\Vacuum Cleaner\\brush_universal_motor__vacuum_cleaner__trial_10__arc.csv",
+    "C:\\Disk\\Ancy\\Platform IO\\TinyML_Smart-Plug\\tinyml\\data\\raw\\Universal Motor\\Vacuum Cleaner\\brush_universal_motor__vacuum_cleaner__trial_10__start.csv",
+    "C:\\Disk\\Ancy\\Platform IO\\TinyML_Smart-Plug\\tinyml\\data\\raw\\Universal Motor\\Vacuum Cleaner\\brush_universal_motor__vacuum_cleaner__trial_10__steady.csv",
+    "C:\\Disk\\Ancy\\Platform IO\\TinyML_Smart-Plug\\tinyml\\data\\raw\\Universal Motor\\Vacuum Cleaner\\brush_universal_motor__vacuum_cleaner__trial_11__start.csv",
+    "C:\\Disk\\Ancy\\Platform IO\\TinyML_Smart-Plug\\tinyml\\data\\raw\\Universal Motor\\Vacuum Cleaner\\brush_universal_motor__vacuum_cleaner__trial_11__steady.csv",
+    "C:\\Disk\\Ancy\\Platform IO\\TinyML_Smart-Plug\\tinyml\\data\\raw\\Universal Motor\\Vacuum Cleaner\\brush_universal_motor__vacuum_cleaner__trial_12__start.csv",
+    "C:\\Disk\\Ancy\\Platform IO\\TinyML_Smart-Plug\\tinyml\\data\\raw\\Universal Motor\\Vacuum Cleaner\\brush_universal_motor__vacuum_cleaner__trial_12__steady.csv",
+    "C:\\Disk\\Ancy\\Platform IO\\TinyML_Smart-Plug\\tinyml\\data\\raw\\Universal Motor\\Vacuum Cleaner\\brush_universal_motor__vacuum_cleaner__trial_13__start.csv",
+    "C:\\Disk\\Ancy\\Platform IO\\TinyML_Smart-Plug\\tinyml\\data\\raw\\Universal Motor\\Vacuum Cleaner\\brush_universal_motor__vacuum_cleaner__trial_13__steady.csv",
+    "C:\\Disk\\Ancy\\Platform IO\\TinyML_Smart-Plug\\tinyml\\data\\raw\\Universal Motor\\Vacuum Cleaner\\brush_universal_motor__vacuum_cleaner__trial_14__start.csv",
+    "C:\\Disk\\Ancy\\Platform IO\\TinyML_Smart-Plug\\tinyml\\data\\raw\\Universal Motor\\Vacuum Cleaner\\brush_universal_motor__vacuum_cleaner__trial_14__steady.csv",
+    "C:\\Disk\\Ancy\\Platform IO\\TinyML_Smart-Plug\\tinyml\\data\\raw\\Universal Motor\\Vacuum Cleaner\\brush_universal_motor__vacuum_cleaner__trial_15__start.csv",
+    "C:\\Disk\\Ancy\\Platform IO\\TinyML_Smart-Plug\\tinyml\\data\\raw\\Universal Motor\\Vacuum Cleaner\\brush_universal_motor__vacuum_cleaner__trial_15__steady.csv",
+    "C:\\Disk\\Ancy\\Platform IO\\TinyML_Smart-Plug\\tinyml\\data\\raw\\Universal Motor\\Vacuum Cleaner\\brush_universal_motor__vacuum_cleaner__trial_1__arc.csv",
+    "C:\\Disk\\Ancy\\Platform IO\\TinyML_Smart-Plug\\tinyml\\data\\raw\\Universal Motor\\Vacuum Cleaner\\brush_universal_motor__vacuum_cleaner__trial_1__start.csv",
+    "C:\\Disk\\Ancy\\Platform IO\\TinyML_Smart-Plug\\tinyml\\data\\raw\\Universal Motor\\Vacuum Cleaner\\brush_universal_motor__vacuum_cleaner__trial_1__steady.csv",
+    "C:\\Disk\\Ancy\\Platform IO\\TinyML_Smart-Plug\\tinyml\\data\\raw\\Universal Motor\\Vacuum Cleaner\\brush_universal_motor__vacuum_cleaner__trial_2__arc.csv",
+    "C:\\Disk\\Ancy\\Platform IO\\TinyML_Smart-Plug\\tinyml\\data\\raw\\Universal Motor\\Vacuum Cleaner\\brush_universal_motor__vacuum_cleaner__trial_2__start.csv",
+    "C:\\Disk\\Ancy\\Platform IO\\TinyML_Smart-Plug\\tinyml\\data\\raw\\Universal Motor\\Vacuum Cleaner\\brush_universal_motor__vacuum_cleaner__trial_2__steady.csv",
+    "C:\\Disk\\Ancy\\Platform IO\\TinyML_Smart-Plug\\tinyml\\data\\raw\\Universal Motor\\Vacuum Cleaner\\brush_universal_motor__vacuum_cleaner__trial_3__arc.csv",
+    "C:\\Disk\\Ancy\\Platform IO\\TinyML_Smart-Plug\\tinyml\\data\\raw\\Universal Motor\\Vacuum Cleaner\\brush_universal_motor__vacuum_cleaner__trial_3__start.csv",
+    "C:\\Disk\\Ancy\\Platform IO\\TinyML_Smart-Plug\\tinyml\\data\\raw\\Universal Motor\\Vacuum Cleaner\\brush_universal_motor__vacuum_cleaner__trial_3__steady.csv",
+    "C:\\Disk\\Ancy\\Platform IO\\TinyML_Smart-Plug\\tinyml\\data\\raw\\Universal Motor\\Vacuum Cleaner\\brush_universal_motor__vacuum_cleaner__trial_4__arc.csv",
+    "C:\\Disk\\Ancy\\Platform IO\\TinyML_Smart-Plug\\tinyml\\data\\raw\\Universal Motor\\Vacuum Cleaner\\brush_universal_motor__vacuum_cleaner__trial_4__steady.csv",
+    "C:\\Disk\\Ancy\\Platform IO\\TinyML_Smart-Plug\\tinyml\\data\\raw\\Universal Motor\\Vacuum Cleaner\\brush_universal_motor__vacuum_cleaner__trial_5__arc.csv",
+    "C:\\Disk\\Ancy\\Platform IO\\TinyML_Smart-Plug\\tinyml\\data\\raw\\Universal Motor\\Vacuum Cleaner\\brush_universal_motor__vacuum_cleaner__trial_5__start.csv",
+    "C:\\Disk\\Ancy\\Platform IO\\TinyML_Smart-Plug\\tinyml\\data\\raw\\Universal Motor\\Vacuum Cleaner\\brush_universal_motor__vacuum_cleaner__trial_5__steady.csv",
+    "C:\\Disk\\Ancy\\Platform IO\\TinyML_Smart-Plug\\tinyml\\data\\raw\\Universal Motor\\Vacuum Cleaner\\brush_universal_motor__vacuum_cleaner__trial_6__arc.csv",
+    "C:\\Disk\\Ancy\\Platform IO\\TinyML_Smart-Plug\\tinyml\\data\\raw\\Universal Motor\\Vacuum Cleaner\\brush_universal_motor__vacuum_cleaner__trial_6__steady.csv",
+    "C:\\Disk\\Ancy\\Platform IO\\TinyML_Smart-Plug\\tinyml\\data\\raw\\Universal Motor\\Vacuum Cleaner\\brush_universal_motor__vacuum_cleaner__trial_7__arc.csv",
+    "C:\\Disk\\Ancy\\Platform IO\\TinyML_Smart-Plug\\tinyml\\data\\raw\\Universal Motor\\Vacuum Cleaner\\brush_universal_motor__vacuum_cleaner__trial_7__start.csv",
+    "C:\\Disk\\Ancy\\Platform IO\\TinyML_Smart-Plug\\tinyml\\data\\raw\\Universal Motor\\Vacuum Cleaner\\brush_universal_motor__vacuum_cleaner__trial_7__steady.csv",
+    "C:\\Disk\\Ancy\\Platform IO\\TinyML_Smart-Plug\\tinyml\\data\\raw\\Universal Motor\\Vacuum Cleaner\\brush_universal_motor__vacuum_cleaner__trial_8__arc.csv",
+    "C:\\Disk\\Ancy\\Platform IO\\TinyML_Smart-Plug\\tinyml\\data\\raw\\Universal Motor\\Vacuum Cleaner\\brush_universal_motor__vacuum_cleaner__trial_8__start.csv",
+    "C:\\Disk\\Ancy\\Platform IO\\TinyML_Smart-Plug\\tinyml\\data\\raw\\Universal Motor\\Vacuum Cleaner\\brush_universal_motor__vacuum_cleaner__trial_8__steady.csv",
+    "C:\\Disk\\Ancy\\Platform IO\\TinyML_Smart-Plug\\tinyml\\data\\raw\\Universal Motor\\Vacuum Cleaner\\brush_universal_motor__vacuum_cleaner__trial_9__arc.csv",
+    "C:\\Disk\\Ancy\\Platform IO\\TinyML_Smart-Plug\\tinyml\\data\\raw\\Universal Motor\\Vacuum Cleaner\\brush_universal_motor__vacuum_cleaner__trial_9__start.csv",
+    "C:\\Disk\\Ancy\\Platform IO\\TinyML_Smart-Plug\\tinyml\\data\\raw\\Universal Motor\\Vacuum Cleaner\\brush_universal_motor__vacuum_cleaner__trial_9__steady.csv"
+  ],
+  "elapsed_seconds": 70.26186418533325,
+  "elapsed_hms": "00:01:10",
+  "summary": {
+    "rows_before_cleaning": 23281,
+    "rows_after_cleaning": 22126,
+    "rows_removed": 1155,
+    "augmentation_rows_added": 0,
+    "rows_after_cleaning_with_augmentation": 22126,
+    "trainable_rows": 18399,
+    "trusted_normal_rows": 0,
+    "conflict_marked_rows": 0,
+    "label_counts": {
+      "0": 21972,
+      "1": 154
+    },
+    "source_counts": {
+      "real": 22126
+    },
+    "conflict_policy_counts": {
+      "none": 22126
+    },
+    "quality_summary": {
+      "invalid_off_rows": 0,
+      "invalid_loaded_rows": 13,
+      "very_weak_positive_rows": 0,
+      "soft_positive_rows": 0,
+      "flat_extinguish_positive_rows": 0,
+      "strong_arc_like_negative_rows": 3522,
+      "soft_arc_like_negative_rows": 12462,
+      "scaffold_rows": 0,
+      "scaffold_trainable_rows": 0,
+      "scaffold_scaled_rows": 0,
+      "scaffold_effective_weight": 0,
+      "real_effective_weight": 63220
+    },
+    "division_counts": {
+      "steady": 12742,
+      "arc": 5893,
+      "start": 3491
+    },
+    "trial_counts": {
+      "Universal Motor__Vacuum Cleaner__brush_universal_motor__vacuum_cleaner__trial001": 1096,
+      "Universal Motor__Vacuum Cleaner__brush_universal_motor__vacuum_cleaner__trial003": 1042,
+      "Universal Motor__Vacuum Cleaner__brush_universal_motor__vacuum_cleaner__trial008": 1042,
+      "Universal Motor__Vacuum Cleaner__brush_universal_motor__vacuum_cleaner__trial007": 1034,
+      "Universal Motor__Vacuum Cleaner__brush_universal_motor__vacuum_cleaner__trial002": 1032,
+      "Universal Motor__Vacuum Cleaner__brush_universal_motor__vacuum_cleaner__trial005": 1023,
+      "Resistive__Electric Kettle__resistive_linear__electric_kettle__trial002": 1022,
+      "Resistive__Electric Kettle__resistive_linear__electric_kettle__trial001": 966,
+      "Resistive__Electric Kettle__resistive_linear__electric_kettle__trial008": 938,
+      "Resistive__Electric Kettle__resistive_linear__electric_kettle__trial009": 897,
+      "Universal Motor__Vacuum Cleaner__brush_universal_motor__vacuum_cleaner__trial004": 884,
+      "Resistive__Electric Kettle__resistive_linear__electric_kettle__trial004": 762,
+      "Universal Motor__Vacuum Cleaner__brush_universal_motor__vacuum_cleaner__trial009": 734,
+      "Resistive__Electric Kettle__resistive_linear__electric_kettle__trial006": 710,
+      "Universal Motor__Vacuum Cleaner__brush_universal_motor__vacuum_cleaner__trial006": 709,
+      "Universal Motor__Vacuum Cleaner__brush_universal_motor__vacuum_cleaner__trial010": 704,
+      "Inductive Motor__Drill Press__inductive_motor__drill_press__trial001": 624,
+      "Inductive Motor__Drill Press__inductive_motor__drill_press__trial002": 614,
+      "Inductive Motor__Drill Press__inductive_motor__drill_press__trial005": 614,
+      "Universal Motor__Vacuum Cleaner__brush_universal_motor__vacuum_cleaner__trial014": 604,
+      "Resistive__Electric Kettle__resistive_linear__electric_kettle__trial005": 600,
+      "Inductive Motor__Drill Press__inductive_motor__drill_press__trial004": 597,
+      "Inductive Motor__Drill Press__inductive_motor__drill_press__trial003": 596,
+      "Universal Motor__Vacuum Cleaner__brush_universal_motor__vacuum_cleaner__trial012": 585,
+      "Universal Motor__Vacuum Cleaner__brush_universal_motor__vacuum_cleaner__trial013": 581,
+      "Universal Motor__Vacuum Cleaner__brush_universal_motor__vacuum_cleaner__trial015": 572,
+      "Universal Motor__Vacuum Cleaner__brush_universal_motor__vacuum_cleaner__trial011": 569,
+      "Resistive__Electric Kettle__resistive_linear__electric_kettle__trial007": 529,
+      "Resistive__Electric Kettle__resistive_linear__electric_kettle__trial003": 446
+    },
+    "device_family_counts": {
+      "brush_universal_motor": 12211,
+      "resistive_linear": 6870,
+      "inductive_motor": 3045
+    },
+    "device_family_code_counts": {
+      "4": 12211,
+      "0": 6870,
+      "1": 3045
+    },
+    "context_runtime_code_counts": {
+      "0": 18643,
+      "1": 3045,
+      "-1": 438
+    },
+    "unknown_division_rows": 0,
+    "section_prior_counts": {
+      "steady_hint": 12742,
+      "arc_eligible": 5893,
+      "transient_hint": 3491
+    },
+    "conflict_resolution": {
+      "groups_seen": 22126,
+      "mixed_groups": 0,
+      "prefer_trusted_normal": 0,
+      "prefer_more_trusted_normal": 0,
+      "keep_more_trusted_arc": 0,
+      "drop_ambiguous": 0
+    },
+    "arc_training_rows": 18635,
+    "load_context_rows": 3491,
+    "arc_feature_count_available": 12,
+    "context_feature_count_available": 10,
+    "arc_training_path": "C:\\Disk\\Ancy\\Platform IO\\TinyML_Smart-Plug\\tinyml\\data\\arc_training.csv",
+    "load_context_path": "C:\\Disk\\Ancy\\Platform IO\\TinyML_Smart-Plug\\tinyml\\data\\load_context.csv",
+    "elapsed_seconds": 70.26186418533325,
+    "elapsed_hms": "00:01:10"
+  },
+  "outputs": {
+    "arc_training_path": "C:\\Disk\\Ancy\\Platform IO\\TinyML_Smart-Plug\\tinyml\\data\\arc_training.csv",
+    "load_context_path": "C:\\Disk\\Ancy\\Platform IO\\TinyML_Smart-Plug\\tinyml\\data\\load_context.csv",
+    "arc_training_rows": 18635,
+    "load_context_rows": 3491
+  },
+  "split_checks": {
+    "arc_training_division_counts": {
+      "steady": 12742,
+      "arc": 5893
+    },
+    "load_context_division_counts": {
+      "start": 3491
+    },
+    "arc_training_label_counts": {
+      "0": 18481,
+      "1": 154
+    },
+    "load_context_family_counts": {
+      "brush_universal_motor": 1775,
+      "resistive_linear": 910,
+      "inductive_motor": 806
+    },
+    "warnings": []
+  },
+  "full_dataset": {
+    "rows": 22126,
+    "division_counts": {
+      "steady": 12742,
+      "arc": 5893,
+      "start": 3491
+    },
+    "label_counts": {
+      "0": 21972,
+      "1": 154
+    },
+    "device_family_counts": {
+      "brush_universal_motor": 12211,
+      "resistive_linear": 6870,
+      "inductive_motor": 3045
+    }
+  },
+  "arc_training_feature_stats": {
+    "abs_irms_zscore_vs_baseline": {
+      "rows": 18635,
+      "mean": 0.24781274633753692,
+      "std": 0.36283503931391836,
+      "min": 0.0,
+      "max": 10.90018
+    },
+    "delta_irms_abs": {
+      "rows": 18635,
+      "mean": 0.11876489224577408,
+      "std": 0.45554976237657163,
+      "min": 0.0,
+      "max": 7.138243
+    },
+    "halfcycle_asymmetry": {
+      "rows": 18635,
+      "mean": 5.961049221894286,
+      "std": 5.204035955220226,
+      "min": 0.0,
+      "max": 57.908726
+    },
+    "suspicious_run_energy": {
+      "rows": 18635,
+      "mean": 4.446903411913067,
+      "std": 2.5252132098214872,
+      "min": 0.0,
+      "max": 7.159003
+    },
+    "delta_hf_energy": {
+      "rows": 18635,
+      "mean": 1.5856199343171453,
+      "std": 1.419515903742681,
+      "min": 0.0,
+      "max": 14.174192
+    },
+    "delta_flux": {
+      "rows": 18635,
+      "mean": 4.078680357392004,
+      "std": 3.5381054334231883,
+      "min": 0.0,
+      "max": 39.414814
+    },
+    "midband_residual_ratio": {
+      "rows": 18635,
+      "mean": -53.3200830650389,
+      "std": 7.647974117287244,
+      "min": -72.603317,
+      "max": 0.0
+    },
+    "zcv": {
+      "rows": 18635,
+      "mean": 0.5334486300509794,
+      "std": 0.5370961723774261,
+      "min": 0.0,
+      "max": 3.821068
+    },
+    "spectral_flux_midhf": {
+      "rows": 18635,
+      "mean": 37.65370141137644,
+      "std": 4.084727633810089,
+      "min": 0.0,
+      "max": 55.858028
+    },
+    "peak_fluct_cv": {
+      "rows": 18635,
+      "mean": 0.10001373227797154,
+      "std": 0.3707250115837787,
+      "min": 0.0,
+      "max": 9.993029
+    },
+    "residual_crest_factor": {
+      "rows": 18635,
+      "mean": 7.652937717145157,
+      "std": 2.8253912829111383,
+      "min": 0.0,
+      "max": 14.228626
+    },
+    "thd_i": {
+      "rows": 18635,
+      "mean": 65.01136570968607,
+      "std": 27.56012503033722,
+      "min": 0.0,
+      "max": 197.4957
+    },
+    "hf_energy_delta": {
+      "rows": 18635,
+      "mean": 11.068042770968608,
+      "std": 2.3546456000525415,
+      "min": -0.898692,
+      "max": 18.0
+    },
+    "edge_spike_ratio": {
+      "rows": 18635,
+      "mean": -7.7064942142205535,
+      "std": 4.930664934419922,
+      "min": -27.789768,
+      "max": 3.130948
+    },
+    "v_sag_pct": {
+      "rows": 18635,
+      "mean": 0.07344478669170916,
+      "std": 0.14418523498139296,
+      "min": 0.0,
+      "max": 1.8917
+    },
+    "cycle_nmse": {
+      "rows": 18635,
+      "mean": 0.07909421223504158,
+      "std": 0.5305664412552002,
+      "min": 0.0,
+      "max": 30.027925
+    }
+  },
+  "load_context_feature_stats": {
+    "abs_irms_zscore_vs_baseline": {
+      "rows": 3491,
+      "mean": 0.4656592712689774,
+      "std": 2.188976149189518,
+      "min": 0.0,
+      "max": 25.0
+    },
+    "delta_irms_abs": {
+      "rows": 3491,
+      "mean": 0.18751141134345461,
+      "std": 1.1009173479944574,
+      "min": 0.0,
+      "max": 19.176886
+    },
+    "halfcycle_asymmetry": {
+      "rows": 3491,
+      "mean": 5.969920289028932,
+      "std": 5.42178130831427,
+      "min": 0.0,
+      "max": 41.052975
+    },
+    "suspicious_run_energy": {
+      "rows": 3491,
+      "mean": 3.4520007152678316,
+      "std": 2.8965851735159074,
+      "min": 0.0,
+      "max": 7.499999
+    },
+    "delta_hf_energy": {
+      "rows": 3491,
+      "mean": 1.5827361509596105,
+      "std": 1.670997586426758,
+      "min": 0.0,
+      "max": 15.930437
+    },
+    "delta_flux": {
+      "rows": 3491,
+      "mean": 3.950069317101117,
+      "std": 4.484340397062698,
+      "min": 0.0,
+      "max": 49.45351
+    },
+    "midband_residual_ratio": {
+      "rows": 3491,
+      "mean": -50.484654570323684,
+      "std": 14.948761311724956,
+      "min": -70.172783,
+      "max": 9.385942
+    },
+    "zcv": {
+      "rows": 3491,
+      "mean": 0.496911643941564,
+      "std": 0.5314842426020212,
+      "min": 0.0,
+      "max": 3.45512
+    },
+    "spectral_flux_midhf": {
+      "rows": 3491,
+      "mean": 35.204632955027215,
+      "std": 9.927437820532289,
+      "min": 0.0,
+      "max": 54.438828
+    },
+    "peak_fluct_cv": {
+      "rows": 3491,
+      "mean": 0.11045877227155543,
+      "std": 0.4134379871178598,
+      "min": 0.0,
+      "max": 7.343152
+    },
+    "residual_crest_factor": {
+      "rows": 3491,
+      "mean": 7.24231871125752,
+      "std": 3.251672381313424,
+      "min": 0.0,
+      "max": 12.87236
+    },
+    "thd_i": {
+      "rows": 3491,
+      "mean": 60.91808536236036,
+      "std": 30.25246826326985,
+      "min": 0.0,
+      "max": 195.5443
+    },
+    "hf_energy_delta": {
+      "rows": 3491,
+      "mean": 10.904662411343455,
+      "std": 3.7291442615383095,
+      "min": 0.0,
+      "max": 17.932951
+    },
+    "edge_spike_ratio": {
+      "rows": 3491,
+      "mean": -7.115952713262676,
+      "std": 5.5838292637704425,
+      "min": -31.161936,
+      "max": 20.0
+    },
+    "v_sag_pct": {
+      "rows": 3491,
+      "mean": 0.11211099971354913,
+      "std": 0.22463203420880243,
+      "min": 0.0,
+      "max": 1.7045
+    },
+    "cycle_nmse": {
+      "rows": 3491,
+      "mean": 0.0686838693784016,
+      "std": 0.3450768738420311,
+      "min": 0.0,
+      "max": 6.53853
+    }
+  }
+}
