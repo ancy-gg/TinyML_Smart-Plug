@@ -170,6 +170,37 @@ static inline ZcRegion classifyRegion(float x, float hys) {
   return ZC_MID;
 }
 
+static void collectZeroCrossings_(const float* sigClean, size_t n, float zcHys,
+                                  float* crossAll, int crossAllCap, int& crossAllN,
+                                  float* crossPos, int crossPosCap, int& crossPosN) {
+  crossAllN = 0;
+  crossPosN = 0;
+  if (!sigClean || n < 2 || !crossAll || !crossPos) return;
+
+  ZcRegion armedSide = classifyRegion(sigClean[0], zcHys);
+  for (size_t i = 1; i < n && crossAllN < crossAllCap; ++i) {
+    const float a = sigClean[i - 1];
+    const float b = sigClean[i];
+    const ZcRegion r = classifyRegion(b, zcHys);
+    if (r == ZC_POS || r == ZC_NEG) armedSide = r;
+
+    if (armedSide == ZC_NEG && a <= 0.0f && b > 0.0f) {
+      const float idx = interpZeroCrossIndex(a, b, (int)(i - 1));
+      crossAll[crossAllN++] = idx;
+      if (crossPosN < crossPosCap) crossPos[crossPosN++] = idx;
+      armedSide = ZC_MID;
+      continue;
+    }
+
+    if (armedSide == ZC_POS && a >= 0.0f && b < 0.0f) {
+      const float idx = interpZeroCrossIndex(a, b, (int)(i - 1));
+      crossAll[crossAllN++] = idx;
+      armedSide = ZC_MID;
+      continue;
+    }
+  }
+}
+
 
 struct RollingBaselineTracker {
   bool initialized = false;
@@ -432,29 +463,12 @@ bool ArcDetection::compute(const uint16_t* raw, size_t n, float fs_hz,
   float crossPos[64];
   int crossPosN = 0;
 
-  const float zcHys = fmaxf(ZC_HYS_MIN_A, ZC_HYS_FRAC * fmaxf(irms, 0.1f));
-  ZcRegion armedSide = classifyRegion(sigClean[0], zcHys);
-
-  for (size_t i = 1; i < n && crossAllN < 128; ++i) {
-    const float a = sigClean[i - 1];
-    const float b = sigClean[i];
-    const ZcRegion r = classifyRegion(b, zcHys);
-    if (r == ZC_POS || r == ZC_NEG) armedSide = r;
-
-    if (armedSide == ZC_NEG && a <= 0.0f && b > 0.0f) {
-      const float idx = interpZeroCrossIndex(a, b, (int)(i - 1));
-      crossAll[crossAllN++] = idx;
-      if (crossPosN < 64) crossPos[crossPosN++] = idx;
-      armedSide = ZC_MID;
-      continue;
-    }
-
-    if (armedSide == ZC_POS && a >= 0.0f && b < 0.0f) {
-      const float idx = interpZeroCrossIndex(a, b, (int)(i - 1));
-      crossAll[crossAllN++] = idx;
-      armedSide = ZC_MID;
-      continue;
-    }
+  const float zcHysBase = fmaxf(ZC_HYS_MIN_A, ZC_HYS_FRAC * fmaxf(irms, 0.1f));
+  collectZeroCrossings_(sigClean, n, zcHysBase, crossAll, 128, crossAllN, crossPos, 64, crossPosN);
+  if ((crossAllN < 3 || crossPosN < 2) && irms <= ZC_HYS_LOWCURRENT_RETRY_MAX_A) {
+    const float retryHys = fmaxf(ZC_HYS_MIN_A * ZC_HYS_LOWCURRENT_RETRY_SCALE,
+                                 zcHysBase * ZC_HYS_LOWCURRENT_RETRY_SCALE);
+    collectZeroCrossings_(sigClean, n, retryHys, crossAll, 128, crossAllN, crossPos, 64, crossPosN);
   }
 
   if (crossAllN < 3) {
@@ -637,14 +651,16 @@ bool ArcDetection::compute(const uint16_t* raw, size_t n, float fs_hz,
   const double avgNoise = pTotNoDc / (double)(half - 1);
   const double snr = (avgNoise > 0.0) ? ((double)fundP / avgNoise) : 0.0;
   const bool haveFund = (fundP >= FUND_MAG_MIN) && (snr >= FUND_SNR_MIN);
+  const float trackedFundP = goertzelTonePower_(sigFilt, n, fs_hz, mainsHz);
+  const float trackedFundGate = fmaxf(FUND_MAG_MIN, (float)avgNoise * TRACKED_FUND_SNR_MIN);
+  const bool haveTrackedFund = (trackedFundP >= trackedFundGate);
 
-  if (!haveFund && irms < FEATURE_REQUIRE_FUND_BELOW_A) {
+  if (!haveFund && !haveTrackedFund && irms < FEATURE_REQUIRE_FUND_BELOW_A) {
     out.feat_valid = false;
     return true;
   }
 
-  const float trackedFundP = goertzelTonePower_(sigFilt, n, fs_hz, mainsHz);
-  if (haveFund || trackedFundP > 1e-9f) {
+  if (haveFund || haveTrackedFund || trackedFundP > 1e-9f) {
     double harmP = 0.0;
     const float nyquist = 0.5f * fs_hz;
     for (int h = 2; h <= 10; ++h) {

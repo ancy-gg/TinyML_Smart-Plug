@@ -163,14 +163,21 @@ private:
   static constexpr uint8_t HISTORY_QUEUE_MAX = 24;
   static constexpr uint32_t CLOUD_TX_MIN_GAP_MS = 220UL;
   static constexpr uint32_t CLOUD_TX_RETRY_MS = 1800UL;
+  static constexpr uint32_t CLOUD_CTRL_FAIL_RETRY_MS = 900UL;
   static constexpr uint32_t CLOUD_CTRL_READ_GAP_MS = 500UL;
   static constexpr uint32_t CLOUD_CTRL_READ_GAP_LOGGING_MS = 1200UL;
-  static constexpr uint16_t ROWS_PER_CHUNK = 12;
+  static constexpr uint16_t CLOUD_TLS_RX_BUFFER_BYTES = 2048;
+  static constexpr uint16_t CLOUD_TLS_TX_BUFFER_BYTES = 1024;
+  static constexpr uint16_t CLOUD_RESPONSE_BUFFER_BYTES = 1024;
+  static constexpr uint32_t CLOUD_SOCKET_TIMEOUT_MS = 3500UL;
+  static constexpr uint32_t CLOUD_SERVER_RESPONSE_TIMEOUT_MS = 3000UL;
+  static constexpr uint16_t ROWS_PER_CHUNK = 8;
 
   FirebaseData fbLive;
   FirebaseData fbRead;
   FirebaseData fbHistory;
   FirebaseData fbLog;
+  FirebaseData fbCtrl;
   FirebaseAuth auth;
   FirebaseConfig config;
 
@@ -276,11 +283,14 @@ private:
   static bool isTransitionState(const String& state);
   static String sanitizeToken(const String& s);
   static void updateControlToken_(const String& token, bool& primed, String& cache, String& handled, bool& pendingFlag);
+  void configureClient_(FirebaseData& client, uint16_t responseSize = CLOUD_RESPONSE_BUFFER_BYTES);
+  void recoverClient_(FirebaseData& client, uint32_t backoffMs);
 
   const SessionSpec& activeSpec() const;
   bool activeIsAuto() const { return (!_manualEnabled && _autoEnabled); }
 
   bool pushHistoryRecord_(const HistoryJob& job);
+  bool controlWorkPending_() const;
   void clearControlToken_(const char* path, String& cache, bool& pendingFlag);
   bool enqueueHistory_(const HistoryJob& job);
   bool dequeueHistory_(HistoryJob& job);

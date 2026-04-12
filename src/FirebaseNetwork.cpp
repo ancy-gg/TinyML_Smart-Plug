@@ -9,6 +9,26 @@ static inline bool cloudNetReady_() {
   return WiFi.status() == WL_CONNECTED;
 }
 
+static inline bool cloudHeapHealthy_() {
+#if defined(ARDUINO_ARCH_ESP32)
+  return (ESP.getFreeHeap() >= 48000) &&
+         (heap_caps_get_largest_free_block(MALLOC_CAP_8BIT) >= 28000);
+#else
+  return true;
+#endif
+}
+
+void FirebaseNetwork::configureClient_(FirebaseData& client, uint16_t responseSize) {
+  client.setBSSLBufferSize(CLOUD_TLS_RX_BUFFER_BYTES, CLOUD_TLS_TX_BUFFER_BYTES);
+  client.setResponseSize(responseSize);
+  client.keepAlive(5, 5, 1);
+}
+
+void FirebaseNetwork::recoverClient_(FirebaseData& client, uint32_t backoffMs) {
+  client.stopWiFiClient();
+  _txBackoffUntilMs = millis() + backoffMs;
+}
+
 bool FirebaseNetwork::timeLooksValid(time_t t) {
   return t > 1577836800;
 }
@@ -183,8 +203,15 @@ void FirebaseNetwork::begin(const char* apiKey, const char* dbUrl, const char* t
   (void)apiKey;
   config.database_url = dbUrl;
   config.signer.test_mode = true;
+  config.timeout.socketConnection = CLOUD_SOCKET_TIMEOUT_MS;
+  config.timeout.serverResponse = CLOUD_SERVER_RESPONSE_TIMEOUT_MS;
   Firebase.begin(&config, &auth);
   Firebase.reconnectWiFi(true);
+  configureClient_(fbLive);
+  configureClient_(fbRead);
+  configureClient_(fbHistory);
+  configureClient_(fbLog);
+  configureClient_(fbCtrl);
   ensureBuffersAllocated_();
 
   if (!_started) {
@@ -300,6 +327,7 @@ void FirebaseNetwork::stopAllClients() {
   fbRead.stopWiFiClient();
   fbHistory.stopWiFiClient();
   fbLog.stopWiFiClient();
+  fbCtrl.stopWiFiClient();
 }
 
 bool FirebaseNetwork::publishOtaDebug(const String& phase, const String& detail, int progress) {
@@ -340,7 +368,11 @@ bool FirebaseNetwork::publishControlAck(const String& kind, const String& token)
   json.set("last_control_ack_token", token);
   json.set("last_control_ack_server_ts/.sv", "timestamp");
   json.set("last_control_ack_uptime_ms", (int)millis());
-  return Firebase.RTDB.updateNode(&fbLive, "/live_data", &json);
+  const bool ok = Firebase.RTDB.updateNode(&fbCtrl, "/live_data", &json);
+  if (!ok) {
+    recoverClient_(fbCtrl, CLOUD_CTRL_FAIL_RETRY_MS);
+  }
+  return ok;
 }
 
 bool FirebaseNetwork::publishRelayPulseEvent(const String& kind, const String& token, const String& source) {
@@ -367,7 +399,20 @@ bool FirebaseNetwork::publishRelayPulseEvent(const String& kind, const String& t
     json.set("load_state", "LOAD OFF");
     json.set("device_phase", "LOAD OFF");
   }
-  return Firebase.RTDB.updateNode(&fbLive, "/live_data", &json);
+  const bool ok = Firebase.RTDB.updateNode(&fbCtrl, "/live_data", &json);
+  if (!ok) {
+    recoverClient_(fbCtrl, CLOUD_CTRL_FAIL_RETRY_MS);
+  }
+  return ok;
+}
+
+bool FirebaseNetwork::controlWorkPending_() const {
+  return _portalRequestPending ||
+         _relayOnPending ||
+         _relayOffPending ||
+         _faultClearPending ||
+         _revertFwPending ||
+         _otaCheckPending;
 }
 
 
@@ -394,7 +439,9 @@ void FirebaseNetwork::clearControlToken_(const char* path, String& cache, bool& 
   pendingFlag = false;
   cache = "";
   if (!isReady() || !path || !*path) return;
-  Firebase.RTDB.setString(&fbLog, path, "");
+  if (!Firebase.RTDB.setString(&fbCtrl, path, "")) {
+    recoverClient_(fbCtrl, CLOUD_CTRL_FAIL_RETRY_MS);
+  }
 }
 
 bool FirebaseNetwork::consumePortalRequest() {
@@ -480,38 +527,51 @@ bool FirebaseNetwork::fetchMlControl(bool& enabled, int& dur, int& labelOv, Stri
 void FirebaseNetwork::pollControls(bool allowNet, bool portalActive) {
   if (!allowNet || portalActive || !isReady()) return;
   const uint32_t now = millis();
-  if ((now - _lastControlPollMs) < CLOUD_CTRL_READ_GAP_MS) return;
+  if ((int32_t)(now - _txBackoffUntilMs) < 0) return;
+  const uint32_t pollGap = logEnabled() ? CLOUD_CTRL_READ_GAP_LOGGING_MS : CLOUD_CTRL_READ_GAP_MS;
+  if ((now - _lastControlPollMs) < pollGap) return;
+  if (!cloudHeapHealthy_()) {
+    _txBackoffUntilMs = now + CLOUD_TX_RETRY_MS;
+    return;
+  }
   _lastControlPollMs = now;
 
-  if (Firebase.RTDB.getJSON(&fbRead, "/controls")) {
-    const String raw = fbRead.payload();
-    String token;
-    if (jsonStringField_(raw, "open_portal_token", token)) updateControlToken_(token, _portalTokenPrimed, _portalToken, _portalTokenHandled, _portalRequestPending);
-    if (jsonStringField_(raw, "relay_on_token", token)) updateControlToken_(token, _relayOnTokenPrimed, _relayOnToken, _relayOnTokenHandled, _relayOnPending);
-    if (jsonStringField_(raw, "relay_off_token", token)) updateControlToken_(token, _relayOffTokenPrimed, _relayOffToken, _relayOffTokenHandled, _relayOffPending);
-    if (jsonStringField_(raw, "fault_clear_token", token)) updateControlToken_(token, _faultClearTokenPrimed, _faultClearToken, _faultClearTokenHandled, _faultClearPending);
-    if (jsonStringField_(raw, "revert_fw_token", token)) updateControlToken_(token, _revertFwTokenPrimed, _revertFwToken, _revertFwTokenHandled, _revertFwPending);
-    if (jsonStringField_(raw, "ota_check_token", token)) updateControlToken_(token, _otaCheckTokenPrimed, _otaCheckToken, _otaCheckTokenHandled, _otaCheckPending);
+  if ((_controlPollSlot & 0x01U) == 0U) {
+    if (Firebase.RTDB.getJSON(&fbRead, "/controls")) {
+      const String raw = fbRead.payload();
+      String token;
+      if (jsonStringField_(raw, "open_portal_token", token)) updateControlToken_(token, _portalTokenPrimed, _portalToken, _portalTokenHandled, _portalRequestPending);
+      if (jsonStringField_(raw, "relay_on_token", token)) updateControlToken_(token, _relayOnTokenPrimed, _relayOnToken, _relayOnTokenHandled, _relayOnPending);
+      if (jsonStringField_(raw, "relay_off_token", token)) updateControlToken_(token, _relayOffTokenPrimed, _relayOffToken, _relayOffTokenHandled, _relayOffPending);
+      if (jsonStringField_(raw, "fault_clear_token", token)) updateControlToken_(token, _faultClearTokenPrimed, _faultClearToken, _faultClearTokenHandled, _faultClearPending);
+      if (jsonStringField_(raw, "revert_fw_token", token)) updateControlToken_(token, _revertFwTokenPrimed, _revertFwToken, _revertFwTokenHandled, _revertFwPending);
+      if (jsonStringField_(raw, "ota_check_token", token)) updateControlToken_(token, _otaCheckTokenPrimed, _otaCheckToken, _otaCheckTokenHandled, _otaCheckPending);
+    } else {
+      recoverClient_(fbRead, CLOUD_CTRL_FAIL_RETRY_MS);
+    }
+  } else {
+    if (Firebase.RTDB.getJSON(&fbRead, "/ml_log")) {
+      const String raw = fbRead.payload();
+      bool b = false;
+      int v = 0;
+      String s;
+      if (jsonBoolField_(raw, "enabled", b)) _mlEnabledCache = b;
+      if (jsonIntField_(raw, "duration_s", v)) _mlDurationCache = v;
+      if (jsonIntField_(raw, "label_override", v)) _mlLabelOverrideCache = v;
+      if (jsonStringField_(raw, "session_id", s)) { _mlSessionIdCache = s; _mlSessionIdCache.trim(); }
+      if (jsonStringField_(raw, "load_type", s)) { _mlLoadTypeCache = s; _mlLoadTypeCache.trim(); }
+      if (jsonStringField_(raw, "device_family", s)) { _mlDeviceFamilyCache = s; _mlDeviceFamilyCache.trim(); }
+      if (jsonStringField_(raw, "device_name", s)) { _mlDeviceNameCache = s; _mlDeviceNameCache.trim(); }
+      if (jsonIntField_(raw, "trial_number", v)) _mlTrialNumberCache = v;
+      if (jsonStringField_(raw, "division_tag", s)) { _mlDivisionTagCache = s; _mlDivisionTagCache.trim(); }
+      if (jsonStringField_(raw, "notes", s)) { _mlNotesCache = s; _mlNotesCache.trim(); }
+      if (jsonBoolField_(raw, "trusted_normal_session", b)) _mlTrustedNormalCache = b;
+      if (jsonStringField_(raw, "request_token", s)) { _mlRequestTokenCache = s; _mlRequestTokenCache.trim(); }
+    } else {
+      recoverClient_(fbRead, CLOUD_CTRL_FAIL_RETRY_MS);
+    }
   }
-
-  if (Firebase.RTDB.getJSON(&fbRead, "/ml_log")) {
-    const String raw = fbRead.payload();
-    bool b = false;
-    int v = 0;
-    String s;
-    if (jsonBoolField_(raw, "enabled", b)) _mlEnabledCache = b;
-    if (jsonIntField_(raw, "duration_s", v)) _mlDurationCache = v;
-    if (jsonIntField_(raw, "label_override", v)) _mlLabelOverrideCache = v;
-    if (jsonStringField_(raw, "session_id", s)) { _mlSessionIdCache = s; _mlSessionIdCache.trim(); }
-    if (jsonStringField_(raw, "load_type", s)) { _mlLoadTypeCache = s; _mlLoadTypeCache.trim(); }
-    if (jsonStringField_(raw, "device_family", s)) { _mlDeviceFamilyCache = s; _mlDeviceFamilyCache.trim(); }
-    if (jsonStringField_(raw, "device_name", s)) { _mlDeviceNameCache = s; _mlDeviceNameCache.trim(); }
-    if (jsonIntField_(raw, "trial_number", v)) _mlTrialNumberCache = v;
-    if (jsonStringField_(raw, "division_tag", s)) { _mlDivisionTagCache = s; _mlDivisionTagCache.trim(); }
-    if (jsonStringField_(raw, "notes", s)) { _mlNotesCache = s; _mlNotesCache.trim(); }
-    if (jsonBoolField_(raw, "trusted_normal_session", b)) _mlTrustedNormalCache = b;
-    if (jsonStringField_(raw, "request_token", s)) { _mlRequestTokenCache = s; _mlRequestTokenCache.trim(); }
-  }
+  _controlPollSlot = uint8_t((_controlPollSlot + 1U) & 0x01U);
 }
 
 void FirebaseNetwork::requestLiveUpdate(float v, float c, float apparentPower, float t,
@@ -676,12 +736,15 @@ bool FirebaseNetwork::logFeatureEvent(const String& status, const FeatureFrame& 
 
 bool FirebaseNetwork::serviceHistory_() {
   if (_historyCount == 0 || !isReady()) return false;
+  if (!cloudHeapHealthy_()) {
+    _txBackoffUntilMs = millis() + CLOUD_TX_RETRY_MS;
+    return false;
+  }
   HistoryJob job;
   if (!dequeueHistory_(job)) return false;
   if (!pushHistoryRecord_(job)) {
     enqueueHistory_(job);
-    stopAllClients();
-    _txBackoffUntilMs = millis() + CLOUD_TX_RETRY_MS;
+    recoverClient_(fbHistory, CLOUD_TX_RETRY_MS);
     return false;
   }
   _lastTxMs = millis();
@@ -690,6 +753,10 @@ bool FirebaseNetwork::serviceHistory_() {
 
 bool FirebaseNetwork::serviceLive_() {
   if (!_pendingLive || !isReady()) return false;
+  if (!cloudHeapHealthy_()) {
+    _txBackoffUntilMs = millis() + CLOUD_TX_RETRY_MS;
+    return false;
+  }
 
   const uint64_t epochMs = nowEpochMs();
   const String iso = nowISO8601Ms();
@@ -757,8 +824,7 @@ bool FirebaseNetwork::serviceLive_() {
   json.set("server_ts/.sv", "timestamp");
 
   if (!Firebase.RTDB.updateNode(&fbLive, "/live_data", &json)) {
-    stopAllClients();
-    _txBackoffUntilMs = millis() + CLOUD_TX_RETRY_MS;
+    recoverClient_(fbLive, CLOUD_TX_RETRY_MS);
     return false;
   }
 
@@ -1117,6 +1183,7 @@ void FirebaseNetwork::serviceMlState_() {
 
 bool FirebaseNetwork::serviceMlUpload_() {
   if (!_mlUploadActive || !isReady()) return false;
+  if (controlWorkPending_() || _pendingLive || _historyCount > 0) return false;
 #if defined(ARDUINO_ARCH_ESP32)
   if (ESP.getFreeHeap() < 32000 || heap_caps_get_largest_free_block(MALLOC_CAP_8BIT) < 24000) {
     _txBackoffUntilMs = millis() + 900UL;
@@ -1327,7 +1394,10 @@ bool FirebaseNetwork::serviceMlUpload_() {
   json.set("meta/hop_samples", (int)ARC_RUNTIME_HOP_SAMPLES);
   json.set("meta/feature_emit_every_hops", (int)ARC_RUNTIME_EMIT_EVERY_HOPS);
 
-  if (!Firebase.RTDB.pushJSON(&fbLog, path.c_str(), &json)) return false;
+  if (!Firebase.RTDB.pushJSON(&fbLog, path.c_str(), &json)) {
+    recoverClient_(fbLog, CLOUD_TX_RETRY_MS);
+    return false;
+  }
 
   _uploadNextIndex = i1;
   _uploadChunkIndex++;

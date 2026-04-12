@@ -364,9 +364,17 @@ static void updateContextTracker_(const FeatureFrame& f, float vProtect, float i
       if ((now - gContext.zeroSinceMs) >= CONTEXT_UNLATCH_ZERO_MS) resetContextTracker_();
       else arcDetect.setContext(gContext.family, gContext.confidence);
     } else {
-      gContext.activeSinceMs = 0;
-      gContext.zeroSinceMs = 0;
-      clearContextAccumulation_();
+      if (gContext.activeSinceMs == 0U) {
+        gContext.zeroSinceMs = 0;
+        clearContextAccumulation_();
+      } else {
+        if (gContext.zeroSinceMs == 0U) gContext.zeroSinceMs = now;
+        if ((now - gContext.zeroSinceMs) >= CONTEXT_ACQUIRE_DROP_GRACE_MS) {
+          gContext.activeSinceMs = 0;
+          gContext.zeroSinceMs = 0;
+          clearContextAccumulation_();
+        }
+      }
     }
     return;
   }
@@ -921,6 +929,12 @@ static bool pushFeatureFrame_(FeatureFrame& frame) {
   return ok == pdPASS;
 }
 
+static void drainFeatureQueue_() {
+  if (!qFeat) return;
+  FeatureFrame dump = {};
+  while (xQueueReceive(qFeat, &dump, 0) == pdTRUE) {}
+}
+
 static bool pushRawFeatureFrame_(RawFeatureFrame& frame) {
   if (!qRawFeat) return false;
   UBaseType_t queued = uxQueueMessagesWaiting(qRawFeat);
@@ -934,6 +948,12 @@ static bool pushRawFeatureFrame_(RawFeatureFrame& frame) {
   frame.queue_drop_count += dropped;
   const BaseType_t ok = xQueueSendToBack(qRawFeat, &frame, 0);
   return ok == pdPASS;
+}
+
+static void drainRawFeatureQueue_() {
+  if (!qRawFeat) return;
+  RawFeatureFrame dump = {};
+  while (xQueueReceive(qRawFeat, &dump, 0) == pdTRUE) {}
 }
 
 static void sleepUntilUs_(int64_t targetUs) {
@@ -960,10 +980,7 @@ static void onOtaEvent(OtaEvent ev, int progress) {
     s_lastDbProgress = 0;
     notification.setOta(true, 0);
     notification.notify(SND_OTA_START);
-    const bool prepOk = enterOtaExclusiveMode_();
-    (void)network.publishOtaDebug(prepOk ? "START" : "WARN",
-                                  prepOk ? "OTA exclusive mode ready" : "OTA exclusive prep partial",
-                                  0);
+    (void)enterOtaExclusiveMode_();
   } else if (ev == OtaEvent::PROGRESS) {
     const int pct = constrain(progress, 0, 100);
     notification.setOta(true, (uint8_t)pct);
@@ -995,6 +1012,7 @@ static void Core0Task(void* pv) {
   uint32_t hopSeq = 0;
   size_t windowCount = 0;
   uint8_t emitHopCounter = 0;
+  uint8_t emitSinceIdleSlice = 0;
   int64_t hopStartUsBuf[ARC_RUNTIME_FRAME_HOP_COUNT] = {0};
   int64_t hopEndUsBuf[ARC_RUNTIME_FRAME_HOP_COUNT] = {0};
   uint32_t hopStartMsBuf[ARC_RUNTIME_FRAME_HOP_COUNT] = {0};
@@ -1038,9 +1056,10 @@ static void Core0Task(void* pv) {
       memset(hopEndMsBuf, 0, sizeof(hopEndMsBuf));
       memset(hopFsBuf, 0, sizeof(hopFsBuf));
       memset(hopWarnBuf, 0, sizeof(hopWarnBuf));
-      if (qRawFeat) xQueueReset(qRawFeat);
-      if (qFeat) xQueueReset(qFeat);
+      drainRawFeatureQueue_();
+      drainFeatureQueue_();
       timingGraceStartMs = millis();
+      emitSinceIdleSlice = 0;
     }
 
     const int64_t hopStartUs = esp_timer_get_time();
@@ -1147,6 +1166,14 @@ static void Core0Task(void* pv) {
 
     rawFrame.sampling_quality_bad = (sampleRateWarnBad || frameTimingBad) ? 1U : 0U;
     (void)pushRawFeatureFrame_(rawFrame);
+    emitSinceIdleSlice++;
+    if (FEATURE_CAPTURE_IDLE_SLICE_MS > 0U &&
+        emitSinceIdleSlice >= FEATURE_CAPTURE_IDLE_SLICE_EVERY_EMITS) {
+      emitSinceIdleSlice = 0;
+      TickType_t idleTicks = pdMS_TO_TICKS(FEATURE_CAPTURE_IDLE_SLICE_MS);
+      if (idleTicks < 1) idleTicks = 1;
+      vTaskDelay(idleTicks);
+    }
   }
 
   gSenseTaskRunning = false;
@@ -1170,7 +1197,6 @@ static void Core1FeatureTask(void* pv) {
 
     if (seenResetEpoch != gFeaturePipelineResetEpoch) {
       seenResetEpoch = gFeaturePipelineResetEpoch;
-      if (qRawFeat) xQueueReset(qRawFeat);
       resetArcRuntime_();
       continue;
     }
@@ -1340,6 +1366,7 @@ void loop() {
   static WifiHandler::Phase lastWiFiPhase = WifiHandler::PHASE_BOOT_CONNECT;
   static bool lastWiFiConnected = false;
   static uint32_t wifiBannerUntilMs = 0;
+  static uint32_t wifiCloudReadyAtMs = 0;
   static bool wifiTimedOutUi = false;
   const auto wifiPhase = wifiMgr.phase();
   const bool wifiConnected = wifiMgr.isConnected();
@@ -1350,8 +1377,15 @@ void loop() {
     else if (wifiPhase == WifiHandler::PHASE_AP_WAIT_CLIENT) { wifiBannerUntilMs = 0; wifiTimedOutUi = false; notification.notify(SND_WIFI_PORTAL); }
     lastWiFiPhase = wifiPhase;
   }
-  if (wifiConnected && !lastWiFiConnected) notification.notify(SND_WIFI_OK);
+  if (wifiConnected && !lastWiFiConnected) {
+    notification.notify(SND_WIFI_OK);
+    wifiCloudReadyAtMs = millis() + CLOUD_WIFI_WARMUP_MS;
+  } else if (!wifiConnected) {
+    wifiCloudReadyAtMs = 0;
+  }
   lastWiFiConnected = wifiConnected;
+  const bool wifiCloudWarm = wifiConnected &&
+      (wifiCloudReadyAtMs == 0U || (int32_t)(millis() - wifiCloudReadyAtMs) >= 0);
 
   static FeatureFrame lastF = {};
   static bool hasLast = false;
@@ -1666,7 +1700,7 @@ void loop() {
   bool relayNetQuietActive = ((int32_t)(relayNetQuietUntilMs - millis()) > 0);
   const bool controlPollMuted = ((int32_t)(controlPollMuteUntilMs - millis()) > 0);
 
-  network.pollControls(!paused && !portalActive && wifiConnected && !relayNetQuietActive && !controlPollMuted, portalActive);
+  network.pollControls(!paused && !portalActive && wifiCloudWarm && !relayNetQuietActive && !controlPollMuted, portalActive);
   if (paused || gSafeMode) network.setLogEnabled(false);
   else if (!relayNetQuietActive) pollMlControl(network, notification);
   const bool collectionModeActive = network.manualEnabled();
@@ -1674,7 +1708,7 @@ void loop() {
   const bool faultClearRequested = (!gSafeMode) ? network.consumeFaultClearRequest() : false;
   const bool revertFirmwareRequested = network.consumeRevertFirmwareRequest();
   const bool otaCheckRequested = network.consumeOtaCheckRequest();
-  if (otaCheckRequested && !portalActive && wifiConnected) {
+  if (otaCheckRequested && !portalActive && wifiCloudWarm) {
     (void)network.publishOtaDebug("CHECKING", "Manual OTA check requested", -1);
     updater.requestCheckNow();
   }
@@ -1940,20 +1974,35 @@ void loop() {
   network.setMlUploadSuspended(relayNetQuietActive || paused || gSafeMode || (st != STATE_NORMAL));
   if (!paused && !gSafeMode) {
     static uint32_t lastLoggedFeatUptimeMs = 0;
-    static uint32_t lastLogEnqueueMs = 0;
-    const bool logCadenceReady =
-        (lastLogEnqueueMs == 0U) ||
-        ((millis() - lastLogEnqueueMs) >= CSV_LOG_MIN_INTERVAL_MS);
-    if (freshFeatThisLoop && logCadenceReady && f.uptime_ms != 0 && f.uptime_ms != lastLoggedFeatUptimeMs) {
-      lastLoggedFeatUptimeMs = f.uptime_ms;
-      lastLogEnqueueMs = millis();
-      FeatureFrame fLog = f;
-      fLog.irms = irmsRawForLogic;
-      fLog.log_enqueue_uptime_ms = lastLogEnqueueMs;
-      fLog.timing_skew_ms = (fLog.log_enqueue_uptime_ms >= fLog.frame_start_uptime_ms)
-          ? float(fLog.log_enqueue_uptime_ms - fLog.frame_start_uptime_ms)
-          : 0.0f;
-      network.ingestLog(fLog, st, collectionModeActive ? 0 : protection.arcCounter());
+    static uint32_t lastSeenFeatUptimeMs = 0;
+    static float logCadenceCarryMs = (float)CSV_LOG_MIN_INTERVAL_MS;
+    if (freshFeatThisLoop && f.uptime_ms != 0U && f.uptime_ms != lastSeenFeatUptimeMs) {
+      float featGapMs = (lastSeenFeatUptimeMs != 0U && f.uptime_ms > lastSeenFeatUptimeMs)
+          ? float(f.uptime_ms - lastSeenFeatUptimeMs)
+          : f.frame_dt_ms;
+      if (!isfinite(featGapMs) || featGapMs < 1.0f || featGapMs > 500.0f) featGapMs = FEATURE_FRAME_PERIOD_MS;
+      lastSeenFeatUptimeMs = f.uptime_ms;
+      logCadenceCarryMs += featGapMs;
+      if (logCadenceCarryMs > (float)CSV_LOG_MIN_INTERVAL_MS * 3.0f) {
+        logCadenceCarryMs = (float)CSV_LOG_MIN_INTERVAL_MS;
+      }
+
+      const bool logCadenceReady =
+          (f.uptime_ms != lastLoggedFeatUptimeMs) &&
+          (lastLoggedFeatUptimeMs == 0U || logCadenceCarryMs >= (float)CSV_LOG_MIN_INTERVAL_MS);
+      if (logCadenceReady) {
+        lastLoggedFeatUptimeMs = f.uptime_ms;
+        logCadenceCarryMs -= (float)CSV_LOG_MIN_INTERVAL_MS;
+        if (logCadenceCarryMs < 0.0f) logCadenceCarryMs = 0.0f;
+        const uint32_t logEnqueueMs = millis();
+        FeatureFrame fLog = f;
+        fLog.irms = irmsRawForLogic;
+        fLog.log_enqueue_uptime_ms = logEnqueueMs;
+        fLog.timing_skew_ms = (fLog.log_enqueue_uptime_ms >= fLog.frame_start_uptime_ms)
+            ? float(fLog.log_enqueue_uptime_ms - fLog.frame_start_uptime_ms)
+            : 0.0f;
+        network.ingestLog(fLog, st, collectionModeActive ? 0 : protection.arcCounter());
+      }
     }
   }
 
@@ -2048,6 +2097,6 @@ void loop() {
     wifiDropSinceMs = 0;
   }
 
-  if (!paused && ((int32_t)(relayNetQuietUntilMs - millis()) <= 0)) network.loop();
+  if (!paused && wifiCloudWarm && ((int32_t)(relayNetQuietUntilMs - millis()) <= 0)) network.loop();
   delay(1);
 }

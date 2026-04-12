@@ -11,7 +11,10 @@
 #include <esp_attr.h>
 #include <esp_app_format.h>
 #include <esp_http_client.h>
+#include <esp_https_ota.h>
+#include <esp_err.h>
 #include <esp_heap_caps.h>
+#include <esp_crt_bundle.h>
 #include <memory>
 #include <new>
 #include <stdlib.h>
@@ -28,7 +31,11 @@ static const uint32_t OTA_RESTART_DELAY_MS  = 1200;
 static const uint32_t OTA_PREP_QUIET_MS     = 350;
 static const uint32_t OTA_CLIENT_DRAIN_MS   = 700;
 static const size_t   OTA_MIN_BIN_BYTES     = 128 * 1024;
-static const uint32_t OTA_TASK_STACK_BYTES  = 12288;
+static const uint32_t OTA_TASK_STACK_BYTES  = 14336;
+static const int      OTA_HTTPS_RX_BUF_BYTES = 4096;
+static const int      OTA_HTTPS_TX_BUF_BYTES = 1024;
+static const int      OTA_HTTPS_PARTIAL_REQ_BYTES = 4096;
+static const int      OTA_HTTPS_MAX_REDIRECTS = 6;
 
 static bool isCrashReset(esp_reset_reason_t r) {
   switch (r) {
@@ -100,6 +107,16 @@ static inline String otaErr_(const char* msg, int code = 0) {
     s += String(code);
     s += ")";
   }
+  return s;
+}
+
+static inline String otaEspErr_(const char* stage, esp_err_t err) {
+  String s = stage ? String(stage) : String("OTA_ESP_ERR");
+  s += " ";
+  s += String(esp_err_to_name(err));
+  s += " (";
+  s += String((int)err);
+  s += ")";
   return s;
 }
 
@@ -601,6 +618,90 @@ bool UpdateManager::performUpdateFromUrl(const String& rawUrl) {
     lastPhaseSent = phase;
   };
 
+  auto httpsOtaAttempt = [&](const String& url) -> bool {
+    if (_cloud) _cloud->stopAllClients();
+    delay(OTA_CLIENT_DRAIN_MS);
+
+    publishStep("HTTPS_OTA_BEGIN", url, 0);
+
+    esp_http_client_config_t httpCfg = {};
+    httpCfg.url = url.c_str();
+    httpCfg.user_agent = "TinyML-SmartPlug-OTA/3.0";
+    httpCfg.timeout_ms = OTA_HTTP_TIMEOUT_MS;
+    httpCfg.buffer_size = OTA_HTTPS_RX_BUF_BYTES;
+    httpCfg.buffer_size_tx = OTA_HTTPS_TX_BUF_BYTES;
+    httpCfg.keep_alive_enable = false;
+    httpCfg.disable_auto_redirect = false;
+    httpCfg.max_redirection_count = OTA_HTTPS_MAX_REDIRECTS;
+    httpCfg.crt_bundle_attach = arduino_esp_crt_bundle_attach;
+    httpCfg.skip_cert_common_name_check = _insecureTLS;
+
+    esp_https_ota_config_t otaCfg = {};
+    otaCfg.http_config = &httpCfg;
+    otaCfg.bulk_flash_erase = false;
+    otaCfg.partial_http_download = true;
+    otaCfg.max_http_request_size = OTA_HTTPS_PARTIAL_REQ_BYTES;
+
+    esp_https_ota_handle_t handle = nullptr;
+    esp_err_t ret = esp_https_ota_begin(&otaCfg, &handle);
+    if (ret != ESP_OK || handle == nullptr) {
+      _lastError = currentStage + " | " + otaEspErr_("OTA_HTTPS_BEGIN_FAILED", ret);
+      _lastError += " | ";
+      _lastError += otaHeapInfo_();
+      return false;
+    }
+
+    int lastPct = -1;
+    int totalSize = esp_https_ota_get_image_size(handle);
+    while (true) {
+      ret = esp_https_ota_perform(handle);
+      if (ret == ESP_ERR_HTTPS_OTA_IN_PROGRESS) {
+        if (_cb) {
+          const int read = esp_https_ota_get_image_len_read(handle);
+          if (totalSize <= 0) totalSize = esp_https_ota_get_image_size(handle);
+          if (read > 0 && totalSize > 0) {
+            int pct = (int)((100.0f * (float)read) / (float)totalSize);
+            if (pct < 0) pct = 0;
+            if (pct > 99) pct = 99;
+            if (pct != lastPct) {
+              lastPct = pct;
+              _cb(OtaEvent::PROGRESS, pct);
+            }
+          }
+        }
+        delay(1);
+        continue;
+      }
+      break;
+    }
+
+    if (ret != ESP_OK) {
+      esp_https_ota_abort(handle);
+      _lastError = currentStage + " | " + otaEspErr_("OTA_HTTPS_PERFORM_FAILED", ret);
+      _lastError += " | ";
+      _lastError += otaHeapInfo_();
+      return false;
+    }
+
+    if (!esp_https_ota_is_complete_data_received(handle)) {
+      esp_https_ota_abort(handle);
+      _lastError = currentStage + " | " + otaErr_("OTA_INCOMPLETE_IMAGE");
+      return false;
+    }
+
+    ret = esp_https_ota_finish(handle);
+    if (ret != ESP_OK) {
+      _lastError = currentStage + " | " + otaEspErr_("OTA_HTTPS_FINISH_FAILED", ret);
+      _lastError += " | ";
+      _lastError += otaHeapInfo_();
+      return false;
+    }
+
+    if (_cb && lastPct < 100) _cb(OtaEvent::PROGRESS, 100);
+    _lastError = "";
+    return true;
+  };
+
   auto doAttempt = [&](const String& url) -> bool {
     String currentUrl = url;
     for (int redirectCount = 0; redirectCount < 4; ++redirectCount) {
@@ -859,6 +960,14 @@ bool UpdateManager::performUpdateFromUrl(const String& rawUrl) {
     return false;
   };
 
+  String httpsAttemptErr = "";
+  if (parsed.https) {
+    const bool httpsOk = httpsOtaAttempt(baseUrl);
+    if (httpsOk) return true;
+    httpsAttemptErr = _lastError;
+    currentStage = "HTTPS_OTA_FALLBACK";
+  }
+
   String lastErr = "";
   for (int attempt = 0; attempt < 3; ++attempt) {
     String tryUrl = baseUrl;
@@ -875,6 +984,9 @@ bool UpdateManager::performUpdateFromUrl(const String& rawUrl) {
   }
 
   _lastError = lastErr.length() ? lastErr : otaErr_("OTA_ALL_ATTEMPTS_FAILED");
+  if (httpsAttemptErr.length() && _lastError != httpsAttemptErr) {
+    _lastError += " | https=";
+    _lastError += httpsAttemptErr;
+  }
   return false;
 }
-

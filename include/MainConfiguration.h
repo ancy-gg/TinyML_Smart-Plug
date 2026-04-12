@@ -14,7 +14,7 @@ static constexpr bool ENABLE_AUTO_ARC_CAPTURE = false;
 // Cloud / OTA configuration
 static constexpr const char* FIREBASE_API_KEY = "AIzaSyAmJlZZszyWPJFgIkTAAl_TbIySys1nvEw";
 static constexpr const char* FIREBASE_DB_URL  = "tinyml-smart-plug-default-rtdb.asia-southeast1.firebasedatabase.app";
-static constexpr const char* FW_VERSION       = "v7.3.0-c-gen2";
+static constexpr const char* FW_VERSION       = "v7.3.4-c-gen2";
 static constexpr const char* OTA_DESIRED_VERSION_PATH = "/ota/desired_version";
 static constexpr const char* OTA_FIRMWARE_URL_PATH    = "/ota/firmware_url";
 
@@ -177,9 +177,10 @@ struct FeatureFrame {
 
 
 // Context timing / confidence tuning
-static constexpr float CONTEXT_MIN_IRMS_A = 0.10f;
+static constexpr float CONTEXT_MIN_IRMS_A = 0.09f;
 static constexpr float CONTEXT_UNLATCH_ZERO_IRMS_A = 0.020f;
 static constexpr uint32_t CONTEXT_ACQUIRE_WINDOW_MS = 5000UL;
+static constexpr uint32_t CONTEXT_ACQUIRE_DROP_GRACE_MS = 600UL;
 static constexpr uint32_t CONTEXT_UNLATCH_ZERO_MS = 5000UL;
 static constexpr uint32_t CONTEXT_PROVISIONAL_MIN_MS = 300UL;
 static constexpr float CONTEXT_MIN_CONFIDENCE = 0.45f;
@@ -298,11 +299,14 @@ static constexpr uint32_t HEAT_HOLD_MS = 1200;
 static constexpr uint32_t FAULT_ALERT_MIN_MS = 3000UL;
 static constexpr uint32_t FAULT_BUZZ_MS      = 3000UL;
 static constexpr uint32_t FAULT_NET_QUIET_MS = 2350UL;
-static constexpr uint32_t OLED_RENDER_INTERVAL_MS = 33UL;
+static constexpr uint32_t OLED_RENDER_INTERVAL_MS = 100UL;
+static constexpr uint32_t OLED_I2C_CLOCK_HZ = 400000UL;
 
 // Sensing pipeline / timing quality
 static constexpr uint8_t  FEATURE_FRAME_QUEUE_LEN        = 18;
 static constexpr uint8_t  FEATURE_RAW_FRAME_QUEUE_LEN    = 6;
+static constexpr uint8_t  FEATURE_CAPTURE_IDLE_SLICE_EVERY_EMITS = 2;
+static constexpr uint32_t FEATURE_CAPTURE_IDLE_SLICE_MS  = 1UL;
 static constexpr uint32_t FEATURE_TIMING_GRACE_MS        = 1500UL;
 static constexpr float    FRAME_DT_BAD_EARLY_MS          = FEATURE_FRAME_PERIOD_MS * 0.70f;
 static constexpr float    FRAME_DT_BAD_LATE_MS           = FEATURE_FRAME_PERIOD_MS * 1.70f;
@@ -436,6 +440,7 @@ static constexpr uint16_t ML_LOG_AUTO_MAX_DURATION_S    = 60;
 static constexpr uint32_t CLOUD_LIVE_NORMAL_INTERVAL_MS = 5000UL;
 static constexpr uint32_t CLOUD_LIVE_FAULT_INTERVAL_MS  = 1200UL;
 static constexpr uint32_t CLOUD_REFRESH_KEEPALIVE_MS    = 1000UL;
+static constexpr uint32_t CLOUD_WIFI_WARMUP_MS          = 2500UL;
 
 // =========================
 // Current backend (MCP3204 only)
@@ -458,11 +463,13 @@ static constexpr float CURRENT_IDLE_SUPPRESS_A      = 0.040f;
 static constexpr float FEATURE_MIN_VRMS             = 70.0f;
 static constexpr float FEATURE_MIN_IRMS_A           = 0.050f;
 static constexpr float ARC_MIN_IRMS_A               = 0.060f;
-static constexpr float FEATURE_REQUIRE_FUND_BELOW_A = 0.180f;
+static constexpr float FEATURE_REQUIRE_FUND_BELOW_A = 0.150f;
 static constexpr float CURRENT_LPF_HZ               = 2000.0f;
 static constexpr float CURRENT_BASE_LPF_HZ          = 240.0f;
-static constexpr float ZC_HYS_MIN_A                 = 0.035f;
-static constexpr float ZC_HYS_FRAC                  = 0.18f;
+static constexpr float ZC_HYS_MIN_A                 = 0.032f;
+static constexpr float ZC_HYS_FRAC                  = 0.17f;
+static constexpr float ZC_HYS_LOWCURRENT_RETRY_MAX_A = 0.180f;
+static constexpr float ZC_HYS_LOWCURRENT_RETRY_SCALE = 0.72f;
 static constexpr float ZC_DWELL_THR_FRAC            = 0.10f;
 static constexpr float ZC_DWELL_THR_MIN_A           = 0.035f;
 static constexpr float PULSE_MIN_WIDTH_US           = 20.0f;
@@ -479,6 +486,7 @@ static constexpr float SPEC_ENT_LO_HZ               = 220.0f;
 static constexpr float SPEC_ENT_HI_HZ               = 9000.0f;
 static constexpr float FUND_SNR_MIN                 = 6.0f;
 static constexpr float FUND_MAG_MIN                 = 1e-5f;
+static constexpr float TRACKED_FUND_SNR_MIN         = 3.0f;
 static constexpr float SF_EPS                       = 1e-12f;
 static constexpr int CURRENT_MIN_ACTIVITY_CHANGES   = 10;
 static constexpr uint16_t CURRENT_MIN_CODE_SPAN     = 10;

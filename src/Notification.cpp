@@ -163,6 +163,9 @@ bool Notification::begin(int pinBuzzer) {
   soundBegin(_pinBuzzer);
   soundStop();
   if (!display->begin(SSD1306_SWITCHCAPVCC, _address)) return false;
+#if defined(OLED_I2C_CLOCK_HZ)
+  Wire.setClock(OLED_I2C_CLOCK_HZ);
+#endif
   display->cp437(true);
   display->clearDisplay();
   display->display();

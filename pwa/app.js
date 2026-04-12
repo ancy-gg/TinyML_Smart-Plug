@@ -40,8 +40,9 @@ const healthLatencyText = el("healthLatencyText");
 const overviewPrimary = el("overviewPrimary");
 const overviewSecondary = el("overviewSecondary");
 const overviewMeta = el("overviewMeta");
-const ovConnectivity = el("ovConnectivity");
-const ovConnectivitySub = el("ovConnectivitySub");
+const ovLoadFamily = el("ovLoadFamily");
+const ovLoadFamilySub = el("ovLoadFamilySub");
+const ovConnectivitySub = ovLoadFamilySub;
 const ovPowerCondition = el("ovPowerCondition");
 const ovPowerSub = el("ovPowerSub");
 const ovProtection = el("ovProtection");
@@ -120,6 +121,15 @@ const OTA_DEFAULT_BIN  = "";
 const DEVICE_FAMILY_OPTIONS = ["unknown", "resistive_linear", "inductive_motor", "rectifier_smps", "phase_angle_controlled", "brush_universal_motor", "other_mixed"];
 const DEVICE_FAMILY_CODE_MAP = { unknown: -1, resistive_linear: 0, inductive_motor: 1, rectifier_smps: 2, phase_angle_controlled: 3, brush_universal_motor: 4, other_mixed: 5 };
 const DIVISION_TAG_OPTIONS = ["start", "steady", "arc"];
+const RUNTIME_CONTEXT_FAMILY_LABELS = {
+  [-1]: "Unknown",
+  0: "Resistive",
+  1: "Inductive",
+  2: "SMPS",
+  3: "Phase Control",
+  4: "Brushed Motor",
+  5: "Others"
+};
 
 const UI_OVERLOAD_WARN_A = 10;
 const UI_SHORT_CIRCUIT_A = 20;
@@ -274,6 +284,14 @@ function buildStructuredDatasetFilename(meta, fallback = "session") {
 
 function familyTitle(v) {
   return titleizeTokenText(String(v || "").replace(/_/g, " "), "Mixed Unknown");
+}
+
+function runtimeContextFamilyLabel(code) {
+  const n = Number(code);
+  if (Number.isFinite(n) && Object.prototype.hasOwnProperty.call(RUNTIME_CONTEXT_FAMILY_LABELS, n)) {
+    return RUNTIME_CONTEXT_FAMILY_LABELS[n];
+  }
+  return "Unknown";
 }
 
 function deviceTitle(v) {
@@ -1059,6 +1077,13 @@ function isLiveLoadActive(data) {
   return i >= UI_ACTIVE_CURRENT_A || p >= UI_ACTIVE_POWER_VA;
 }
 
+function isLiveLoadDetected(data) {
+  if (typeof data?.load_detected === "boolean") return data.load_detected;
+  const numeric = Number(data?.load_detected);
+  if (Number.isFinite(numeric)) return numeric > 0.5;
+  return isLiveLoadActive(data);
+}
+
 function deriveLiveStatus(data) {
   const raw = classifyStatus(data?.status || "NORMAL");
   if (["DEVICE_DISCONNECTED", "OVERLOAD", "SUSTAINED_OVERLOAD", "HEATING", "ARCING", "OVERVOLTAGE", "UNDERVOLTAGE", "UNPLUGGED", "SAFE_MODE", "CONFIG_PORTAL", "WIFI_CONNECTING", "STARTUP_STABILIZING", "OTA_UPDATING", "FIRMWARE_UPDATED"].includes(raw)) return raw;
@@ -1213,6 +1238,7 @@ function renderOverview() {
   const lastEventStatus = latestHistoryRecord ? prettyStatus(latestHistoryRecord.status || "") : "—";
   const lastEventTime = latestHistoryRecord ? formatDisplayTimestamp(getRecordEpochMs(latestHistoryRecord)) : "—";
   const loadActive = fresh && isLiveLoadActive(live);
+  const loadDetected = fresh && isLiveLoadDetected(live);
   const faultLatched = !!live.fault_latched || !!live.web_controls_locked;
   if (fresh && (["ARCING", "HEATING", "SUSTAINED_OVERLOAD", "UNDERVOLTAGE", "OVERVOLTAGE"].includes(status) || faultLatched)) latchedFaultUi = true;
 
@@ -1254,10 +1280,34 @@ function renderOverview() {
       : `${fresh ? "Live" : "Stale"} • ${formatElapsedClock(ageMs)}`;
   }
 
-  if (ovConnectivity) ovConnectivity.textContent = connectionText;
-  if (ovConnectivitySub) {
-    const pieces = [];
-    if (lastReceiptMs) pieces.push(formatElapsedClock(ageMs));
+  const contextLatched = !!live.context_latched;
+  const contextAcquiring = !!live.context_acquiring;
+  const runtimeFamily = runtimeContextFamilyLabel(live.context_family_code_runtime);
+  const provisionalFamily = runtimeContextFamilyLabel(live.context_family_code_provisional);
+  const runtimeConfidence = Number(live.context_family_confidence);
+  const provisionalConfidence = Number(live.context_family_confidence_provisional);
+
+  if (ovLoadFamily) {
+    if (!fresh) ovLoadFamily.textContent = "Offline";
+    else if (!loadDetected) ovLoadFamily.textContent = "No Load";
+    else if (contextLatched) ovLoadFamily.textContent = runtimeFamily;
+    else ovLoadFamily.textContent = "Identifying...";
+  }
+  if (ovLoadFamilySub) {
+    if (!fresh) ovLoadFamilySub.textContent = "No live link.";
+    else if (!loadDetected) ovLoadFamilySub.textContent = "No active load detected.";
+    else if (contextLatched) {
+      ovLoadFamilySub.textContent = Number.isFinite(runtimeConfidence) && runtimeConfidence > 0
+        ? `Latched | ${Math.round(runtimeConfidence * 100)}% confidence`
+        : "Latched from context model.";
+    } else if (contextAcquiring && Number.isFinite(provisionalConfidence) && provisionalConfidence > 0 && provisionalFamily !== "Unknown") {
+      ovLoadFamilySub.textContent = `Identifying | provisional ${provisionalFamily} ${Math.round(provisionalConfidence * 100)}%`;
+    } else if (contextAcquiring) {
+      ovLoadFamilySub.textContent = "Context model is acquiring.";
+    } else {
+      ovLoadFamilySub.textContent = "Waiting for context frames.";
+    }
+    const pieces = [ovLoadFamilySub.textContent];
     ovConnectivitySub.textContent = pieces.join(" • ") || "No live link.";
   }
 
@@ -1802,6 +1852,12 @@ let activeLoggerTab = "original";
 let loggerCountdownTimer = null;
 let loggerCountdownEndsAtMs = 0;
 let pendingLoggerStart = null;
+
+btnUploadCsv?.addEventListener("click", () => {
+  if (!mlCsvUpload) return;
+  mlCsvUpload.value = "";
+  mlCsvUpload.click();
+});
 
 function applyActiveMlSessionRow() {
   if (!mlSessionBody) return;
