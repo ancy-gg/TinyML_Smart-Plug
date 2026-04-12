@@ -18,11 +18,13 @@ from tinyml_common import (
     CONTEXT_SWEEP_FEATURES,
     DEVICE_FAMILY_CLASSES,
     MODEL_CONFIGS,
+    compose_arc_training_view,
     ensure_dir,
     evaluate_binary_scores,
     load_clean_dataset,
     make_group_splits,
     model_size_estimate,
+    normalize_arc_tolerance_config,
     select_threshold_cost,
     train_one_model,
     estimate_search_plan,
@@ -46,6 +48,17 @@ def emit_progress(current: int, total: int, payload: dict) -> None:
     payload["current"] = int(current)
     payload["total"] = int(total)
     print("[[PROGRESS]] " + json.dumps(payload, sort_keys=True), flush=True)
+
+
+def _arc_tolerance_dict(args) -> dict:
+    return {
+        "mode": getattr(args, "arc_tolerance_mode", "soft_positive"),
+        "pre_rows": int(getattr(args, "pre_arc_window", 1)),
+        "post_rows": int(getattr(args, "post_arc_window", 3)),
+        "soft_neighbor_weight": float(getattr(args, "soft_neighbor_weight", 0.30)),
+        "expanded_neighbor_weight": float(getattr(args, "expanded_neighbor_weight", 0.70)),
+        "hard_negative_ring": int(getattr(args, "hard_negative_ring", 2)),
+    }
 
 
 
@@ -213,9 +226,12 @@ def _validation_accuracy(tn: int, fp: int, fn: int, tp: int) -> float:
 
 def _sort_model_row_fn_first(row: dict):
     return (
+        _row_int(row, "validation_event_fn", default=10**9),
         _row_int(row, "validation_fn", default=10**9),
         _row_int(row, "validation_fp", default=10**9),
+        _row_float(row, "validation_false_alarms_per_session", default=10**9),
         0 if _row_int(row, "validation_fn", default=10**9) == 0 else 1,
+        -_row_float(row, "validation_event_recall", default=0.0),
         -_row_float(row, "validation_recall", default=0.0),
         -_row_float(row, "validation_precision", default=0.0),
         _row_float(row, "validation_fpr", default=1.0),
@@ -228,9 +244,12 @@ def _sort_model_row_fn_first(row: dict):
 
 def _sort_combined_row_fn_first(row: dict):
     return (
+        _row_int(row, "combined_validation_event_fn", default=10**9),
         _row_int(row, "combined_validation_fn", default=10**9),
         _row_int(row, "combined_validation_fp", default=10**9),
+        _row_float(row, "combined_validation_false_alarms_per_session_mean", default=10**9),
         0 if _row_int(row, "combined_validation_fn", default=10**9) == 0 else 1,
+        -_row_float(row, "combined_validation_event_recall_mean", default=0.0),
         -_row_float(row, "combined_validation_recall_mean", default=0.0),
         -_row_float(row, "combined_validation_precision_mean", default=0.0),
         _row_float(row, "combined_validation_fpr_mean", default=1.0),
@@ -246,7 +265,9 @@ def _sort_combined_row_fn_first(row: dict):
 def _sort_model_row_validation_cost(row: dict):
     return (
         0 if _row_bool(row, "threshold_constraints_met", default=False) else 1,
+        _row_int(row, "validation_event_fn", default=10**9),
         _row_float(row, "validation_cost", default=float("inf")),
+        _row_float(row, "validation_false_alarms_per_session", default=10**9),
         _row_int(row, "validation_fp", default=10**9),
         _row_int(row, "validation_fn", default=10**9),
         -_row_float(row, "validation_balanced_accuracy", default=0.0),
@@ -261,7 +282,9 @@ def _sort_model_row_validation_cost(row: dict):
 def _sort_combined_row_validation_cost(row: dict):
     return (
         -_row_int(row, "combined_validation_constraints_met_count", default=0),
+        _row_int(row, "combined_validation_event_fn", default=10**9),
         _row_float(row, "combined_validation_cost", default=float("inf")),
+        _row_float(row, "combined_validation_false_alarms_per_session_mean", default=10**9),
         _row_int(row, "combined_validation_fp", default=10**9),
         _row_int(row, "combined_validation_fn", default=10**9),
         -_row_float(row, "combined_validation_balanced_accuracy_mean", default=0.0),
@@ -275,11 +298,14 @@ def _sort_combined_row_validation_cost(row: dict):
 
 def _sort_model_row_accuracy(row: dict):
     return (
+        -_row_float(row, "validation_event_recall", default=0.0),
+        _row_int(row, "validation_event_fn", default=10**9),
         -_row_float(row, "validation_balanced_accuracy", default=0.0),
         -_row_float(row, "validation_accuracy", default=0.0),
         -_row_float(row, "test_accuracy", default=0.0),
         -_row_float(row, "test_balanced_accuracy", default=0.0),
         _row_float(row, "validation_cost", default=float("inf")),
+        _row_float(row, "validation_false_alarms_per_session", default=10**9),
         _row_int(row, "validation_fn", default=10**9),
         _row_int(row, "validation_fp", default=10**9),
         _row_int(row, "feature_count", default=10**9),
@@ -289,11 +315,14 @@ def _sort_model_row_accuracy(row: dict):
 
 def _sort_combined_row_accuracy(row: dict):
     return (
+        -_row_float(row, "combined_validation_event_recall_mean", default=0.0),
+        _row_int(row, "combined_validation_event_fn", default=10**9),
         -_row_float(row, "combined_validation_balanced_accuracy_mean", default=0.0),
         -_row_float(row, "combined_validation_accuracy_mean", default=0.0),
         -_row_float(row, "combined_test_accuracy_mean", default=0.0),
         -_row_float(row, "combined_test_balanced_accuracy_mean", default=0.0),
         _row_float(row, "combined_validation_cost", default=float("inf")),
+        _row_float(row, "combined_validation_false_alarms_per_session_mean", default=10**9),
         _row_int(row, "combined_validation_fn", default=10**9),
         _row_int(row, "combined_validation_fp", default=10**9),
         _row_int(row, "feature_count", default=10**9),
@@ -304,8 +333,11 @@ def _sort_combined_row_accuracy(row: dict):
 def _sort_model_row_practical(row: dict):
     return (
         0 if _row_bool(row, "threshold_constraints_met", default=False) else 1,
+        _row_int(row, "validation_event_fn", default=10**9),
+        -_row_float(row, "validation_event_recall", default=0.0),
         -_row_float(row, "validation_balanced_accuracy", default=0.0),
         -_row_float(row, "validation_accuracy", default=0.0),
+        _row_float(row, "validation_false_alarms_per_session", default=10**9),
         _row_float(row, "validation_fpr", default=1.0),
         _row_int(row, "validation_fp", default=10**9),
         _row_int(row, "validation_fn", default=10**9),
@@ -321,8 +353,11 @@ def _sort_model_row_practical(row: dict):
 def _sort_combined_row_practical(row: dict):
     return (
         -_row_int(row, "combined_validation_constraints_met_count", default=0),
+        _row_int(row, "combined_validation_event_fn", default=10**9),
+        -_row_float(row, "combined_validation_event_recall_mean", default=0.0),
         -_row_float(row, "combined_validation_balanced_accuracy_mean", default=0.0),
         -_row_float(row, "combined_validation_accuracy_mean", default=0.0),
+        _row_float(row, "combined_validation_false_alarms_per_session_mean", default=10**9),
         _row_float(row, "combined_validation_fpr_mean", default=1.0),
         _row_int(row, "combined_validation_fp", default=10**9),
         _row_int(row, "combined_validation_fn", default=10**9),
@@ -361,8 +396,11 @@ def _sort_arc_candidate_row(row: dict):
     )
     return (
         -val_constraints,
+        _arc_row_int(row, "validation_event_fn", "combined_validation_event_fn", default=10**9),
+        -_arc_row_float(row, "validation_event_recall", "combined_validation_event_recall_mean", default=0.0),
         -_arc_row_float(row, "validation_balanced_accuracy", "combined_validation_balanced_accuracy_mean", default=0.0),
         -_arc_row_float(row, "validation_accuracy", "combined_validation_accuracy_mean", default=0.0),
+        _arc_row_float(row, "validation_false_alarms_per_session", "combined_validation_false_alarms_per_session_mean", default=10**9),
         _arc_row_float(row, "validation_fpr", "combined_validation_fpr_mean", default=1.0),
         _arc_row_int(row, "validation_fp", "combined_validation_fp", default=10**9),
         _arc_row_int(row, "validation_fn", "combined_validation_fn", default=10**9),
@@ -373,6 +411,53 @@ def _sort_arc_candidate_row(row: dict):
         _arc_row_int(row, "feature_count", default=10**9),
         str(row.get("feature_combo", "")),
     )
+
+
+def _pick_arc_deployment_row(rf_row: dict | None, et_row: dict | None, fallback_row: dict | None = None) -> tuple[str, dict]:
+    rf = dict(rf_row or {})
+    et = dict(et_row or {})
+    fallback = dict(fallback_row or {})
+    if not rf and et:
+        return "et", et
+    if not rf:
+        return "combined", fallback
+    if not et:
+        return "rf", rf
+
+    rf_event_fn = _row_int(rf, "validation_event_fn", default=10**9)
+    et_event_fn = _row_int(et, "validation_event_fn", default=10**9)
+    rf_fn = _row_int(rf, "validation_fn", default=10**9)
+    et_fn = _row_int(et, "validation_fn", default=10**9)
+    rf_fp = _row_int(rf, "validation_fp", default=10**9)
+    et_fp = _row_int(et, "validation_fp", default=10**9)
+    rf_fa = _row_float(rf, "validation_false_alarms_per_session", default=10**9)
+    et_fa = _row_float(et, "validation_false_alarms_per_session", default=10**9)
+    rf_bal = _row_float(rf, "validation_balanced_accuracy", default=0.0)
+    et_bal = _row_float(et, "validation_balanced_accuracy", default=0.0)
+
+    et_clearly_better = (
+        (et_event_fn + 1 < rf_event_fn)
+        or (
+            et_event_fn < rf_event_fn
+            and et_fp <= (rf_fp + 3)
+            and et_fa <= (rf_fa + 0.08)
+        )
+        or (
+            et_event_fn == rf_event_fn
+            and et_fn + 2 < rf_fn
+            and et_fp <= (rf_fp + 2)
+        )
+        or (
+            et_event_fn == rf_event_fn
+            and et_fn == rf_fn
+            and et_fp + 8 < rf_fp
+            and et_fa + 0.10 < rf_fa
+            and et_bal >= (rf_bal + 0.015)
+        )
+    )
+    if et_clearly_better:
+        return "et", et
+    return "rf", rf
 
 
 def _arc_feature_combinations(feature_pool: list[str], feature_count_min: int, feature_count_max: int, max_combinations: int) -> list[list[str]]:
@@ -511,12 +596,16 @@ def _safe_train_arc_model(
     y_train,
     groups_train,
     w_train,
+    meta_train,
     X_val,
     y_val,
+    meta_val,
     X_test,
     y_test,
+    meta_test,
     n_iter: int,
     args,
+    search_profile: str = "full",
     progress_callback=None,
 ) -> dict:
     model_name = "RandomForest" if model_key == "rf" else "ExtraTrees"
@@ -527,10 +616,13 @@ def _safe_train_arc_model(
             y_train=y_train,
             groups_train=groups_train,
             w_train=w_train,
+            meta_train=meta_train,
             X_val=X_val,
             y_val=y_val,
+            meta_val=meta_val,
             X_test=X_test,
             y_test=y_test,
+            meta_test=meta_test,
             fn_weight=args.fn_weight,
             fp_weight=args.fp_weight,
             min_recall=args.min_recall,
@@ -538,6 +630,8 @@ def _safe_train_arc_model(
             min_precision=args.min_precision,
             max_fpr=args.max_fpr,
             min_threshold=args.min_threshold,
+            arc_tolerance=_arc_tolerance_dict(args),
+            search_profile=search_profile,
             progress_callback=progress_callback,
         )
     except Exception as exc:
@@ -556,10 +650,13 @@ def _run_arc_et_prescreen(
     X_train,
     y_train,
     w_train,
+    meta_train,
     X_val,
     y_val,
+    meta_val,
     X_test,
     y_test,
+    meta_test,
     args,
 ) -> dict:
     params = {
@@ -592,11 +689,28 @@ def _run_arc_et_prescreen(
             min_precision=args.min_precision,
             max_fpr=args.max_fpr,
             min_threshold=args.min_threshold,
+            meta_df=meta_val.reset_index(drop=True) if isinstance(meta_val, pd.DataFrame) else None,
+            arc_tolerance=_arc_tolerance_dict(args),
         )
         threshold = float(best_thr["thr"])
         val_metrics = evaluate_binary_scores(y_val_np, val_proba, threshold)
         test_proba = estimator.predict_proba(X_test)[:, 1]
         test_metrics = evaluate_binary_scores(y_test_np, test_proba, threshold)
+        from tinyml_common import build_event_level_report
+        val_event_metrics = build_event_level_report(
+            meta_val.reset_index(drop=True) if isinstance(meta_val, pd.DataFrame) else None,
+            y_val_np,
+            val_proba,
+            threshold,
+            tolerance=_arc_tolerance_dict(args),
+        ) if isinstance(meta_val, pd.DataFrame) else {}
+        test_event_metrics = build_event_level_report(
+            meta_test.reset_index(drop=True) if isinstance(meta_test, pd.DataFrame) else None,
+            y_test_np,
+            test_proba,
+            threshold,
+            tolerance=_arc_tolerance_dict(args),
+        ) if isinstance(meta_test, pd.DataFrame) else {}
         return {
             "model_key": "et",
             "model_name": "ExtraTrees",
@@ -631,6 +745,7 @@ def _run_arc_et_prescreen(
             "validation_fnr": float(val_metrics.get("fnr", 1.0)),
             "validation_mcc": float(val_metrics.get("mcc", 0.0)),
             "validation_confusion_matrix": val_metrics.get("confusion_matrix", {}),
+            "validation_event_level_metrics": val_event_metrics,
             "test_accuracy": float(test_metrics.get("accuracy", 0.0)),
             "test_average_precision": float(test_metrics.get("average_precision", 0.0)),
             "test_roc_auc": float(test_metrics.get("roc_auc", 0.5)),
@@ -644,6 +759,7 @@ def _run_arc_et_prescreen(
             "test_fnr": float(test_metrics.get("fnr", 1.0)),
             "test_mcc": float(test_metrics.get("mcc", 0.0)),
             "test_confusion_matrix": test_metrics.get("confusion_matrix", {}),
+            "test_event_level_metrics": test_event_metrics,
         }
     except Exception as exc:
         return _failed_arc_model_result(
@@ -659,6 +775,8 @@ def _run_arc_et_prescreen(
 
 
 def _build_arc_model_row_optimized(stage: str, combo: list[str], selected_cols: list[str], result: dict, extra: dict | None = None) -> dict:
+    val_event = result.get("validation_event_level_metrics", {}) or {}
+    test_event = result.get("test_event_level_metrics", {}) or {}
     row = {
         "task": "arc",
         "stage": str(stage),
@@ -676,6 +794,11 @@ def _build_arc_model_row_optimized(stage: str, combo: list[str], selected_cols: 
         "validation_average_precision": float(result.get("validation_average_precision", 0.0)),
         "validation_balanced_accuracy": float(result.get("validation_balanced_accuracy", 0.0)),
         "validation_cost": float((result.get("validation_threshold_result", {}) or {}).get("cost", 0.0)),
+        "validation_event_tp": int(val_event.get("detected_event_count", 0)),
+        "validation_event_fn": int(val_event.get("missed_event_count", 0)),
+        "validation_event_recall": float(val_event.get("event_recall", 0.0)),
+        "validation_event_precision": float(val_event.get("event_precision", 0.0)),
+        "validation_false_alarms_per_session": float(val_event.get("false_alarms_per_session", 0.0)),
         "test_fn": int(result.get("test_confusion_matrix", {}).get("fn", 0)),
         "test_fp": int(result.get("test_confusion_matrix", {}).get("fp", 0)),
         "test_recall": float(result.get("test_recall", 0.0)),
@@ -684,6 +807,11 @@ def _build_arc_model_row_optimized(stage: str, combo: list[str], selected_cols: 
         "test_average_precision": float(result.get("test_average_precision", 0.0)),
         "test_accuracy": float(result.get("test_accuracy", 0.0)),
         "test_balanced_accuracy": float(result.get("test_balanced_accuracy", 0.0)),
+        "test_event_tp": int(test_event.get("detected_event_count", 0)),
+        "test_event_fn": int(test_event.get("missed_event_count", 0)),
+        "test_event_recall": float(test_event.get("event_recall", 0.0)),
+        "test_event_precision": float(test_event.get("event_precision", 0.0)),
+        "test_false_alarms_per_session": float(test_event.get("false_alarms_per_session", 0.0)),
         "estimated_node_count": int(result.get("estimated_node_count", 0)),
         "threshold": float(result.get("threshold", 0.5)),
         "threshold_source": str(result.get("threshold_source", "")),
@@ -712,16 +840,22 @@ def _build_arc_combined_row_optimized(stage: str, combo: list[str], selected_col
         "combined_validation_fp": int(rf_row["validation_fp"] + et_row["validation_fp"]),
         "combined_test_fn": int(rf_row["test_fn"] + et_row["test_fn"]),
         "combined_test_fp": int(rf_row["test_fp"] + et_row["test_fp"]),
+        "combined_validation_event_fn": int(rf_row["validation_event_fn"] + et_row["validation_event_fn"]),
+        "combined_test_event_fn": int(rf_row["test_event_fn"] + et_row["test_event_fn"]),
         "combined_validation_accuracy_mean": float((rf_row["validation_accuracy"] + et_row["validation_accuracy"]) / 2.0),
         "combined_validation_balanced_accuracy_mean": float((rf_row["validation_balanced_accuracy"] + et_row["validation_balanced_accuracy"]) / 2.0),
         "combined_validation_recall_mean": float((rf_row["validation_recall"] + et_row["validation_recall"]) / 2.0),
         "combined_validation_precision_mean": float((rf_row["validation_precision"] + et_row["validation_precision"]) / 2.0),
         "combined_validation_fpr_mean": float((rf_row["validation_fpr"] + et_row["validation_fpr"]) / 2.0),
+        "combined_validation_event_recall_mean": float((rf_row["validation_event_recall"] + et_row["validation_event_recall"]) / 2.0),
+        "combined_validation_false_alarms_per_session_mean": float((rf_row["validation_false_alarms_per_session"] + et_row["validation_false_alarms_per_session"]) / 2.0),
         "combined_test_recall_mean": float((rf_row["test_recall"] + et_row["test_recall"]) / 2.0),
         "combined_test_precision_mean": float((rf_row["test_precision"] + et_row["test_precision"]) / 2.0),
         "combined_test_accuracy_mean": float((rf_row["test_accuracy"] + et_row["test_accuracy"]) / 2.0),
         "combined_test_balanced_accuracy_mean": float((rf_row["test_balanced_accuracy"] + et_row["test_balanced_accuracy"]) / 2.0),
         "combined_test_average_precision_mean": float((rf_row["test_average_precision"] + et_row["test_average_precision"]) / 2.0),
+        "combined_test_event_recall_mean": float((rf_row["test_event_recall"] + et_row["test_event_recall"]) / 2.0),
+        "combined_test_false_alarms_per_session_mean": float((rf_row["test_false_alarms_per_session"] + et_row["test_false_alarms_per_session"]) / 2.0),
         "combined_estimated_node_count": int(rf_row["estimated_node_count"] + et_row["estimated_node_count"]),
     }
     combined.update(_build_arc_model_summary("rf", combo, rf_result))
@@ -734,6 +868,8 @@ def _build_arc_combined_row_optimized(stage: str, combo: list[str], selected_col
 def _build_arc_model_summary(prefix: str, combo: list[str], result: dict) -> dict:
     cm = result.get("test_confusion_matrix", {}) or {}
     val_cm = result.get("validation_threshold_result", {}) or {}
+    val_event = result.get("validation_event_level_metrics", {}) or {}
+    test_event = result.get("test_event_level_metrics", {}) or {}
     return {
         f"{prefix}_model_name": result.get("model_name"),
         f"{prefix}_threshold": float(result.get("threshold", 0.5)),
@@ -749,6 +885,9 @@ def _build_arc_model_summary(prefix: str, combo: list[str], result: dict) -> dic
         f"{prefix}_validation_precision": float(result.get("validation_precision", 0.0)),
         f"{prefix}_validation_specificity": float(result.get("validation_specificity", 0.0)),
         f"{prefix}_validation_fpr": float(result.get("validation_fpr", 1.0)),
+        f"{prefix}_validation_event_fn": int(val_event.get("missed_event_count", 0)),
+        f"{prefix}_validation_event_recall": float(val_event.get("event_recall", 0.0)),
+        f"{prefix}_validation_false_alarms_per_session": float(val_event.get("false_alarms_per_session", 0.0)),
         f"{prefix}_validation_average_precision": float(result.get("validation_average_precision", 0.0)),
         f"{prefix}_validation_balanced_accuracy": float(result.get("validation_balanced_accuracy", 0.0)),
         f"{prefix}_test_tn": int(cm.get("tn", 0)),
@@ -759,6 +898,9 @@ def _build_arc_model_summary(prefix: str, combo: list[str], result: dict) -> dic
         f"{prefix}_test_precision": float(result.get("test_precision", 0.0)),
         f"{prefix}_test_specificity": float(result.get("test_specificity", 0.0)),
         f"{prefix}_test_fpr": float(result.get("test_fpr", 1.0)),
+        f"{prefix}_test_event_fn": int(test_event.get("missed_event_count", 0)),
+        f"{prefix}_test_event_recall": float(test_event.get("event_recall", 0.0)),
+        f"{prefix}_test_false_alarms_per_session": float(test_event.get("false_alarms_per_session", 0.0)),
         f"{prefix}_test_average_precision": float(result.get("test_average_precision", 0.0)),
         f"{prefix}_test_balanced_accuracy": float(result.get("test_balanced_accuracy", 0.0)),
         f"{prefix}_test_accuracy": float(result.get("test_accuracy", 0.0)),
@@ -767,6 +909,7 @@ def _build_arc_model_summary(prefix: str, combo: list[str], result: dict) -> dic
 
 def run_arc_dual_sweep(args, tracker: dict | None = None) -> tuple[dict, pd.DataFrame]:
     feature_pool = [str(x).strip() for x in (args.features or ARC_SWEEP_FEATURES) if str(x).strip() in ARC_SWEEP_FEATURES]
+    arc_tolerance = normalize_arc_tolerance_config(_arc_tolerance_dict(args))
     if tracker is not None:
         tracker["arc_feature_pool"] = list(feature_pool)
     feature_count_min = max(1, int(args.feature_count_min))
@@ -787,6 +930,7 @@ def run_arc_dual_sweep(args, tracker: dict | None = None) -> tuple[dict, pd.Data
         args.arc_csv,
         include_invalid=args.include_invalid,
         feature_names=full_feature_names,
+        arc_tolerance=arc_tolerance,
     )
     splits = make_group_splits(X_all, y, groups)
     train_idx = splits["train_idx"]
@@ -794,15 +938,47 @@ def run_arc_dual_sweep(args, tracker: dict | None = None) -> tuple[dict, pd.Data
     train_full_idx = splits["train_full_idx"]
     X_train_full = splits["X_train_full"]
     y_train_full = splits["y_train_full"]
+    groups_train_full = splits["groups_train_full"]
     X_test_full = splits["X_test"]
     y_test = splits["y_test"]
+    meta_train_full = df_meta.iloc[train_full_idx].copy()
+    meta_train_base = meta_train_full.iloc[train_idx].copy()
+    meta_val_base = meta_train_full.iloc[val_idx].copy()
+    meta_test = df_meta.iloc[splits["test_idx"]].copy()
 
     X_train_base = X_train_full.iloc[train_idx]
     y_train_base = y_train_full.iloc[train_idx]
-    groups_train_base = splits["groups_train_full"].iloc[train_idx]
+    groups_train_base = groups_train_full.iloc[train_idx]
     w_train_base = np.asarray(w[train_full_idx][train_idx]).astype(float)
     X_val_base = X_train_full.iloc[val_idx]
     y_val_base = y_train_full.iloc[val_idx]
+    sweep_negative_ratio = float(getattr(args, "sweep_negative_ratio", 18.0))
+    sweep_positive_oversample = float(getattr(args, "sweep_positive_oversample", 1.25))
+    final_negative_ratio = float(getattr(args, "final_negative_ratio", 0.0))
+    final_positive_oversample = float(getattr(args, "final_positive_oversample", 1.0))
+
+    X_train_sweep, y_train_sweep, groups_train_sweep, w_train_sweep, meta_train_sweep, sweep_view_info = compose_arc_training_view(
+        X_train_base,
+        y_train_base,
+        groups_train_base,
+        w_train_base,
+        meta_df=meta_train_base,
+        negative_ratio=sweep_negative_ratio,
+        positive_oversample=sweep_positive_oversample,
+        random_state=42,
+        min_negative_rows=256,
+    )
+    X_train_final, y_train_final, groups_train_final, w_train_final, meta_train_final, final_view_info = compose_arc_training_view(
+        X_train_base,
+        y_train_base,
+        groups_train_base,
+        w_train_base,
+        meta_df=meta_train_base,
+        negative_ratio=final_negative_ratio,
+        positive_oversample=final_positive_oversample,
+        random_state=84,
+        min_negative_rows=512,
+    )
 
     combos = _arc_feature_combinations(
         feature_pool=feature_pool,
@@ -830,6 +1006,9 @@ def run_arc_dual_sweep(args, tracker: dict | None = None) -> tuple[dict, pd.Data
     print("Arc sweep n_iter per final model:", args.n_iter)
     print("Arc shortlist n_iter:", arc_shortlist_n_iter)
     print("Arc time budget minutes:", budget_minutes)
+    print("Arc tolerance:", arc_tolerance)
+    print("Arc sweep training view:", sweep_view_info)
+    print("Arc final training view:", final_view_info)
     print("CV split summary:", splits.get("cv_group_summary", {}))
 
     if tracker is not None:
@@ -875,13 +1054,16 @@ def run_arc_dual_sweep(args, tracker: dict | None = None) -> tuple[dict, pd.Data
             selected_cols = list(combo) + list(ARC_CONTEXT_FEATURES)
             combo_key = "|".join(combo)
             result = _run_arc_et_prescreen(
-                X_train=X_train_base[selected_cols],
-                y_train=y_train_base,
-                w_train=w_train_base,
+                X_train=X_train_sweep[selected_cols],
+                y_train=y_train_sweep,
+                w_train=w_train_sweep,
+                meta_train=meta_train_sweep,
                 X_val=X_val_base[selected_cols],
                 y_val=y_val_base,
+                meta_val=meta_val_base,
                 X_test=X_test_full[selected_cols],
                 y_test=y_test,
+                meta_test=meta_test,
                 args=args,
             )
             row = _build_arc_model_row_optimized(
@@ -896,6 +1078,15 @@ def run_arc_dual_sweep(args, tracker: dict | None = None) -> tuple[dict, pd.Data
                     "shard_total": int(shard_count),
                     "elapsed_seconds": float(elapsed),
                     "remaining_budget_seconds": None if remaining is None else float(remaining),
+                    "training_rows": int(sweep_view_info.get("final_rows", len(X_train_sweep))),
+                    "training_positive_rows": int(sweep_view_info.get("final_positive_rows", np.sum(np.asarray(y_train_sweep) == 1))),
+                    "training_negative_rows": int(sweep_view_info.get("final_negative_rows", np.sum(np.asarray(y_train_sweep) == 0))),
+                    "training_negative_ratio_requested": float(sweep_view_info.get("negative_ratio_requested", sweep_negative_ratio)),
+                    "training_positive_oversample": float(sweep_view_info.get("positive_oversample", sweep_positive_oversample)),
+                    "hard_negative_kept": int(sweep_view_info.get("hard_negative_kept", 0)),
+                    "transition_negative_kept": int(sweep_view_info.get("transition_negative_kept", 0)),
+                    "near_arc_negative_kept": int(sweep_view_info.get("near_arc_negative_kept", 0)),
+                    "search_profile": "fast_subset",
                 },
             )
             prescreen_rows.append(row)
@@ -961,16 +1152,20 @@ def run_arc_dual_sweep(args, tracker: dict | None = None) -> tuple[dict, pd.Data
         combo_base_current = int(tracker.get("current", 0)) if tracker is not None else 0
         result = _safe_train_arc_model(
             model_key="et",
-            X_train=X_train_base[selected_cols],
-            y_train=y_train_base,
-            groups_train=groups_train_base,
-            w_train=w_train_base,
+            X_train=X_train_sweep[selected_cols],
+            y_train=y_train_sweep,
+            groups_train=groups_train_sweep,
+            w_train=w_train_sweep,
+            meta_train=meta_train_sweep,
             X_val=X_val_base[selected_cols],
             y_val=y_val_base,
+            meta_val=meta_val_base,
             X_test=X_test_full[selected_cols],
             y_test=y_test,
+            meta_test=meta_test,
             n_iter=arc_shortlist_n_iter,
             args=args,
+            search_profile="fast_subset",
             progress_callback=_progress_child_callback(
                 tracker,
                 combo_base_current,
@@ -993,6 +1188,15 @@ def run_arc_dual_sweep(args, tracker: dict | None = None) -> tuple[dict, pd.Data
                 "seed_stage": "prescreen_et",
                 "elapsed_seconds": float(elapsed),
                 "remaining_budget_seconds": None if remaining is None else float(remaining),
+                "training_rows": int(sweep_view_info.get("final_rows", len(X_train_sweep))),
+                "training_positive_rows": int(sweep_view_info.get("final_positive_rows", np.sum(np.asarray(y_train_sweep) == 1))),
+                "training_negative_rows": int(sweep_view_info.get("final_negative_rows", np.sum(np.asarray(y_train_sweep) == 0))),
+                "training_negative_ratio_requested": float(sweep_view_info.get("negative_ratio_requested", sweep_negative_ratio)),
+                "training_positive_oversample": float(sweep_view_info.get("positive_oversample", sweep_positive_oversample)),
+                "hard_negative_kept": int(sweep_view_info.get("hard_negative_kept", 0)),
+                "transition_negative_kept": int(sweep_view_info.get("transition_negative_kept", 0)),
+                "near_arc_negative_kept": int(sweep_view_info.get("near_arc_negative_kept", 0)),
+                "search_profile": "fast_subset",
             },
         )
         shortlist_rows.append(row)
@@ -1047,31 +1251,39 @@ def run_arc_dual_sweep(args, tracker: dict | None = None) -> tuple[dict, pd.Data
             rf_future = executor.submit(
                 _safe_train_arc_model,
                 "rf",
-                X_train_base[selected_cols],
-                y_train_base,
-                groups_train_base,
-                w_train_base,
+                X_train_final[selected_cols],
+                y_train_final,
+                groups_train_final,
+                w_train_final,
+                meta_train_final,
                 X_val=X_val_base[selected_cols],
                 y_val=y_val_base,
+                meta_val=meta_val_base,
                 X_test=X_test_full[selected_cols],
                 y_test=y_test,
+                meta_test=meta_test,
                 n_iter=int(args.n_iter),
                 args=args,
+                search_profile="final_rf",
                 progress_callback=rf_callback,
             )
             et_future = executor.submit(
                 _safe_train_arc_model,
                 "et",
-                X_train_base[selected_cols],
-                y_train_base,
-                groups_train_base,
-                w_train_base,
+                X_train_final[selected_cols],
+                y_train_final,
+                groups_train_final,
+                w_train_final,
+                meta_train_final,
                 X_val=X_val_base[selected_cols],
                 y_val=y_val_base,
+                meta_val=meta_val_base,
                 X_test=X_test_full[selected_cols],
                 y_test=y_test,
+                meta_test=meta_test,
                 n_iter=int(args.n_iter),
                 args=args,
+                search_profile="final_et",
                 progress_callback=et_callback,
             )
             rf_result = rf_future.result()
@@ -1081,12 +1293,30 @@ def run_arc_dual_sweep(args, tracker: dict | None = None) -> tuple[dict, pd.Data
             "finalist_total": int(len(finalist_seed_rows)),
             "elapsed_seconds": float(elapsed),
             "remaining_budget_seconds": None if remaining is None else float(remaining),
+            "training_rows": int(final_view_info.get("final_rows", len(X_train_final))),
+            "training_positive_rows": int(final_view_info.get("final_positive_rows", np.sum(np.asarray(y_train_final) == 1))),
+            "training_negative_rows": int(final_view_info.get("final_negative_rows", np.sum(np.asarray(y_train_final) == 0))),
+            "training_negative_ratio_requested": float(final_view_info.get("negative_ratio_requested", final_negative_ratio)),
+            "training_positive_oversample": float(final_view_info.get("positive_oversample", final_positive_oversample)),
+            "hard_negative_kept": int(final_view_info.get("hard_negative_kept", 0)),
+            "transition_negative_kept": int(final_view_info.get("transition_negative_kept", 0)),
+            "near_arc_negative_kept": int(final_view_info.get("near_arc_negative_kept", 0)),
+            "search_profile": "final_rf",
         })
         et_row = _build_arc_model_row_optimized("final_et", combo, selected_cols, et_result, {
             "finalist_index": int(finalist_index),
             "finalist_total": int(len(finalist_seed_rows)),
             "elapsed_seconds": float(elapsed),
             "remaining_budget_seconds": None if remaining is None else float(remaining),
+            "training_rows": int(final_view_info.get("final_rows", len(X_train_final))),
+            "training_positive_rows": int(final_view_info.get("final_positive_rows", np.sum(np.asarray(y_train_final) == 1))),
+            "training_negative_rows": int(final_view_info.get("final_negative_rows", np.sum(np.asarray(y_train_final) == 0))),
+            "training_negative_ratio_requested": float(final_view_info.get("negative_ratio_requested", final_negative_ratio)),
+            "training_positive_oversample": float(final_view_info.get("positive_oversample", final_positive_oversample)),
+            "hard_negative_kept": int(final_view_info.get("hard_negative_kept", 0)),
+            "transition_negative_kept": int(final_view_info.get("transition_negative_kept", 0)),
+            "near_arc_negative_kept": int(final_view_info.get("near_arc_negative_kept", 0)),
+            "search_profile": "final_et",
         })
         combined = _build_arc_combined_row_optimized(
             stage="final_duel",
@@ -1099,6 +1329,14 @@ def run_arc_dual_sweep(args, tracker: dict | None = None) -> tuple[dict, pd.Data
                 "finalist_total": int(len(finalist_seed_rows)),
                 "elapsed_seconds": float(elapsed),
                 "remaining_budget_seconds": None if remaining is None else float(remaining),
+                "training_rows": int(final_view_info.get("final_rows", len(X_train_final))),
+                "training_positive_rows": int(final_view_info.get("final_positive_rows", np.sum(np.asarray(y_train_final) == 1))),
+                "training_negative_rows": int(final_view_info.get("final_negative_rows", np.sum(np.asarray(y_train_final) == 0))),
+                "training_negative_ratio_requested": float(final_view_info.get("negative_ratio_requested", final_negative_ratio)),
+                "training_positive_oversample": float(final_view_info.get("positive_oversample", final_positive_oversample)),
+                "hard_negative_kept": int(final_view_info.get("hard_negative_kept", 0)),
+                "transition_negative_kept": int(final_view_info.get("transition_negative_kept", 0)),
+                "near_arc_negative_kept": int(final_view_info.get("near_arc_negative_kept", 0)),
             },
         )
         rf_rows.append(rf_row)
@@ -1182,6 +1420,7 @@ def run_arc_dual_sweep(args, tracker: dict | None = None) -> tuple[dict, pd.Data
     rf_best = practical_section.get("overall_best_rf", {}) or {}
     et_best = practical_section.get("overall_best_et", {}) or {}
     best_by_feature_count = practical_section.get("best_by_feature_count", []) or []
+    deployment_model_key, deployment_row = _pick_arc_deployment_row(rf_best, et_best, combined_best)
 
     report = {
         "task": "arc_dual_model_staged",
@@ -1206,8 +1445,10 @@ def run_arc_dual_sweep(args, tracker: dict | None = None) -> tuple[dict, pd.Data
         "all_results_csv": args.out_csv,
         "ranking_policy_default": "practical",
         "ranking_sections": ranking_sections,
-        "recommended_arc_base_features_global": list(combined_best.get("features", [])),
-        "recommended_features_global": list(combined_best.get("features", [])),
+        "recommended_arc_deployment_model": deployment_model_key,
+        "recommended_arc_deployment_candidate": deployment_row,
+        "recommended_arc_base_features_global": list(deployment_row.get("features", [])),
+        "recommended_features_global": list(deployment_row.get("features", [])),
         "recommended_by_model": {
             "rf": list(rf_best.get("features", [])),
             "et": list(et_best.get("features", [])),
@@ -1265,6 +1506,16 @@ def run_arc_dual_sweep(args, tracker: dict | None = None) -> tuple[dict, pd.Data
             "min_threshold": args.min_threshold,
             "n_iter": args.n_iter,
             "n_jobs": getattr(args, "n_jobs", 1),
+            "arc_tolerance_mode": arc_tolerance.normalized_mode(),
+            "pre_arc_window": int(arc_tolerance.pre_rows),
+            "post_arc_window": int(arc_tolerance.post_rows),
+            "soft_neighbor_weight": float(arc_tolerance.soft_neighbor_weight),
+            "expanded_neighbor_weight": float(arc_tolerance.expanded_neighbor_weight),
+            "hard_negative_ring": int(arc_tolerance.hard_negative_ring),
+            "sweep_negative_ratio": float(sweep_negative_ratio),
+            "sweep_positive_oversample": float(sweep_positive_oversample),
+            "final_negative_ratio": float(final_negative_ratio),
+            "final_positive_oversample": float(final_positive_oversample),
             "feature_count_min": feature_count_min,
             "feature_count_max": feature_count_max,
             "max_combinations": int(args.max_combinations),
@@ -1276,6 +1527,10 @@ def run_arc_dual_sweep(args, tracker: dict | None = None) -> tuple[dict, pd.Data
             "arc_prescreen_trees": int(getattr(args, "arc_prescreen_trees", 64)),
             "arc_prescreen_max_depth": int(getattr(args, "arc_prescreen_max_depth", 8)),
             "arc_shortlist_n_iter": int(arc_shortlist_n_iter),
+        },
+        "training_views": {
+            "sweep": sweep_view_info,
+            "final": final_view_info,
         },
     }
     if tracker is not None:
@@ -1539,6 +1794,16 @@ def main():
     ap.add_argument("--arc_prescreen_trees", type=int, default=64)
     ap.add_argument("--arc_prescreen_max_depth", type=int, default=8)
     ap.add_argument("--arc_shortlist_n_iter", type=int, default=6)
+    ap.add_argument("--arc_tolerance_mode", default="soft_positive", choices=["none", "expanded_positive", "soft_positive"])
+    ap.add_argument("--pre_arc_window", type=int, default=1)
+    ap.add_argument("--post_arc_window", type=int, default=3)
+    ap.add_argument("--soft_neighbor_weight", type=float, default=0.30)
+    ap.add_argument("--expanded_neighbor_weight", type=float, default=0.70)
+    ap.add_argument("--hard_negative_ring", type=int, default=2)
+    ap.add_argument("--sweep_negative_ratio", type=float, default=18.0)
+    ap.add_argument("--sweep_positive_oversample", type=float, default=1.25)
+    ap.add_argument("--final_negative_ratio", type=float, default=0.0)
+    ap.add_argument("--final_positive_oversample", type=float, default=1.0)
     ap.add_argument("--context_feature_count_min", type=int, default=1)
     ap.add_argument("--context_feature_count_max", type=int, default=len(CONTEXT_SWEEP_FEATURES))
     ap.add_argument("--context_max_combinations", type=int, default=0)

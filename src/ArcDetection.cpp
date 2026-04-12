@@ -3,7 +3,7 @@
 #include <math.h>
 #include <string.h>
 
-#include "TinyMLTreeEnsemble.h"
+#include "TinyMLTreeEnsemble_RF.h"
 #include "esp_dsp.h"
 #include "dsps_fft2r.h"
 #include "dsps_wind_hann.h"
@@ -116,6 +116,22 @@ static inline float codeToCurrentA(uint16_t code, const CurrentCalib& cal) {
   const float v_sensor = (cal.dividerRatio > 1e-9f) ? (v_adc / cal.dividerRatio) : 0.0f;
   const float amps_uncal = ((v_sensor - cal.offsetV) / cal.voltsPerAmp) * cal.ampsScale;
   return amps_uncal;
+}
+
+
+static float goertzelTonePower_(const float* x, size_t n, float fs_hz, float tone_hz) {
+  if (!x || n == 0 || fs_hz <= 0.0f || tone_hz <= 0.0f || tone_hz >= (0.5f * fs_hz)) return 0.0f;
+  const float omega = (2.0f * 3.14159265358979f * tone_hz) / fs_hz;
+  const float coeff = 2.0f * cosf(omega);
+  float s1 = 0.0f;
+  float s2 = 0.0f;
+  for (size_t i = 0; i < n; ++i) {
+    const float s0 = x[i] + coeff * s1 - s2;
+    s2 = s1;
+    s1 = s0;
+  }
+  const float power = (s1 * s1) + (s2 * s2) - (coeff * s1 * s2);
+  return fmaxf(power, 0.0f);
 }
 
 
@@ -281,7 +297,8 @@ bool ArcDetection::compute(const uint16_t* raw, size_t n, float fs_hz,
   out = ArcDetectionResult{};
   out.fs_hz = fs_hz;
 
-  if (!raw || n != N_SAMP || fs_hz < 1000.0f) return false;
+  if (!raw || fs_hz < 1000.0f) return false;
+  if (!(n == ARC_RUNTIME_FAST_FFT_SAMPLES || n == ARC_RUNTIME_LEGACY_FFT_SAMPLES)) return false;
   if (!dsp_is_power_of_two((int)n)) return false;
   if ((int)n > CONFIG_DSP_MAX_FFT_SIZE) return false;
 
@@ -296,6 +313,7 @@ bool ArcDetection::compute(const uint16_t* raw, size_t n, float fs_hz,
   static uint8_t harmonicSkip[N_SAMP / 2];
   static bool dspReady = false;
   static bool winReady = false;
+  static int winLen = 0;
 
   double mean = 0.0;
   int changes = 0;
@@ -403,9 +421,10 @@ bool ArcDetection::compute(const uint16_t* raw, size_t n, float fs_hz,
     dspReady = true;
   }
 
-  if (!winReady) {
+  if (!winReady || winLen != (int)n) {
     dsps_wind_hann_f32(win, (int)n);
     winReady = true;
+    winLen = (int)n;
   }
 
   float crossAll[128];
@@ -624,14 +643,19 @@ bool ArcDetection::compute(const uint16_t* raw, size_t n, float fs_hz,
     return true;
   }
 
-  if (haveFund) {
+  const float trackedFundP = goertzelTonePower_(sigFilt, n, fs_hz, mainsHz);
+  if (haveFund || trackedFundP > 1e-9f) {
     double harmP = 0.0;
+    const float nyquist = 0.5f * fs_hz;
     for (int h = 2; h <= 10; ++h) {
-      const int khNom = h * k1;
-      if (khNom >= half) break;
-      harmP += bandPeakExcess(sig, half, khNom, 1, 4);
+      const float harmHz = float(h) * mainsHz;
+      if (harmHz >= (nyquist - 5.0f)) break;
+      harmP += (double)goertzelTonePower_(sigFilt, n, fs_hz, harmHz);
     }
-    out.thd_i = (fundP > 1e-12f) ? clampf((float)(sqrt(harmP / (double)fundP) * 100.0), DB_THD_CLIP_MIN, DB_THD_CLIP_MAX) : 0.0f;
+    const float thdFundP = fmaxf(trackedFundP, fundP);
+    out.thd_i = (thdFundP > 1e-12f)
+        ? clampf((float)(sqrt(harmP / (double)thdFundP) * 100.0), DB_THD_CLIP_MIN, DB_THD_CLIP_MAX)
+        : 0.0f;
   } else {
     out.thd_i = 0.0f;
   }
@@ -1003,19 +1027,23 @@ static inline void fillArcModelInput_(double* dst,
 #endif
 }
 
-static inline float contextAwareArcThreshold_() {
+static inline float contextAwareArcThresholdFor_(int8_t ctxFamily, float ctxConfidence) {
 #if defined(ARC_CONTEXT_CONFIDENCE_MIN) && defined(ARC_THRESHOLD_UNKNOWN)
-  if (s_ctxFamily >= 0 && s_ctxFamily < FAMILY_COUNT && s_ctxConfidence >= ARC_CONTEXT_CONFIDENCE_MIN) {
+  if (ctxFamily >= 0 && ctxFamily < FAMILY_COUNT && ctxConfidence >= ARC_CONTEXT_CONFIDENCE_MIN) {
   #if defined(arc_family_thresholds)
-    return arc_family_thresholds[s_ctxFamily];
+    return arc_family_thresholds[ctxFamily];
   #else
-    return arc_context_threshold_for_family((int)s_ctxFamily, s_ctxConfidence);
+    return arc_context_threshold_for_family((int)ctxFamily, ctxConfidence);
   #endif
   }
   return ARC_THRESHOLD_UNKNOWN;
 #else
   return ARC_THRESHOLD;
 #endif
+}
+
+static inline float contextAwareArcThreshold_() {
+  return contextAwareArcThresholdFor_(s_ctxFamily, s_ctxConfidence);
 }
 
 
@@ -1142,15 +1170,16 @@ static inline int unknownContextArcVotes_(float spectral_flux_midhf,
 #endif
 }
 
-int ArcDetection::predict(float spectral_flux_midhf, float residual_crest_factor,
-                          float edge_spike_ratio, float midband_residual_ratio,
-                          float cycle_nmse, float peak_fluct_cv,
-                          float thd_i, float hf_energy_delta,
-                          float zcv, float abs_irms_zscore_vs_baseline,
-                          float suspicious_run_energy, float delta_irms_abs,
-                          float delta_hf_energy, float delta_flux,
-                          float halfcycle_asymmetry, float v_sag_pct,
-                          float v_rms, float i_rms, float temp_c) const {
+int ArcDetection::predictWithContext(float spectral_flux_midhf, float residual_crest_factor,
+                                     float edge_spike_ratio, float midband_residual_ratio,
+                                     float cycle_nmse, float peak_fluct_cv,
+                                     float thd_i, float hf_energy_delta,
+                                     float zcv, float abs_irms_zscore_vs_baseline,
+                                     float suspicious_run_energy, float delta_irms_abs,
+                                     float delta_hf_energy, float delta_flux,
+                                     float halfcycle_asymmetry, float v_sag_pct,
+                                     float v_rms, float i_rms, float temp_c,
+                                     int8_t ctxFamily, float ctxConfidence) const {
 #if defined(ARC_MODEL_FEATURE_VERSION) && (ARC_MODEL_FEATURE_VERSION >= 5)
   (void)v_rms; (void)i_rms; (void)temp_c;
   double input_features[ARC_MODEL_INPUT_DIM];
@@ -1171,12 +1200,12 @@ int ArcDetection::predict(float spectral_flux_midhf, float residual_crest_factor
                      delta_flux,
                      halfcycle_asymmetry,
                      v_sag_pct,
-                     s_ctxFamily,
-                     s_ctxConfidence);
+                     ctxFamily,
+                     ctxConfidence);
   double output_probs[2] = {0.0, 0.0};
   arc_rf_predict(input_features, output_probs);
-  const float threshold = contextAwareArcThreshold_();
-  const bool unknown_ctx = !((s_ctxFamily >= 0) && (s_ctxFamily < FAMILY_COUNT) && (s_ctxConfidence >= ARC_CONTEXT_CONFIDENCE_MIN));
+  const float threshold = contextAwareArcThresholdFor_(ctxFamily, ctxConfidence);
+  const bool unknown_ctx = !((ctxFamily >= 0) && (ctxFamily < FAMILY_COUNT) && (ctxConfidence >= ARC_CONTEXT_CONFIDENCE_MIN));
   if (unknown_ctx) {
     const int votes = unknownContextArcVotes_(spectral_flux_midhf,
                                               residual_crest_factor,
@@ -1215,6 +1244,38 @@ int ArcDetection::predict(float spectral_flux_midhf, float residual_crest_factor
   if (halfcycle_asymmetry >= 10.0f) score += 0.9f;
   return (score >= 4.0f) ? 1 : 0;
 #endif
+}
+
+int ArcDetection::predict(float spectral_flux_midhf, float residual_crest_factor,
+                          float edge_spike_ratio, float midband_residual_ratio,
+                          float cycle_nmse, float peak_fluct_cv,
+                          float thd_i, float hf_energy_delta,
+                          float zcv, float abs_irms_zscore_vs_baseline,
+                          float suspicious_run_energy, float delta_irms_abs,
+                          float delta_hf_energy, float delta_flux,
+                          float halfcycle_asymmetry, float v_sag_pct,
+                          float v_rms, float i_rms, float temp_c) const {
+  return predictWithContext(spectral_flux_midhf,
+                            residual_crest_factor,
+                            edge_spike_ratio,
+                            midband_residual_ratio,
+                            cycle_nmse,
+                            peak_fluct_cv,
+                            thd_i,
+                            hf_energy_delta,
+                            zcv,
+                            abs_irms_zscore_vs_baseline,
+                            suspicious_run_energy,
+                            delta_irms_abs,
+                            delta_hf_energy,
+                            delta_flux,
+                            halfcycle_asymmetry,
+                            v_sag_pct,
+                            v_rms,
+                            i_rms,
+                            temp_c,
+                            s_ctxFamily,
+                            s_ctxConfidence);
 }
 
 int ArcDetection::computeAndPredict(const uint16_t* raw, size_t n, float fs_hz,

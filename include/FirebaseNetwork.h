@@ -133,6 +133,8 @@ private:
     float frame_dt_ms;
     float compute_time_ms;
     float timing_skew_ms;
+    uint16_t fft_size;
+    uint16_t hop_samples;
     float spectral_flux_midhf, residual_crest_factor, edge_spike_ratio, midband_residual_ratio, cycle_nmse;
     float peak_fluct_cv, thd_i, hf_energy_delta, zcv, abs_irms_zscore_vs_baseline;
     float fs_err_hz, suspicious_run_energy, delta_irms_abs, delta_hf_energy, delta_flux, v_sag_pct, halfcycle_asymmetry;

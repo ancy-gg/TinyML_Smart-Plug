@@ -17,6 +17,7 @@ from tinyml_common import (
     build_event_level_report,
     build_subset_metrics_report,
     calibrate_family_threshold_policy,
+    compose_arc_training_view,
     evaluate_threshold_policy,
     load_clean_dataset,
     make_group_splits,
@@ -42,6 +43,17 @@ def emit_progress(current: int, total: int, payload: dict) -> None:
     payload["current"] = int(current)
     payload["total"] = int(total)
     print("[[PROGRESS]] " + json.dumps(payload, sort_keys=True), flush=True)
+
+
+def _arc_tolerance_dict(args) -> dict:
+    return {
+        "mode": getattr(args, "arc_tolerance_mode", "soft_positive"),
+        "pre_rows": int(getattr(args, "pre_arc_window", 1)),
+        "post_rows": int(getattr(args, "post_arc_window", 3)),
+        "soft_neighbor_weight": float(getattr(args, "soft_neighbor_weight", 0.30)),
+        "expanded_neighbor_weight": float(getattr(args, "expanded_neighbor_weight", 0.70)),
+        "hard_negative_ring": int(getattr(args, "hard_negative_ring", 2)),
+    }
 
 
 def _load_feature_list_from_report(report_path: str | None, model_key: str) -> list[str] | None:
@@ -98,6 +110,15 @@ def main():
     ap.add_argument("--n_jobs", type=int, default=-1)
     ap.add_argument("--feature_report", default=None)
     ap.add_argument("--features", nargs="*", default=None)
+    ap.add_argument("--arc_tolerance_mode", default="soft_positive", choices=["none", "expanded_positive", "soft_positive"])
+    ap.add_argument("--pre_arc_window", type=int, default=1)
+    ap.add_argument("--post_arc_window", type=int, default=3)
+    ap.add_argument("--soft_neighbor_weight", type=float, default=0.30)
+    ap.add_argument("--expanded_neighbor_weight", type=float, default=0.70)
+    ap.add_argument("--hard_negative_ring", type=int, default=2)
+    ap.add_argument("--final_negative_ratio", type=float, default=0.0)
+    ap.add_argument("--positive_oversample", type=float, default=1.0)
+    ap.add_argument("--search_profile", default="final_rf")
     args = ap.parse_args()
 
     if args.n_jobs != 0:
@@ -111,6 +132,7 @@ def main():
         args.csv,
         include_invalid=args.include_invalid,
         feature_names=selected_feature_names,
+        arc_tolerance=_arc_tolerance_dict(args),
     )
     splits = make_group_splits(X, y, groups)
     print("CV split summary:", splits.get("cv_group_summary", {}))
@@ -118,17 +140,36 @@ def main():
     train_idx = splits["train_idx"]
     val_idx = splits["val_idx"]
     train_full_idx = splits["train_full_idx"]
+    train_meta_full = df_meta.iloc[train_full_idx].copy()
+    train_meta = train_meta_full.iloc[train_idx].copy()
+    val_meta = train_meta_full.iloc[val_idx].copy()
+    test_meta = df_meta.iloc[splits["test_idx"]].copy()
+
+    X_train, y_train, groups_train, w_train, meta_train, training_view = compose_arc_training_view(
+        splits["X_train_full"].iloc[train_idx],
+        splits["y_train_full"].iloc[train_idx],
+        splits["groups_train_full"].iloc[train_idx],
+        w[train_full_idx][train_idx],
+        meta_df=train_meta,
+        negative_ratio=float(args.final_negative_ratio),
+        positive_oversample=float(args.positive_oversample),
+        random_state=42,
+        min_negative_rows=512,
+    )
 
     result = train_one_model(
         model_key="rf",
-        X_train=splits["X_train_full"].iloc[train_idx],
-        y_train=splits["y_train_full"].iloc[train_idx],
-        groups_train=splits["groups_train_full"].iloc[train_idx],
-        w_train=w[train_full_idx][train_idx],
+        X_train=X_train,
+        y_train=y_train,
+        groups_train=groups_train,
+        w_train=w_train,
+        meta_train=meta_train,
         X_val=splits["X_train_full"].iloc[val_idx],
         y_val=splits["y_train_full"].iloc[val_idx],
+        meta_val=val_meta,
         X_test=splits["X_test"],
         y_test=splits["y_test"],
+        meta_test=test_meta,
         fn_weight=args.fn_weight,
         fp_weight=args.fp_weight,
         min_recall=args.min_recall,
@@ -136,10 +177,11 @@ def main():
         min_precision=args.min_precision,
         max_fpr=args.max_fpr,
         min_threshold=args.min_threshold,
+        arc_tolerance=_arc_tolerance_dict(args),
+        search_profile=args.search_profile,
         progress_callback=emit_progress,
     )
 
-    val_meta = df_meta.iloc[train_full_idx].iloc[val_idx].reset_index(drop=True)
     val_score = result["estimator"].predict_proba(splits["X_train_full"].iloc[val_idx])[:, 1]
     result["threshold_policy"] = calibrate_family_threshold_policy(
         val_meta,
@@ -161,7 +203,6 @@ def main():
     )
 
     y_score = result["estimator"].predict_proba(splits["X_test"])[:, 1]
-    test_meta = df_meta.iloc[splits["test_idx"]].reset_index(drop=True)
     result["test_policy_metrics"] = evaluate_threshold_policy(
         test_meta,
         splits["y_test"].to_numpy(),
@@ -201,10 +242,18 @@ def main():
     result["short_burst_sweep"] = build_short_burst_sweep_report(test_meta, splits["y_test"].to_numpy(), y_score, result["threshold"], policy=result.get("threshold_policy"))
     result["transition_window_report"] = build_transition_window_report(test_meta, splits["y_test"].to_numpy(), y_score, result["threshold"], policy=result.get("threshold_policy"))
     result["unknown_context_startup_report"] = build_unknown_context_startup_report(test_meta, splits["y_test"].to_numpy(), y_score, result["threshold"], policy=result.get("threshold_policy"))
-    result["event_level_metrics"] = build_event_level_report(test_meta, splits["y_test"].to_numpy(), y_score, result["threshold"], policy=result.get("threshold_policy"))
+    result["event_level_metrics"] = build_event_level_report(
+        test_meta,
+        splits["y_test"].to_numpy(),
+        y_score,
+        result["threshold"],
+        policy=result.get("threshold_policy"),
+        tolerance=_arc_tolerance_dict(args),
+    )
     result["leave_one_trial_out_inventory"] = build_group_inventory_report(df_meta, "trial_id")
     result["leave_one_load_type_out_inventory"] = build_group_inventory_report(df_meta, full_load_col) if full_load_col is not None else []
     result["leave_one_device_out_inventory"] = build_group_inventory_report(df_meta, "device_name") if "device_name" in df_meta.columns else []
+    result["training_view"] = training_view
 
     search_plan = estimate_search_plan(args.n_iter)
     print("Search plan:", search_plan)
@@ -233,6 +282,15 @@ def main():
         "model": "rf",
         "feature_report": args.feature_report,
         "features": list(selected_base_features),
+        "arc_tolerance_mode": args.arc_tolerance_mode,
+        "pre_arc_window": int(args.pre_arc_window),
+        "post_arc_window": int(args.post_arc_window),
+        "soft_neighbor_weight": float(args.soft_neighbor_weight),
+        "expanded_neighbor_weight": float(args.expanded_neighbor_weight),
+        "hard_negative_ring": int(args.hard_negative_ring),
+        "final_negative_ratio": float(args.final_negative_ratio),
+        "positive_oversample": float(args.positive_oversample),
+        "search_profile": args.search_profile,
     }
     save_model_bundle(
         result=result,

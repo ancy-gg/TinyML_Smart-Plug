@@ -149,6 +149,8 @@ struct FeatureFrame {
   float v_sag_pct = 0.0f;
   float halfcycle_asymmetry = 0.0f;
   float adc_fs_hz = 0.0f;
+  uint16_t fft_size = 0;
+  uint16_t hop_samples = 0;
 
   uint32_t queue_drop_count = 0;
   uint16_t suspicious_run_len = 0;
@@ -204,13 +206,26 @@ static constexpr uint8_t  BUZZER_STATUS_MAX_DUTY = 26;
 // the *measured* sampling rate truthful and must not snap or canonicalize it.
 static constexpr float    FS_INTENDED_HZ = 27000.0f;
 static constexpr float    FS_TARGET_HZ = FS_INTENDED_HZ;
-static constexpr uint16_t N_SAMP       = 1024;
+static constexpr uint16_t ARC_RUNTIME_LEGACY_FFT_SAMPLES = 1024;
+static constexpr uint16_t ARC_RUNTIME_FAST_FFT_SAMPLES   = 512;
+static constexpr uint16_t ARC_RUNTIME_FAST_HOP_SAMPLES   = 256;
+static constexpr bool     ARC_RUNTIME_USE_FAST_FFT       = true;
+static constexpr uint16_t ARC_RUNTIME_FRAME_SAMPLES      = ARC_RUNTIME_USE_FAST_FFT ? ARC_RUNTIME_FAST_FFT_SAMPLES : ARC_RUNTIME_LEGACY_FFT_SAMPLES;
+static constexpr uint16_t ARC_RUNTIME_HOP_SAMPLES        = ARC_RUNTIME_USE_FAST_FFT ? ARC_RUNTIME_FAST_HOP_SAMPLES : ARC_RUNTIME_FRAME_SAMPLES;
+static constexpr uint8_t  ARC_RUNTIME_EMIT_EVERY_HOPS    = ARC_RUNTIME_USE_FAST_FFT ? 3 : 1;
+static constexpr uint16_t ARC_RUNTIME_MAX_FFT_SAMPLES    = ARC_RUNTIME_LEGACY_FFT_SAMPLES;
+static constexpr uint8_t  ARC_RUNTIME_FRAME_HOP_COUNT    = (ARC_RUNTIME_FRAME_SAMPLES / ARC_RUNTIME_HOP_SAMPLES);
+static constexpr uint16_t N_SAMP       = ARC_RUNTIME_MAX_FFT_SAMPLES;
 static constexpr float    MAINS_F0_HZ  = 60.0f;
 
 // Pace feature generation to a stable latest-frame cadence instead of free-running.
-static constexpr float    FEATURE_TARGET_CADENCE_HZ = 15.0f;
+static constexpr float    FEATURE_TARGET_CADENCE_HZ = FS_TARGET_HZ / float(ARC_RUNTIME_HOP_SAMPLES * ARC_RUNTIME_EMIT_EVERY_HOPS);
 static constexpr uint32_t FEATURE_FRAME_PERIOD_US = (uint32_t)(1000000.0f / FEATURE_TARGET_CADENCE_HZ + 0.5f);
 static constexpr float    FEATURE_FRAME_PERIOD_MS = 1000.0f / FEATURE_TARGET_CADENCE_HZ;
+static constexpr float    FEATURE_WINDOW_PERIOD_MS = 1000.0f * (float)ARC_RUNTIME_FRAME_SAMPLES / FS_TARGET_HZ;
+static constexpr float    FEATURE_HOP_PERIOD_MS = 1000.0f * (float)ARC_RUNTIME_HOP_SAMPLES / FS_TARGET_HZ;
+static constexpr float    CSV_LOG_TARGET_CADENCE_HZ = 30.0f;
+static constexpr uint32_t CSV_LOG_MIN_INTERVAL_MS = (uint32_t)(1000.0f / CSV_LOG_TARGET_CADENCE_HZ + 0.5f);
 
 // The analog AAF is already around 10 kHz / Q≈0.73. Keep a conservative cascaded
 // digital LPF as a second anti-alias / de-ringing stage before feature extraction.
@@ -287,15 +302,16 @@ static constexpr uint32_t OLED_RENDER_INTERVAL_MS = 33UL;
 
 // Sensing pipeline / timing quality
 static constexpr uint8_t  FEATURE_FRAME_QUEUE_LEN        = 18;
+static constexpr uint8_t  FEATURE_RAW_FRAME_QUEUE_LEN    = 6;
 static constexpr uint32_t FEATURE_TIMING_GRACE_MS        = 1500UL;
 static constexpr float    FRAME_DT_BAD_EARLY_MS          = FEATURE_FRAME_PERIOD_MS * 0.70f;
 static constexpr float    FRAME_DT_BAD_LATE_MS           = FEATURE_FRAME_PERIOD_MS * 1.70f;
 static constexpr float    FRAME_DT_JITTER_BAD_MS         = FEATURE_FRAME_PERIOD_MS * 0.48f;
-static constexpr float    FRAME_COMPUTE_BAD_MS           = 65.0f;
+static constexpr float    FRAME_COMPUTE_BAD_MS           = FEATURE_FRAME_PERIOD_MS * 0.72f;
 static constexpr float    FS_ERR_BAD_HZ                  = 3200.0f;
 
 
-static constexpr int   ARC_RUNTIME_FEATURE_SPACE_VERSION = 6;
+static constexpr int   ARC_RUNTIME_FEATURE_SPACE_VERSION = 7;
 static constexpr float DB_RATIO_EPS                 = 1e-6f;
 static constexpr float DB_POWER_RATIO_EPS           = 1e-6f;
 static constexpr float DB_RATIO_CLIP_MIN            = -80.0f;
@@ -411,9 +427,9 @@ static constexpr uint16_t ML_LOG_MAX_DURATION_S         = 7200;
 static constexpr uint32_t ML_LOG_IDLE_ARM_GRACE_MS      = 8000UL;
 static constexpr uint32_t ML_LOG_SETTLE_EXCLUDE_MS      = 1200UL;
 static constexpr uint8_t  ML_LOG_SETTLE_GOOD_FRAMES     = 4;
-static constexpr float    ML_LOG_SETTLE_FRAME_DT_MIN_MS = 70.0f;
-static constexpr float    ML_LOG_SETTLE_FRAME_DT_MAX_MS = 130.0f;
-static constexpr float    ML_LOG_SETTLE_COMPUTE_MAX_MS  = 55.0f;
+static constexpr float    ML_LOG_SETTLE_FRAME_DT_MIN_MS = FEATURE_FRAME_PERIOD_MS * 0.60f;
+static constexpr float    ML_LOG_SETTLE_FRAME_DT_MAX_MS = FEATURE_FRAME_PERIOD_MS * 1.80f;
+static constexpr float    ML_LOG_SETTLE_COMPUTE_MAX_MS  = FRAME_COMPUTE_BAD_MS;
 static constexpr uint16_t ML_LOG_AUTO_MIN_DURATION_S    = 5;
 static constexpr uint16_t ML_LOG_AUTO_MAX_DURATION_S    = 60;
 

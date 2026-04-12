@@ -45,6 +45,16 @@ public:
               float delta_hf_energy, float delta_flux,
               float halfcycle_asymmetry, float v_sag_pct,
               float v_rms, float i_rms, float temp_c) const;
+  int predictWithContext(float spectral_flux_midhf, float residual_crest_factor,
+                         float edge_spike_ratio, float midband_residual_ratio,
+                         float cycle_nmse, float peak_fluct_cv,
+                         float thd_i, float hf_energy_delta,
+                         float zcv, float abs_irms_zscore_vs_baseline,
+                         float suspicious_run_energy, float delta_irms_abs,
+                         float delta_hf_energy, float delta_flux,
+                         float halfcycle_asymmetry, float v_sag_pct,
+                         float v_rms, float i_rms, float temp_c,
+                         int8_t ctxFamily, float ctxConfidence) const;
 
   int computeAndPredict(const uint16_t* raw, size_t n, float fs_hz,
                         const CurrentCalib& cal, float mainsHz,

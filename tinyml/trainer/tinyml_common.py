@@ -113,7 +113,7 @@ TARGET = "label_arc"
 CONTEXT_TARGET = "device_family_code"
 GROUP_COL_CANDIDATES = ["trial_id", "session_id", "section_id", "session", "sid"]
 
-DB_FEATURE_SPACE_VERSION = 6
+DB_FEATURE_SPACE_VERSION = 7
 DB_RATIO_FLOOR = 1e-6
 DB_POWER_RATIO_FLOOR = 1e-6
 DB_RATIO_CLIP = (-80.0, 20.0)
@@ -172,6 +172,73 @@ SCAFFOLD_MAX_SHARE_OF_REAL = 0.45
 SCAFFOLD_MAX_BUCKET_WEIGHT_NO_REAL = 6.0
 SCAFFOLD_MIN_ROW_WEIGHT = 0.05
 SCAFFOLD_MIN_BUCKETS_FOR_DEVICE_CAP = 1
+
+ARC_TOLERANCE_MODES = ("none", "expanded_positive", "soft_positive")
+
+
+@dataclass(frozen=True)
+class ArcToleranceConfig:
+    mode: str = "soft_positive"
+    pre_rows: int = 1
+    post_rows: int = 3
+    soft_neighbor_weight: float = 0.30
+    expanded_neighbor_weight: float = 0.70
+    hard_negative_ring: int = 2
+
+    def normalized_mode(self) -> str:
+        mode = str(self.mode or "none").strip().lower()
+        if mode in ("expanded", "expanded_positive", "expanded-positive", "expand"):
+            return "expanded_positive"
+        if mode in ("soft", "soft_positive", "soft-positive", "soft_label"):
+            return "soft_positive"
+        return "none"
+
+    def event_pre_rows(self) -> int:
+        return max(0, int(self.pre_rows))
+
+    def event_post_rows(self) -> int:
+        return max(0, int(self.post_rows))
+
+
+def normalize_arc_tolerance_config(
+    tolerance: ArcToleranceConfig | dict | None = None,
+    *,
+    mode: str | None = None,
+    pre_rows: int | None = None,
+    post_rows: int | None = None,
+    soft_neighbor_weight: float | None = None,
+    expanded_neighbor_weight: float | None = None,
+    hard_negative_ring: int | None = None,
+) -> ArcToleranceConfig:
+    if isinstance(tolerance, ArcToleranceConfig):
+        base = tolerance
+    elif isinstance(tolerance, dict):
+        base = ArcToleranceConfig(
+            mode=str(tolerance.get("mode", "soft_positive")),
+            pre_rows=int(tolerance.get("pre_rows", tolerance.get("pre_arc_window", 1)) or 0),
+            post_rows=int(tolerance.get("post_rows", tolerance.get("post_arc_window", 3)) or 0),
+            soft_neighbor_weight=float(tolerance.get("soft_neighbor_weight", 0.30)),
+            expanded_neighbor_weight=float(tolerance.get("expanded_neighbor_weight", 0.70)),
+            hard_negative_ring=int(tolerance.get("hard_negative_ring", 2) or 0),
+        )
+    else:
+        base = ArcToleranceConfig()
+    cfg = ArcToleranceConfig(
+        mode=base.mode if mode is None else mode,
+        pre_rows=base.pre_rows if pre_rows is None else int(pre_rows),
+        post_rows=base.post_rows if post_rows is None else int(post_rows),
+        soft_neighbor_weight=base.soft_neighbor_weight if soft_neighbor_weight is None else float(soft_neighbor_weight),
+        expanded_neighbor_weight=base.expanded_neighbor_weight if expanded_neighbor_weight is None else float(expanded_neighbor_weight),
+        hard_negative_ring=base.hard_negative_ring if hard_negative_ring is None else int(hard_negative_ring),
+    )
+    return ArcToleranceConfig(
+        mode=cfg.normalized_mode(),
+        pre_rows=max(0, int(cfg.pre_rows)),
+        post_rows=max(0, int(cfg.post_rows)),
+        soft_neighbor_weight=float(min(1.0, max(0.02, cfg.soft_neighbor_weight))),
+        expanded_neighbor_weight=float(min(1.25, max(0.10, cfg.expanded_neighbor_weight))),
+        hard_negative_ring=max(0, int(cfg.hard_negative_ring)),
+    )
 
 
 def default_feature_names_for_target(target_col: str = TARGET) -> list[str]:
@@ -559,6 +626,74 @@ MODEL_CONFIGS = {
     },
 }
 
+MODEL_SEARCH_PROFILES = {
+    "rf": {
+        "full": dict(MODEL_CONFIGS["rf"]["param_space"]),
+        "fast_subset": {
+            "n_estimators": [48, 64, 80, 96, 128],
+            "max_depth": [4, 6, 8, 10, 12],
+            "min_samples_leaf": [2, 3, 4, 6, 8],
+            "min_samples_split": [4, 6, 8, 12, 16],
+            "max_features": ["sqrt", "log2", 0.35, 0.5, 0.65],
+            "bootstrap": [True, False],
+            "class_weight": ["balanced", "balanced_subsample"],
+            "criterion": ["gini", "entropy"],
+            "ccp_alpha": [0.0, 0.00001, 0.00005, 0.0001],
+            "max_leaf_nodes": [32, 48, 64, 96, 128],
+            "min_impurity_decrease": [0.0, 0.000001, 0.00001, 0.00005],
+        },
+        "final_rf": {
+            "n_estimators": [160, 220, 280, 360],
+            "max_depth": [8, 10, 12, 16, 20, None],
+            "min_samples_leaf": [1, 2, 3, 4, 6],
+            "min_samples_split": [2, 4, 6, 8, 12],
+            "max_features": ["sqrt", "log2", 0.35, 0.5, 0.65, 0.8],
+            "bootstrap": [True, False],
+            "class_weight": ["balanced", "balanced_subsample", None],
+            "criterion": ["gini", "entropy"],
+            "ccp_alpha": [0.0, 0.00001, 0.00005, 0.0001, 0.0002],
+            "max_leaf_nodes": [None, 48, 64, 96, 128, 160],
+            "min_impurity_decrease": [0.0, 0.000001, 0.00001, 0.00005],
+        },
+    },
+    "et": {
+        "full": dict(MODEL_CONFIGS["et"]["param_space"]),
+        "fast_subset": {
+            "n_estimators": [48, 64, 80, 96, 128],
+            "max_depth": [4, 6, 8, 10, 12],
+            "min_samples_leaf": [2, 3, 4, 6, 8],
+            "min_samples_split": [4, 6, 8, 12, 16],
+            "max_features": ["sqrt", "log2", 0.35, 0.5, 0.65],
+            "bootstrap": [False, True],
+            "class_weight": ["balanced", None],
+            "criterion": ["gini", "entropy"],
+            "ccp_alpha": [0.0, 0.00001, 0.00005, 0.0001],
+            "max_leaf_nodes": [32, 48, 64, 96, 128],
+            "min_impurity_decrease": [0.0, 0.000001, 0.00001, 0.00005],
+        },
+        "final_et": {
+            "n_estimators": [160, 220, 280, 360],
+            "max_depth": [8, 10, 12, 16, 20, None],
+            "min_samples_leaf": [1, 2, 3, 4, 6],
+            "min_samples_split": [2, 4, 6, 8, 12],
+            "max_features": ["sqrt", "log2", 0.35, 0.5, 0.65, 0.8],
+            "bootstrap": [False, True],
+            "class_weight": ["balanced", None],
+            "criterion": ["gini", "entropy"],
+            "ccp_alpha": [0.0, 0.00001, 0.00005, 0.0001, 0.0002],
+            "max_leaf_nodes": [None, 48, 64, 96, 128, 160],
+            "min_impurity_decrease": [0.0, 0.000001, 0.00001, 0.00005],
+        },
+    },
+}
+
+
+def resolve_model_search_profile(model_key: str, profile: str | None = None) -> dict:
+    key = str(model_key).strip().lower()
+    profile_key = str(profile or "full").strip().lower()
+    profiles = MODEL_SEARCH_PROFILES.get(key, {})
+    return dict(profiles.get(profile_key) or profiles.get("full") or MODEL_CONFIGS[key]["param_space"])
+
 
 
 def ensure_dir(path: str) -> None:
@@ -777,6 +912,8 @@ def select_threshold_cost(
     min_precision: float = 0.0,
     max_fpr: float = 1.0,
     min_threshold: float = 0.05,
+    meta_df: pd.DataFrame | None = None,
+    arc_tolerance: ArcToleranceConfig | dict | None = None,
 ) -> dict:
     start_thr = max(0.01, float(min_threshold))
     thresholds = np.arange(start_thr, 0.96, 0.01)
@@ -784,6 +921,7 @@ def select_threshold_cost(
 
     y_true = np.asarray(y_true).astype(int)
     y_proba = np.asarray(y_proba).astype(float)
+    tolerance_cfg = normalize_arc_tolerance_config(arc_tolerance)
 
     def _pack(thr, tn, fp, fn, tp, selection_reason):
         recall = tp / max(1, tp + fn)
@@ -794,7 +932,7 @@ def select_threshold_cost(
         recall_ok = recall >= float(min_recall)
         precision_ok = precision >= float(min_precision)
         fpr_ok = fpr <= float(max_fpr)
-        return {
+        row = {
             "thr": float(thr),
             "cost": float(fn_weight * fn + fp_weight * fp),
             "tn": int(tn),
@@ -812,6 +950,32 @@ def select_threshold_cost(
             "constraints_met": bool(threshold_ok and recall_ok and precision_ok and fpr_ok),
             "selection_reason": selection_reason,
         }
+        if meta_df is not None and len(meta_df) == len(y_true):
+            event_report = build_event_level_report(
+                meta_df,
+                y_true,
+                y_proba,
+                float(thr),
+                tolerance=tolerance_cfg,
+            ) or {}
+            row["event_true_count"] = int(event_report.get("true_event_count", 0))
+            row["event_tp"] = int(event_report.get("detected_event_count", 0))
+            row["event_fn"] = int(event_report.get("missed_event_count", 0))
+            row["event_recall"] = float(event_report.get("event_recall", 0.0))
+            row["event_precision"] = float(event_report.get("event_precision", 0.0))
+            row["false_alarm_events"] = int(event_report.get("false_alarm_event_count", 0))
+            row["false_alarm_sessions"] = int(event_report.get("false_alarm_session_count", 0))
+            row["false_alarms_per_session"] = float(event_report.get("false_alarms_per_session", 0.0))
+        else:
+            row["event_true_count"] = 0
+            row["event_tp"] = 0
+            row["event_fn"] = 0
+            row["event_recall"] = 0.0
+            row["event_precision"] = 0.0
+            row["false_alarm_events"] = 0
+            row["false_alarm_sessions"] = 0
+            row["false_alarms_per_session"] = 0.0
+        return row
 
     feasible = []
     fallback = []
@@ -828,8 +992,12 @@ def select_threshold_cost(
         miss_recall = max(0.0, float(min_recall) - row["recall"])
         miss_precision = max(0.0, float(min_precision) - row["precision"])
         over_fpr = max(0.0, row["fpr"] - float(max_fpr))
+        event_fn_penalty = max(0.0, float(row.get("event_fn", 0)))
+        false_alarm_penalty = max(0.0, float(row.get("false_alarms_per_session", 0.0)))
         penalty = (
             row["cost"]
+            + (event_fn_penalty * max(1500.0, float(fn_weight) * 35.0))
+            + (false_alarm_penalty * max(120.0, float(fp_weight) * 80.0))
             + (miss_recall * max(1.0, float(fn_weight)) * 800.0)
             + (miss_precision * max(1.0, max(float(fp_weight) * 12.0, float(fn_weight) * 0.45)) * 1200.0)
             + (over_fpr * max(1.0, max(float(fp_weight) * 18.0, float(fn_weight) * 0.35)) * 1400.0)
@@ -841,10 +1009,13 @@ def select_threshold_cost(
         best = sorted(
             feasible,
             key=lambda r: (
+                r.get("event_fn", 10**9),
                 r["cost"],
+                r.get("false_alarms_per_session", 10**9),
                 r["fpr"],
                 r["fp"],
                 r["fn"],
+                -r.get("event_precision", 0.0),
                 -r["precision"],
                 -r["recall"],
                 -r["thr"],
@@ -857,10 +1028,13 @@ def select_threshold_cost(
         best = sorted(
             fallback,
             key=lambda r: (
+                r.get("event_fn", 10**9),
                 r["fallback_penalty"],
+                r.get("false_alarms_per_session", 10**9),
                 r["fpr"],
                 r["fp"],
                 r["fn"],
+                -r.get("event_precision", 0.0),
                 -r["precision"],
                 -r["recall"],
                 -r["thr"],
@@ -886,6 +1060,14 @@ def select_threshold_cost(
         "fpr_ok": False,
         "constraints_met": False,
         "selection_reason": "no_thresholds_available",
+        "event_true_count": 0,
+        "event_tp": 0,
+        "event_fn": 0,
+        "event_recall": 0.0,
+        "event_precision": 0.0,
+        "false_alarm_events": 0,
+        "false_alarm_sessions": 0,
+        "false_alarms_per_session": 0.0,
     }
 
 
@@ -1151,14 +1333,16 @@ def _selection_policy_meta(
             "mode": winner_mode,
             "description": (
                 "Arc-first winner rule: prefer models that satisfy threshold constraints, "
-                "then minimize validation false negatives, then minimize validation false positives, "
-                "then maximize validation recall and precision."
+                "then minimize validation event misses, then minimize row false negatives, "
+                "then minimize false positives and false alarms."
             ),
             "uses_test_metrics_for_selection": False,
             "tie_break_order": [
                 "threshold_constraints_met",
+                "validation_event_fn",
                 "validation_fn",
                 "validation_fp",
+                "validation_false_alarms_per_session",
                 "validation_recall",
                 "validation_precision",
                 "cv_best_average_precision",
@@ -1169,22 +1353,25 @@ def _selection_policy_meta(
     return {
         "mode": winner_mode,
         "description": (
-            "Composite winner score using cross-validation AP plus validation-set "
-            "average precision, recall, balanced accuracy, F1, specificity, ROC AUC, "
-            "MCC, validation threshold cost penalty, and model size penalty. "
+            "Composite winner score using event-aware validation first, then CV AP plus "
+            "validation-set precision, recall, balanced accuracy, specificity, ROC AUC, "
+            "MCC, validation threshold cost penalty, false-alarm penalty, and model size penalty. "
             "Test metrics are intentionally excluded from winner selection."
         ),
         "uses_test_metrics_for_selection": False,
         "weights": {
+            "validation_event_recall": 0.24,
+            "validation_event_fn_penalty": -0.22,
             "cv_best_average_precision": 0.18,
-            "validation_average_precision": 0.20,
-            "validation_recall": 0.20,
+            "validation_average_precision": 0.14,
+            "validation_recall": 0.16,
             "validation_balanced_accuracy": 0.15,
-            "validation_f1": 0.10,
-            "validation_specificity": 0.06,
+            "validation_f1": 0.08,
+            "validation_specificity": 0.08,
             "validation_roc_auc": 0.04,
             "validation_mcc_norm": 0.03,
             "validation_cost_penalty": -0.03,
+            "validation_false_alarm_penalty": -0.09,
             "node_penalty": -0.01,
         },
         "cost_context": {
@@ -1194,10 +1381,13 @@ def _selection_policy_meta(
         },
         "tie_break_order": [
             "winner_score",
+            "validation_event_recall",
+            "validation_event_fn",
             "validation_recall",
             "validation_balanced_accuracy",
             "validation_average_precision",
             "cv_best_average_precision",
+            "validation_false_alarms_per_session",
             "validation_specificity",
             "estimated_node_count",
         ],
@@ -1212,6 +1402,7 @@ def _build_selection_meta(
     fp_weight: float,
 ) -> dict:
     val = result.get("validation_metrics", {})
+    val_event = result.get("validation_event_level_metrics", {}) or {}
 
     if winner_mode == "legacy_cv_ap":
         score = _safe_float(result.get("cv_best_average_precision"))
@@ -1239,20 +1430,27 @@ def _build_selection_meta(
     val_cost = _safe_float(result.get("validation_threshold_result", {}).get("cost"))
     val_fn = _safe_float(result.get("validation_threshold_result", {}).get("fn"), 1e18)
     val_fp = _safe_float(result.get("validation_threshold_result", {}).get("fp"), 1e18)
+    val_event_fn = _safe_float(val_event.get("missed_event_count"), 1e18)
+    val_event_recall = _safe_float(val_event.get("event_recall"))
+    val_false_alarm_rate = _safe_float(val_event.get("false_alarms_per_session"))
     node_count = _safe_float(result.get("estimated_node_count"))
     constraints_met = bool(result.get("threshold_constraints_met", False))
 
     if winner_mode == "arc_guard":
         components = {
             "constraints_met": 4.0 * float(1.0 if constraints_met else 0.0),
+            "zero_validation_event_fn": 3.5 * float(1.0 if val_event_fn == 0 else 0.0),
             "zero_validation_fn": 3.0 * float(1.0 if val_fn == 0 else 0.0),
             "zero_validation_fp": 1.0 * float(1.0 if val_fp == 0 else 0.0),
+            "validation_event_recall": 2.8 * val_event_recall,
             "validation_recall": 2.5 * val_recall,
             "validation_precision": 1.5 * val_precision,
             "validation_specificity": 1.0 * val_spec,
             "cv_best_average_precision": 0.5 * cv_ap,
+            "validation_event_fn_penalty": -0.65 * min(12.0, val_event_fn),
             "validation_fn_penalty": -0.35 * min(20.0, val_fn),
             "validation_fp_penalty": -0.05 * min(50.0, val_fp),
+            "validation_false_alarm_penalty": -0.10 * min(20.0, val_false_alarm_rate),
             "node_penalty": -0.01 * min(1.0, node_count / 20000.0),
         }
         score = float(sum(components.values()))
@@ -1271,15 +1469,18 @@ def _build_selection_meta(
     node_penalty = min(1.0, node_count / 20000.0)
 
     components = {
+        "validation_event_recall": 0.24 * val_event_recall,
+        "validation_event_fn_penalty": -0.22 * min(1.0, val_event_fn / 6.0),
         "cv_best_average_precision": 0.18 * cv_ap,
-        "validation_average_precision": 0.20 * val_ap,
-        "validation_recall": 0.20 * val_recall,
+        "validation_average_precision": 0.14 * val_ap,
+        "validation_recall": 0.16 * val_recall,
         "validation_balanced_accuracy": 0.15 * val_bal_acc,
-        "validation_f1": 0.10 * val_f1,
-        "validation_specificity": 0.06 * val_spec,
+        "validation_f1": 0.08 * val_f1,
+        "validation_specificity": 0.08 * val_spec,
         "validation_roc_auc": 0.04 * val_roc_auc,
         "validation_mcc_norm": 0.03 * val_mcc_norm,
         "validation_cost_penalty": -0.03 * val_cost_penalty,
+        "validation_false_alarm_penalty": -0.09 * min(1.0, val_false_alarm_rate),
         "node_penalty": -0.01 * node_penalty,
     }
     score = float(sum(components.values()))
@@ -1339,7 +1540,155 @@ def postprocess_m2c_header(c_code: str) -> str:
     return c_code
 
 
-def load_clean_dataset(csv_path: str, include_invalid: bool = False, feature_names=None, target_col: str = TARGET, augment_unknown_context: bool = True):
+def _arc_time_sort_column(df: pd.DataFrame) -> str | None:
+    for col in ("frame_start_uptime_ms", "frame_end_uptime_ms", "uptime_ms", "epoch_ms"):
+        if col in df.columns:
+            return col
+    return None
+
+
+def apply_arc_tolerance_policy(
+    df: pd.DataFrame,
+    *,
+    target_col: str = TARGET,
+    tolerance: ArcToleranceConfig | dict | None = None,
+) -> pd.DataFrame:
+    work = df.copy()
+    cfg = normalize_arc_tolerance_config(tolerance)
+
+    if target_col != TARGET:
+        return work
+
+    raw_target = pd.to_numeric(work.get(target_col, pd.Series(0, index=work.index)), errors="coerce").fillna(0).astype(int)
+    work["label_arc_raw"] = raw_target.astype(int)
+    work["label_arc_exact"] = raw_target.astype(int)
+    work["label_arc_tolerant"] = raw_target.astype(int)
+    work["arc_tolerance_positive"] = raw_target.astype(int)
+    work["arc_tolerance_center"] = raw_target.astype(int)
+    work["arc_neighbor_distance"] = np.where(raw_target.to_numpy(dtype=int) == 1, 0, 9999).astype(int)
+    work["arc_event_window_positive"] = raw_target.astype(int)
+    work["arc_event_id"] = -1
+    work["near_arc_hard_negative"] = 0
+    work["arc_tolerance_mode"] = cfg.normalized_mode()
+
+    mode = cfg.normalized_mode()
+    if mode == "none" or (cfg.pre_rows <= 0 and cfg.post_rows <= 0):
+        return work
+
+    group_col = pick_group_column(work)
+    if group_col is None:
+        work["_group"] = np.arange(len(work)) // 200
+        group_col = "_group"
+
+    time_col = _arc_time_sort_column(work)
+    sort_cols = [group_col] + ([time_col] if time_col is not None else [])
+    work = work.sort_values(sort_cols, kind="stable").copy()
+
+    positive_weight_ref = float(
+        pd.to_numeric(work.loc[work["label_arc_raw"] == 1, "sample_weight"], errors="coerce").fillna(1.0).median()
+        if "sample_weight" in work.columns and (work["label_arc_raw"] == 1).any()
+        else 1.0
+    )
+    if not np.isfinite(positive_weight_ref) or positive_weight_ref <= 0.0:
+        positive_weight_ref = 1.0
+
+    event_serial = 0
+    for _, group in work.groupby(group_col, sort=False):
+        idxs = group.index.to_numpy()
+        labels = work.loc[idxs, "label_arc_raw"].to_numpy(dtype=int)
+        starts = []
+        ends = []
+        run_start = None
+        for i, lab in enumerate(labels):
+            if lab == 1 and run_start is None:
+                run_start = i
+            end_run = (lab == 0 and run_start is not None)
+            final_row = (i == len(labels) - 1 and run_start is not None and lab == 1)
+            if end_run or final_row:
+                run_end = i if final_row else i - 1
+                starts.append(int(run_start))
+                ends.append(int(run_end))
+                run_start = None
+        for run_start, run_end in zip(starts, ends):
+            event_serial += 1
+            win_lo = max(0, int(run_start) - int(cfg.pre_rows))
+            win_hi = min(len(idxs) - 1, int(run_end) + int(cfg.post_rows))
+            ring_lo = max(0, int(win_lo) - int(cfg.hard_negative_ring))
+            ring_hi = min(len(idxs) - 1, int(win_hi) + int(cfg.hard_negative_ring))
+
+            window_rows = idxs[win_lo:win_hi + 1]
+            center_rows = idxs[run_start:run_end + 1]
+            ring_rows = idxs[ring_lo:ring_hi + 1]
+
+            work.loc[window_rows, "arc_event_window_positive"] = 1
+            work.loc[window_rows, "arc_tolerance_positive"] = 1
+            work.loc[center_rows, "arc_tolerance_center"] = 1
+            work.loc[window_rows, "arc_event_id"] = np.maximum(
+                pd.to_numeric(work.loc[window_rows, "arc_event_id"], errors="coerce").fillna(-1).astype(int),
+                int(event_serial),
+            )
+
+            for rel_i, abs_idx in enumerate(window_rows, start=win_lo):
+                if work.at[abs_idx, "label_arc_raw"] == 1:
+                    dist = 0
+                elif rel_i < run_start:
+                    dist = int(run_start - rel_i)
+                elif rel_i > run_end:
+                    dist = int(rel_i - run_end)
+                else:
+                    dist = 0
+                work.at[abs_idx, "arc_neighbor_distance"] = min(int(work.at[abs_idx, "arc_neighbor_distance"]), int(dist))
+
+            if mode == "expanded_positive":
+                work.loc[window_rows, "label_arc_tolerant"] = 1
+                neighbor_rows = [idx for idx in window_rows if idx not in set(center_rows.tolist())]
+                if neighbor_rows and "sample_weight" in work.columns:
+                    current = pd.to_numeric(work.loc[neighbor_rows, "sample_weight"], errors="coerce").fillna(0.0)
+                    promoted = max(0.10, positive_weight_ref * float(cfg.expanded_neighbor_weight))
+                    work.loc[neighbor_rows, "sample_weight"] = np.maximum(current, promoted)
+            elif mode == "soft_positive":
+                neighbor_mask = (work.loc[window_rows, "label_arc_raw"].astype(int) == 0)
+                neighbor_rows = work.loc[window_rows].index[neighbor_mask].tolist()
+                if neighbor_rows and "sample_weight" in work.columns:
+                    current = pd.to_numeric(work.loc[neighbor_rows, "sample_weight"], errors="coerce").fillna(1.0)
+                    work.loc[neighbor_rows, "sample_weight"] = np.maximum(
+                        SCAFFOLD_MIN_ROW_WEIGHT,
+                        current * float(cfg.soft_neighbor_weight),
+                    )
+                    if "label_trust" in work.columns:
+                        trust = pd.to_numeric(work.loc[neighbor_rows, "label_trust"], errors="coerce").fillna(1.0)
+                        work.loc[neighbor_rows, "label_trust"] = np.minimum(trust, float(cfg.soft_neighbor_weight))
+
+            ring_only_rows = [idx for idx in ring_rows if idx not in set(window_rows.tolist())]
+            if ring_only_rows:
+                ring_only_rows = [idx for idx in ring_only_rows if int(work.at[idx, "label_arc_raw"]) == 0]
+            if ring_only_rows:
+                work.loc[ring_only_rows, "near_arc_hard_negative"] = 1
+                if "hard_negative" in work.columns:
+                    work.loc[ring_only_rows, "hard_negative"] = 1
+                if "sample_weight" in work.columns:
+                    current = pd.to_numeric(work.loc[ring_only_rows, "sample_weight"], errors="coerce").fillna(1.0)
+                    work.loc[ring_only_rows, "sample_weight"] = np.maximum(current, current * 1.6)
+
+    if mode == "expanded_positive":
+        work[target_col] = pd.to_numeric(work["label_arc_tolerant"], errors="coerce").fillna(0).astype(int)
+
+    if "clean_quality" in work.columns:
+        soft_rows = (work["arc_tolerance_positive"].astype(int) == 1) & (work["label_arc_raw"].astype(int) == 0)
+        work.loc[soft_rows & (work["clean_quality"].astype(str) == "trainable"), "clean_quality"] = (
+            "expanded_positive_neighbor" if mode == "expanded_positive" else "soft_positive_neighbor"
+        )
+    return work.sort_index().copy()
+
+
+def load_clean_dataset(
+    csv_path: str,
+    include_invalid: bool = False,
+    feature_names=None,
+    target_col: str = TARGET,
+    augment_unknown_context: bool = True,
+    arc_tolerance: ArcToleranceConfig | dict | None = None,
+):
     if not os.path.isfile(csv_path):
         raise ValueError(f"Merged dataset not found: {csv_path}")
 
@@ -1348,6 +1697,8 @@ def load_clean_dataset(csv_path: str, include_invalid: bool = False, feature_nam
     feature_names = list(feature_names or default_feature_names_for_target(target_col))
     df = clean_df(raw_df, include_invalid=include_invalid, feature_names=feature_names, target_col=target_col)
     df = apply_scaffold_gap_fill_cap(df, target_col=target_col)
+    if target_col == TARGET:
+        df = apply_arc_tolerance_policy(df, target_col=target_col, tolerance=arc_tolerance)
 
     if augment_unknown_context and target_col == TARGET and any(str(name).startswith("ctx_family_") for name in feature_names):
         already_augmented = pd.Series(False, index=df.index)
@@ -1534,6 +1885,129 @@ def make_group_splits(X, y, groups, test_size=0.20):
     }
 
 
+def compose_arc_training_view(
+    X,
+    y,
+    groups,
+    w,
+    *,
+    meta_df: pd.DataFrame | None = None,
+    negative_ratio: float = 0.0,
+    positive_oversample: float = 1.0,
+    random_state: int = 42,
+    min_negative_rows: int = 256,
+) -> tuple[pd.DataFrame, pd.Series, pd.Series, np.ndarray, pd.DataFrame | None, dict]:
+    X_df = X.copy()
+    y_ser = pd.Series(np.asarray(y).astype(int), index=X_df.index)
+    g_ser = pd.Series(groups).astype(str).reset_index(drop=True)
+    g_ser.index = X_df.index
+    w_arr = np.asarray(w).astype(float)
+    meta = meta_df.copy() if isinstance(meta_df, pd.DataFrame) else None
+
+    pos_mask = y_ser.astype(int) == 1
+    neg_mask = ~pos_mask
+    pos_idx = X_df.index[pos_mask].to_numpy()
+    neg_idx = X_df.index[neg_mask].to_numpy()
+
+    info = {
+        "positive_rows": int(pos_mask.sum()),
+        "negative_rows": int(neg_mask.sum()),
+        "negative_ratio_requested": float(negative_ratio),
+        "positive_oversample": float(positive_oversample),
+        "hard_negative_kept": 0,
+        "transition_negative_kept": 0,
+        "near_arc_negative_kept": 0,
+    }
+
+    selected_neg_idx = neg_idx
+    if float(negative_ratio) > 0.0 and len(pos_idx) > 0 and len(neg_idx) > 0:
+        target_neg = int(max(int(min_negative_rows), round(len(pos_idx) * float(negative_ratio))))
+        target_neg = min(target_neg, len(neg_idx))
+        if target_neg < len(neg_idx):
+            work_meta = meta if meta is not None else pd.DataFrame(index=X_df.index)
+            arc_like = pd.to_numeric(work_meta.get("arc_like_score", pd.Series(0.0, index=X_df.index)), errors="coerce").fillna(0.0)
+            hard_negative = pd.to_numeric(work_meta.get("hard_negative", pd.Series(0, index=X_df.index)), errors="coerce").fillna(0).astype(int)
+            transition_normal = pd.to_numeric(work_meta.get("transition_normal", pd.Series(0, index=X_df.index)), errors="coerce").fillna(0).astype(int)
+            near_arc_negative = pd.to_numeric(work_meta.get("near_arc_hard_negative", pd.Series(0, index=X_df.index)), errors="coerce").fillna(0).astype(int)
+            trusted_normal = pd.to_numeric(work_meta.get("trusted_normal_session", pd.Series(0, index=X_df.index)), errors="coerce").fillna(0).astype(int)
+            start_like = pd.Series(False, index=X_df.index, dtype=bool)
+            if "division_tag" in work_meta.columns:
+                start_like = work_meta["division_tag"].astype(str).str.lower().str.contains("start", na=False)
+
+            hardness = (
+                1.0
+                + (2.8 * hard_negative.to_numpy(dtype=float))
+                + (1.9 * transition_normal.to_numpy(dtype=float))
+                + (1.6 * near_arc_negative.to_numpy(dtype=float))
+                + np.clip(arc_like.to_numpy(dtype=float), 0.0, 3.0)
+                + (0.9 * start_like.to_numpy(dtype=float))
+                - (0.45 * trusted_normal.to_numpy(dtype=float))
+            )
+            hardness = np.clip(hardness, 0.05, None)
+            neg_positions = np.where(neg_mask.to_numpy(dtype=bool))[0]
+            neg_probs = hardness[neg_positions] * np.clip(w_arr[neg_positions], 0.05, None)
+            neg_probs = np.clip(neg_probs, 1e-6, None)
+            neg_probs = neg_probs / neg_probs.sum()
+            rng = np.random.default_rng(int(random_state))
+            chosen_pos = rng.choice(neg_positions, size=target_neg, replace=False, p=neg_probs)
+            selected_neg_idx = X_df.index[np.sort(chosen_pos)]
+            info["negative_rows_selected"] = int(target_neg)
+        else:
+            info["negative_rows_selected"] = int(len(neg_idx))
+    else:
+        info["negative_rows_selected"] = int(len(neg_idx))
+
+    selected_idx = np.concatenate([pos_idx, np.asarray(selected_neg_idx)])
+    selected_idx = np.unique(selected_idx)
+    X_sel = X_df.loc[selected_idx].copy()
+    y_sel = y_ser.loc[selected_idx].copy()
+    g_sel = g_ser.loc[selected_idx].copy()
+    w_sel = np.asarray(w_arr[[X_df.index.get_loc(idx) for idx in selected_idx]], dtype=float)
+    meta_sel = meta.loc[selected_idx].copy() if meta is not None else None
+
+    if meta_sel is not None and not meta_sel.empty:
+        info["hard_negative_kept"] = int(pd.to_numeric(meta_sel.get("hard_negative", pd.Series(0, index=meta_sel.index)), errors="coerce").fillna(0).astype(int).sum())
+        info["transition_negative_kept"] = int(pd.to_numeric(meta_sel.get("transition_normal", pd.Series(0, index=meta_sel.index)), errors="coerce").fillna(0).astype(int).sum())
+        info["near_arc_negative_kept"] = int(pd.to_numeric(meta_sel.get("near_arc_hard_negative", pd.Series(0, index=meta_sel.index)), errors="coerce").fillna(0).astype(int).sum())
+
+    oversample = max(1.0, float(positive_oversample))
+    extra_repeats = int(np.floor(oversample) - 1)
+    fractional = float(oversample - np.floor(oversample))
+    if len(pos_idx) > 0 and (extra_repeats > 0 or fractional > 1e-9):
+        extra_idx = []
+        if extra_repeats > 0:
+            for _ in range(extra_repeats):
+                extra_idx.extend(pos_idx.tolist())
+        if fractional > 1e-9:
+            rng = np.random.default_rng(int(random_state) + 17)
+            take = int(round(len(pos_idx) * fractional))
+            if take > 0:
+                picked = rng.choice(pos_idx, size=min(len(pos_idx), take), replace=False)
+                extra_idx.extend(list(picked))
+        if extra_idx:
+            extra_idx = list(extra_idx)
+            X_extra = X_df.loc[extra_idx].copy()
+            y_extra = y_ser.loc[extra_idx].copy()
+            g_extra = g_ser.loc[extra_idx].copy()
+            w_extra = np.asarray(w_arr[[X_df.index.get_loc(idx) for idx in extra_idx]], dtype=float)
+            X_sel = pd.concat([X_sel, X_extra], axis=0)
+            y_sel = pd.concat([y_sel, y_extra], axis=0)
+            g_sel = pd.concat([g_sel, g_extra], axis=0)
+            w_sel = np.concatenate([w_sel, w_extra])
+            if meta_sel is not None:
+                meta_sel = pd.concat([meta_sel, meta.loc[extra_idx].copy()], axis=0)
+            info["positive_rows_oversampled_extra"] = int(len(extra_idx))
+        else:
+            info["positive_rows_oversampled_extra"] = 0
+    else:
+        info["positive_rows_oversampled_extra"] = 0
+
+    info["final_rows"] = int(len(X_sel))
+    info["final_positive_rows"] = int(np.sum(np.asarray(y_sel).astype(int) == 1))
+    info["final_negative_rows"] = int(np.sum(np.asarray(y_sel).astype(int) == 0))
+    return X_sel, y_sel, g_sel, np.asarray(w_sel).astype(float), meta_sel, info
+
+
 def estimate_search_plan(n_iter: int) -> dict:
     base = max(1, int(n_iter))
     if base <= 1:
@@ -1667,6 +2141,7 @@ def _cv_candidate_metrics(
     groups_train,
     w_train,
     n_splits: int,
+    meta_train: pd.DataFrame | None = None,
     random_state_override: int | None = None,
     fn_weight: float = 80.0,
     fp_weight: float = 4.0,
@@ -1674,6 +2149,7 @@ def _cv_candidate_metrics(
     min_precision: float = 0.0,
     max_fpr: float = 1.0,
     min_threshold: float = 0.05,
+    arc_tolerance: ArcToleranceConfig | dict | None = None,
 ) -> dict:
     fold_splits = _class_balanced_group_kfold_splits(
         X_train,
@@ -1692,6 +2168,9 @@ def _cv_candidate_metrics(
     threshold_scores = []
     cost_scores = []
     constraint_scores = []
+    event_recall_scores = []
+    event_fn_scores = []
+    false_alarm_scores = []
     missing_class_folds = 0
 
     y_train_np = np.asarray(y_train).astype(int)
@@ -1716,6 +2195,8 @@ def _cv_candidate_metrics(
                 min_precision=min_precision,
                 max_fpr=max_fpr,
                 min_threshold=min_threshold,
+                meta_df=(meta_train.iloc[val_idx].reset_index(drop=True) if isinstance(meta_train, pd.DataFrame) else None),
+                arc_tolerance=arc_tolerance,
             )
             metrics = evaluate_binary_scores(y_val_fold, proba, threshold_result["thr"])
             if np.unique(y_val_fold).size < 2:
@@ -1753,6 +2234,9 @@ def _cv_candidate_metrics(
         threshold_scores.append(_safe_float(threshold_result.get("thr"), min_threshold))
         cost_scores.append(_safe_float(threshold_result.get("cost"), 1e18))
         constraint_scores.append(1.0 if threshold_result.get("constraints_met", False) else 0.0)
+        event_recall_scores.append(_safe_float(threshold_result.get("event_recall"), 0.0))
+        event_fn_scores.append(_safe_float(threshold_result.get("event_fn"), 0.0))
+        false_alarm_scores.append(_safe_float(threshold_result.get("false_alarms_per_session"), 0.0))
 
     ap_mean = float(np.mean(ap_scores)) if ap_scores else 0.0
     ap_std = float(np.std(ap_scores)) if ap_scores else 0.0
@@ -1767,17 +2251,22 @@ def _cv_candidate_metrics(
     raw_cost_mean = float(np.mean(cost_scores)) if cost_scores else 1e18
     constraints_met_rate = float(np.mean(constraint_scores)) if constraint_scores else 0.0
     missing_class_rate = float(missing_class_folds / max(1, len(ap_scores)))
+    event_recall_mean = float(np.mean(event_recall_scores)) if event_recall_scores else 0.0
+    event_fn_mean = float(np.mean(event_fn_scores)) if event_fn_scores else 1e18
+    false_alarm_mean = float(np.mean(false_alarm_scores)) if false_alarm_scores else 0.0
 
     cost_unit = max(1.0, (0.65 * float(fn_weight)) + (12.0 * float(fp_weight)))
     cost_penalty = float(np.tanh(raw_cost_mean / cost_unit)) if np.isfinite(raw_cost_mean) else 1.0
     fpr_penalty = max(0.0, fpr_mean - float(max_fpr))
     recall_shortfall = max(0.0, float(min_recall) - recall_mean)
     precision_shortfall = max(0.0, float(min_precision) - precision_mean)
+    event_fn_penalty = 0.0 if not np.isfinite(event_fn_mean) else min(1.0, float(event_fn_mean) / max(1.0, float(np.sum(np.asarray(y_train_np) == 1))))
 
     search_score = (
         (0.12 * ap_mean)
-        + (0.14 * recall_mean)
-        + (0.18 * precision_mean)
+        + (0.22 * event_recall_mean)
+        + (0.10 * recall_mean)
+        + (0.16 * precision_mean)
         + (0.18 * bal_mean)
         + (0.16 * specificity_mean)
         + (0.05 * f1_mean)
@@ -1786,6 +2275,8 @@ def _cv_candidate_metrics(
         - (0.03 * ap_std)
         - (0.08 * cost_penalty)
         - (0.24 * fpr_penalty)
+        - (0.22 * event_fn_penalty)
+        - (0.12 * min(1.0, false_alarm_mean))
         - (0.10 * recall_shortfall)
         - (0.16 * precision_shortfall)
         - (0.08 * missing_class_rate)
@@ -1806,6 +2297,9 @@ def _cv_candidate_metrics(
         "cv_threshold_cost": float(raw_cost_mean),
         "cv_constraints_met_rate": float(constraints_met_rate),
         "cv_f1": float(f1_mean),
+        "cv_event_recall": float(event_recall_mean),
+        "cv_event_fn": float(event_fn_mean if np.isfinite(event_fn_mean) else 0.0),
+        "cv_false_alarms_per_session": float(false_alarm_mean),
         "missing_class_folds": int(missing_class_folds),
         "missing_class_rate": float(missing_class_rate),
         "search_score": float(search_score),
@@ -1837,6 +2331,11 @@ def train_one_model(
     min_precision: float = 0.0,
     max_fpr: float = 1.0,
     min_threshold: float = 0.05,
+    meta_train: pd.DataFrame | None = None,
+    meta_val: pd.DataFrame | None = None,
+    meta_test: pd.DataFrame | None = None,
+    arc_tolerance: ArcToleranceConfig | dict | None = None,
+    search_profile: str = "full",
     progress_callback=None,
 ) -> dict:
     if model_key not in MODEL_CONFIGS:
@@ -1845,7 +2344,7 @@ def train_one_model(
     cfg = MODEL_CONFIGS[model_key]
     pretty = cfg["pretty_name"]
     builder = cfg["builder"]
-    param_space = cfg["param_space"]
+    param_space = resolve_model_search_profile(model_key, search_profile)
 
     group_summary = _group_summary_frame(groups_train, y_train)
     pos_group_count = int((group_summary["group_label"] == 1).sum())
@@ -1888,12 +2387,14 @@ def train_one_model(
             groups_train=groups_train,
             w_train=w_train,
             n_splits=n_splits,
+            meta_train=meta_train,
             fn_weight=fn_weight,
             fp_weight=fp_weight,
             min_recall=min_recall,
             min_precision=min_precision,
             max_fpr=max_fpr,
             min_threshold=min_threshold,
+            arc_tolerance=arc_tolerance,
         )
         row["search_stage"] = "broad"
         row["candidate_index"] = int(idx)
@@ -1970,12 +2471,14 @@ def train_one_model(
             groups_train=groups_train,
             w_train=w_train,
             n_splits=n_splits,
+            meta_train=meta_train,
             fn_weight=fn_weight,
             fp_weight=fp_weight,
             min_recall=min_recall,
             min_precision=min_precision,
             max_fpr=max_fpr,
             min_threshold=min_threshold,
+            arc_tolerance=arc_tolerance,
         )
         row["search_stage"] = "refine"
         row["candidate_index"] = int(idx)
@@ -2023,6 +2526,7 @@ def train_one_model(
                 groups_train=groups_train,
                 w_train=w_train,
                 n_splits=n_splits,
+                meta_train=meta_train,
                 random_state_override=seed,
                 fn_weight=fn_weight,
                 fp_weight=fp_weight,
@@ -2030,6 +2534,7 @@ def train_one_model(
                 min_precision=min_precision,
                 max_fpr=max_fpr,
                 min_threshold=min_threshold,
+                arc_tolerance=arc_tolerance,
             )
             seed_rows.append(robust)
             progress_step += 1
@@ -2129,12 +2634,28 @@ def train_one_model(
         min_precision=min_precision,
         max_fpr=max_fpr,
         min_threshold=min_threshold,
+        meta_df=(meta_val.reset_index(drop=True) if isinstance(meta_val, pd.DataFrame) else None),
+        arc_tolerance=arc_tolerance,
     )
     thr = float(best_thr["thr"])
 
     val_metrics = evaluate_binary_scores(y_val.to_numpy(), val_proba, thr)
     y_score = best.predict_proba(X_test)[:, 1]
     test_metrics = evaluate_binary_scores(y_test, y_score, thr)
+    val_event_metrics = build_event_level_report(
+        meta_val.reset_index(drop=True) if isinstance(meta_val, pd.DataFrame) else None,
+        y_val.to_numpy(),
+        val_proba,
+        thr,
+        tolerance=arc_tolerance,
+    ) if isinstance(meta_val, pd.DataFrame) else {}
+    test_event_metrics = build_event_level_report(
+        meta_test.reset_index(drop=True) if isinstance(meta_test, pd.DataFrame) else None,
+        np.asarray(y_test).astype(int),
+        y_score,
+        thr,
+        tolerance=arc_tolerance,
+    ) if isinstance(meta_test, pd.DataFrame) else {}
 
     fi = pd.Series(
         best.feature_importances_,
@@ -2188,6 +2709,7 @@ def train_one_model(
         "validation_mcc": val_metrics["mcc"],
         "validation_confusion_matrix": val_metrics["confusion_matrix"],
         "validation_classification_report": val_metrics["classification_report"],
+        "validation_event_level_metrics": val_event_metrics,
         "test_metrics": test_metrics,
         "test_accuracy": test_metrics["accuracy"],
         "test_average_precision": test_metrics["average_precision"],
@@ -2203,6 +2725,7 @@ def train_one_model(
         "test_mcc": test_metrics["mcc"],
         "test_confusion_matrix": test_metrics["confusion_matrix"],
         "test_classification_report": test_metrics["classification_report"],
+        "test_event_level_metrics": test_event_metrics,
         "split_sizes": {
             "train_rows": int(len(X_train)),
             "validation_rows": int(len(X_val)),
@@ -2215,6 +2738,12 @@ def train_one_model(
             "train_positive": int(np.sum(np.asarray(y_train) == 1)),
             "validation_positive": int(np.sum(np.asarray(y_val) == 1)),
             "test_positive": int(np.sum(np.asarray(y_test) == 1)),
+        },
+        "training_semantics": {
+            "arc_tolerance_mode": normalize_arc_tolerance_config(arc_tolerance).normalized_mode(),
+            "pre_arc_window": int(normalize_arc_tolerance_config(arc_tolerance).pre_rows),
+            "post_arc_window": int(normalize_arc_tolerance_config(arc_tolerance).post_rows),
+            "search_profile": str(search_profile),
         },
         "feature_importances": {
             str(k): float(v) for k, v in fi.items()
@@ -2586,6 +3115,31 @@ def _positive_runs(labels: np.ndarray) -> list[tuple[int, int]]:
     return runs
 
 
+def _event_windows_for_group(group: pd.DataFrame, tolerance: ArcToleranceConfig | dict | None = None) -> list[tuple[int, int]]:
+    cfg = normalize_arc_tolerance_config(tolerance)
+    if "arc_event_window_positive" in group.columns:
+        labels = pd.to_numeric(group["arc_event_window_positive"], errors="coerce").fillna(0).astype(int).to_numpy()
+        runs = _positive_runs(labels)
+        if runs:
+            return runs
+    if "label_arc_raw" in group.columns:
+        raw_labels = pd.to_numeric(group["label_arc_raw"], errors="coerce").fillna(0).astype(int).to_numpy()
+    else:
+        raw_labels = group["_y_true"].astype(int).to_numpy()
+    base_runs = _positive_runs(raw_labels)
+    if not base_runs:
+        return []
+    windows = []
+    for start, end in base_runs:
+        lo = max(0, int(start) - int(cfg.event_pre_rows()))
+        hi = min(len(group) - 1, int(end) + int(cfg.event_post_rows()))
+        if windows and lo <= (windows[-1][1] + 1):
+            windows[-1] = (windows[-1][0], max(windows[-1][1], hi))
+        else:
+            windows.append((lo, hi))
+    return windows
+
+
 def _subset_threshold_report(frame: pd.DataFrame, mask, thr: float, *, policy: dict | None = None, extra: dict | None = None) -> dict:
     mask = np.asarray(mask).astype(bool)
     if frame is None or len(frame) == 0 or mask.size == 0 or not mask.any():
@@ -2742,7 +3296,15 @@ def build_unknown_context_startup_report(
     }
 
 
-def build_event_level_report(meta_df: pd.DataFrame, y_true, y_score, thr: float, *, policy: dict | None = None) -> dict:
+def build_event_level_report(
+    meta_df: pd.DataFrame,
+    y_true,
+    y_score,
+    thr: float,
+    *,
+    policy: dict | None = None,
+    tolerance: ArcToleranceConfig | dict | None = None,
+) -> dict:
     frame, session_col, time_col = _prepare_meta_binary_frame(meta_df, y_true, y_score)
     if len(frame) == 0:
         return {}
@@ -2755,20 +3317,29 @@ def build_event_level_report(meta_df: pd.DataFrame, y_true, y_score, thr: float,
     detected_events = 0
     predicted_events = 0
     predicted_overlap = 0
+    false_alarm_events = 0
+    false_alarm_session_count = 0
+    session_count = 0
 
     for _, group in frame.groupby(session_col, sort=False):
-        gt = group["_y_true"].to_numpy(dtype=int)
+        session_count += 1
         gp = np.asarray(y_pred[group.index.to_numpy()], dtype=int)
-        true_runs = _positive_runs(gt)
+        true_runs = _event_windows_for_group(group, tolerance=tolerance)
         pred_runs = _positive_runs(gp)
         true_events += len(true_runs)
         predicted_events += len(pred_runs)
+        session_false_alarms = 0
         for ts, te in true_runs:
             if any(not (pe < ts or ps > te) for ps, pe in pred_runs):
                 detected_events += 1
         for ps, pe in pred_runs:
             if any(not (te < ps or ts > pe) for ts, te in true_runs):
                 predicted_overlap += 1
+            else:
+                false_alarm_events += 1
+                session_false_alarms += 1
+        if session_false_alarms > 0:
+            false_alarm_session_count += 1
 
     event_recall = _safe_rate(detected_events, true_events)
     event_precision = _safe_rate(predicted_overlap, predicted_events)
@@ -2778,6 +3349,9 @@ def build_event_level_report(meta_df: pd.DataFrame, y_true, y_score, thr: float,
         "missed_event_count": int(max(0, true_events - detected_events)),
         "predicted_event_count": int(predicted_events),
         "overlapping_predicted_event_count": int(predicted_overlap),
+        "false_alarm_event_count": int(false_alarm_events),
+        "false_alarm_session_count": int(false_alarm_session_count),
+        "false_alarms_per_session": float(_safe_rate(false_alarm_events, max(1, session_count))),
         "event_recall": float(event_recall),
         "event_precision": float(event_precision),
         "event_f1": float(0.0 if (event_precision + event_recall) <= 0 else (2.0 * event_precision * event_recall / (event_precision + event_recall))),
@@ -2819,6 +3393,7 @@ def pick_winner(
             annotated,
             key=lambda r: (
                 -_safe_float(r.get("cv_best_average_precision")),
+                _safe_float((r.get("validation_event_level_metrics") or {}).get("missed_event_count"), 1e18),
                 _safe_float(r.get("validation_threshold_result", {}).get("fp"), 1e18),
                 _safe_float(r.get("validation_threshold_result", {}).get("fn"), 1e18),
                 _safe_float(r.get("estimated_node_count"), 1e18),
@@ -2829,8 +3404,11 @@ def pick_winner(
             annotated,
             key=lambda r: (
                 -float(1.0 if r.get("threshold_constraints_met", False) else 0.0),
+                _safe_float((r.get("validation_event_level_metrics") or {}).get("missed_event_count"), 1e18),
                 _safe_float(r.get("validation_threshold_result", {}).get("fn"), 1e18),
                 _safe_float(r.get("validation_threshold_result", {}).get("fp"), 1e18),
+                _safe_float((r.get("validation_event_level_metrics") or {}).get("false_alarms_per_session"), 1e18),
+                -_safe_float((r.get("validation_event_level_metrics") or {}).get("event_recall")),
                 -_safe_float(r.get("holdout_validation_recall", r.get("validation_recall"))),
                 -_safe_float(r.get("holdout_validation_precision", r.get("validation_precision"))),
                 -_safe_float(r.get("validation_specificity")),
@@ -2843,10 +3421,13 @@ def pick_winner(
             annotated,
             key=lambda r: (
                 -_safe_float(r.get("winner_score")),
+                -_safe_float((r.get("validation_event_level_metrics") or {}).get("event_recall")),
+                _safe_float((r.get("validation_event_level_metrics") or {}).get("missed_event_count"), 1e18),
                 -_safe_float(r.get("validation_recall")),
                 -_safe_float(r.get("validation_balanced_accuracy")),
                 -_safe_float(r.get("validation_average_precision")),
                 -_safe_float(r.get("cv_best_average_precision")),
+                _safe_float((r.get("validation_event_level_metrics") or {}).get("false_alarms_per_session"), 1e18),
                 -_safe_float(r.get("validation_specificity")),
                 _safe_float(r.get("estimated_node_count"), 1e18),
             ),

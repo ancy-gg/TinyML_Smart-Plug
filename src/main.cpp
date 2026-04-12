@@ -4,6 +4,7 @@
 #include <freertos/FreeRTOS.h>
 #include <freertos/task.h>
 #include <freertos/queue.h>
+#include <freertos/semphr.h>
 #include <esp_log.h>
 #include <math.h>
 #include <esp_heap_caps.h>
@@ -33,13 +34,33 @@ CurrentSensor      curSensor;
 ArcDetection       arcDetect;
 CurrentCalib       curCalib;
 
+struct RawFeatureFrame {
+  uint16_t sample_count = 0;
+  uint16_t fft_size = 0;
+  uint16_t hop_samples = 0;
+  uint32_t queue_drop_count = 0;
+  uint32_t frame_start_uptime_ms = 0;
+  uint32_t frame_end_uptime_ms = 0;
+  float frame_dt_ms = 0.0f;
+  float adc_fs_hz = 0.0f;
+  float fs_err_hz = 0.0f;
+  uint8_t sampling_quality_bad = 0;
+  uint16_t samples[N_SAMP] = {0};
+};
+
 static uint16_t* s_raw = nullptr;
+static uint16_t* s_hop = nullptr;
+static QueueHandle_t qRawFeat = nullptr;
 static QueueHandle_t qFeat = nullptr;
 static TaskHandle_t gCore0SenseTask = nullptr;
+static TaskHandle_t gCore1FeatTask = nullptr;
+static SemaphoreHandle_t gArcRuntimeMutex = nullptr;
 static bool gSafeMode = false;
 static volatile bool gPauseByOta = false;
 static volatile bool gStopSenseTask = false;
 static volatile bool gSenseTaskRunning = false;
+static volatile bool gFeatTaskRunning = false;
+static volatile uint32_t gFeaturePipelineResetEpoch = 1;
 static volatile uint32_t gRelayArtifactBlankUntilMs = 0;
 static bool gManualRelayAssumedOn = false;
 static bool gManualRelayConfirmPending = false;
@@ -51,6 +72,7 @@ static uint32_t gManualRelayCooldownUntilMs = 0;
 static uint32_t gManualRelayWebHoldoffUntilMs = 0;
 
 static void Core0Task(void* pv);
+static void Core1FeatureTask(void* pv);
 
 
 
@@ -223,6 +245,8 @@ static inline void sanitizeFeatureFrame_(FeatureFrame& f) {
   if (!isfinite(f.temp_c)) f.temp_c = 0.0f;
   if (!isfinite(f.adc_fs_hz) || f.adc_fs_hz < 0.0f) f.adc_fs_hz = 0.0f;
   if (!isfinite(f.fs_err_hz) || f.fs_err_hz < 0.0f) f.fs_err_hz = fabsf(FS_INTENDED_HZ);
+  if (f.fft_size == 0U) f.fft_size = ARC_RUNTIME_FRAME_SAMPLES;
+  if (f.hop_samples == 0U) f.hop_samples = ARC_RUNTIME_HOP_SAMPLES;
   f.context_family_confidence =
       tinymlClampFeatureValue(TINYML_FEATURE_CONTEXT_FAMILY_CONFIDENCE, f.context_family_confidence);
   f.context_family_confidence_provisional =
@@ -421,26 +445,46 @@ static inline void applyContextToFrame_(FeatureFrame& f) {
   f.context_acquiring = (!gContext.ready && gContext.activeSinceMs > 0U) ? 1U : 0U;
   f.context_latched = gContext.ready ? 1U : 0U;
 }
+
+static inline void requestFeaturePipelineReset_() {
+  gFeaturePipelineResetEpoch++;
+}
+
+static void resetArcRuntime_() {
+  if (gArcRuntimeMutex && xSemaphoreTake(gArcRuntimeMutex, pdMS_TO_TICKS(40)) == pdTRUE) {
+    arcDetect.resetRuntime();
+    xSemaphoreGive(gArcRuntimeMutex);
+  } else {
+    arcDetect.resetRuntime();
+  }
+}
+
 static bool allocSampleBuffer_() {
-  if (s_raw) return true;
-  s_raw = static_cast<uint16_t*>(heap_caps_malloc(sizeof(uint16_t) * N_SAMP, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT));
-  if (!s_raw) s_raw = static_cast<uint16_t*>(heap_caps_malloc(sizeof(uint16_t) * N_SAMP, MALLOC_CAP_8BIT));
-  return s_raw != nullptr;
+  if (!s_raw) {
+    s_raw = static_cast<uint16_t*>(heap_caps_malloc(sizeof(uint16_t) * N_SAMP, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT));
+    if (!s_raw) s_raw = static_cast<uint16_t*>(heap_caps_malloc(sizeof(uint16_t) * N_SAMP, MALLOC_CAP_8BIT));
+  }
+  if (!s_hop) {
+    s_hop = static_cast<uint16_t*>(heap_caps_malloc(sizeof(uint16_t) * ARC_RUNTIME_HOP_SAMPLES, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT));
+    if (!s_hop) s_hop = static_cast<uint16_t*>(heap_caps_malloc(sizeof(uint16_t) * ARC_RUNTIME_HOP_SAMPLES, MALLOC_CAP_8BIT));
+  }
+  return (s_raw != nullptr) && (s_hop != nullptr);
 }
 
 static bool requestSenseTaskStop_(uint32_t waitMs = 3500UL) {
-  if (!gCore0SenseTask && !gSenseTaskRunning) {
+  if (!gCore0SenseTask && !gSenseTaskRunning && !gCore1FeatTask && !gFeatTaskRunning) {
     gStopSenseTask = false;
     return true;
   }
 
   gStopSenseTask = true;
   const uint32_t t0 = millis();
-  while ((gCore0SenseTask || gSenseTaskRunning) && ((millis() - t0) < waitMs)) {
+  while ((gCore0SenseTask || gSenseTaskRunning || gCore1FeatTask || gFeatTaskRunning) &&
+         ((millis() - t0) < waitMs)) {
     vTaskDelay(10 / portTICK_PERIOD_MS);
   }
 
-  const bool stopped = (!gCore0SenseTask && !gSenseTaskRunning);
+  const bool stopped = (!gCore0SenseTask && !gSenseTaskRunning && !gCore1FeatTask && !gFeatTaskRunning);
   gStopSenseTask = false;
   return stopped;
 }
@@ -448,6 +492,10 @@ static bool requestSenseTaskStop_(uint32_t waitMs = 3500UL) {
 static bool stopSensePipeline_(bool freeBuffer = true) {
   const bool stopped = requestSenseTaskStop_();
   if (!stopped) return false;
+  if (qRawFeat) {
+    vQueueDelete(qRawFeat);
+    qRawFeat = nullptr;
+  }
   if (qFeat) {
     vQueueDelete(qFeat);
     qFeat = nullptr;
@@ -456,22 +504,53 @@ static bool stopSensePipeline_(bool freeBuffer = true) {
     heap_caps_free(s_raw);
     s_raw = nullptr;
   }
+  if (freeBuffer && s_hop) {
+    heap_caps_free(s_hop);
+    s_hop = nullptr;
+  }
   return true;
 }
 
 static bool startSensePipeline_() {
-  if (gCore0SenseTask) return true;
+  if (gCore0SenseTask || gCore1FeatTask) return true;
   if (!allocSampleBuffer_()) return false;
   if (!curSensor.begin()) return false;
+  if (!gArcRuntimeMutex) gArcRuntimeMutex = xSemaphoreCreateMutex();
+  if (!gArcRuntimeMutex) return false;
+  if (!qRawFeat) qRawFeat = xQueueCreate(FEATURE_RAW_FRAME_QUEUE_LEN, sizeof(RawFeatureFrame));
+  if (!qRawFeat) return false;
   if (!qFeat) qFeat = xQueueCreate(FEATURE_FRAME_QUEUE_LEN, sizeof(FeatureFrame));
-  if (!qFeat) return false;
-  const BaseType_t ok = xTaskCreatePinnedToCore(Core0Task, "Core0Sense", 16384, nullptr, 3, &gCore0SenseTask, 0);
-  if (ok != pdPASS) {
+  if (!qFeat) {
+    vQueueDelete(qRawFeat);
+    qRawFeat = nullptr;
+    return false;
+  }
+  const BaseType_t capOk = xTaskCreatePinnedToCore(Core0Task, "Core0Sense", 14336, nullptr, 4, &gCore0SenseTask, 0);
+  if (capOk != pdPASS) {
     gCore0SenseTask = nullptr;
+    vQueueDelete(qRawFeat);
+    qRawFeat = nullptr;
     vQueueDelete(qFeat);
     qFeat = nullptr;
     return false;
   }
+  const BaseType_t featOk = xTaskCreatePinnedToCore(Core1FeatureTask, "Core1Feat", 16384, nullptr, 2, &gCore1FeatTask, 1);
+  if (featOk != pdPASS) {
+    gStopSenseTask = true;
+    requestSenseTaskStop_(2500UL);
+    gStopSenseTask = false;
+    gCore1FeatTask = nullptr;
+    if (qRawFeat) {
+      vQueueDelete(qRawFeat);
+      qRawFeat = nullptr;
+    }
+    if (qFeat) {
+      vQueueDelete(qFeat);
+      qFeat = nullptr;
+    }
+    return false;
+  }
+  requestFeaturePipelineReset_();
   return true;
 }
 
@@ -498,7 +577,8 @@ static bool exitOtaExclusiveMode_() {
 
 static inline void armRelayArtifactBlank_(uint32_t extraMs = RELAY_ARTIFACT_BLANK_MS) {
   gRelayArtifactBlankUntilMs = millis() + extraMs;
-  arcDetect.resetRuntime();
+  requestFeaturePipelineReset_();
+  resetArcRuntime_();
 }
 
 static inline void clearManualRelayAssume_() {
@@ -512,7 +592,7 @@ static inline void clearManualRelayAssume_() {
 
 static bool restartSensePipelineSoft_() {
   if (!stopSensePipeline_(false)) return false;
-  arcDetect.resetRuntime();
+  resetArcRuntime_();
   delay(40);
   return startSensePipeline_();
 }
@@ -836,8 +916,23 @@ static bool pushFeatureFrame_(FeatureFrame& frame) {
     dropped++;
     queued = uxQueueMessagesWaiting(qFeat);
   }
-  frame.queue_drop_count = dropped;
+  frame.queue_drop_count += dropped;
   const BaseType_t ok = xQueueSendToBack(qFeat, &frame, 0);
+  return ok == pdPASS;
+}
+
+static bool pushRawFeatureFrame_(RawFeatureFrame& frame) {
+  if (!qRawFeat) return false;
+  UBaseType_t queued = uxQueueMessagesWaiting(qRawFeat);
+  uint32_t dropped = 0;
+  while (queued >= FEATURE_RAW_FRAME_QUEUE_LEN) {
+    RawFeatureFrame dump = {};
+    if (xQueueReceive(qRawFeat, &dump, 0) != pdTRUE) break;
+    dropped++;
+    queued = uxQueueMessagesWaiting(qRawFeat);
+  }
+  frame.queue_drop_count += dropped;
+  const BaseType_t ok = xQueueSendToBack(qRawFeat, &frame, 0);
   return ok == pdPASS;
 }
 
@@ -894,10 +989,18 @@ static void onOtaEvent(OtaEvent ev, int progress) {
 static void Core0Task(void* pv) {
   (void)pv;
   gSenseTaskRunning = true;
-  ArcDetectionResult out;
-  int64_t prevFrameStartUs = 0;
-  int64_t nextFrameStartUs = 0;
   uint32_t timingGraceStartMs = 0;
+  int64_t prevEmitStartUs = 0;
+  uint32_t seenResetEpoch = gFeaturePipelineResetEpoch;
+  uint32_t hopSeq = 0;
+  size_t windowCount = 0;
+  uint8_t emitHopCounter = 0;
+  int64_t hopStartUsBuf[ARC_RUNTIME_FRAME_HOP_COUNT] = {0};
+  int64_t hopEndUsBuf[ARC_RUNTIME_FRAME_HOP_COUNT] = {0};
+  uint32_t hopStartMsBuf[ARC_RUNTIME_FRAME_HOP_COUNT] = {0};
+  uint32_t hopEndMsBuf[ARC_RUNTIME_FRAME_HOP_COUNT] = {0};
+  float hopFsBuf[ARC_RUNTIME_FRAME_HOP_COUNT] = {0.0f};
+  bool hopWarnBuf[ARC_RUNTIME_FRAME_HOP_COUNT] = {false};
 
   while (millis() < SENSOR_BOOT_SETTLE_MS) {
     if (gStopSenseTask) {
@@ -909,70 +1012,193 @@ static void Core0Task(void* pv) {
   }
 
   timingGraceStartMs = millis();
-  nextFrameStartUs = esp_timer_get_time();
 
   while (true) {
     if (gStopSenseTask) break;
     if (gPauseByOta || gSafeMode) {
       if (gStopSenseTask) break;
       vTaskDelay(20 / portTICK_PERIOD_MS);
-      prevFrameStartUs = 0;
-      nextFrameStartUs = esp_timer_get_time();
+      prevEmitStartUs = 0;
+      windowCount = 0;
+      emitHopCounter = 0;
+      hopSeq = 0;
       timingGraceStartMs = millis();
       continue;
     }
 
-    sleepUntilUs_(nextFrameStartUs);
-    const int64_t frameStartUs = esp_timer_get_time();
-
-    FeatureFrame f = {};
-    const uint32_t frameStartMs = millis();
-    f.uptime_ms = frameStartMs;
-    f.frame_start_uptime_ms = frameStartMs;
-    f.epoch_ms = network.epochForUptimeMs(frameStartMs);
-    if (prevFrameStartUs > 0 && frameStartUs > prevFrameStartUs) {
-      f.frame_dt_ms = float(frameStartUs - prevFrameStartUs) * 0.001f;
+    if (seenResetEpoch != gFeaturePipelineResetEpoch) {
+      seenResetEpoch = gFeaturePipelineResetEpoch;
+      windowCount = 0;
+      emitHopCounter = 0;
+      hopSeq = 0;
+      prevEmitStartUs = 0;
+      memset(hopStartUsBuf, 0, sizeof(hopStartUsBuf));
+      memset(hopEndUsBuf, 0, sizeof(hopEndUsBuf));
+      memset(hopStartMsBuf, 0, sizeof(hopStartMsBuf));
+      memset(hopEndMsBuf, 0, sizeof(hopEndMsBuf));
+      memset(hopFsBuf, 0, sizeof(hopFsBuf));
+      memset(hopWarnBuf, 0, sizeof(hopWarnBuf));
+      if (qRawFeat) xQueueReset(qRawFeat);
+      if (qFeat) xQueueReset(qFeat);
+      timingGraceStartMs = millis();
     }
-    prevFrameStartUs = frameStartUs;
 
+    const int64_t hopStartUs = esp_timer_get_time();
+    const uint32_t hopStartMs = millis();
     float fs_hz = 0.0f;
-    size_t got = curSensor.capture(s_raw, N_SAMP, &fs_hz);
+    size_t got = curSensor.capture(s_hop, ARC_RUNTIME_HOP_SAMPLES, &fs_hz);
+    uint32_t hopEndMs = millis();
+    int64_t hopEndUs = esp_timer_get_time();
 
     if (gPauseByOta || gSafeMode) {
       if (gStopSenseTask) break;
       vTaskDelay(20 / portTICK_PERIOD_MS);
-      prevFrameStartUs = 0;
-      nextFrameStartUs = esp_timer_get_time();
+      prevEmitStartUs = 0;
+      windowCount = 0;
+      emitHopCounter = 0;
+      hopSeq = 0;
       timingGraceStartMs = millis();
       continue;
     }
 
     bool sampleRateHardBad = (!isfinite(fs_hz)) || (fs_hz < MCP3204_FS_HARD_LOW_HZ) || (fs_hz > MCP3204_FS_HARD_HIGH_HZ);
-    if (got != N_SAMP || sampleRateHardBad) {
+    if (got != ARC_RUNTIME_HOP_SAMPLES || sampleRateHardBad) {
       vTaskDelay(1);
       fs_hz = 0.0f;
-      got = curSensor.capture(s_raw, N_SAMP, &fs_hz);
-
-      if (gPauseByOta || gSafeMode) {
-        if (gStopSenseTask) break;
-        vTaskDelay(20 / portTICK_PERIOD_MS);
-        prevFrameStartUs = 0;
-        nextFrameStartUs = esp_timer_get_time();
-        timingGraceStartMs = millis();
-        continue;
-      }
-
+      got = curSensor.capture(s_hop, ARC_RUNTIME_HOP_SAMPLES, &fs_hz);
+      hopEndMs = millis();
+      hopEndUs = esp_timer_get_time();
       sampleRateHardBad = (!isfinite(fs_hz)) || (fs_hz < MCP3204_FS_HARD_LOW_HZ) || (fs_hz > MCP3204_FS_HARD_HIGH_HZ);
     }
 
-    f.frame_end_uptime_ms = millis();
-    f.adc_fs_hz = fs_hz;
-    f.fs_err_hz = (fs_hz > 0.0f) ? fabsf(fs_hz - FS_INTENDED_HZ) : fabsf(FS_INTENDED_HZ);
+    if (got != ARC_RUNTIME_HOP_SAMPLES || sampleRateHardBad) {
+      continue;
+    }
+
+    if (windowCount < ARC_RUNTIME_FRAME_SAMPLES) {
+      memcpy(s_raw + windowCount, s_hop, sizeof(uint16_t) * ARC_RUNTIME_HOP_SAMPLES);
+      windowCount += ARC_RUNTIME_HOP_SAMPLES;
+      if (windowCount > ARC_RUNTIME_FRAME_SAMPLES) windowCount = ARC_RUNTIME_FRAME_SAMPLES;
+    } else {
+      if (ARC_RUNTIME_FRAME_SAMPLES > ARC_RUNTIME_HOP_SAMPLES) {
+        memmove(s_raw, s_raw + ARC_RUNTIME_HOP_SAMPLES, sizeof(uint16_t) * (ARC_RUNTIME_FRAME_SAMPLES - ARC_RUNTIME_HOP_SAMPLES));
+      }
+      memcpy(s_raw + (ARC_RUNTIME_FRAME_SAMPLES - ARC_RUNTIME_HOP_SAMPLES), s_hop, sizeof(uint16_t) * ARC_RUNTIME_HOP_SAMPLES);
+    }
+
+    const uint8_t hopSlot = (uint8_t)(hopSeq % ARC_RUNTIME_FRAME_HOP_COUNT);
+    hopStartUsBuf[hopSlot] = hopStartUs;
+    hopEndUsBuf[hopSlot] = hopEndUs;
+    hopStartMsBuf[hopSlot] = hopStartMs;
+    hopEndMsBuf[hopSlot] = hopEndMs;
+    hopFsBuf[hopSlot] = fs_hz;
+    hopWarnBuf[hopSlot] =
+        (!isfinite(fs_hz)) ||
+        (fs_hz < MCP3204_FS_WARN_LOW_HZ) ||
+        (fs_hz > MCP3204_FS_WARN_HIGH_HZ) ||
+        (fabsf(fs_hz - FS_INTENDED_HZ) > FS_ERR_BAD_HZ);
+    hopSeq++;
+
+    if (windowCount < ARC_RUNTIME_FRAME_SAMPLES) continue;
+
+    emitHopCounter++;
+    if (emitHopCounter < ARC_RUNTIME_EMIT_EVERY_HOPS) continue;
+    emitHopCounter = 0;
+
+    RawFeatureFrame rawFrame = {};
+    rawFrame.sample_count = ARC_RUNTIME_FRAME_SAMPLES;
+    rawFrame.fft_size = ARC_RUNTIME_FRAME_SAMPLES;
+    rawFrame.hop_samples = ARC_RUNTIME_HOP_SAMPLES;
+    memcpy(rawFrame.samples, s_raw, sizeof(uint16_t) * ARC_RUNTIME_FRAME_SAMPLES);
+
+    const uint8_t oldestSlot = (uint8_t)((hopSeq - ARC_RUNTIME_FRAME_HOP_COUNT) % ARC_RUNTIME_FRAME_HOP_COUNT);
+    const uint8_t newestSlot = (uint8_t)((hopSeq - 1U) % ARC_RUNTIME_FRAME_HOP_COUNT);
+    rawFrame.frame_start_uptime_ms = hopStartMsBuf[oldestSlot];
+    rawFrame.frame_end_uptime_ms = hopEndMsBuf[newestSlot];
+    if (prevEmitStartUs > 0 && hopStartUsBuf[oldestSlot] > prevEmitStartUs) {
+      rawFrame.frame_dt_ms = float(hopStartUsBuf[oldestSlot] - prevEmitStartUs) * 0.001f;
+    }
+    prevEmitStartUs = hopStartUsBuf[oldestSlot];
+
+    float fsSum = 0.0f;
+    uint8_t fsCount = 0;
+    bool sampleRateWarnBad = false;
+    for (uint8_t i = 0; i < ARC_RUNTIME_FRAME_HOP_COUNT; ++i) {
+      const uint8_t slot = (uint8_t)((hopSeq - ARC_RUNTIME_FRAME_HOP_COUNT + i) % ARC_RUNTIME_FRAME_HOP_COUNT);
+      if (hopFsBuf[slot] > 0.0f) {
+        fsSum += hopFsBuf[slot];
+        fsCount++;
+      }
+      sampleRateWarnBad = sampleRateWarnBad || hopWarnBuf[slot];
+    }
+    rawFrame.adc_fs_hz = (fsCount > 0) ? (fsSum / float(fsCount)) : fs_hz;
+    rawFrame.fs_err_hz = (rawFrame.adc_fs_hz > 0.0f) ? fabsf(rawFrame.adc_fs_hz - FS_INTENDED_HZ) : fabsf(FS_INTENDED_HZ);
+
+    const bool timingGraceActive = ((hopStartMs - timingGraceStartMs) < FEATURE_TIMING_GRACE_MS);
+    const float frameJitterMs = (rawFrame.frame_dt_ms > 0.0f)
+        ? fabsf(rawFrame.frame_dt_ms - FEATURE_FRAME_PERIOD_MS)
+        : 0.0f;
+    const bool frameTimingBad =
+        !timingGraceActive &&
+        (rawFrame.frame_dt_ms > 0.0f) &&
+        ((rawFrame.frame_dt_ms < FRAME_DT_BAD_EARLY_MS) ||
+         (rawFrame.frame_dt_ms > FRAME_DT_BAD_LATE_MS) ||
+         (frameJitterMs > FRAME_DT_JITTER_BAD_MS));
+
+    rawFrame.sampling_quality_bad = (sampleRateWarnBad || frameTimingBad) ? 1U : 0U;
+    (void)pushRawFeatureFrame_(rawFrame);
+  }
+
+  gSenseTaskRunning = false;
+  gCore0SenseTask = nullptr;
+  vTaskDelete(nullptr);
+}
+
+static void Core1FeatureTask(void* pv) {
+  (void)pv;
+  gFeatTaskRunning = true;
+  ArcDetectionResult out = {};
+  uint32_t seenResetEpoch = gFeaturePipelineResetEpoch;
+
+  while (true) {
+    if (gStopSenseTask) break;
+    if (gPauseByOta || gSafeMode) {
+      if (gStopSenseTask) break;
+      vTaskDelay(20 / portTICK_PERIOD_MS);
+      continue;
+    }
+
+    if (seenResetEpoch != gFeaturePipelineResetEpoch) {
+      seenResetEpoch = gFeaturePipelineResetEpoch;
+      if (qRawFeat) xQueueReset(qRawFeat);
+      resetArcRuntime_();
+      continue;
+    }
+
+    RawFeatureFrame rawFrame = {};
+    if (!qRawFeat || xQueueReceive(qRawFeat, &rawFrame, pdMS_TO_TICKS(20)) != pdTRUE) {
+      continue;
+    }
+
+    FeatureFrame f = {};
+    f.uptime_ms = rawFrame.frame_end_uptime_ms;
+    f.frame_start_uptime_ms = rawFrame.frame_start_uptime_ms;
+    f.frame_end_uptime_ms = rawFrame.frame_end_uptime_ms;
+    f.epoch_ms = network.epochForUptimeMs(rawFrame.frame_end_uptime_ms);
+    f.frame_dt_ms = rawFrame.frame_dt_ms;
+    f.adc_fs_hz = rawFrame.adc_fs_hz;
+    f.fs_err_hz = rawFrame.fs_err_hz;
+    f.fft_size = rawFrame.fft_size;
+    f.hop_samples = rawFrame.hop_samples;
+    f.queue_drop_count = rawFrame.queue_drop_count;
 
     const int64_t tComp0 = esp_timer_get_time();
     bool ok = false;
-    if (got == N_SAMP && !sampleRateHardBad) {
-      ok = arcDetect.compute(s_raw, N_SAMP, fs_hz, curCalib, MAINS_F0_HZ, out);
+    if (gArcRuntimeMutex && xSemaphoreTake(gArcRuntimeMutex, pdMS_TO_TICKS(40)) == pdTRUE) {
+      ok = arcDetect.compute(rawFrame.samples, rawFrame.sample_count, rawFrame.adc_fs_hz, curCalib, MAINS_F0_HZ, out);
+      xSemaphoreGive(gArcRuntimeMutex);
+    } else {
+      ok = arcDetect.compute(rawFrame.samples, rawFrame.sample_count, rawFrame.adc_fs_hz, curCalib, MAINS_F0_HZ, out);
     }
     const int64_t tComp1 = esp_timer_get_time();
     f.compute_time_ms = (tComp1 > tComp0) ? float(tComp1 - tComp0) * 0.001f : 0.0f;
@@ -983,7 +1209,7 @@ static void Core0Task(void* pv) {
       f.fs_err_hz = fabsf(f.adc_fs_hz - FS_INTENDED_HZ);
       f.irms = out.irms_a;
       f.current_valid = 1;
-      f.feat_valid = out.feat_valid ? 1 : 0;
+      f.feat_valid = out.feat_valid ? 1U : 0U;
       copyComputedFeaturesToFrame_(f, out);
     } else {
       f.current_valid = 0;
@@ -992,44 +1218,13 @@ static void Core0Task(void* pv) {
       zeroComputedFeatures_(f);
     }
 
-    const bool sampleRateWarnBad =
-        sampleRateHardBad ||
-        (!isfinite(f.adc_fs_hz)) ||
-        (f.adc_fs_hz < MCP3204_FS_WARN_LOW_HZ) ||
-        (f.adc_fs_hz > MCP3204_FS_WARN_HIGH_HZ) ||
-        (f.fs_err_hz > FS_ERR_BAD_HZ);
-
-    const bool timingGraceActive = ((frameStartMs - timingGraceStartMs) < FEATURE_TIMING_GRACE_MS);
-    const float frameJitterMs = (f.frame_dt_ms > 0.0f)
-        ? fabsf(f.frame_dt_ms - FEATURE_FRAME_PERIOD_MS)
-        : 0.0f;
-    const bool frameTimingBad =
-        !timingGraceActive &&
-        (f.frame_dt_ms > 0.0f) &&
-        ((f.frame_dt_ms < FRAME_DT_BAD_EARLY_MS) ||
-         (f.frame_dt_ms > FRAME_DT_BAD_LATE_MS) ||
-         (frameJitterMs > FRAME_DT_JITTER_BAD_MS));
-    const bool computeTimingBad = !timingGraceActive && (f.compute_time_ms > FRAME_COMPUTE_BAD_MS);
-
-    f.sampling_quality_bad =
-        (got != N_SAMP) ||
-        sampleRateWarnBad ||
-        frameTimingBad ||
-        computeTimingBad;
+    const bool computeTimingBad = (f.compute_time_ms > FRAME_COMPUTE_BAD_MS);
+    f.sampling_quality_bad = rawFrame.sampling_quality_bad || computeTimingBad || !ok;
     (void)pushFeatureFrame_(f);
-
-    nextFrameStartUs = frameStartUs + (int64_t)FEATURE_FRAME_PERIOD_US;
-    const int64_t nowUs = esp_timer_get_time();
-    if (nextFrameStartUs <= nowUs) {
-      const int64_t missed = 1 + ((nowUs - nextFrameStartUs) / (int64_t)FEATURE_FRAME_PERIOD_US);
-      nextFrameStartUs += missed * (int64_t)FEATURE_FRAME_PERIOD_US;
-    }
-
-    taskYIELD();
   }
 
-  gSenseTaskRunning = false;
-  gCore0SenseTask = nullptr;
+  gFeatTaskRunning = false;
+  gCore1FeatTask = nullptr;
   vTaskDelete(nullptr);
 }
 
@@ -1163,8 +1358,34 @@ void loop() {
   static uint32_t lastFeatRxMs = 0;
   bool freshFeatThisLoop = false;
   FeatureFrame f;
-  if (qFeat && xQueueReceive(qFeat, &f, 0) == pdTRUE) {
-    lastF = f; hasLast = true; lastFeatRxMs = millis(); freshFeatThisLoop = true;
+  if (qFeat) {
+    bool gotAny = false;
+    FeatureFrame newest = {};
+    while (xQueueReceive(qFeat, &newest, 0) == pdTRUE) {
+      f = newest;
+      gotAny = true;
+    }
+    if (gotAny) {
+      lastF = f;
+      hasLast = true;
+      lastFeatRxMs = millis();
+      freshFeatThisLoop = true;
+    } else if (hasLast) {
+      f = lastF;
+      if ((millis() - lastFeatRxMs) > FEAT_STALE_MS) {
+        f.irms = 0.0f; f.current_valid = 0; f.feat_valid = 0; f.model_pred = 0; f.adc_fs_hz = 0.0f;
+        f.fs_err_hz = fabsf(FS_INTENDED_HZ); f.sampling_quality_bad = 1;
+        zeroComputedFeatures_(f);
+        f.invalid_loaded_flag = 0; f.invalid_off_flag = 1;
+        f.relay_blank_active = 0; f.turnon_blank_active = 0; f.transient_blank_active = 0;
+        lastF = f;
+      }
+    } else {
+      memset(&f, 0, sizeof(f));
+      f.uptime_ms = millis();
+      f.fft_size = ARC_RUNTIME_FRAME_SAMPLES;
+      f.hop_samples = ARC_RUNTIME_HOP_SAMPLES;
+    }
   } else if (hasLast) {
     f = lastF;
     if ((millis() - lastFeatRxMs) > FEAT_STALE_MS) {
@@ -1175,7 +1396,12 @@ void loop() {
       f.relay_blank_active = 0; f.turnon_blank_active = 0; f.transient_blank_active = 0;
       lastF = f;
     }
-  } else { memset(&f, 0, sizeof(f)); f.uptime_ms = millis(); }
+  } else {
+    memset(&f, 0, sizeof(f));
+    f.uptime_ms = millis();
+    f.fft_size = ARC_RUNTIME_FRAME_SAMPLES;
+    f.hop_samples = ARC_RUNTIME_HOP_SAMPLES;
+  }
 
   static float vRms = 0.0f, vFast = 0.0f, vRaw = 0.0f, tC = 0.0f;
   static uint32_t tTemp = 0;
@@ -1189,7 +1415,8 @@ void loop() {
     hasLast = false;
     lastFeatRxMs = 0;
     memset(&lastF, 0, sizeof(lastF));
-    arcDetect.resetRuntime();
+    requestFeaturePipelineReset_();
+    resetArcRuntime_();
     resetContextTracker_();
     if (mainsPresentForFeat) armRelayArtifactBlank_(1200UL);
   }
@@ -1473,6 +1700,8 @@ void loop() {
     prevHfDelta = f.hf_energy_delta;
     prevIrmsLogic = irmsRawForLogic;
     prevVFast = vFast;
+    requestFeaturePipelineReset_();
+    resetArcRuntime_();
     resetContextTracker_();
     (void)stabilizeFeatureValidity(f, vFast, irmsRawForLogic, true);
     notification.notify(SND_RESET_ACK);
@@ -1493,25 +1722,27 @@ void loop() {
 
   int rawPred = 0;
   if (!faultClearSuppressActive && mlArcEligible) {
-    rawPred = arcDetect.predict(f.spectral_flux_midhf,
-                                f.residual_crest_factor,
-                                f.edge_spike_ratio,
-                                f.midband_residual_ratio,
-                                f.cycle_nmse,
-                                f.peak_fluct_cv,
-                                f.thd_i,
-                                f.hf_energy_delta,
-                                f.zcv,
-                                f.abs_irms_zscore_vs_baseline,
-                                f.suspicious_run_energy,
-                                f.delta_irms_abs,
-                                f.delta_hf_energy,
-                                f.delta_flux,
-                                f.halfcycle_asymmetry,
-                                f.v_sag_pct,
-                                f.vrms,
-                                irmsRawForLogic,
-                                f.temp_c);
+    rawPred = arcDetect.predictWithContext(f.spectral_flux_midhf,
+                                           f.residual_crest_factor,
+                                           f.edge_spike_ratio,
+                                           f.midband_residual_ratio,
+                                           f.cycle_nmse,
+                                           f.peak_fluct_cv,
+                                           f.thd_i,
+                                           f.hf_energy_delta,
+                                           f.zcv,
+                                           f.abs_irms_zscore_vs_baseline,
+                                           f.suspicious_run_energy,
+                                           f.delta_irms_abs,
+                                           f.delta_hf_energy,
+                                           f.delta_flux,
+                                           f.halfcycle_asymmetry,
+                                           f.v_sag_pct,
+                                           f.vrms,
+                                           irmsRawForLogic,
+                                           f.temp_c,
+                                           f.context_family_code_runtime,
+                                           f.context_family_confidence);
     if (rawPred == 1 && !mlEventLike) rawPred = 0;
   }
 
@@ -1709,11 +1940,16 @@ void loop() {
   network.setMlUploadSuspended(relayNetQuietActive || paused || gSafeMode || (st != STATE_NORMAL));
   if (!paused && !gSafeMode) {
     static uint32_t lastLoggedFeatUptimeMs = 0;
-    if (freshFeatThisLoop && f.uptime_ms != 0 && f.uptime_ms != lastLoggedFeatUptimeMs) {
+    static uint32_t lastLogEnqueueMs = 0;
+    const bool logCadenceReady =
+        (lastLogEnqueueMs == 0U) ||
+        ((millis() - lastLogEnqueueMs) >= CSV_LOG_MIN_INTERVAL_MS);
+    if (freshFeatThisLoop && logCadenceReady && f.uptime_ms != 0 && f.uptime_ms != lastLoggedFeatUptimeMs) {
       lastLoggedFeatUptimeMs = f.uptime_ms;
+      lastLogEnqueueMs = millis();
       FeatureFrame fLog = f;
       fLog.irms = irmsRawForLogic;
-      fLog.log_enqueue_uptime_ms = millis();
+      fLog.log_enqueue_uptime_ms = lastLogEnqueueMs;
       fLog.timing_skew_ms = (fLog.log_enqueue_uptime_ms >= fLog.frame_start_uptime_ms)
           ? float(fLog.log_enqueue_uptime_ms - fLog.frame_start_uptime_ms)
           : 0.0f;

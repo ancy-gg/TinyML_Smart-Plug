@@ -60,6 +60,70 @@ def emit_progress(current: int, total: int, payload: dict) -> None:
     print("[[PROGRESS]] " + json.dumps(payload, sort_keys=True), flush=True)
 
 
+def _shared_arc_training_args(args) -> list[str]:
+    return [
+        "--arc_tolerance_mode", str(args.arc_tolerance_mode),
+        "--pre_arc_window", str(int(args.pre_arc_window)),
+        "--post_arc_window", str(int(args.post_arc_window)),
+        "--soft_neighbor_weight", str(float(args.soft_neighbor_weight)),
+        "--expanded_neighbor_weight", str(float(args.expanded_neighbor_weight)),
+        "--hard_negative_ring", str(int(args.hard_negative_ring)),
+        "--final_negative_ratio", str(float(args.final_negative_ratio)),
+        "--positive_oversample", str(float(args.positive_oversample)),
+    ]
+
+
+def _prefer_rf_deployment_winner(ranked_results: list[dict], winner_policy: dict) -> tuple[dict | None, dict]:
+    rf = next((r for r in ranked_results if str(r.get("model_key", "")).lower() == "rf"), None)
+    et = next((r for r in ranked_results if str(r.get("model_key", "")).lower() == "et"), None)
+    if rf is None:
+        return et, winner_policy
+    if et is None:
+        return rf, winner_policy
+
+    rf_event_fn = int((rf.get("validation_event_level_metrics") or {}).get("missed_event_count", 10**9))
+    et_event_fn = int((et.get("validation_event_level_metrics") or {}).get("missed_event_count", 10**9))
+    rf_fn = int((rf.get("validation_threshold_result") or {}).get("fn", 10**9))
+    et_fn = int((et.get("validation_threshold_result") or {}).get("fn", 10**9))
+    rf_fp = int((rf.get("validation_threshold_result") or {}).get("fp", 10**9))
+    et_fp = int((et.get("validation_threshold_result") or {}).get("fp", 10**9))
+    rf_false_alarms = float((rf.get("validation_event_level_metrics") or {}).get("false_alarms_per_session", 10**9))
+    et_false_alarms = float((et.get("validation_event_level_metrics") or {}).get("false_alarms_per_session", 10**9))
+    rf_bal = float(rf.get("validation_balanced_accuracy", 0.0) or 0.0)
+    et_bal = float(et.get("validation_balanced_accuracy", 0.0) or 0.0)
+
+    et_clearly_better = (
+        (et_event_fn + 1 < rf_event_fn)
+        or (
+            et_event_fn < rf_event_fn
+            and et_fp <= (rf_fp + 3)
+            and et_false_alarms <= (rf_false_alarms + 0.08)
+        )
+        or (
+            et_event_fn == rf_event_fn
+            and et_fn + 2 < rf_fn
+            and et_fp <= (rf_fp + 2)
+        )
+        or (
+            et_event_fn == rf_event_fn
+            and et_fn == rf_fn
+            and et_fp + 8 < rf_fp
+            and et_false_alarms + 0.10 < rf_false_alarms
+            and et_bal >= (rf_bal + 0.015)
+        )
+    )
+    if et_clearly_better:
+        return et, winner_policy
+
+    policy = dict(winner_policy or {})
+    policy["rf_deployment_preference_applied"] = True
+    policy["rf_deployment_preference_reason"] = (
+        "Random Forest kept as deployment winner unless Extra Trees shows a clearly better "
+        "validation event-miss / false-positive tradeoff."
+    )
+    return rf, policy
+
+
 def _load_feature_list_from_report(report_path: str | None, model_key: str) -> list[str] | None:
     path = Path(report_path or "")
     if not path.is_file():
@@ -151,6 +215,7 @@ def _build_child_command(model_key: str, args, n_jobs: int) -> list[str]:
         cmd.extend(["--feature_report", str(args.feature_report)])
     if selected_base_features:
         cmd.extend(["--features", *selected_base_features])
+    cmd.extend(_shared_arc_training_args(args))
     return cmd
 
 
@@ -222,6 +287,14 @@ def main():
     ap.add_argument("--et_feature_report", default=None)
     ap.add_argument("--rf_features", nargs="*", default=None)
     ap.add_argument("--et_features", nargs="*", default=None)
+    ap.add_argument("--arc_tolerance_mode", default="soft_positive", choices=["none", "expanded_positive", "soft_positive"])
+    ap.add_argument("--pre_arc_window", type=int, default=1)
+    ap.add_argument("--post_arc_window", type=int, default=3)
+    ap.add_argument("--soft_neighbor_weight", type=float, default=0.30)
+    ap.add_argument("--expanded_neighbor_weight", type=float, default=0.70)
+    ap.add_argument("--hard_negative_ring", type=int, default=2)
+    ap.add_argument("--final_negative_ratio", type=float, default=0.0)
+    ap.add_argument("--positive_oversample", type=float, default=1.0)
     args = ap.parse_args()
 
     plan = estimate_search_plan(args.n_iter)
@@ -320,6 +393,9 @@ def main():
         fn_weight=args.fn_weight,
         fp_weight=args.fp_weight,
     )
+    preferred_winner, winner_policy = _prefer_rf_deployment_winner(ranked_results, winner_policy)
+    if preferred_winner is not None:
+        winner = preferred_winner
 
     print("\n=== Full benchmark table ===")
     for i, r in enumerate(ranked_results, start=1):
@@ -367,6 +443,14 @@ def main():
         "feature_report": args.feature_report,
         "rf_feature_report": args.rf_feature_report,
         "et_feature_report": args.et_feature_report,
+        "arc_tolerance_mode": args.arc_tolerance_mode,
+        "pre_arc_window": int(args.pre_arc_window),
+        "post_arc_window": int(args.post_arc_window),
+        "soft_neighbor_weight": float(args.soft_neighbor_weight),
+        "expanded_neighbor_weight": float(args.expanded_neighbor_weight),
+        "hard_negative_ring": int(args.hard_negative_ring),
+        "final_negative_ratio": float(args.final_negative_ratio),
+        "positive_oversample": float(args.positive_oversample),
         "model_features": {
             str(r.get("model_key", r.get("model_name", ""))): list(r.get("arc_base_feature_names", []) or [])
             for r in ranked_results

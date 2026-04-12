@@ -165,6 +165,16 @@ class TinyMLTrainerGUI(tk.Tk):
         self.arc_subset_keep_per_shard = tk.StringVar(value="1")
         self.arc_subset_shortlist_size = tk.StringVar(value="18")
         self.arc_subset_finalist_count = tk.StringVar(value="6")
+        self.arc_tolerance_mode = tk.StringVar(value="soft_positive")
+        self.pre_arc_window = tk.StringVar(value="1")
+        self.post_arc_window = tk.StringVar(value="3")
+        self.soft_neighbor_weight = tk.StringVar(value="0.30")
+        self.expanded_neighbor_weight = tk.StringVar(value="0.70")
+        self.hard_negative_ring = tk.StringVar(value="2")
+        self.sweep_negative_ratio = tk.StringVar(value="18")
+        self.sweep_positive_oversample = tk.StringVar(value="1.25")
+        self.final_negative_ratio = tk.StringVar(value="0")
+        self.final_positive_oversample = tk.StringVar(value="1.0")
         self.subset_n_jobs = tk.StringVar(value="1")
         self.search_iters = tk.StringVar(value="120")
         self.max_search_iters = tk.StringVar(value="240")
@@ -398,10 +408,31 @@ class TinyMLTrainerGUI(tk.Tk):
         ttk.Entry(options, textvariable=self.arc_subset_finalist_count, width=10).grid(row=9, column=4, sticky="ew", padx=(0, 8), pady=(4, 0))
         tk.Label(options, text="Sweep n_jobs", bg=CARD_BG_2, fg=MUTED, font=("Segoe UI", 9)).grid(row=8, column=5, sticky="w", pady=(10, 0))
         ttk.Entry(options, textvariable=self.subset_n_jobs, width=10).grid(row=9, column=5, sticky="ew", pady=(4, 0))
+        tk.Label(options, text="Tolerance mode", bg=CARD_BG_2, fg=MUTED, font=("Segoe UI", 9)).grid(row=10, column=0, sticky="w", pady=(10, 0))
+        ttk.Combobox(options, textvariable=self.arc_tolerance_mode, values=["soft_positive", "expanded_positive", "none"], state="readonly", width=16).grid(row=11, column=0, sticky="ew", padx=(0, 8), pady=(4, 0))
+        tk.Label(options, text="Pre arc rows", bg=CARD_BG_2, fg=MUTED, font=("Segoe UI", 9)).grid(row=10, column=1, sticky="w", pady=(10, 0))
+        ttk.Entry(options, textvariable=self.pre_arc_window, width=10).grid(row=11, column=1, sticky="ew", padx=(0, 8), pady=(4, 0))
+        tk.Label(options, text="Post arc rows", bg=CARD_BG_2, fg=MUTED, font=("Segoe UI", 9)).grid(row=10, column=2, sticky="w", pady=(10, 0))
+        ttk.Entry(options, textvariable=self.post_arc_window, width=10).grid(row=11, column=2, sticky="ew", padx=(0, 8), pady=(4, 0))
+        tk.Label(options, text="Soft nbr weight", bg=CARD_BG_2, fg=MUTED, font=("Segoe UI", 9)).grid(row=10, column=3, sticky="w", pady=(10, 0))
+        ttk.Entry(options, textvariable=self.soft_neighbor_weight, width=10).grid(row=11, column=3, sticky="ew", padx=(0, 8), pady=(4, 0))
+        tk.Label(options, text="Expanded nbr weight", bg=CARD_BG_2, fg=MUTED, font=("Segoe UI", 9)).grid(row=10, column=4, sticky="w", pady=(10, 0))
+        ttk.Entry(options, textvariable=self.expanded_neighbor_weight, width=10).grid(row=11, column=4, sticky="ew", padx=(0, 8), pady=(4, 0))
+        tk.Label(options, text="Hard-neg ring", bg=CARD_BG_2, fg=MUTED, font=("Segoe UI", 9)).grid(row=10, column=5, sticky="w", pady=(10, 0))
+        ttk.Entry(options, textvariable=self.hard_negative_ring, width=10).grid(row=11, column=5, sticky="ew", pady=(4, 0))
+        tk.Label(options, text="Sweep neg ratio", bg=CARD_BG_2, fg=MUTED, font=("Segoe UI", 9)).grid(row=12, column=0, sticky="w", pady=(10, 0))
+        ttk.Entry(options, textvariable=self.sweep_negative_ratio, width=10).grid(row=13, column=0, sticky="ew", padx=(0, 8), pady=(4, 0))
+        tk.Label(options, text="Sweep pos over", bg=CARD_BG_2, fg=MUTED, font=("Segoe UI", 9)).grid(row=12, column=1, sticky="w", pady=(10, 0))
+        ttk.Entry(options, textvariable=self.sweep_positive_oversample, width=10).grid(row=13, column=1, sticky="ew", padx=(0, 8), pady=(4, 0))
+        tk.Label(options, text="Final neg ratio", bg=CARD_BG_2, fg=MUTED, font=("Segoe UI", 9)).grid(row=12, column=2, sticky="w", pady=(10, 0))
+        ttk.Entry(options, textvariable=self.final_negative_ratio, width=10).grid(row=13, column=2, sticky="ew", padx=(0, 8), pady=(4, 0))
+        tk.Label(options, text="Final pos over", bg=CARD_BG_2, fg=MUTED, font=("Segoe UI", 9)).grid(row=12, column=3, sticky="w", pady=(10, 0))
+        ttk.Entry(options, textvariable=self.final_positive_oversample, width=10).grid(row=13, column=3, sticky="ew", padx=(0, 8), pady=(4, 0))
         subset_note = tk.Label(
             options,
             text=(
                 f"Arc subset sweep now runs in stages: fast ET prescreen over the arc pool, deeper ET shortlist, then parallel RF + ET finalists. "
+                f"Arc labels can use a configurable tolerance window and hard-negative-aware downsampling so event recall improves without letting FP explode. "
                 f"Context subset sweep uses the locked {len(CONTEXT_SWEEP_FEATURES)}-feature start-only pool. "
                 f"Subset inner depth is fixed at {SUBSET_SWEEP_SEARCH_DEPTH}; shortlist depth is auto-reduced for speed."
             ),
@@ -411,11 +442,11 @@ class TinyMLTrainerGUI(tk.Tk):
             anchor="w",
             wraplength=1180,
         )
-        subset_note.grid(row=10, column=0, columnspan=6, sticky="ew", pady=(10, 0))
+        subset_note.grid(row=14, column=0, columnspan=6, sticky="ew", pady=(10, 0))
         self._adaptive_labels.append((subset_note, 0.78, 440))
         self.workflow_scope_text = tk.StringVar(value="RF / ET / King train on the selected arc base features below, then append the fixed 7 runtime context inputs at export/runtime. Context training uses the selected context-only features below on start-only data. Cleaner rebuilds the datasets only. Subset Sweep can run Arc, Context, or both; for Arc it now budgets time, shards prescreen work, and reranks finalists without changing the full CSV schema.")
         scope_label = tk.Label(options, textvariable=self.workflow_scope_text, bg=CARD_BG_2, fg=MUTED, justify="left", anchor="w", wraplength=1180)
-        scope_label.grid(row=11, column=0, columnspan=6, sticky="ew", pady=(10, 0))
+        scope_label.grid(row=15, column=0, columnspan=6, sticky="ew", pady=(10, 0))
         self._adaptive_labels.append((scope_label, 0.78, 440))
         self._build_feature_selection_card(main_card, 3)
         status = tk.Frame(main_card, bg=CARD_BG)
@@ -1135,6 +1166,14 @@ class TinyMLTrainerGUI(tk.Tk):
             "--min_precision", f"{self._get_float(self.min_precision_goal, 0.90, 0.0, 1.0):.6f}",
             "--max_fpr", f"{self._get_float(self.max_fpr_goal, 0.03, 0.0, 1.0):.6f}",
             "--min_threshold", f"{self._get_float(self.min_threshold_goal, 0.08, 0.0, 0.99):.6f}",
+            "--arc_tolerance_mode", str((self.arc_tolerance_mode.get() or "soft_positive").strip()),
+            "--pre_arc_window", str(self._get_int(self.pre_arc_window, 1, 0)),
+            "--post_arc_window", str(self._get_int(self.post_arc_window, 3, 0)),
+            "--soft_neighbor_weight", f"{self._get_float(self.soft_neighbor_weight, 0.30, 0.02, 1.0):.6f}",
+            "--expanded_neighbor_weight", f"{self._get_float(self.expanded_neighbor_weight, 0.70, 0.10, 1.25):.6f}",
+            "--hard_negative_ring", str(self._get_int(self.hard_negative_ring, 2, 0)),
+            "--final_negative_ratio", f"{self._get_float(self.final_negative_ratio, 0.0, 0.0, None):.6f}",
+            "--positive_oversample", f"{self._get_float(self.final_positive_oversample, 1.0, 1.0, None):.6f}",
         ]
     def _context_training_flags(self, n_iter):
         return ["--n_iter", str(int(n_iter))]
@@ -1171,6 +1210,16 @@ class TinyMLTrainerGUI(tk.Tk):
             "--arc_shortlist_size", str(self._get_int(self.arc_subset_shortlist_size, 18, 1)),
             "--arc_finalist_count", str(self._get_int(self.arc_subset_finalist_count, 6, 1)),
             "--arc_shortlist_n_iter", str(shortlist_depth),
+            "--arc_tolerance_mode", str((self.arc_tolerance_mode.get() or "soft_positive").strip()),
+            "--pre_arc_window", str(self._get_int(self.pre_arc_window, 1, 0)),
+            "--post_arc_window", str(self._get_int(self.post_arc_window, 3, 0)),
+            "--soft_neighbor_weight", f"{self._get_float(self.soft_neighbor_weight, 0.30, 0.02, 1.0):.6f}",
+            "--expanded_neighbor_weight", f"{self._get_float(self.expanded_neighbor_weight, 0.70, 0.10, 1.25):.6f}",
+            "--hard_negative_ring", str(self._get_int(self.hard_negative_ring, 2, 0)),
+            "--sweep_negative_ratio", f"{self._get_float(self.sweep_negative_ratio, 18.0, 0.0, None):.6f}",
+            "--sweep_positive_oversample", f"{self._get_float(self.sweep_positive_oversample, 1.25, 1.0, None):.6f}",
+            "--final_negative_ratio", f"{self._get_float(self.final_negative_ratio, 0.0, 0.0, None):.6f}",
+            "--final_positive_oversample", f"{self._get_float(self.final_positive_oversample, 1.0, 1.0, None):.6f}",
             "--context_feature_count_min", str(ctx_feature_min),
             "--context_feature_count_max", str(ctx_feature_max),
             "--context_max_combinations", str(ctx_max_combos),
@@ -1431,7 +1480,7 @@ class TinyMLTrainerGUI(tk.Tk):
                 if self._last_eta_seconds is not None:
                     self.eta_text.set(f"ETA: {self._fmt_duration(self._last_eta_seconds)}")
                 elif self._progress_payload is None:
-                    self.eta_text.set("ETA: estimating…")
+                    self.eta_text.set("ETA: estimating...")
             elif self.proc is None and self._process_started_at is None and self.progress_text.get() == "Idle":
                 self.elapsed_text.set("Elapsed: —")
                 self.eta_text.set("ETA: —")
@@ -1481,7 +1530,7 @@ class TinyMLTrainerGUI(tk.Tk):
                 self.eta_text.set(f"ETA: {self._fmt_duration(remaining)}")
             else:
                 self._last_eta_seconds = None
-                self.eta_text.set("ETA: estimatingâ€¦")
+                self.eta_text.set("ETA: estimating...")
         self.pb.configure(mode="determinate", maximum=100.0)
         self.pb["value"] = pct
         task_name = str(payload.get("task", "")).strip()
@@ -1665,7 +1714,7 @@ class TinyMLTrainerGUI(tk.Tk):
             self._pending_cleaner_summary = None
         self.last_command.set(" ".join(cmd))
         self.elapsed_text.set("Elapsed: 00:00")
-        self.eta_text.set("ETA: estimating…")
+        self.eta_text.set("ETA: estimating...")
         self.log("\n" + "=" * 100 + "\n")
         self.log("Running: " + " ".join(cmd) + "\n\n")
         def worker():
@@ -1845,13 +1894,58 @@ class TinyMLTrainerGUI(tk.Tk):
         summary = report.get("summary", {}) or {}
         outputs = report.get("outputs", {}) or {}
         split_checks = report.get("split_checks", {}) or {}
-        elapsed_seconds = float(report.get("elapsed_seconds", summary.get("elapsed_seconds", 0.0)) or 0.0)
+        timing = report.get("timing", {}) or {}
+        elapsed_seconds = float(
+            timing.get("duration_seconds", report.get("elapsed_seconds", summary.get("elapsed_seconds", 0.0))) or 0.0
+        )
         arc_rows = outputs.get("arc_training_rows", summary.get("arc_training_rows", "â€”"))
         context_rows = outputs.get("load_context_rows", summary.get("load_context_rows", "â€”"))
+        arc_divisions = {
+            str(k).strip().lower()
+            for k, v in (split_checks.get("arc_training_division_counts", {}) or {}).items()
+            if float(v or 0) > 0.0
+        }
+        context_divisions = {
+            str(k).strip().lower()
+            for k, v in (split_checks.get("load_context_division_counts", {}) or {}).items()
+            if float(v or 0) > 0.0
+        }
+        arc_label_counts = {
+            str(k): int(v)
+            for k, v in (split_checks.get("arc_training_label_counts", {}) or {}).items()
+            if int(v or 0) > 0
+        }
+        context_family_counts = {
+            str(k).strip().lower(): int(v)
+            for k, v in (split_checks.get("load_context_family_counts", {}) or {}).items()
+            if int(v or 0) > 0 and str(k).strip()
+        }
+        sanity = {
+            "arc_contains_only_steady_or_arc": bool(arc_divisions) and arc_divisions.issubset({"steady", "arc"}),
+            "context_contains_only_start": bool(context_divisions) and context_divisions.issubset({"start", "startup"}),
+            "start_rows_excluded_from_arc_training": "start" not in arc_divisions and "startup" not in arc_divisions,
+            "arc_rows_excluded_from_context": "arc" not in context_divisions,
+            "arc_dataset_has_both_labels": {"0", "1"}.issubset(set(arc_label_counts.keys())),
+            "context_has_known_families": any(k not in {"unknown", "nan", "none", ""} for k in context_family_counts.keys()),
+        }
         self.prepare_summary.set(
             f"Source: {self._project_path(self.prepare_report.get())}\n"
             f"Rows before/after: {summary.get('rows_before_cleaning', '—')} → {summary.get('rows_after_cleaning_with_augmentation', summary.get('rows_after_cleaning', '—'))}\n"
             f"Arc rows: {summary.get('arc_training_rows', '—')} | Context rows: {summary.get('load_context_rows', '—')} | Duration: {self._fmt_duration(timing.get('duration_seconds', summary.get('duration_seconds', 0.0)))}"
+        )
+        self.prepare_summary.set(
+            "Source: "
+            + str(self._project_path(self.prepare_report.get()))
+            + "\nRows before/after: "
+            + str(summary.get("rows_before_cleaning", "-"))
+            + " -> "
+            + str(summary.get("rows_after_cleaning_with_augmentation", summary.get("rows_after_cleaning", "-")))
+            + "\nArc rows: "
+            + str(arc_rows)
+            + " | Context rows: "
+            + str(context_rows)
+            + " | Duration: "
+            + str(self._fmt_duration(elapsed_seconds))
         )
         metrics = [
             ("Input file count", self._pick(report, ("input_files", "count"))),
@@ -2350,14 +2444,14 @@ class TinyMLTrainerGUI(tk.Tk):
                 self._fmt(row.get("mean_confidence")),
             )
         return (
-            "Val BalAcc",
-            self._fmt(row.get("validation_balanced_accuracy", row.get("combined_validation_balanced_accuracy_mean"))),
-            "Val FPR",
-            self._fmt(row.get("validation_fpr", row.get("combined_validation_fpr_mean"))),
-            "Val FN",
+            "Val Event FN",
+            self._fmt(row.get("validation_event_fn", row.get("combined_validation_event_fn"))),
+            "Val Row FN",
             self._fmt(row.get("validation_fn", row.get("combined_validation_fn"))),
             "Val FP",
             self._fmt(row.get("validation_fp", row.get("combined_validation_fp"))),
+            "FalseAlm/Session",
+            self._fmt(row.get("validation_false_alarms_per_session", row.get("combined_validation_false_alarms_per_session_mean"))),
         )
     def _refresh_subset_report(self):
         if not hasattr(self, "subset_metric_tree"):
@@ -2388,7 +2482,8 @@ class TinyMLTrainerGUI(tk.Tk):
                 + (" | budget stop hit" if arc_report.get("budget_hit") else "")
             )
             summary_lines.append(
-                f"Default recommendation / practical ranking ({len(arc_report.get('recommended_arc_base_features_global', []) or [])}): "
+                f"Deployment recommendation [{str(arc_report.get('recommended_arc_deployment_model', 'rf')).upper()}] "
+                f"({len(arc_report.get('recommended_arc_base_features_global', []) or [])}): "
                 f"{self._feature_list_text(arc_report.get('recommended_arc_base_features_global') or arc_report.get('recommended_features_global') or [])}"
             )
             summary_lines.append(
@@ -2420,9 +2515,14 @@ class TinyMLTrainerGUI(tk.Tk):
             ("Arc keep per shard", arc_settings.get("arc_keep_per_shard") if arc_report else "—"),
             ("Arc shortlist size", arc_settings.get("arc_shortlist_size") if arc_report else "—"),
             ("Arc finalist count", arc_settings.get("arc_finalist_count") if arc_report else "—"),
+            ("Arc tolerance mode", arc_settings.get("arc_tolerance_mode") if arc_report else "—"),
+            ("Arc tolerance rows", f"{arc_settings.get('pre_arc_window', '—')} / {arc_settings.get('post_arc_window', '—')}" if arc_report else "—"),
+            ("Arc sweep neg ratio", arc_settings.get("sweep_negative_ratio") if arc_report else "—"),
+            ("Arc final neg ratio", arc_settings.get("final_negative_ratio") if arc_report else "—"),
             ("Arc budget min", arc_report.get("budget_minutes") if arc_report else "—"),
             ("Arc budget stop", arc_report.get("budget_stop_stage") if arc_report and arc_report.get("budget_hit") else "No"),
             ("Arc ranking default", (arc_report or {}).get("ranking_policy_default", "practical") if arc_report else "—"),
+            ("Arc deployment model", str((arc_report or {}).get("recommended_arc_deployment_model", "rf")).upper() if arc_report else "—"),
             ("Arc fixed context inputs", self._feature_list_text((arc_report or {}).get("context_inputs_fixed", [])) if arc_report else "—"),
             ("Arc recommended base features", self._feature_list_text((arc_report or {}).get("recommended_arc_base_features_global", []) or (arc_report or {}).get("recommended_features_global", [])) if arc_report else "—"),
             ("Arc practical features", self._feature_list_text(((arc_report or {}).get("overall_best_practical") or {}).get("features", [])) if arc_report else "—"),

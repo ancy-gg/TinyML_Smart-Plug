@@ -968,6 +968,8 @@ void FirebaseNetwork::ingestLog(const FeatureFrame& f, FaultState st, int arcCou
   r.frame_dt_ms = f.frame_dt_ms;
   r.compute_time_ms = f.compute_time_ms;
   r.timing_skew_ms = f.timing_skew_ms;
+  r.fft_size = f.fft_size;
+  r.hop_samples = f.hop_samples;
   r.spectral_flux_midhf = f.spectral_flux_midhf;
   r.residual_crest_factor = f.residual_crest_factor;
   r.edge_spike_ratio = f.edge_spike_ratio;
@@ -1196,7 +1198,7 @@ bool FirebaseNetwork::serviceMlUpload_() {
   const uint16_t i1 = ((uint16_t)(i0 + ROWS_PER_CHUNK) < _uploadTotalCount) ? (uint16_t)(i0 + ROWS_PER_CHUNK) : _uploadTotalCount;
   const Rec& firstRec = _buf[i0];
   const Rec& lastRec  = _buf[i1 - 1];
-  const char* header = "abs_irms_zscore_vs_baseline,delta_irms_abs,halfcycle_asymmetry,suspicious_run_energy,delta_hf_energy,delta_flux,midband_residual_ratio,zcv,spectral_flux_midhf,peak_fluct_cv,residual_crest_factor,thd_i,hf_energy_delta,edge_spike_ratio,v_sag_pct,cycle_nmse,fs_err_hz,v_rms,i_rms,temp_c,label_arc,device_family,device_name,trial_number,division_tag,notes,trusted_normal_session,load_type,session_id,epoch_ms,uptime_ms,frame_start_uptime_ms,frame_end_uptime_ms,feature_compute_end_uptime_ms,log_enqueue_uptime_ms,frame_dt_ms,compute_time_ms,timing_skew_ms,queue_drop_count,suspicious_run_len,invalid_loaded_run_len,restrike_count_short,model_pred,feat_valid,current_valid,sampling_quality_bad,invalid_loaded_flag,invalid_off_flag,relay_blank_active,turnon_blank_active,transient_blank_active,device_family_code,context_family_code_runtime,context_family_code_provisional,context_family_confidence,context_family_confidence_provisional,context_acquiring,context_latched,fault_state,arc_counter,adc_fs_hz,auto_capture,feature_space_version\n";
+  const char* header = "abs_irms_zscore_vs_baseline,delta_irms_abs,halfcycle_asymmetry,suspicious_run_energy,delta_hf_energy,delta_flux,midband_residual_ratio,zcv,spectral_flux_midhf,peak_fluct_cv,residual_crest_factor,thd_i,hf_energy_delta,edge_spike_ratio,v_sag_pct,cycle_nmse,fs_err_hz,v_rms,i_rms,temp_c,label_arc,device_family,device_name,trial_number,division_tag,notes,trusted_normal_session,load_type,session_id,epoch_ms,uptime_ms,frame_start_uptime_ms,frame_end_uptime_ms,feature_compute_end_uptime_ms,log_enqueue_uptime_ms,frame_dt_ms,compute_time_ms,timing_skew_ms,fft_size,hop_samples,queue_drop_count,suspicious_run_len,invalid_loaded_run_len,restrike_count_short,model_pred,feat_valid,current_valid,sampling_quality_bad,invalid_loaded_flag,invalid_off_flag,relay_blank_active,turnon_blank_active,transient_blank_active,device_family_code,context_family_code_runtime,context_family_code_provisional,context_family_confidence,context_family_confidence_provisional,context_acquiring,context_latched,fault_state,arc_counter,adc_fs_hz,auto_capture,feature_space_version\n";
 
   String csv;
   csv.reserve((i1 - i0) * 520 + 512);
@@ -1241,6 +1243,8 @@ bool FirebaseNetwork::serviceMlUpload_() {
     csv += String(r.frame_dt_ms, 3);           csv += ",";
     csv += String(r.compute_time_ms, 3);       csv += ",";
     csv += String(r.timing_skew_ms, 3);        csv += ",";
+    csv += String((unsigned int)r.fft_size);   csv += ",";
+    csv += String((unsigned int)r.hop_samples); csv += ",";
     csv += String((unsigned long)r.queue_drop_count); csv += ",";
     csv += String((int)r.suspicious_run_len);  csv += ",";
     csv += String((int)r.invalid_loaded_run_len); csv += ",";
@@ -1319,6 +1323,9 @@ bool FirebaseNetwork::serviceMlUpload_() {
   json.set("meta/auto_capture", _uploadAuto);
   json.set("meta/feature_order", "abs_irms_zscore_vs_baseline,delta_irms_abs,halfcycle_asymmetry,suspicious_run_energy,delta_hf_energy,delta_flux,midband_residual_ratio,zcv,spectral_flux_midhf,peak_fluct_cv,residual_crest_factor,thd_i,hf_energy_delta,edge_spike_ratio,v_sag_pct,cycle_nmse");
   json.set("meta/pwa_feature_order", "abs_irms_zscore_vs_baseline,delta_irms_abs,halfcycle_asymmetry,spectral_flux_midhf,peak_fluct_cv,residual_crest_factor,edge_spike_ratio,midband_residual_ratio,zcv,hf_energy_delta,thd_i,v_sag_pct");
+  json.set("meta/fft_size", (int)ARC_RUNTIME_FRAME_SAMPLES);
+  json.set("meta/hop_samples", (int)ARC_RUNTIME_HOP_SAMPLES);
+  json.set("meta/feature_emit_every_hops", (int)ARC_RUNTIME_EMIT_EVERY_HOPS);
 
   if (!Firebase.RTDB.pushJSON(&fbLog, path.c_str(), &json)) return false;
 
