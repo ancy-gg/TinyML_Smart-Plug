@@ -364,6 +364,14 @@ static inline float bandPeakExcess(const float* spec, int half, int kCenter, int
   return fmaxf(0.0f, peak - noise);
 }
 
+static inline bool lowCurrentGapEventLike_(const ArcDetectionResult& out) {
+  return (out.pulse_count_per_cycle >= ARC_SIG_PULSE_COUNT_PER_CYCLE) ||
+         (out.max_low_current_run_ms >= ARC_SIG_MAX_LOW_CURRENT_RUN_MS) ||
+         ((out.zero_dwell_ratio >= ARC_SIG_ZERO_DWELL_RATIO) &&
+          (out.low_current_ratio >= (ARC_SIG_LOW_CURRENT_RATIO * 0.80f))) ||
+         ((out.abs_irms_zscore_vs_baseline >= 1.20f) && (out.delta_irms_abs >= 0.12f));
+}
+
 bool ArcDetection::compute(const uint16_t* raw, size_t n, float fs_hz,
                            const CurrentCalib& cal, float mainsHz,
                            ArcDetectionResult& out) {
@@ -519,42 +527,6 @@ bool ArcDetection::compute(const uint16_t* raw, size_t n, float fs_hz,
     collectZeroCrossings_(sigClean, n, retryHys, crossAll, 128, crossAllN, crossPos, 64, crossPosN);
   }
 
-  if (crossAllN < 2) {
-    out.feat_valid = false;
-    return true;
-  }
-
-  if (crossPosN >= 3) {
-    out.zcv = robustIntervalJitterMs_(crossPos, crossPosN, fs_hz);
-  } else if (crossAllN >= 4) {
-    out.zcv = robustIntervalJitterMs_(crossAll, crossAllN, fs_hz);
-  } else if (crossPosN >= 2) {
-    out.zcv = pairIntervalJitterMs_(crossPos, crossPosN, fs_hz);
-  } else if (crossAllN >= 3) {
-    out.zcv = pairIntervalJitterMs_(crossAll, crossAllN, fs_hz);
-  }
-
-  const float zeroDwellThr = fmaxf(ZC_DWELL_THR_MIN_A, ZC_DWELL_THR_FRAC * fmaxf(irms, 0.10f));
-  const float avgHalfSamp = (crossAllN >= 4)
-      ? (float)((crossAll[crossAllN - 1] - crossAll[0]) / (float)(crossAllN - 1))
-      : (fs_hz / (mainsHz * 2.0f));
-  const int halfWin = clampi((int)lroundf(avgHalfSamp * 0.12f), 3, 100);
-
-  int zeroWindowTotal = 0;
-  int zeroWindowDwell = 0;
-  for (int ci = 0; ci < crossAllN; ++ci) {
-    const int c = (int)lroundf(crossAll[ci]);
-    const int a = clampi(c - halfWin, 0, (int)n - 1);
-    const int b = clampi(c + halfWin, 0, (int)n - 1);
-    for (int i = a; i <= b; ++i) {
-      zeroWindowTotal++;
-      if (fabsf(sigClean[i]) <= zeroDwellThr) zeroWindowDwell++;
-    }
-  }
-  if (zeroWindowTotal > 0) {
-    out.zero_dwell_ratio = ((float)zeroWindowDwell / (float)zeroWindowTotal) * FEATURE_PERCENT_SCALE;
-  }
-
   const float lowCurrentThr = fmaxf(ZC_DWELL_THR_MIN_A, LOW_CURRENT_RATIO_THR_FRAC * fmaxf(irms, 0.10f));
   int lowCurrentCount = 0;
   int lowCurrentRun = 0;
@@ -570,6 +542,49 @@ bool ArcDetection::compute(const uint16_t* raw, size_t n, float fs_hz,
   }
   out.low_current_ratio = ((float)lowCurrentCount / (float)n) * FEATURE_PERCENT_SCALE;
   out.max_low_current_run_ms = (1000.0f * (float)maxLowCurrentRun) / fmaxf(fs_hz, 1.0f);
+
+  const bool lowCurrentGapWindow =
+      strongActivity &&
+      (weakArcWindow ||
+       (out.low_current_ratio >= ARC_SIG_LOW_CURRENT_RATIO) ||
+       (out.max_low_current_run_ms >= ARC_SIG_MAX_LOW_CURRENT_RUN_MS));
+
+  if (crossPosN >= 3) {
+    out.zcv = robustIntervalJitterMs_(crossPos, crossPosN, fs_hz);
+  } else if (crossAllN >= 4) {
+    out.zcv = robustIntervalJitterMs_(crossAll, crossAllN, fs_hz);
+  } else if (crossPosN >= 2) {
+    out.zcv = pairIntervalJitterMs_(crossPos, crossPosN, fs_hz);
+  } else if (crossAllN >= 3) {
+    out.zcv = pairIntervalJitterMs_(crossAll, crossAllN, fs_hz);
+  } else {
+    out.zcv = 0.0f;
+  }
+
+  const float zeroDwellThr = fmaxf(ZC_DWELL_THR_MIN_A, ZC_DWELL_THR_FRAC * fmaxf(irms, 0.10f));
+  if (crossAllN >= 2) {
+    const float avgHalfSamp = (crossAllN >= 4)
+        ? (float)((crossAll[crossAllN - 1] - crossAll[0]) / (float)(crossAllN - 1))
+        : (fs_hz / (mainsHz * 2.0f));
+    const int halfWin = clampi((int)lroundf(avgHalfSamp * 0.12f), 3, 100);
+
+    int zeroWindowTotal = 0;
+    int zeroWindowDwell = 0;
+    for (int ci = 0; ci < crossAllN; ++ci) {
+      const int c = (int)lroundf(crossAll[ci]);
+      const int a = clampi(c - halfWin, 0, (int)n - 1);
+      const int b = clampi(c + halfWin, 0, (int)n - 1);
+      for (int i = a; i <= b; ++i) {
+        zeroWindowTotal++;
+        if (fabsf(sigClean[i]) <= zeroDwellThr) zeroWindowDwell++;
+      }
+    }
+    if (zeroWindowTotal > 0) {
+      out.zero_dwell_ratio = ((float)zeroWindowDwell / (float)zeroWindowTotal) * FEATURE_PERCENT_SCALE;
+    }
+  } else if (lowCurrentGapWindow) {
+    out.zero_dwell_ratio = out.low_current_ratio;
+  }
 
   const int cycleCount = crossPosN - 1;
   const bool useHalfCycleShapeFallback = (cycleCount <= 0) && (crossAllN >= 3);
@@ -710,6 +725,27 @@ bool ArcDetection::compute(const uint16_t* raw, size_t n, float fs_hz,
 
   if (pulseCycles > 0) {
     out.pulse_count_per_cycle = pulsePerCycleAcc / (float)pulseCycles;
+  } else if (pulseEligible && lowCurrentGapWindow) {
+    int pulseCountTotal = 0;
+    bool inPulse = false;
+    int pulseStart = 0;
+    for (size_t i = 0; i < n; ++i) {
+      const bool over = fabsf(resid[i]) >= pulseThr;
+      if (over && !inPulse) {
+        inPulse = true;
+        pulseStart = (int)i;
+      } else if (!over && inPulse) {
+        const int w = (int)i - pulseStart;
+        if (w >= pulseMinW && w <= pulseMaxW) pulseCountTotal++;
+        inPulse = false;
+      }
+    }
+    if (inPulse) {
+      const int w = (int)n - pulseStart;
+      if (w >= pulseMinW && w <= pulseMaxW) pulseCountTotal++;
+    }
+    const float nominalCycles = fmaxf(1.0f, ((float)n * fmaxf(mainsHz, 1.0f)) / fmaxf(fs_hz, 1.0f));
+    out.pulse_count_per_cycle = (float)pulseCountTotal / nominalCycles;
   }
 
   if (!limitedCycleWindow && peakN >= 2) {
@@ -788,7 +824,7 @@ bool ArcDetection::compute(const uint16_t* raw, size_t n, float fs_hz,
        (s_prevSpectralFluxFeature >= ARC_SIG_SPECTRAL_FLUX) ||
        (s_suspiciousRunEnergyState >= 1.25f));
 
-  if (!haveFund && !haveTrackedFund && irms < FEATURE_REQUIRE_FUND_BELOW_A && !transientLowCurrentFrame) {
+  if (!haveFund && !haveTrackedFund && irms < FEATURE_REQUIRE_FUND_BELOW_A && !transientLowCurrentFrame && !lowCurrentGapWindow) {
     out.feat_valid = false;
     return true;
   }
@@ -944,7 +980,11 @@ bool ArcDetection::compute(const uint16_t* raw, size_t n, float fs_hz,
       clampf((out.delta_irms_abs - 0.04f) / 0.60f, 0.0f, 1.5f) * 0.90f +
       clampf((out.residual_crest_factor - 7.0f) / 10.0f, 0.0f, 1.5f) * 0.80f +
       clampf((out.edge_spike_ratio + 22.0f) / 12.0f, 0.0f, 1.5f) * 0.70f +
-      clampf((out.halfcycle_asymmetry - 6.0f) / 30.0f, 0.0f, 1.5f) * 0.60f;
+      clampf((out.halfcycle_asymmetry - 6.0f) / 30.0f, 0.0f, 1.5f) * 0.60f +
+      clampf((out.zero_dwell_ratio - 12.0f) / 32.0f, 0.0f, 1.5f) * 0.95f +
+      clampf((out.low_current_ratio - 6.0f) / 24.0f, 0.0f, 1.5f) * 0.90f +
+      clampf((out.max_low_current_run_ms - 0.35f) / 2.0f, 0.0f, 1.5f) * 1.05f +
+      clampf((out.pulse_count_per_cycle - 0.12f) / 1.0f, 0.0f, 1.5f) * 0.85f;
   const float suspiciousDecay = powf(0.72f, temporalStep);
   s_suspiciousRunEnergyState = fminf(
       20.0f,
@@ -978,6 +1018,10 @@ bool ArcDetection::compute(const uint16_t* raw, size_t n, float fs_hz,
       (out.peak_fluct_cv >= ARC_SIG_PEAK_FLUCT) ||
       (out.thd_i >= ARC_SIG_THD_I) ||
       (out.hf_energy_delta >= ARC_SIG_HF_ENERGY_DELTA) ||
+      (out.pulse_count_per_cycle >= ARC_SIG_PULSE_COUNT_PER_CYCLE) ||
+      (out.zero_dwell_ratio >= ARC_SIG_ZERO_DWELL_RATIO) ||
+      (out.low_current_ratio >= ARC_SIG_LOW_CURRENT_RATIO) ||
+      (out.max_low_current_run_ms >= ARC_SIG_MAX_LOW_CURRENT_RUN_MS) ||
       (out.suspicious_run_energy >= 1.60f) ||
       (out.delta_irms_abs >= 0.12f) ||
       (out.delta_hf_energy >= 0.70f) ||
@@ -1579,7 +1623,8 @@ int ArcDetection::computeAndPredict(const uint16_t* raw, size_t n, float fs_hz,
                                     float v_rms, float temp_c,
                                     ArcDetectionResult& out) {
   if (!compute(raw, n, fs_hz, cal, mainsHz, out)) return 0;
-  if (!out.current_valid || !out.feat_valid || out.irms_a < ARC_MIN_IRMS_A) {
+  const bool lowCurrentGapEvent = lowCurrentGapEventLike_(out);
+  if (!out.current_valid || !out.feat_valid || (out.irms_a < ARC_MIN_IRMS_A && !lowCurrentGapEvent)) {
     out.model_pred = 0;
     return 0;
   }

@@ -239,6 +239,13 @@ static inline void zeroComputedFeatures_(FeatureFrame& f) {
   }
 }
 
+static inline void copyComputedFeaturesBetweenFrames_(FeatureFrame& dst, const FeatureFrame& src) {
+  for (uint8_t i = 0; i < TINYML_COMPUTED_FEATURE_COUNT; ++i) {
+    const int featureId = TINYML_RUNTIME_EXPORT_FEATURE_IDS[i];
+    setFrameComputedFeatureById_(dst, featureId, frameComputedFeatureById_(src, featureId));
+  }
+}
+
 static inline void sanitizeFeatureFrame_(FeatureFrame& f) {
   for (uint8_t i = 0; i < TINYML_COMPUTED_FEATURE_COUNT; ++i) {
     const int featureId = TINYML_RUNTIME_EXPORT_FEATURE_IDS[i];
@@ -828,21 +835,7 @@ static bool stabilizeFeatureValidity(FeatureFrame& f, float vProtect, float irms
       return false;
     }
 
-    f.spectral_flux_midhf = lastValidFeat.spectral_flux_midhf;
-    f.residual_crest_factor = lastValidFeat.residual_crest_factor;
-    f.edge_spike_ratio = lastValidFeat.edge_spike_ratio;
-    f.midband_residual_ratio = lastValidFeat.midband_residual_ratio;
-    f.cycle_nmse = lastValidFeat.cycle_nmse;
-    f.peak_fluct_cv = lastValidFeat.peak_fluct_cv;
-    f.thd_i = lastValidFeat.thd_i;
-    f.hf_energy_delta = lastValidFeat.hf_energy_delta;
-    f.zcv = lastValidFeat.zcv;
-    f.abs_irms_zscore_vs_baseline = lastValidFeat.abs_irms_zscore_vs_baseline;
-    f.halfcycle_asymmetry = lastValidFeat.halfcycle_asymmetry;
-    f.suspicious_run_energy = lastValidFeat.suspicious_run_energy;
-    f.delta_hf_energy = lastValidFeat.delta_hf_energy;
-    f.delta_flux = lastValidFeat.delta_flux;
-    f.v_sag_pct = lastValidFeat.v_sag_pct;
+    copyComputedFeaturesBetweenFrames_(f, lastValidFeat);
     f.adc_fs_hz = lastValidFeat.adc_fs_hz;
     f.feat_valid = 1;
     return true;
@@ -857,21 +850,7 @@ static bool stabilizeFeatureValidity(FeatureFrame& f, float vProtect, float irms
 
   if (!bridgeAllowed) return false;
 
-  f.spectral_flux_midhf = lastValidFeat.spectral_flux_midhf;
-  f.residual_crest_factor = lastValidFeat.residual_crest_factor;
-  f.edge_spike_ratio = lastValidFeat.edge_spike_ratio;
-  f.midband_residual_ratio = lastValidFeat.midband_residual_ratio;
-  f.cycle_nmse = lastValidFeat.cycle_nmse;
-  f.peak_fluct_cv = lastValidFeat.peak_fluct_cv;
-  f.thd_i = lastValidFeat.thd_i;
-  f.hf_energy_delta = lastValidFeat.hf_energy_delta;
-  f.zcv = lastValidFeat.zcv;
-  f.abs_irms_zscore_vs_baseline = lastValidFeat.abs_irms_zscore_vs_baseline;
-  f.halfcycle_asymmetry = lastValidFeat.halfcycle_asymmetry;
-  f.suspicious_run_energy = lastValidFeat.suspicious_run_energy;
-  f.delta_hf_energy = lastValidFeat.delta_hf_energy;
-  f.delta_flux = lastValidFeat.delta_flux;
-  f.v_sag_pct = lastValidFeat.v_sag_pct;
+  copyComputedFeaturesBetweenFrames_(f, lastValidFeat);
   f.adc_fs_hz = lastValidFeat.adc_fs_hz;
   f.feat_valid = 1;
   return true;
