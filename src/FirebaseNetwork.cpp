@@ -1581,5 +1581,13 @@ void FirebaseNetwork::loop() {
   if (serviceControlEvent_()) return;
   if (serviceLive_()) return;
   if (serviceHistory_()) return;
-  if (!_suspendMlUpload && serviceMlUpload_()) return;
+  if (!_suspendMlUpload) {
+    const uint32_t uploadGapMs = (_manualEnabled || _mlUploadActive || _uploadFinalFlush) ? 700UL : 0UL;
+    if (uploadGapMs == 0UL || (now - _lastMlUploadAttemptMs) >= uploadGapMs) {
+      if (serviceMlUpload_()) {
+        _lastMlUploadAttemptMs = millis();
+        return;
+      }
+    }
+  }
 }

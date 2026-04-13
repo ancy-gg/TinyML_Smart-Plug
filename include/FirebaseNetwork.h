@@ -178,9 +178,9 @@ private:
   static constexpr uint32_t CLOUD_TX_RETRY_MS = 1800UL;
   static constexpr uint32_t CLOUD_CTRL_FAIL_RETRY_MS = 900UL;
   static constexpr uint32_t CLOUD_CTRL_READ_GAP_MS = 900UL;
-  static constexpr uint32_t CLOUD_CTRL_READ_GAP_LOGGING_MS = 3500UL;
+  static constexpr uint32_t CLOUD_CTRL_READ_GAP_LOGGING_MS = 6000UL;
   static constexpr uint32_t CLOUD_ML_READ_GAP_MS = 1500UL;
-  static constexpr uint32_t CLOUD_ML_READ_GAP_LOGGING_MS = 9000UL;
+  static constexpr uint32_t CLOUD_ML_READ_GAP_LOGGING_MS = 15000UL;
   static constexpr uint16_t CLOUD_TLS_RX_BUFFER_BYTES = 2048;
   static constexpr uint16_t CLOUD_TLS_TX_BUFFER_BYTES = 1024;
   static constexpr uint16_t CLOUD_RESPONSE_BUFFER_BYTES = 1024;
@@ -201,6 +201,7 @@ private:
   uint32_t _faultIntervalMs  = CLOUD_LIVE_FAULT_INTERVAL_MS;
   uint32_t _lastTxMs = 0;
   uint32_t _txBackoffUntilMs = 0;
+  uint32_t _lastMlUploadAttemptMs = 0;
 
   String _lastSentLiveState = "";
   String _lastLoggedFaultState = "";

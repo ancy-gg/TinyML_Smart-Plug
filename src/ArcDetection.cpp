@@ -87,6 +87,82 @@ static float pairIntervalJitterMs_(const float* xs, int n, float fs_hz) {
   return fabsf(d1 - d0) * (1000.0f / fs_hz);
 }
 
+static int collectMagnitudePeaks_(const float* x, size_t n, float thr, int minSepSamples,
+                                  float* posOut, int cap) {
+  if (!x || n < 3 || !posOut || cap <= 0) return 0;
+  const int minSep = (minSepSamples < 1) ? 1 : minSepSamples;
+  int count = 0;
+  int lastAccepted = -minSep * 4;
+  for (size_t i = 1; i + 1 < n; ++i) {
+    const float a0 = fabsf(x[i - 1]);
+    const float a1 = fabsf(x[i]);
+    const float a2 = fabsf(x[i + 1]);
+    if (a1 < thr) continue;
+    if (a1 < a0 || a1 < a2) continue;
+    if (((int)i - lastAccepted) < minSep) {
+      if (count > 0 && a1 > fabsf(x[(int)lroundf(posOut[count - 1])])) {
+        posOut[count - 1] = (float)i;
+        lastAccepted = (int)i;
+      }
+      continue;
+    }
+    posOut[count++] = (float)i;
+    lastAccepted = (int)i;
+    if (count >= cap) break;
+  }
+  return count;
+}
+
+static float edgeTransitionNmsePct_(const float* x, size_t n, int center, int side) {
+  if (!x || n < 16) return 0.0f;
+  const int c = clampi(center, 4, (int)n - 5);
+  const int w = clampi(side, 8, 64);
+  const int a0 = clampi(c - w, 0, (int)n - 1);
+  const int a1 = clampi(c - 1, a0, (int)n - 1);
+  const int b0 = clampi(c, 0, (int)n - 1);
+  const int b1 = clampi(c + w - 1, b0, (int)n - 1);
+  const int leftLen = a1 - a0 + 1;
+  const int rightLen = b1 - b0 + 1;
+  if (leftLen < 6 || rightLen < 6) return 0.0f;
+
+  static constexpr int RSZ = 48;
+  float left[RSZ];
+  float right[RSZ];
+
+  auto sampleResampled = [&](int start, int len, int idx)->float {
+    if (len <= 1) return x[start];
+    const float pos = (float)start + ((float)idx * (float)(len - 1) / (float)(RSZ - 1));
+    const int i0 = clampi((int)floorf(pos), start, start + len - 1);
+    const int i1 = clampi(i0 + 1, start, start + len - 1);
+    const float frac = pos - (float)i0;
+    return x[i0] + frac * (x[i1] - x[i0]);
+  };
+
+  double leftSq = 0.0;
+  double rightSq = 0.0;
+  for (int i = 0; i < RSZ; ++i) {
+    left[i] = sampleResampled(a0, leftLen, i);
+    right[i] = sampleResampled(b0, rightLen, i);
+    leftSq += (double)left[i] * (double)left[i];
+    rightSq += (double)right[i] * (double)right[i];
+  }
+  const float leftRms = sqrtf((float)(leftSq / (double)RSZ));
+  const float rightRms = sqrtf((float)(rightSq / (double)RSZ));
+  if (leftRms <= 1e-6f || rightRms <= 1e-6f) return 0.0f;
+
+  double mse = 0.0;
+  double eRef = 0.0;
+  for (int i = 0; i < RSZ; ++i) {
+    const double lv = (double)(left[i] / leftRms);
+    const double rv = (double)(right[i] / rightRms);
+    const double d = lv - rv;
+    mse += d * d;
+    eRef += 0.5 * (lv * lv + rv * rv);
+  }
+  return clampf((float)(mse / (eRef + 1e-9)) * FEATURE_PERCENT_SCALE, 0.0f, 100.0f);
+}
+
+
 struct BiquadLPF {
   float b0 = 1.0f, b1 = 0.0f, b2 = 0.0f;
   float a1 = 0.0f, a2 = 0.0f;
@@ -586,6 +662,16 @@ bool ArcDetection::compute(const uint16_t* raw, size_t n, float fs_hz,
     out.zero_dwell_ratio = out.low_current_ratio;
   }
 
+  float residualSpikePos[96];
+  const float spikeThr = fmaxf(0.080f, fmaxf(residRms * 2.8f, fmaxf(PULSE_THRESH_MIN_A, 0.10f * fmaxf(irms, 0.10f)) * 0.65f));
+  const int spikeMinSep = clampi((int)lroundf((120.0f * 1e-6f) * fs_hz), 1, 24);
+  const int residualSpikeN = collectMagnitudePeaks_(resid, n, spikeThr, spikeMinSep, residualSpikePos, 96);
+  if (residualSpikeN >= 3) {
+    out.zcv = fmaxf(out.zcv, robustIntervalJitterMs_(residualSpikePos, residualSpikeN, fs_hz));
+  } else if (out.zcv <= 0.0f && residualSpikeN >= 2) {
+    out.zcv = pairIntervalJitterMs_(residualSpikePos, residualSpikeN, fs_hz);
+  }
+
   const int cycleCount = crossPosN - 1;
   const bool useHalfCycleShapeFallback = (cycleCount <= 0) && (crossAllN >= 3);
   const bool limitedCycleWindow = (cycleCount <= 0) && !useHalfCycleShapeFallback;
@@ -723,6 +809,7 @@ bool ArcDetection::compute(const uint16_t* raw, size_t n, float fs_hz,
     out.halfcycle_asymmetry = clampf((fabsf(posRms - negRms) / denom) * FEATURE_PERCENT_SCALE, 0.0f, 200.0f);
   }
 
+  const float nominalCycles = fmaxf(1.0f, ((float)n * fmaxf(mainsHz, 1.0f)) / fmaxf(fs_hz, 1.0f));
   if (pulseCycles > 0) {
     out.pulse_count_per_cycle = pulsePerCycleAcc / (float)pulseCycles;
   } else if (pulseEligible && lowCurrentGapWindow) {
@@ -744,8 +831,11 @@ bool ArcDetection::compute(const uint16_t* raw, size_t n, float fs_hz,
       const int w = (int)n - pulseStart;
       if (w >= pulseMinW && w <= pulseMaxW) pulseCountTotal++;
     }
-    const float nominalCycles = fmaxf(1.0f, ((float)n * fmaxf(mainsHz, 1.0f)) / fmaxf(fs_hz, 1.0f));
     out.pulse_count_per_cycle = (float)pulseCountTotal / nominalCycles;
+  }
+  if (residualSpikeN > 0 && (weakArcWindow || lowCurrentGapWindow)) {
+    const float spikePerCycle = (float)residualSpikeN / nominalCycles;
+    out.pulse_count_per_cycle = fmaxf(out.pulse_count_per_cycle, spikePerCycle);
   }
 
   if (!limitedCycleWindow && peakN >= 2) {
@@ -925,6 +1015,12 @@ bool ArcDetection::compute(const uint16_t* raw, size_t n, float fs_hz,
       strongestEdgeIdx = (int)i;
     }
   }
+  if ((out.cycle_nmse <= 0.0f || limitedCycleWindow) && (weakArcWindow || lowCurrentGapWindow)) {
+    const int nmseSide = clampi((int)lroundf((0.35f * fs_hz) / fmaxf(mainsHz, 1.0f)), 10, 48);
+    const float transitionNmse = edgeTransitionNmsePct_(resid, n, strongestEdgeIdx, nmseSide);
+    if (transitionNmse > out.cycle_nmse) out.cycle_nmse = transitionNmse;
+  }
+
   float edgeBurst = 0.0f;
   const int edgeA = clampi(strongestEdgeIdx - edgeWin, 0, (int)n - 1);
   const int edgeB = clampi(strongestEdgeIdx + edgeWin, 0, (int)n - 1);
