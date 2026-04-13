@@ -8,6 +8,8 @@
     "midband_residual_ratio",
     "abs_irms_zscore_vs_baseline",
     "zcv",
+    "delta_flux",
+    "residual_crest_factor",
     "peak_fluct_cv"
   ],
   "class_labels": [
@@ -19,62 +21,57 @@
     "other_mixed"
   ],
   "unknown_confidence_threshold": 0.45,
-  "row_count": 24,
-  "train_rows": 18,
-  "test_rows": 6,
+  "row_count": 30,
+  "train_rows": 22,
+  "test_rows": 8,
   "class_counts": {
-    "brush_universal_motor": 13,
-    "resistive_linear": 6,
-    "inductive_motor": 5
+    "brush_universal_motor": 5,
+    "inductive_motor": 5,
+    "other_mixed": 5,
+    "phase_angle_controlled": 5,
+    "resistive_linear": 5,
+    "rectifier_smps": 5
   },
   "effective_class_weight": {
-    "resistive_linear": 14.926800000000002,
-    "inductive_motor": 12.370400000000002,
-    "rectifier_smps": 0.0,
-    "phase_angle_controlled": 0.0,
-    "brush_universal_motor": 31.7128,
-    "other_mixed": 0.0
+    "resistive_linear": 0.24999999999999994,
+    "inductive_motor": 0.24999999999999994,
+    "rectifier_smps": 0.24999999999999994,
+    "phase_angle_controlled": 0.24999999999999994,
+    "brush_universal_motor": 0.24999999999999994,
+    "other_mixed": 0.24999999999999994
   },
   "source_counts": {
-    "real": 24
+    "real": 30
   },
-  "real_rows": 24,
+  "real_rows": 30,
   "scaffold_rows": 0,
   "valid_classes": [
     "resistive_linear",
     "inductive_motor",
-    "brush_universal_motor"
-  ],
-  "missing_classes": [
     "rectifier_smps",
     "phase_angle_controlled",
+    "brush_universal_motor",
     "other_mixed"
   ],
-  "export_zero_centroid_classes": [
-    "rectifier_smps",
-    "phase_angle_controlled",
-    "other_mixed"
-  ],
+  "missing_classes": [],
+  "export_zero_centroid_classes": [],
   "active_class_mask": [
     1,
     1,
-    0,
-    0,
     1,
-    0
+    1,
+    1,
+    1
   ],
-  "warnings": [
-    "Context training is missing class coverage for: rectifier_smps, phase_angle_controlled, other_mixed",
-    "Disabling missing classes during context inference and exporting zero centroids only as placeholders for: rectifier_smps, phase_angle_controlled, other_mixed"
-  ],
+  "warnings": [],
   "accuracy": 1.0,
   "balanced_accuracy": 1.0,
   "accuracy_with_unknown_gate": 1.0,
-  "mean_confidence": 0.9999999902351148,
+  "mean_confidence": 0.9972372204021037,
   "unknown_rate": 0.0,
   "confusion_matrix": [
     [
-      2,
+      1,
       0,
       0,
       0,
@@ -92,15 +89,7 @@
     [
       0,
       0,
-      0,
-      0,
-      0,
-      0
-    ],
-    [
-      0,
-      0,
-      0,
+      1,
       0,
       0,
       0
@@ -109,8 +98,16 @@
       0,
       0,
       0,
+      2,
       0,
-      3,
+      0
+    ],
+    [
+      0,
+      0,
+      0,
+      0,
+      2,
       0
     ],
     [
@@ -119,22 +116,22 @@
       0,
       0,
       0,
-      0
+      1
     ]
   ],
   "per_class": [
     {
       "family": "resistive_linear",
       "family_code": 0,
-      "rows": 2,
+      "rows": 1,
       "accuracy": 1.0,
-      "mean_confidence": 0.9999999999804062,
+      "mean_confidence": 0.9999956201579012,
       "unknown_rate": 0.0,
       "precision": 1.0,
       "recall": 1.0,
       "f1": 1.0,
-      "support": 2,
-      "predicted_rows": 2,
+      "support": 1,
+      "predicted_rows": 1,
       "active_in_model": true
     },
     {
@@ -142,7 +139,7 @@
       "family_code": 1,
       "rows": 1,
       "accuracy": 1.0,
-      "mean_confidence": 0.9999999689227531,
+      "mean_confidence": 0.9999995395327412,
       "unknown_rate": 0.0,
       "precision": 1.0,
       "recall": 1.0,
@@ -154,58 +151,58 @@
     {
       "family": "rectifier_smps",
       "family_code": 2,
-      "rows": 0,
-      "accuracy": 0.0,
-      "mean_confidence": 0.0,
-      "unknown_rate": 0.0,
-      "precision": 0.0,
-      "recall": 0.0,
-      "f1": 0.0,
-      "support": 0,
-      "predicted_rows": 0,
-      "active_in_model": false
-    },
-    {
-      "family": "phase_angle_controlled",
-      "family_code": 3,
-      "rows": 0,
-      "accuracy": 0.0,
-      "mean_confidence": 0.0,
-      "unknown_rate": 0.0,
-      "precision": 0.0,
-      "recall": 0.0,
-      "f1": 0.0,
-      "support": 0,
-      "predicted_rows": 0,
-      "active_in_model": false
-    },
-    {
-      "family": "brush_universal_motor",
-      "family_code": 4,
-      "rows": 3,
+      "rows": 1,
       "accuracy": 1.0,
-      "mean_confidence": 0.9999999908423743,
+      "mean_confidence": 0.9852767157324801,
       "unknown_rate": 0.0,
       "precision": 1.0,
       "recall": 1.0,
       "f1": 1.0,
-      "support": 3,
-      "predicted_rows": 3,
+      "support": 1,
+      "predicted_rows": 1,
+      "active_in_model": true
+    },
+    {
+      "family": "phase_angle_controlled",
+      "family_code": 3,
+      "rows": 2,
+      "accuracy": 1.0,
+      "mean_confidence": 0.9999873245239423,
+      "unknown_rate": 0.0,
+      "precision": 1.0,
+      "recall": 1.0,
+      "f1": 1.0,
+      "support": 2,
+      "predicted_rows": 2,
+      "active_in_model": true
+    },
+    {
+      "family": "brush_universal_motor",
+      "family_code": 4,
+      "rows": 2,
+      "accuracy": 1.0,
+      "mean_confidence": 0.9984932380049629,
+      "unknown_rate": 0.0,
+      "precision": 1.0,
+      "recall": 1.0,
+      "f1": 1.0,
+      "support": 2,
+      "predicted_rows": 2,
       "active_in_model": true
     },
     {
       "family": "other_mixed",
       "family_code": 5,
-      "rows": 0,
-      "accuracy": 0.0,
-      "mean_confidence": 0.0,
+      "rows": 1,
+      "accuracy": 1.0,
+      "mean_confidence": 0.9956647627358968,
       "unknown_rate": 0.0,
-      "precision": 0.0,
-      "recall": 0.0,
-      "f1": 0.0,
-      "support": 0,
-      "predicted_rows": 0,
-      "active_in_model": false
+      "precision": 1.0,
+      "recall": 1.0,
+      "f1": 1.0,
+      "support": 1,
+      "predicted_rows": 1,
+      "active_in_model": true
     }
   ],
   "classification_report": {
@@ -213,7 +210,7 @@
       "precision": 1.0,
       "recall": 1.0,
       "f1-score": 1.0,
-      "support": 2.0
+      "support": 1.0
     },
     "inductive_motor": {
       "precision": 1.0,
@@ -222,123 +219,139 @@
       "support": 1.0
     },
     "rectifier_smps": {
-      "precision": 0.0,
-      "recall": 0.0,
-      "f1-score": 0.0,
-      "support": 0.0
+      "precision": 1.0,
+      "recall": 1.0,
+      "f1-score": 1.0,
+      "support": 1.0
     },
     "phase_angle_controlled": {
-      "precision": 0.0,
-      "recall": 0.0,
-      "f1-score": 0.0,
-      "support": 0.0
+      "precision": 1.0,
+      "recall": 1.0,
+      "f1-score": 1.0,
+      "support": 2.0
     },
     "brush_universal_motor": {
       "precision": 1.0,
       "recall": 1.0,
       "f1-score": 1.0,
-      "support": 3.0
+      "support": 2.0
     },
     "other_mixed": {
-      "precision": 0.0,
-      "recall": 0.0,
-      "f1-score": 0.0,
-      "support": 0.0
+      "precision": 1.0,
+      "recall": 1.0,
+      "f1-score": 1.0,
+      "support": 1.0
     },
     "accuracy": 1.0,
     "macro avg": {
-      "precision": 0.5,
-      "recall": 0.5,
-      "f1-score": 0.5,
-      "support": 6.0
+      "precision": 1.0,
+      "recall": 1.0,
+      "f1-score": 1.0,
+      "support": 8.0
     },
     "weighted avg": {
       "precision": 1.0,
       "recall": 1.0,
       "f1-score": 1.0,
-      "support": 6.0
+      "support": 8.0
     }
   },
   "means": [
-    0.39322604932904937,
-    6.203655970074971,
-    2.3309450718830727,
-    11.681619834057836,
-    -52.81678497908399,
-    0.9502735433755435,
-    0.521364986958987,
-    0.17574245706545708
+    0.26480753433540366,
+    15.268860351406362,
+    3.302807746979213,
+    12.829207830013969,
+    -40.34414884424776,
+    1.0056754647342105,
+    0.8203400238000627,
+    6.556610316967829,
+    8.296051860983448,
+    10.381457190813396
   ],
   "stds": [
-    0.2439577605227876,
-    3.419034483681533,
-    1.3090009503465778,
-    2.0554381346115793,
-    3.743232635357264,
-    0.37124295771395643,
-    0.10316002212604346,
-    0.15983928194378466
+    0.09983378961851401,
+    6.960238421850779,
+    1.47335341520609,
+    2.6464337738601524,
+    10.886374093122447,
+    0.3129457336114301,
+    0.388806740723613,
+    1.9192208172316383,
+    1.0657340545855931,
+    4.029369611054935
   ],
   "centroids": {
     "resistive_linear": [
-      -0.8057234055587813,
-      1.063479765372617,
-      0.9331052193628144,
-      -0.9180705574825516,
-      -1.6962117906481433,
-      -1.459705580274492,
-      -0.5310297731847529,
-      -0.8950363555693961
+      -1.0669304074795478,
+      -0.6973592831004767,
+      1.3130489841557393,
+      -1.458056493148342,
+      -1.5356406832505725,
+      -1.2378820496820468,
+      -1.1086501297208984,
+      -0.972134744518681,
+      -0.587751593184649,
+      -1.6698704967132714
     ],
     "inductive_motor": [
-      -1.3592143160071393,
-      1.1213106501507164,
-      -1.7807054084001388,
-      1.769769703682639,
-      0.17163371722351364,
-      -0.11719002200269121,
-      -1.232698355751888,
-      1.1748174282902644
+      -1.116483611894119,
+      -0.3844189591557601,
+      -1.7039827376148606,
+      0.009406505287270479,
+      -0.25599049624172865,
+      -0.8530825078487257,
+      -0.8371721688265227,
+      -1.2063220800378842,
+      -1.1412263807801017,
+      1.2459913570275798
     ],
     "rectifier_smps": [
-      0.0,
-      0.0,
-      0.0,
-      0.0,
-      0.0,
-      0.0,
-      0.0,
-      0.0
+      -0.04621992285592006,
+      0.5231198271725936,
+      -0.4601204602336693,
+      1.1089922126073308,
+      0.8415994188901917,
+      0.9842083587171209,
+      0.6694753644423749,
+      0.5687683704922185,
+      0.7354947932532574,
+      -0.38641459749830986
     ],
     "phase_angle_controlled": [
-      0.0,
-      0.0,
-      0.0,
-      0.0,
-      0.0,
-      0.0,
-      0.0,
-      0.0
+      1.5959620843857998,
+      1.9926935352729922,
+      0.17373730828196884,
+      1.4793822502228182,
+      1.5870275782894887,
+      1.6901146371628972,
+      1.9834335401115308,
+      1.910009840604815,
+      1.9309096092398226,
+      0.3122974667320765
     ],
     "brush_universal_motor": [
-      0.8843134892719472,
-      -0.892852720010843,
-      0.34407548603852744,
-      -0.3457729906574863,
-      0.6246840250055311,
-      0.6456145774004396,
-      0.720215828013519,
-      -0.11256636543372925
+      0.7875101533721431,
+      -1.4099659165274783,
+      0.9208223824257494,
+      -0.708636277564165,
+      -0.7198626188347119,
+      -0.332729197359615,
+      -0.4108245601259132,
+      0.0027187515849918112,
+      -0.7489723562164183,
+      0.8476370372287493
     ],
     "other_mixed": [
-      0.0,
-      0.0,
-      0.0,
-      0.0,
-      0.0,
-      0.0,
-      0.0,
-      0.0
+      0.44202976391113263,
+      0.12161270102450981,
+      0.030134445662009696,
+      -0.23840170424024693,
+      0.299658041011022,
+      0.08871711896119383,
+      0.09689019911583871,
+      0.1751420099219952,
+      0.1070302409439518,
+      -0.059657140786614646
     ]
   },
   "model_input_feature_ids": [
@@ -349,6 +362,8 @@
     6,
     0,
     7,
+    5,
+    10,
     9
   ],
   "settings": {
@@ -368,6 +383,8 @@
       "midband_residual_ratio",
       "abs_irms_zscore_vs_baseline",
       "zcv",
+      "delta_flux",
+      "residual_crest_factor",
       "peak_fluct_cv"
     ],
     "model": "context"

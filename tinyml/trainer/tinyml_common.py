@@ -54,19 +54,24 @@ ALL_COMPUTED_FEATURES = [
     "cycle_nmse",
 ]
 
+# Curated candidate pool for subset sweep. Keep this pool intentionally smaller
+# than the full computed feature space so combination search remains practical,
+# but do not confuse it with the final deployed model feature count. The RF
+# export stays variable-size and will use whichever subset the trainer/report
+# selects.
 ARC_SWEEP_FEATURES = [
-    "abs_irms_zscore_vs_baseline",
-    "delta_irms_abs",
-    "halfcycle_asymmetry",
-    "spectral_flux_midhf",
-    "peak_fluct_cv",
-    "residual_crest_factor",
-    "edge_spike_ratio",
-    "midband_residual_ratio",
-    "zcv",
-    "hf_energy_delta",
     "thd_i",
-    "v_sag_pct",
+    "spectral_flux_midhf",
+    "hf_energy_delta",
+    "residual_crest_factor",
+    "peak_fluct_cv",
+    "zcv",
+    "cycle_nmse",
+    "delta_hf_energy",
+    "delta_flux",
+    "delta_irms_abs",
+    "midband_residual_ratio",
+    "edge_spike_ratio",
 ]
 
 CONTEXT_SWEEP_FEATURES = [
@@ -83,7 +88,7 @@ CONTEXT_SWEEP_FEATURES = [
 ]
 
 ARC_PWA_VISIBLE_FEATURES = list(ARC_SWEEP_FEATURES)
-ARC_DEFAULT_BASE_FEATURES = list(ARC_SWEEP_FEATURES)
+ARC_DEFAULT_BASE_FEATURES = list(ALL_COMPUTED_FEATURES)
 CONTEXT_DEFAULT_FEATURES = list(CONTEXT_SWEEP_FEATURES)
 ARC_BASE_FEATURES_RANKED = list(ALL_COMPUTED_FEATURES)
 ARC_ALL_COMPUTED_FEATURES = list(ALL_COMPUTED_FEATURES)
@@ -113,7 +118,7 @@ TARGET = "label_arc"
 CONTEXT_TARGET = "device_family_code"
 GROUP_COL_CANDIDATES = ["trial_id", "session_id", "section_id", "session", "sid"]
 
-DB_FEATURE_SPACE_VERSION = 7
+DB_FEATURE_SPACE_VERSION = 8
 DB_RATIO_FLOOR = 1e-6
 DB_POWER_RATIO_FLOOR = 1e-6
 DB_RATIO_CLIP = (-80.0, 20.0)

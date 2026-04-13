@@ -22,6 +22,7 @@ void FirebaseNetwork::configureClient_(FirebaseData& client, uint16_t responseSi
   client.setBSSLBufferSize(CLOUD_TLS_RX_BUFFER_BYTES, CLOUD_TLS_TX_BUFFER_BYTES);
   client.setResponseSize(responseSize);
   client.keepAlive(5, 5, 1);
+  Firebase.RTDB.setReadTimeout(&client, CLOUD_SERVER_RESPONSE_TIMEOUT_MS);
 }
 
 void FirebaseNetwork::recoverClient_(FirebaseData& client, uint32_t backoffMs) {
@@ -453,12 +454,13 @@ bool FirebaseNetwork::dequeueControlEvent_(ControlEvent& ev) {
 }
 
 void FirebaseNetwork::clearControlToken_(const char* path, String& cache, bool& pendingFlag) {
+  (void)path;
   pendingFlag = false;
   cache = "";
-  if (!isReady() || !path || !*path) return;
-  if (!Firebase.RTDB.setString(&fbCtrl, path, "")) {
-    recoverClient_(fbCtrl, CLOUD_CTRL_FAIL_RETRY_MS);
-  }
+  // Avoid synchronous token-clear writes from the main loop. The handled-token
+  // cache already prevents replaying the same command, and keeping consume()
+  // fully local prevents relay/control actions from stalling UI, buzzer, or
+  // logging when Firebase is slow.
 }
 
 bool FirebaseNetwork::consumePortalRequest() {
@@ -545,15 +547,25 @@ void FirebaseNetwork::pollControls(bool allowNet, bool portalActive) {
   if (!allowNet || portalActive || !isReady()) return;
   const uint32_t now = millis();
   if ((int32_t)(now - _txBackoffUntilMs) < 0) return;
-  const uint32_t pollGap = logEnabled() ? CLOUD_CTRL_READ_GAP_LOGGING_MS : CLOUD_CTRL_READ_GAP_MS;
-  if ((now - _lastControlPollMs) < pollGap) return;
+  const bool heavyCloudLoad = _manualEnabled || _mlUploadActive || _uploadFinalFlush;
+  if (heavyCloudLoad && (_pendingLive || _historyCount > 0 || _controlEventCount > 0)) return;
+
+  const uint32_t controlsGap = heavyCloudLoad ? CLOUD_CTRL_READ_GAP_LOGGING_MS : CLOUD_CTRL_READ_GAP_MS;
+  const uint32_t mlGap = heavyCloudLoad ? CLOUD_ML_READ_GAP_LOGGING_MS : CLOUD_ML_READ_GAP_MS;
+  const bool controlsDue = ((now - _lastControlsReadMs) >= controlsGap);
+  const bool mlDue = ((now - _lastMlLogReadMs) >= mlGap);
+  if (!controlsDue && !mlDue) return;
   if (!cloudHeapHealthy_()) {
     _txBackoffUntilMs = now + CLOUD_TX_RETRY_MS;
     return;
   }
-  _lastControlPollMs = now;
 
-  if ((_controlPollSlot & 0x01U) == 0U) {
+  const uint32_t controlsAge = now - _lastControlsReadMs;
+  const uint32_t mlAge = now - _lastMlLogReadMs;
+  const bool preferControls = controlsDue && (!mlDue || controlsAge >= mlAge);
+
+  if (preferControls) {
+    _lastControlsReadMs = now;
     if (Firebase.RTDB.getJSON(&fbRead, "/controls")) {
       const String raw = fbRead.payload();
       String token;
@@ -567,6 +579,7 @@ void FirebaseNetwork::pollControls(bool allowNet, bool portalActive) {
       recoverClient_(fbRead, CLOUD_CTRL_FAIL_RETRY_MS);
     }
   } else {
+    _lastMlLogReadMs = now;
     if (Firebase.RTDB.getJSON(&fbRead, "/ml_log")) {
       const String raw = fbRead.payload();
       bool b = false;
@@ -588,7 +601,6 @@ void FirebaseNetwork::pollControls(bool allowNet, bool portalActive) {
       recoverClient_(fbRead, CLOUD_CTRL_FAIL_RETRY_MS);
     }
   }
-  _controlPollSlot = uint8_t((_controlPollSlot + 1U) & 0x01U);
 }
 
 void FirebaseNetwork::requestLiveUpdate(float v, float c, float apparentPower, float t,
@@ -825,6 +837,7 @@ bool FirebaseNetwork::serviceLive_() {
   const bool mainsPresent = (_live.v >= MAINS_PRESENT_ON_V);
   const bool loadDetected = (_live.c >= LOAD_ON_DETECT_A);
   const bool relayClosed = _live.relayLatchedOn;
+  const bool compactLive = _manualEnabled || _mlUploadActive || _uploadFinalFlush;
   const String powerCondition = powerConditionForState(_live.state, _live.v);
   const String loadState = relayClosed ? String("LOAD ON") : String("LOAD OFF");
   String devicePhase = loadState;
@@ -868,15 +881,18 @@ bool FirebaseNetwork::serviceLive_() {
   json.set("suspicious_run_energy", _live.suspicious_run_energy);
   json.set("delta_hf_energy", _live.delta_hf_energy);
   json.set("delta_flux", _live.delta_flux);
-  json.set("v_sag_pct", _live.v_sag_pct);
   json.set("midband_residual_ratio", _live.midband_residual_ratio);
-  json.set("zcv", _live.zcv);
   json.set("spectral_flux_midhf", _live.spectral_flux_midhf);
-  json.set("peak_fluct_cv", _live.peak_fluct_cv);
   json.set("residual_crest_factor", _live.residual_crest_factor);
   json.set("thd_i", _live.thd_i);
   json.set("hf_energy_delta", _live.hf_energy_delta);
   json.set("edge_spike_ratio", _live.edge_spike_ratio);
+  if (!compactLive) {
+    json.set("v_sag_pct", _live.v_sag_pct);
+    json.set("zcv", _live.zcv);
+    json.set("peak_fluct_cv", _live.peak_fluct_cv);
+    json.set("cycle_nmse", _live.cycle_nmse);
+  }
   json.set("model_pred", (int)_live.model_pred);
   json.set("context_family_code_runtime", (int)_live.contextFamilyCodeRuntime);
   json.set("context_family_confidence", _live.contextFamilyConfidence);
@@ -907,6 +923,7 @@ bool FirebaseNetwork::serviceLive_() {
   json.set("ts_iso", iso);
   json.set("uptime_ms", (int)millis());
   json.set("feature_space_version", ARC_RUNTIME_FEATURE_SPACE_VERSION);
+  json.set("compact_live_mode", compactLive);
   json.set("server_ts/.sv", "timestamp");
 
   if (!Firebase.RTDB.updateNode(&fbLive, "/live_data", &json)) {
@@ -1514,7 +1531,7 @@ bool FirebaseNetwork::serviceMlUpload_() {
   if (sessionContinuousDurationS > 0.0f) json.set("meta/source_continuous_duration_s", sessionContinuousDurationS);
   json.set("meta/auto_capture", _uploadAuto);
   json.set("meta/feature_order", "abs_irms_zscore_vs_baseline,delta_irms_abs,halfcycle_asymmetry,suspicious_run_energy,delta_hf_energy,delta_flux,midband_residual_ratio,zcv,spectral_flux_midhf,peak_fluct_cv,residual_crest_factor,thd_i,hf_energy_delta,edge_spike_ratio,v_sag_pct,cycle_nmse");
-  json.set("meta/pwa_feature_order", "abs_irms_zscore_vs_baseline,delta_irms_abs,halfcycle_asymmetry,spectral_flux_midhf,peak_fluct_cv,residual_crest_factor,edge_spike_ratio,midband_residual_ratio,zcv,hf_energy_delta,thd_i,v_sag_pct");
+  json.set("meta/pwa_feature_order", "thd_i,spectral_flux_midhf,hf_energy_delta,residual_crest_factor,peak_fluct_cv,zcv,cycle_nmse,delta_hf_energy,delta_flux,delta_irms_abs,midband_residual_ratio,edge_spike_ratio");
   json.set("meta/fft_size", (int)ARC_RUNTIME_FRAME_SAMPLES);
   json.set("meta/hop_samples", (int)ARC_RUNTIME_HOP_SAMPLES);
   json.set("meta/feature_emit_every_hops", (int)ARC_RUNTIME_EMIT_EVERY_HOPS);
@@ -1540,7 +1557,7 @@ void FirebaseNetwork::loop() {
   if ((now - _lastTxMs) < CLOUD_TX_MIN_GAP_MS) return;
 
   if (serviceControlEvent_()) return;
-  if (serviceHistory_()) return;
   if (serviceLive_()) return;
+  if (serviceHistory_()) return;
   if (!_suspendMlUpload && serviceMlUpload_()) return;
 }

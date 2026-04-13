@@ -65,6 +65,28 @@ static float robustIntervalJitterMs_(const float* xs, int n, float fs_hz) {
   return robustSigmaSamples * (1000.0f / fs_hz);
 }
 
+static float pairIntervalJitterMs_(const float* xs, int n, float fs_hz) {
+  if (!xs || n < 3 || fs_hz <= 0.0f) return 0.0f;
+  float d0 = 0.0f;
+  float d1 = 0.0f;
+  bool haveD0 = false;
+  bool haveD1 = false;
+  for (int i = 1; i < n; ++i) {
+    const float d = xs[i] - xs[i - 1];
+    if (d <= 1.0f) continue;
+    if (!haveD0) {
+      d0 = d;
+      haveD0 = true;
+    } else {
+      d1 = d;
+      haveD1 = true;
+      break;
+    }
+  }
+  if (!haveD0 || !haveD1) return 0.0f;
+  return fabsf(d1 - d0) * (1000.0f / fs_hz);
+}
+
 struct BiquadLPF {
   float b0 = 1.0f, b1 = 0.0f, b2 = 0.0f;
   float a1 = 0.0f, a2 = 0.0f;
@@ -239,6 +261,12 @@ struct RollingBaselineTracker {
 
 static float s_prevFluxNorm[N_SAMP / 2] = {0.0f};
 static bool s_havePrevFluxNorm = false;
+static bool s_haveTemporalHistory = false;
+static float s_prevIrmsFeature = 0.0f;
+static float s_prevSpectralFluxFeature = 0.0f;
+static float s_prevHfEnergyDeltaFeature = 0.0f;
+static float s_suspiciousRunEnergyState = 0.0f;
+static uint32_t s_lastTemporalFeatureMs = 0;
 static RollingBaselineTracker s_baseline;
 static int8_t s_ctxFamily = CONTEXT_FAMILY_UNKNOWN;
 static float s_ctxConfidence = 0.0f;
@@ -246,6 +274,12 @@ static float s_ctxConfidence = 0.0f;
 void ArcDetection::resetRuntime() {
   memset(s_prevFluxNorm, 0, sizeof(s_prevFluxNorm));
   s_havePrevFluxNorm = false;
+  s_haveTemporalHistory = false;
+  s_prevIrmsFeature = 0.0f;
+  s_prevSpectralFluxFeature = 0.0f;
+  s_prevHfEnergyDeltaFeature = 0.0f;
+  s_suspiciousRunEnergyState = 0.0f;
+  s_lastTemporalFeatureMs = 0;
   s_baseline.reset();
   s_ctxFamily = CONTEXT_FAMILY_UNKNOWN;
   s_ctxConfidence = 0.0f;
@@ -438,7 +472,13 @@ bool ArcDetection::compute(const uint16_t* raw, size_t n, float fs_hz,
   out.irms_a = irms;
   out.current_valid = strongActivity || (irms > 0.0f);
 
-  const bool weakArcWindow = strongActivity && (residRms >= (PULSE_ANALYSIS_MIN_RESID_A * ARC_WEAK_EVENT_RESID_MUL));
+  const bool sharpLowCurrentTransition =
+      s_haveTemporalHistory &&
+      (fabsf(irms - s_prevIrmsFeature) >= 0.045f);
+  const bool weakArcWindow =
+      strongActivity &&
+      ((residRms >= (PULSE_ANALYSIS_MIN_RESID_A * ARC_WEAK_EVENT_RESID_MUL)) ||
+       sharpLowCurrentTransition);
   if (irms < FEATURE_MIN_IRMS_A && !weakArcWindow) {
     out.feat_valid = false;
     return true;
@@ -480,9 +520,16 @@ bool ArcDetection::compute(const uint16_t* raw, size_t n, float fs_hz,
     out.zcv = robustIntervalJitterMs_(crossPos, crossPosN, fs_hz);
   } else if (crossAllN >= 4) {
     out.zcv = robustIntervalJitterMs_(crossAll, crossAllN, fs_hz);
+  } else if (crossPosN >= 2) {
+    out.zcv = pairIntervalJitterMs_(crossPos, crossPosN, fs_hz);
+  } else if (crossAllN >= 3) {
+    out.zcv = pairIntervalJitterMs_(crossAll, crossAllN, fs_hz);
   }
   const int cycleCount = crossPosN - 1;
-  const bool limitedCycleWindow = (cycleCount <= 0);
+  const bool useHalfCycleShapeFallback = (cycleCount <= 0) && (crossAllN >= 3);
+  const bool limitedCycleWindow = (cycleCount <= 0) && !useHalfCycleShapeFallback;
+  const float* shapeCrossings = useHalfCycleShapeFallback ? crossAll : crossPos;
+  const int shapeSegmentCount = useHalfCycleShapeFallback ? (crossAllN - 1) : cycleCount;
 
   float cyclePeaks[24];
   float cycleRmsVals[24];
@@ -495,19 +542,21 @@ bool ArcDetection::compute(const uint16_t* raw, size_t n, float fs_hz,
   int prevCycleLen = 0;
   bool havePrevCycle = false;
 
-  for (int c = 0; c < cycleCount && c < 24; ++c) {
-    const int a = clampi((int)floorf(crossPos[c]), 0, (int)n - 2);
-    const int b = clampi((int)floorf(crossPos[c + 1]), a + 2, (int)n - 1);
+  const int minShapeSegmentLen = useHalfCycleShapeFallback ? 8 : 16;
+  for (int c = 0; c < shapeSegmentCount && c < 24; ++c) {
+    const int a = clampi((int)floorf(shapeCrossings[c]), 0, (int)n - 2);
+    const int b = clampi((int)floorf(shapeCrossings[c + 1]), a + 2, (int)n - 1);
     const int len = b - a;
-    if (len < 16) continue;
+    if (len < minShapeSegmentLen) continue;
 
     float peak = 0.0f;
     double cycSq = 0.0;
 
     for (int i = a; i < b; ++i) {
-      const float av = fabsf(sigClean[i]);
+      const float sample = useHalfCycleShapeFallback ? fabsf(sigClean[i]) : sigClean[i];
+      const float av = fabsf(sample);
       if (av > peak) peak = av;
-      cycSq += (double)sigClean[i] * (double)sigClean[i];
+      cycSq += (double)sample * (double)sample;
     }
 
     const float cycRms = (len > 0) ? sqrtf((float)(cycSq / (double)len)) : 0.0f;
@@ -523,7 +572,9 @@ bool ArcDetection::compute(const uint16_t* raw, size_t n, float fs_hz,
       const int i0 = clampi((int)floorf(pos), a, b - 1);
       const int i1 = clampi(i0 + 1, a, b - 1);
       const float frac = pos - (float)i0;
-      curCycle[j] = (sigClean[i0] + frac * (sigClean[i1] - sigClean[i0])) / cycRms;
+      const float s0 = useHalfCycleShapeFallback ? fabsf(sigClean[i0]) : sigClean[i0];
+      const float s1 = useHalfCycleShapeFallback ? fabsf(sigClean[i1]) : sigClean[i1];
+      curCycle[j] = (s0 + frac * (s1 - s0)) / cycRms;
     }
 
     if (havePrevCycle) {
@@ -649,8 +700,13 @@ bool ArcDetection::compute(const uint16_t* raw, size_t n, float fs_hz,
   const float trackedFundP = goertzelTonePower_(sigFilt, n, fs_hz, mainsHz);
   const float trackedFundGate = fmaxf(FUND_MAG_MIN, (float)avgNoise * TRACKED_FUND_SNR_MIN);
   const bool haveTrackedFund = (trackedFundP >= trackedFundGate);
+  const bool transientLowCurrentFrame =
+      s_haveTemporalHistory &&
+      ((fabsf(irms - s_prevIrmsFeature) >= 0.045f) ||
+       (s_prevSpectralFluxFeature >= ARC_SIG_SPECTRAL_FLUX) ||
+       (s_suspiciousRunEnergyState >= 1.25f));
 
-  if (!haveFund && !haveTrackedFund && irms < FEATURE_REQUIRE_FUND_BELOW_A) {
+  if (!haveFund && !haveTrackedFund && irms < FEATURE_REQUIRE_FUND_BELOW_A && !transientLowCurrentFrame) {
     out.feat_valid = false;
     return true;
   }
@@ -777,6 +833,45 @@ bool ArcDetection::compute(const uint16_t* raw, size_t n, float fs_hz,
       DB_HF_DELTA_CLIP_MIN,
       DB_HF_DELTA_CLIP_MAX);
 
+  if (s_haveTemporalHistory) {
+    out.delta_irms_abs = fabsf(out.irms_a - s_prevIrmsFeature);
+    out.delta_hf_energy = clampf(
+        fabsf(out.hf_energy_delta - s_prevHfEnergyDeltaFeature),
+        0.0f,
+        24.0f);
+    out.delta_flux = clampf(
+        fabsf(out.spectral_flux_midhf - s_prevSpectralFluxFeature),
+        0.0f,
+        200.0f);
+  }
+
+  const uint32_t temporalNowMs = millis();
+  float temporalStep = 1.0f;
+  if (s_lastTemporalFeatureMs != 0U && temporalNowMs > s_lastTemporalFeatureMs) {
+    temporalStep = clampf(
+        float(temporalNowMs - s_lastTemporalFeatureMs) / fmaxf(FEATURE_FRAME_PERIOD_MS, 1.0f),
+        0.5f,
+        4.0f);
+  }
+  const float suspiciousInstant =
+      clampf((out.thd_i - 10.0f) / 18.0f, 0.0f, 1.5f) * 1.10f +
+      clampf((out.spectral_flux_midhf - 5.0f) / 18.0f, 0.0f, 1.5f) * 1.00f +
+      clampf((out.hf_energy_delta - 0.8f) / 6.0f, 0.0f, 1.5f) * 1.00f +
+      clampf((out.delta_hf_energy - 0.4f) / 4.0f, 0.0f, 1.5f) * 1.10f +
+      clampf((out.delta_flux - 1.0f) / 18.0f, 0.0f, 1.5f) * 0.90f +
+      clampf((out.delta_irms_abs - 0.04f) / 0.60f, 0.0f, 1.5f) * 0.90f +
+      clampf((out.residual_crest_factor - 7.0f) / 10.0f, 0.0f, 1.5f) * 0.80f +
+      clampf((out.edge_spike_ratio + 22.0f) / 12.0f, 0.0f, 1.5f) * 0.70f +
+      clampf((out.halfcycle_asymmetry - 6.0f) / 30.0f, 0.0f, 1.5f) * 0.60f;
+  const float suspiciousDecay = powf(0.72f, temporalStep);
+  s_suspiciousRunEnergyState = fminf(
+      20.0f,
+      (s_suspiciousRunEnergyState * suspiciousDecay) + suspiciousInstant);
+  if (out.irms_a <= CURRENT_ANALYSIS_IDLE_A && suspiciousInstant < 0.05f) {
+    s_suspiciousRunEnergyState *= 0.60f;
+  }
+  out.suspicious_run_energy = s_suspiciousRunEnergyState;
+
   const bool cycleNmseSoloArtifact =
       (out.cycle_nmse >= CYCLE_NMSE_SOLO_ARTIFACT_MIN_PCT) &&
       (out.irms_a <= CYCLE_NMSE_SOLO_ARTIFACT_MAX_IRMS_A) &&
@@ -799,7 +894,12 @@ bool ArcDetection::compute(const uint16_t* raw, size_t n, float fs_hz,
       (out.midband_residual_ratio >= ARC_SIG_MIDBAND_RATIO) ||
       (out.cycle_nmse >= ARC_SIG_CYCLE_NMSE) ||
       (out.peak_fluct_cv >= ARC_SIG_PEAK_FLUCT) ||
+      (out.thd_i >= ARC_SIG_THD_I) ||
       (out.hf_energy_delta >= ARC_SIG_HF_ENERGY_DELTA) ||
+      (out.suspicious_run_energy >= 1.60f) ||
+      (out.delta_irms_abs >= 0.12f) ||
+      (out.delta_hf_energy >= 0.70f) ||
+      (out.delta_flux >= 4.00f) ||
       (out.abs_irms_zscore_vs_baseline >= ARC_SIG_IRMS_ZSCORE);
 
   if (baselineStep || suspectedArcLike) s_baseline.freezeUntilMs = nowMs + BASELINE_FREEZE_MS;
@@ -815,7 +915,12 @@ bool ArcDetection::compute(const uint16_t* raw, size_t n, float fs_hz,
       (out.midband_residual_ratio < BASELINE_STABLE_MIDBAND_RATIO_DB) &&
       (out.cycle_nmse < 5.5f) &&
       (out.peak_fluct_cv < 1.0f) &&
+      (out.thd_i < 18.0f) &&
       (fabsf(out.hf_energy_delta) < BASELINE_STABLE_HF_DELTA_DB) &&
+      (out.suspicious_run_energy < 1.25f) &&
+      (out.delta_irms_abs < 0.10f) &&
+      (out.delta_hf_energy < 0.50f) &&
+      (out.delta_flux < 4.0f) &&
       (out.abs_irms_zscore_vs_baseline < 1.5f);
 
   if (out.irms_a <= BASELINE_RESET_IRMS_A) {
@@ -840,6 +945,11 @@ bool ArcDetection::compute(const uint16_t* raw, size_t n, float fs_hz,
     }
   }
   s_baseline.lastIrms = out.irms_a;
+  s_prevIrmsFeature = out.irms_a;
+  s_prevSpectralFluxFeature = out.spectral_flux_midhf;
+  s_prevHfEnergyDeltaFeature = out.hf_energy_delta;
+  s_lastTemporalFeatureMs = temporalNowMs;
+  s_haveTemporalHistory = true;
 
   sanitizeArcDetectionResult_(out);
   out.feat_valid = true;

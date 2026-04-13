@@ -25,6 +25,8 @@
     "midband_residual_ratio",
     "abs_irms_zscore_vs_baseline",
     "zcv",
+    "delta_flux",
+    "residual_crest_factor",
     "peak_fluct_cv"
   ],
   "recommended_features": [
@@ -35,12 +37,14 @@
     "midband_residual_ratio",
     "abs_irms_zscore_vs_baseline",
     "zcv",
+    "delta_flux",
+    "residual_crest_factor",
     "peak_fluct_cv"
   ],
   "overall_best_tradeoff": {
     "task": "context",
-    "feature_count": 8,
-    "feature_combo": "delta_irms_abs|halfcycle_asymmetry|suspicious_run_energy|hf_energy_delta|midband_residual_ratio|abs_irms_zscore_vs_baseline|zcv|peak_fluct_cv",
+    "feature_count": 10,
+    "feature_combo": "delta_irms_abs|halfcycle_asymmetry|suspicious_run_energy|hf_energy_delta|midband_residual_ratio|abs_irms_zscore_vs_baseline|zcv|delta_flux|residual_crest_factor|peak_fluct_cv",
     "features": [
       "delta_irms_abs",
       "halfcycle_asymmetry",
@@ -49,21 +53,19 @@
       "midband_residual_ratio",
       "abs_irms_zscore_vs_baseline",
       "zcv",
+      "delta_flux",
+      "residual_crest_factor",
       "peak_fluct_cv"
     ],
-    "row_count": 24,
-    "valid_class_count": 3,
-    "missing_classes": [
-      "rectifier_smps",
-      "phase_angle_controlled",
-      "other_mixed"
-    ],
+    "row_count": 30,
+    "valid_class_count": 6,
+    "missing_classes": [],
     "repeats": 24,
     "mean_accuracy": 1.0,
     "mean_balanced_accuracy": 1.0,
     "mean_unknown_rate": 0.0,
-    "mean_confidence": 0.9999990653348053,
-    "mean_active_class_count": 3.0
+    "mean_confidence": 0.993598014270504,
+    "mean_active_class_count": 6.0
   },
   "best_by_feature_count": [
     {
@@ -71,23 +73,19 @@
       "best_overall": {
         "task": "context",
         "feature_count": 1,
-        "feature_combo": "delta_irms_abs",
+        "feature_combo": "midband_residual_ratio",
         "features": [
-          "delta_irms_abs"
+          "midband_residual_ratio"
         ],
-        "row_count": 24,
-        "valid_class_count": 3,
-        "missing_classes": [
-          "rectifier_smps",
-          "phase_angle_controlled",
-          "other_mixed"
-        ],
+        "row_count": 30,
+        "valid_class_count": 6,
+        "missing_classes": [],
         "repeats": 24,
         "mean_accuracy": 1.0,
         "mean_balanced_accuracy": 1.0,
-        "mean_unknown_rate": 0.0,
-        "mean_confidence": 0.7501905903210871,
-        "mean_active_class_count": 3.0
+        "mean_unknown_rate": 0.65625,
+        "mean_confidence": 0.41577051098868284,
+        "mean_active_class_count": 6.0
       }
     },
     {
@@ -95,24 +93,20 @@
       "best_overall": {
         "task": "context",
         "feature_count": 2,
-        "feature_combo": "suspicious_run_energy|midband_residual_ratio",
+        "feature_combo": "suspicious_run_energy|zcv",
         "features": [
           "suspicious_run_energy",
-          "midband_residual_ratio"
+          "zcv"
         ],
-        "row_count": 24,
-        "valid_class_count": 3,
-        "missing_classes": [
-          "rectifier_smps",
-          "phase_angle_controlled",
-          "other_mixed"
-        ],
+        "row_count": 30,
+        "valid_class_count": 6,
+        "missing_classes": [],
         "repeats": 24,
         "mean_accuracy": 1.0,
         "mean_balanced_accuracy": 1.0,
         "mean_unknown_rate": 0.0,
-        "mean_confidence": 0.983067776307367,
-        "mean_active_class_count": 3.0
+        "mean_confidence": 0.6595451785406835,
+        "mean_active_class_count": 6.0
       }
     },
     {
@@ -120,25 +114,21 @@
       "best_overall": {
         "task": "context",
         "feature_count": 3,
-        "feature_combo": "delta_irms_abs|hf_energy_delta|midband_residual_ratio",
+        "feature_combo": "delta_irms_abs|halfcycle_asymmetry|hf_energy_delta",
         "features": [
           "delta_irms_abs",
-          "hf_energy_delta",
-          "midband_residual_ratio"
+          "halfcycle_asymmetry",
+          "hf_energy_delta"
         ],
-        "row_count": 24,
-        "valid_class_count": 3,
-        "missing_classes": [
-          "rectifier_smps",
-          "phase_angle_controlled",
-          "other_mixed"
-        ],
+        "row_count": 30,
+        "valid_class_count": 6,
+        "missing_classes": [],
         "repeats": 24,
         "mean_accuracy": 1.0,
         "mean_balanced_accuracy": 1.0,
         "mean_unknown_rate": 0.0,
-        "mean_confidence": 0.9993836375484122,
-        "mean_active_class_count": 3.0
+        "mean_confidence": 0.8440271495732997,
+        "mean_active_class_count": 6.0
       }
     },
     {
@@ -146,26 +136,22 @@
       "best_overall": {
         "task": "context",
         "feature_count": 4,
-        "feature_combo": "delta_irms_abs|halfcycle_asymmetry|hf_energy_delta|midband_residual_ratio",
+        "feature_combo": "halfcycle_asymmetry|suspicious_run_energy|hf_energy_delta|peak_fluct_cv",
         "features": [
-          "delta_irms_abs",
           "halfcycle_asymmetry",
+          "suspicious_run_energy",
           "hf_energy_delta",
-          "midband_residual_ratio"
+          "peak_fluct_cv"
         ],
-        "row_count": 24,
-        "valid_class_count": 3,
-        "missing_classes": [
-          "rectifier_smps",
-          "phase_angle_controlled",
-          "other_mixed"
-        ],
+        "row_count": 30,
+        "valid_class_count": 6,
+        "missing_classes": [],
         "repeats": 24,
         "mean_accuracy": 1.0,
         "mean_balanced_accuracy": 1.0,
         "mean_unknown_rate": 0.0,
-        "mean_confidence": 0.999949394310988,
-        "mean_active_class_count": 3.0
+        "mean_confidence": 0.940214907208149,
+        "mean_active_class_count": 6.0
       }
     },
     {
@@ -173,27 +159,23 @@
       "best_overall": {
         "task": "context",
         "feature_count": 5,
-        "feature_combo": "delta_irms_abs|halfcycle_asymmetry|suspicious_run_energy|midband_residual_ratio|zcv",
+        "feature_combo": "halfcycle_asymmetry|suspicious_run_energy|hf_energy_delta|residual_crest_factor|peak_fluct_cv",
         "features": [
-          "delta_irms_abs",
           "halfcycle_asymmetry",
           "suspicious_run_energy",
-          "midband_residual_ratio",
-          "zcv"
+          "hf_energy_delta",
+          "residual_crest_factor",
+          "peak_fluct_cv"
         ],
-        "row_count": 24,
-        "valid_class_count": 3,
-        "missing_classes": [
-          "rectifier_smps",
-          "phase_angle_controlled",
-          "other_mixed"
-        ],
+        "row_count": 30,
+        "valid_class_count": 6,
+        "missing_classes": [],
         "repeats": 24,
         "mean_accuracy": 1.0,
         "mean_balanced_accuracy": 1.0,
         "mean_unknown_rate": 0.0,
-        "mean_confidence": 0.9999798171380325,
-        "mean_active_class_count": 3.0
+        "mean_confidence": 0.9676381151101915,
+        "mean_active_class_count": 6.0
       }
     },
     {
@@ -201,28 +183,24 @@
       "best_overall": {
         "task": "context",
         "feature_count": 6,
-        "feature_combo": "delta_irms_abs|halfcycle_asymmetry|suspicious_run_energy|hf_energy_delta|midband_residual_ratio|zcv",
+        "feature_combo": "halfcycle_asymmetry|suspicious_run_energy|hf_energy_delta|abs_irms_zscore_vs_baseline|residual_crest_factor|peak_fluct_cv",
         "features": [
-          "delta_irms_abs",
           "halfcycle_asymmetry",
           "suspicious_run_energy",
           "hf_energy_delta",
-          "midband_residual_ratio",
-          "zcv"
+          "abs_irms_zscore_vs_baseline",
+          "residual_crest_factor",
+          "peak_fluct_cv"
         ],
-        "row_count": 24,
-        "valid_class_count": 3,
-        "missing_classes": [
-          "rectifier_smps",
-          "phase_angle_controlled",
-          "other_mixed"
-        ],
+        "row_count": 30,
+        "valid_class_count": 6,
+        "missing_classes": [],
         "repeats": 24,
         "mean_accuracy": 1.0,
         "mean_balanced_accuracy": 1.0,
         "mean_unknown_rate": 0.0,
-        "mean_confidence": 0.9999947997776202,
-        "mean_active_class_count": 3.0
+        "mean_confidence": 0.9813853808095997,
+        "mean_active_class_count": 6.0
       }
     },
     {
@@ -230,29 +208,25 @@
       "best_overall": {
         "task": "context",
         "feature_count": 7,
-        "feature_combo": "delta_irms_abs|halfcycle_asymmetry|suspicious_run_energy|hf_energy_delta|midband_residual_ratio|abs_irms_zscore_vs_baseline|zcv",
+        "feature_combo": "halfcycle_asymmetry|suspicious_run_energy|hf_energy_delta|midband_residual_ratio|abs_irms_zscore_vs_baseline|residual_crest_factor|peak_fluct_cv",
         "features": [
-          "delta_irms_abs",
           "halfcycle_asymmetry",
           "suspicious_run_energy",
           "hf_energy_delta",
           "midband_residual_ratio",
           "abs_irms_zscore_vs_baseline",
-          "zcv"
+          "residual_crest_factor",
+          "peak_fluct_cv"
         ],
-        "row_count": 24,
-        "valid_class_count": 3,
-        "missing_classes": [
-          "rectifier_smps",
-          "phase_angle_controlled",
-          "other_mixed"
-        ],
+        "row_count": 30,
+        "valid_class_count": 6,
+        "missing_classes": [],
         "repeats": 24,
         "mean_accuracy": 1.0,
         "mean_balanced_accuracy": 1.0,
         "mean_unknown_rate": 0.0,
-        "mean_confidence": 0.9999988546945867,
-        "mean_active_class_count": 3.0
+        "mean_confidence": 0.9877448089871299,
+        "mean_active_class_count": 6.0
       }
     },
     {
@@ -260,30 +234,26 @@
       "best_overall": {
         "task": "context",
         "feature_count": 8,
-        "feature_combo": "delta_irms_abs|halfcycle_asymmetry|suspicious_run_energy|hf_energy_delta|midband_residual_ratio|abs_irms_zscore_vs_baseline|zcv|peak_fluct_cv",
+        "feature_combo": "halfcycle_asymmetry|suspicious_run_energy|hf_energy_delta|midband_residual_ratio|abs_irms_zscore_vs_baseline|zcv|residual_crest_factor|peak_fluct_cv",
         "features": [
-          "delta_irms_abs",
           "halfcycle_asymmetry",
           "suspicious_run_energy",
           "hf_energy_delta",
           "midband_residual_ratio",
           "abs_irms_zscore_vs_baseline",
           "zcv",
+          "residual_crest_factor",
           "peak_fluct_cv"
         ],
-        "row_count": 24,
-        "valid_class_count": 3,
-        "missing_classes": [
-          "rectifier_smps",
-          "phase_angle_controlled",
-          "other_mixed"
-        ],
+        "row_count": 30,
+        "valid_class_count": 6,
+        "missing_classes": [],
         "repeats": 24,
         "mean_accuracy": 1.0,
         "mean_balanced_accuracy": 1.0,
         "mean_unknown_rate": 0.0,
-        "mean_confidence": 0.9999990653348053,
-        "mean_active_class_count": 3.0
+        "mean_confidence": 0.9914803679683682,
+        "mean_active_class_count": 6.0
       }
     },
     {
@@ -291,9 +261,8 @@
       "best_overall": {
         "task": "context",
         "feature_count": 9,
-        "feature_combo": "delta_irms_abs|halfcycle_asymmetry|suspicious_run_energy|hf_energy_delta|midband_residual_ratio|abs_irms_zscore_vs_baseline|zcv|delta_flux|peak_fluct_cv",
+        "feature_combo": "halfcycle_asymmetry|suspicious_run_energy|hf_energy_delta|midband_residual_ratio|abs_irms_zscore_vs_baseline|zcv|delta_flux|residual_crest_factor|peak_fluct_cv",
         "features": [
-          "delta_irms_abs",
           "halfcycle_asymmetry",
           "suspicious_run_energy",
           "hf_energy_delta",
@@ -301,21 +270,18 @@
           "abs_irms_zscore_vs_baseline",
           "zcv",
           "delta_flux",
+          "residual_crest_factor",
           "peak_fluct_cv"
         ],
-        "row_count": 24,
-        "valid_class_count": 3,
-        "missing_classes": [
-          "rectifier_smps",
-          "phase_angle_controlled",
-          "other_mixed"
-        ],
+        "row_count": 30,
+        "valid_class_count": 6,
+        "missing_classes": [],
         "repeats": 24,
         "mean_accuracy": 1.0,
         "mean_balanced_accuracy": 1.0,
         "mean_unknown_rate": 0.0,
-        "mean_confidence": 0.9999987284907382,
-        "mean_active_class_count": 3.0
+        "mean_confidence": 0.9928052759636835,
+        "mean_active_class_count": 6.0
       }
     },
     {
@@ -336,19 +302,15 @@
           "residual_crest_factor",
           "peak_fluct_cv"
         ],
-        "row_count": 24,
-        "valid_class_count": 3,
-        "missing_classes": [
-          "rectifier_smps",
-          "phase_angle_controlled",
-          "other_mixed"
-        ],
+        "row_count": 30,
+        "valid_class_count": 6,
+        "missing_classes": [],
         "repeats": 24,
         "mean_accuracy": 1.0,
         "mean_balanced_accuracy": 1.0,
         "mean_unknown_rate": 0.0,
-        "mean_confidence": 0.9999818006491622,
-        "mean_active_class_count": 3.0
+        "mean_confidence": 0.993598014270504,
+        "mean_active_class_count": 6.0
       }
     }
   ],

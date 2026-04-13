@@ -19,18 +19,18 @@
   ]);
 
   const pwaFeatureOrder = Object.freeze([
-    "abs_irms_zscore_vs_baseline",
-    "delta_irms_abs",
-    "halfcycle_asymmetry",
-    "spectral_flux_midhf",
-    "peak_fluct_cv",
-    "residual_crest_factor",
-    "edge_spike_ratio",
-    "midband_residual_ratio",
-    "zcv",
-    "hf_energy_delta",
     "thd_i",
-    "v_sag_pct",
+    "spectral_flux_midhf",
+    "hf_energy_delta",
+    "residual_crest_factor",
+    "peak_fluct_cv",
+    "zcv",
+    "cycle_nmse",
+    "delta_hf_energy",
+    "delta_flux",
+    "delta_irms_abs",
+    "midband_residual_ratio",
+    "edge_spike_ratio",
   ]);
 
   const csvHeaderOrder = Object.freeze([

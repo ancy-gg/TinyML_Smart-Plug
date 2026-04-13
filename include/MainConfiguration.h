@@ -14,7 +14,7 @@ static constexpr bool ENABLE_AUTO_ARC_CAPTURE = false;
 // Cloud / OTA configuration
 static constexpr const char* FIREBASE_API_KEY = "AIzaSyAmJlZZszyWPJFgIkTAAl_TbIySys1nvEw";
 static constexpr const char* FIREBASE_DB_URL  = "tinyml-smart-plug-default-rtdb.asia-southeast1.firebasedatabase.app";
-static constexpr const char* FW_VERSION       = "v7.3.8-c-gen2";
+static constexpr const char* FW_VERSION       = "v7.4.0-c-gen0";
 static constexpr const char* OTA_DESIRED_VERSION_PATH = "/ota/desired_version";
 static constexpr const char* OTA_FIRMWARE_URL_PATH    = "/ota/firmware_url";
 
@@ -304,7 +304,7 @@ static constexpr uint32_t OLED_RENDER_INTERVAL_MS = 100UL;
 static constexpr uint32_t OLED_I2C_CLOCK_HZ = 400000UL;
 
 // Sensing pipeline / timing quality
-static constexpr uint8_t  FEATURE_FRAME_QUEUE_LEN        = 36;
+static constexpr uint8_t  FEATURE_FRAME_QUEUE_LEN        = 48;
 static constexpr uint8_t  FEATURE_RAW_FRAME_QUEUE_LEN    = 6;
 static constexpr uint8_t  FEATURE_CONSUMER_LATEST_CATCHUP_DEPTH = 2;
 static constexpr uint8_t  FEATURE_CAPTURE_IDLE_SLICE_EVERY_EMITS = 2;
@@ -317,7 +317,7 @@ static constexpr float    FRAME_COMPUTE_BAD_MS           = FEATURE_FRAME_PERIOD_
 static constexpr float    FS_ERR_BAD_HZ                  = 3200.0f;
 
 
-static constexpr int   ARC_RUNTIME_FEATURE_SPACE_VERSION = 7;
+static constexpr int   ARC_RUNTIME_FEATURE_SPACE_VERSION = 8;
 static constexpr float DB_RATIO_EPS                 = 1e-6f;
 static constexpr float DB_POWER_RATIO_EPS           = 1e-6f;
 static constexpr float DB_RATIO_CLIP_MIN            = -80.0f;
@@ -425,6 +425,7 @@ static constexpr uint32_t SENSOR_BOOT_SETTLE_MS         = 450UL;
 static constexpr uint32_t PROTECTION_INHIBIT_MS         = 5000UL;
 static constexpr uint32_t ML_CONTROL_POLL_MS            = 3000UL;
 static constexpr uint32_t CLOUD_CONTROL_POLL_MS         = 1500UL;
+static constexpr uint32_t LIVE_REQUEST_UPDATE_MS        = 2000UL;
 static constexpr uint16_t AUTO_ARC_CAPTURE_DURATION_S   = 12;
 static constexpr uint32_t AUTO_ARC_CAPTURE_COOLDOWN_MS  = 60000UL;
 static constexpr int8_t ML_UNKNOWN_LABEL                = -1;
@@ -441,9 +442,9 @@ static constexpr float    ML_LOG_SETTLE_COMPUTE_MAX_MS  = FRAME_COMPUTE_BAD_MS;
 static constexpr uint16_t ML_LOG_AUTO_MIN_DURATION_S    = 5;
 static constexpr uint16_t ML_LOG_AUTO_MAX_DURATION_S    = 60;
 
-static constexpr uint32_t CLOUD_LIVE_NORMAL_INTERVAL_MS = 5000UL;
-static constexpr uint32_t CLOUD_LIVE_FAULT_INTERVAL_MS  = 1200UL;
-static constexpr uint32_t CLOUD_REFRESH_KEEPALIVE_MS    = 1000UL;
+static constexpr uint32_t CLOUD_LIVE_NORMAL_INTERVAL_MS = 7000UL;
+static constexpr uint32_t CLOUD_LIVE_FAULT_INTERVAL_MS  = 1800UL;
+static constexpr uint32_t CLOUD_REFRESH_KEEPALIVE_MS    = 1800UL;
 static constexpr uint32_t CLOUD_WIFI_WARMUP_MS          = 2500UL;
 
 // =========================

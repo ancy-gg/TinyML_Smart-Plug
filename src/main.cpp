@@ -2087,7 +2087,7 @@ void loop() {
   }
 
   static uint32_t lastLive = 0;
-  if (!paused && !relayNetQuietActive && (millis() - lastLive > 1000)) {
+  if (!paused && !relayNetQuietActive && (millis() - lastLive >= LIVE_REQUEST_UPDATE_MS)) {
     lastLive = millis();
     static uint32_t noPowerSinceMs = 0;
     const bool unpluggedLive = classifyUnpluggedSocket(vRaw, vFast, irmsRawForLogic, f.current_valid != 0, st, &noPowerSinceMs);

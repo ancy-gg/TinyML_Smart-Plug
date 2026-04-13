@@ -107,7 +107,7 @@ const alertLabelLeft = el("alertLabelLeft");
 const alertLabelRight = el("alertLabelRight");
 
 const DISPLAY_TZ = "Asia/Manila";
-const STALE_MS = 15000;
+const STALE_MS = 22000;
 const HISTORY_LIMIT = 1000;
 
 cycleNmseVal?.closest(".feature-card")?.classList.add("hidden");

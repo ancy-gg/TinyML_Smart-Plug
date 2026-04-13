@@ -1188,8 +1188,6 @@ const PREFERRED_EXPORT_HEADER_ORDER = FEATURE_SCHEMA?.csvHeaderOrder || [
   "abs_irms_zscore_vs_baseline",
   "delta_irms_abs",
   "halfcycle_asymmetry",
-  "cycle_nmse",
-  "v_sag_pct",
   "suspicious_run_energy",
   "delta_hf_energy",
   "delta_flux",
@@ -1201,6 +1199,8 @@ const PREFERRED_EXPORT_HEADER_ORDER = FEATURE_SCHEMA?.csvHeaderOrder || [
   "thd_i",
   "hf_energy_delta",
   "edge_spike_ratio",
+  "v_sag_pct",
+  "cycle_nmse",
 
   "model_pred",
   "label_arc",

@@ -168,18 +168,20 @@ private:
   };
 
   static constexpr uint8_t HISTORY_QUEUE_MAX = 24;
-  static constexpr uint8_t CONTROL_EVENT_QUEUE_MAX = 6;
-  static constexpr uint32_t CLOUD_TX_MIN_GAP_MS = 220UL;
+  static constexpr uint8_t CONTROL_EVENT_QUEUE_MAX = 10;
+  static constexpr uint32_t CLOUD_TX_MIN_GAP_MS = 300UL;
   static constexpr uint32_t CLOUD_TX_RETRY_MS = 1800UL;
   static constexpr uint32_t CLOUD_CTRL_FAIL_RETRY_MS = 900UL;
-  static constexpr uint32_t CLOUD_CTRL_READ_GAP_MS = 500UL;
-  static constexpr uint32_t CLOUD_CTRL_READ_GAP_LOGGING_MS = 1200UL;
+  static constexpr uint32_t CLOUD_CTRL_READ_GAP_MS = 900UL;
+  static constexpr uint32_t CLOUD_CTRL_READ_GAP_LOGGING_MS = 3500UL;
+  static constexpr uint32_t CLOUD_ML_READ_GAP_MS = 1500UL;
+  static constexpr uint32_t CLOUD_ML_READ_GAP_LOGGING_MS = 9000UL;
   static constexpr uint16_t CLOUD_TLS_RX_BUFFER_BYTES = 2048;
   static constexpr uint16_t CLOUD_TLS_TX_BUFFER_BYTES = 1024;
   static constexpr uint16_t CLOUD_RESPONSE_BUFFER_BYTES = 1024;
-  static constexpr uint32_t CLOUD_SOCKET_TIMEOUT_MS = 3500UL;
-  static constexpr uint32_t CLOUD_SERVER_RESPONSE_TIMEOUT_MS = 3000UL;
-  static constexpr uint16_t ROWS_PER_CHUNK = 8;
+  static constexpr uint32_t CLOUD_SOCKET_TIMEOUT_MS = 2500UL;
+  static constexpr uint32_t CLOUD_SERVER_RESPONSE_TIMEOUT_MS = 1800UL;
+  static constexpr uint16_t ROWS_PER_CHUNK = 16;
 
   FirebaseData fbLive;
   FirebaseData fbRead;
@@ -265,8 +267,8 @@ private:
   String _mlNotesCache = "";
   bool _mlTrustedNormalCache = false;
   String _mlRequestTokenCache = "";
-  uint8_t _controlPollSlot = 0;
-  uint32_t _lastControlPollMs = 0;
+  uint32_t _lastControlsReadMs = 0;
+  uint32_t _lastMlLogReadMs = 0;
 
   bool _manualEnabled = false;
   bool _autoEnabled = false;
