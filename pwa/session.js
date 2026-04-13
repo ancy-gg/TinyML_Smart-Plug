@@ -972,6 +972,7 @@
     }
 
     if (!header) return "";
+    rows = sortSessionCsvLines(header, rows);
     return header + "\n" + rows.join("\n") + "\n";
   }
 
@@ -1012,6 +1013,81 @@
       prevRaw = curRaw;
     }
     return out;
+  }
+
+  function compareMaybeNumberAsc(a, b) {
+    const aOk = Number.isFinite(a);
+    const bOk = Number.isFinite(b);
+    if (aOk && bOk) return a - b;
+    if (aOk) return -1;
+    if (bOk) return 1;
+    return 0;
+  }
+
+  function sortParsedSessionRows(rows) {
+    return (rows || [])
+      .map((row, rowIndex) => ({
+        row,
+        rowIndex,
+        frameStart: Number(row?.frame_start_uptime_ms),
+        uptime: Number(row?.uptime_ms),
+        frameEnd: Number(row?.frame_end_uptime_ms),
+        featureEnd: Number(row?.feature_compute_end_uptime_ms),
+        epoch: Number(row?.epoch_ms),
+        logEnqueue: Number(row?.log_enqueue_uptime_ms),
+      }))
+      .sort((a, b) =>
+        compareMaybeNumberAsc(a.frameStart, b.frameStart) ||
+        compareMaybeNumberAsc(a.uptime, b.uptime) ||
+        compareMaybeNumberAsc(a.frameEnd, b.frameEnd) ||
+        compareMaybeNumberAsc(a.featureEnd, b.featureEnd) ||
+        compareMaybeNumberAsc(a.epoch, b.epoch) ||
+        compareMaybeNumberAsc(a.logEnqueue, b.logEnqueue) ||
+        (a.rowIndex - b.rowIndex))
+      .map((entry) => entry.row);
+  }
+
+  function sortSessionCsvLines(header, lines) {
+    const cleanHeader = String(header || "").trim();
+    if (!cleanHeader || !Array.isArray(lines) || lines.length < 2) return lines || [];
+
+    const cols = cleanHeader.split(",").map((name) => normalizeHeaderName(name));
+    const idxFrameStart = cols.indexOf("frame_start_uptime_ms");
+    const idxUptime = cols.indexOf("uptime_ms");
+    const idxFrameEnd = cols.indexOf("frame_end_uptime_ms");
+    const idxFeatureEnd = cols.indexOf("feature_compute_end_uptime_ms");
+    const idxEpoch = cols.indexOf("epoch_ms");
+    const idxLogEnqueue = cols.indexOf("log_enqueue_uptime_ms");
+
+    const parseNum = (parts, idx) => {
+      if (idx < 0 || idx >= parts.length) return NaN;
+      const v = Number(parts[idx]);
+      return Number.isFinite(v) ? v : NaN;
+    };
+
+    return lines
+      .map((line, rowIndex) => {
+        const parts = String(line || "").split(",");
+        return {
+          line,
+          rowIndex,
+          frameStart: parseNum(parts, idxFrameStart),
+          uptime: parseNum(parts, idxUptime),
+          frameEnd: parseNum(parts, idxFrameEnd),
+          featureEnd: parseNum(parts, idxFeatureEnd),
+          epoch: parseNum(parts, idxEpoch),
+          logEnqueue: parseNum(parts, idxLogEnqueue),
+        };
+      })
+      .sort((a, b) =>
+        compareMaybeNumberAsc(a.frameStart, b.frameStart) ||
+        compareMaybeNumberAsc(a.uptime, b.uptime) ||
+        compareMaybeNumberAsc(a.frameEnd, b.frameEnd) ||
+        compareMaybeNumberAsc(a.featureEnd, b.featureEnd) ||
+        compareMaybeNumberAsc(a.epoch, b.epoch) ||
+        compareMaybeNumberAsc(a.logEnqueue, b.logEnqueue) ||
+        (a.rowIndex - b.rowIndex))
+      .map((entry) => entry.line);
   }
 
   function pickTimeAxis(rows) {
@@ -1369,7 +1445,7 @@ function orderCsvHeaders(headers) {
   }
 
   function ingestParsedCsv(parsed, options = {}) {
-    ROWS = (parsed?.data || []).filter((r) => r && Object.keys(r).length);
+    ROWS = sortParsedSessionRows((parsed?.data || []).filter((r) => r && Object.keys(r).length));
 
     if (!ROWS.length) {
       setStatus(options.emptyStatus || "Parsed 0 rows.");

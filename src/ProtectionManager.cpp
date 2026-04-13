@@ -14,7 +14,10 @@ void ProtectionManager::writeLatchOff_(bool asserted){ if (_pinLatchOff >= 0) di
 void ProtectionManager::updateRelayPulse_() {
   const uint32_t now = millis();
   if (_pulseOnUntil && (int32_t)(now - _pulseOnUntil) >= 0) { writeLatchOn_(false); _pulseOnUntil = 0; }
-  if (_pulseOffUntil && (int32_t)(now - _pulseOffUntil) >= 0) { writeLatchOff_(false); _pulseOffUntil = 0; }
+  if (_pulseOffUntil && (int32_t)(now - _pulseOffUntil) >= 0) {
+    _pulseOffUntil = 0;
+    writeLatchOff_(_relayOffHoldActive);
+  }
 }
 
 void ProtectionManager::begin(int pinLatchOn, int pinLatchOff) {
@@ -28,6 +31,7 @@ void ProtectionManager::begin(int pinLatchOn, int pinLatchOff) {
   writeLatchOff_(false);
 
   _relayLatchedOn   = false;
+  _relayOffHoldActive = false;
   _pulseOnUntil     = 0;
   _pulseOffUntil    = 0;
   _lastRelayPulseMs = 0;
@@ -46,15 +50,27 @@ void ProtectionManager::pulseRelayOn(uint32_t pulseMs) {
   if (pulseMs == 0) pulseMs = LATCH_ON_PULSE_MS;
   const uint32_t now = millis();
   if ((now - _lastRelayPulseMs) < LATCH_PULSE_GAP_MS) return;
-  updateRelayPulse_(); writeLatchOff_(false); writeLatchOn_(true);
+  updateRelayPulse_();
+  _relayOffHoldActive = false;
+  writeLatchOff_(false);
+  writeLatchOn_(true);
   _pulseOffUntil = 0; _pulseOnUntil = now + pulseMs; _lastRelayPulseMs = now; _relayLatchedOn = true;
 }
 void ProtectionManager::pulseRelayOff(uint32_t pulseMs) {
   if (pulseMs == 0) pulseMs = LATCH_OFF_PULSE_MS;
   const uint32_t now = millis();
   if ((now - _lastRelayPulseMs) < LATCH_PULSE_GAP_MS) return;
-  updateRelayPulse_(); writeLatchOn_(false); writeLatchOff_(true);
+  updateRelayPulse_();
+  writeLatchOn_(false);
+  writeLatchOff_(true);
   _pulseOnUntil = 0; _pulseOffUntil = now + pulseMs; _lastRelayPulseMs = now; _relayLatchedOn = false;
+}
+
+void ProtectionManager::setRelayOffHold(bool asserted) {
+  _relayOffHoldActive = asserted;
+  updateRelayPulse_();
+  if (_pulseOnUntil != 0) return;
+  writeLatchOff_(asserted || (_pulseOffUntil != 0));
 }
 
 void ProtectionManager::resetLatch() {
@@ -64,6 +80,7 @@ void ProtectionManager::resetLatch() {
   _tripOffEdge = false; _autoOnEdge = false; _webLockout = false; _resetRequired = false;
   _loadOn = false; _loadOnSince = 0; _loadOffSince = 0; _prevSustainedTrip = false;
   _prevArcActive = false; _prevHeatTrip = false; _prevOverloadTrip = false;
+  setRelayOffHold(false);
 }
 bool ProtectionManager::consumeTripOffEdge() { const bool v = _tripOffEdge; _tripOffEdge = false; return v; }
 bool ProtectionManager::consumeAutoOnEdge()  { const bool v = _autoOnEdge; _autoOnEdge = false; return v; }
@@ -225,21 +242,6 @@ void ProtectionManager::apply(FaultState st, float vDisplay, float vProtect, flo
   const bool underVoltActive = (st == STATE_UNDERVOLTAGE);
   const bool overVoltActive  = (st == STATE_OVERVOLTAGE);
   const bool overloadTripActive = (st == STATE_SUSTAINED_OVERLOAD);
-
-  static uint32_t mainsOffSince = 0;
-  const bool rawOff = (vProtect <= MAINS_PRESENT_OFF_V);
-
-  if (rawOff) {
-    if (mainsOffSince == 0) mainsOffSince = now;
-  } else {
-    mainsOffSince = 0;
-  }
-
-  const bool unplugged = rawOff && (mainsOffSince != 0) && ((now - mainsOffSince) >= UNPLUGGED_STATE_DELAY_MS);
-
-  if (unplugged && _relayLatchedOn) {
-    pulseRelayOff(LATCH_OFF_PULSE_MS);
-  }
 
   // Keep the relay latched OFF after protection trips.
   // Re-close should only happen from explicit commands or the dedicated voltage-recovery path.

@@ -14,7 +14,7 @@ static constexpr bool ENABLE_AUTO_ARC_CAPTURE = false;
 // Cloud / OTA configuration
 static constexpr const char* FIREBASE_API_KEY = "AIzaSyAmJlZZszyWPJFgIkTAAl_TbIySys1nvEw";
 static constexpr const char* FIREBASE_DB_URL  = "tinyml-smart-plug-default-rtdb.asia-southeast1.firebasedatabase.app";
-static constexpr const char* FW_VERSION       = "v7.3.4-c-gen2";
+static constexpr const char* FW_VERSION       = "v7.3.8-c-gen2";
 static constexpr const char* OTA_DESIRED_VERSION_PATH = "/ota/desired_version";
 static constexpr const char* OTA_FIRMWARE_URL_PATH    = "/ota/firmware_url";
 
@@ -180,7 +180,7 @@ struct FeatureFrame {
 static constexpr float CONTEXT_MIN_IRMS_A = 0.09f;
 static constexpr float CONTEXT_UNLATCH_ZERO_IRMS_A = 0.020f;
 static constexpr uint32_t CONTEXT_ACQUIRE_WINDOW_MS = 5000UL;
-static constexpr uint32_t CONTEXT_ACQUIRE_DROP_GRACE_MS = 600UL;
+static constexpr uint32_t CONTEXT_ACQUIRE_DROP_GRACE_MS = 0UL;
 static constexpr uint32_t CONTEXT_UNLATCH_ZERO_MS = 5000UL;
 static constexpr uint32_t CONTEXT_PROVISIONAL_MIN_MS = 300UL;
 static constexpr float CONTEXT_MIN_CONFIDENCE = 0.45f;
@@ -226,6 +226,7 @@ static constexpr float    FEATURE_FRAME_PERIOD_MS = 1000.0f / FEATURE_TARGET_CAD
 static constexpr float    FEATURE_WINDOW_PERIOD_MS = 1000.0f * (float)ARC_RUNTIME_FRAME_SAMPLES / FS_TARGET_HZ;
 static constexpr float    FEATURE_HOP_PERIOD_MS = 1000.0f * (float)ARC_RUNTIME_HOP_SAMPLES / FS_TARGET_HZ;
 static constexpr float    CSV_LOG_TARGET_CADENCE_HZ = 30.0f;
+static constexpr float    CSV_LOG_TARGET_INTERVAL_MS = 1000.0f / CSV_LOG_TARGET_CADENCE_HZ;
 static constexpr uint32_t CSV_LOG_MIN_INTERVAL_MS = (uint32_t)(1000.0f / CSV_LOG_TARGET_CADENCE_HZ + 0.5f);
 
 // The analog AAF is already around 10 kHz / Q≈0.73. Keep a conservative cascaded
@@ -303,8 +304,9 @@ static constexpr uint32_t OLED_RENDER_INTERVAL_MS = 100UL;
 static constexpr uint32_t OLED_I2C_CLOCK_HZ = 400000UL;
 
 // Sensing pipeline / timing quality
-static constexpr uint8_t  FEATURE_FRAME_QUEUE_LEN        = 18;
+static constexpr uint8_t  FEATURE_FRAME_QUEUE_LEN        = 36;
 static constexpr uint8_t  FEATURE_RAW_FRAME_QUEUE_LEN    = 6;
+static constexpr uint8_t  FEATURE_CONSUMER_LATEST_CATCHUP_DEPTH = 2;
 static constexpr uint8_t  FEATURE_CAPTURE_IDLE_SLICE_EVERY_EMITS = 2;
 static constexpr uint32_t FEATURE_CAPTURE_IDLE_SLICE_MS  = 1UL;
 static constexpr uint32_t FEATURE_TIMING_GRACE_MS        = 1500UL;
@@ -380,14 +382,15 @@ static constexpr uint32_t LOAD_OFF_DETECT_MS = 1200UL;
 static constexpr uint32_t RELAY_ARTIFACT_BLANK_MS = 2500UL;
 static constexpr float    RELAY_ARTIFACT_FORCE_ZERO_A = 0.75f;
 static constexpr uint32_t RELAY_ARTIFACT_SELF_HEAL_MS = 1200UL;
+static constexpr float    RELAY_OFF_HOLD_GHOST_MAX_A = 0.090f;
 
 // Local assist when the user manually energizes a load while the MCU still thinks the relay is OFF.
 // The assist should latch quickly for small loads, survive brief charger/SMPS dropouts, and only
 // roll back during the provisional confirmation window if current disappears for long enough.
-static constexpr float    MANUAL_RELAY_REARM_MIN_A = 0.08f;
+static constexpr float    MANUAL_RELAY_REARM_MIN_A = 0.11f;
 static constexpr float    MANUAL_RELAY_REARM_RELEASE_A = 0.05f;
 static constexpr uint32_t MANUAL_RELAY_REARM_DEBOUNCE_MS = 0UL;
-static constexpr uint32_t MANUAL_RELAY_REARM_CONFIRM_MS = 10000UL;
+static constexpr uint32_t MANUAL_RELAY_REARM_CONFIRM_MS = 5000UL;
 static constexpr uint32_t MANUAL_RELAY_REARM_RELEASE_MS = 3000UL;
 static constexpr uint32_t MANUAL_RELAY_REARM_COOLDOWN_MS = 2500UL;
 static constexpr uint32_t MANUAL_RELAY_WEB_HOLDOFF_MS = 2200UL;
@@ -417,6 +420,7 @@ static constexpr float    ARC_TRANSIENT_STEP_A           = 0.60f;
 static constexpr float    ARC_TRANSIENT_STEP_FRAC        = 0.22f;
 
 static constexpr uint32_t FEAT_STALE_MS                 = (uint32_t)(FEATURE_FRAME_PERIOD_MS * 4.0f + 0.5f);
+static constexpr uint32_t FEATURE_VALID_BRIDGE_MS       = 1500UL;
 static constexpr uint32_t SENSOR_BOOT_SETTLE_MS         = 450UL;
 static constexpr uint32_t PROTECTION_INHIBIT_MS         = 5000UL;
 static constexpr uint32_t ML_CONTROL_POLL_MS            = 3000UL;
@@ -454,8 +458,8 @@ static constexpr uint8_t  MCP3204_WARMUP_BURSTS  = 2;
 static constexpr uint8_t  MCP3204_BURST_FLUSH    = 4;
 static constexpr float    MCP3204_FS_WARN_LOW_HZ = 23000.0f;
 static constexpr float    MCP3204_FS_WARN_HIGH_HZ = 31000.0f;
-static constexpr float    MCP3204_FS_HARD_LOW_HZ = 20000.0f;
-static constexpr float    MCP3204_FS_HARD_HIGH_HZ = 34000.0f;
+static constexpr float    MCP3204_FS_HARD_LOW_HZ = 16000.0f;
+static constexpr float    MCP3204_FS_HARD_HIGH_HZ = 40000.0f;
 
 static constexpr float IRMS_GATE_ON_A               = 0.050f;
 static constexpr float IRMS_GATE_OFF_A              = 0.025f;

@@ -471,7 +471,7 @@ bool ArcDetection::compute(const uint16_t* raw, size_t n, float fs_hz,
     collectZeroCrossings_(sigClean, n, retryHys, crossAll, 128, crossAllN, crossPos, 64, crossPosN);
   }
 
-  if (crossAllN < 3) {
+  if (crossAllN < 2) {
     out.feat_valid = false;
     return true;
   }
@@ -481,13 +481,8 @@ bool ArcDetection::compute(const uint16_t* raw, size_t n, float fs_hz,
   } else if (crossAllN >= 4) {
     out.zcv = robustIntervalJitterMs_(crossAll, crossAllN, fs_hz);
   }
-
-
   const int cycleCount = crossPosN - 1;
-  if (cycleCount <= 0) {
-    out.feat_valid = false;
-    return true;
-  }
+  const bool limitedCycleWindow = (cycleCount <= 0);
 
   float cyclePeaks[24];
   float cycleRmsVals[24];
@@ -584,7 +579,7 @@ bool ArcDetection::compute(const uint16_t* raw, size_t n, float fs_hz,
     out.halfcycle_asymmetry = clampf((fabsf(posRms - negRms) / denom) * FEATURE_PERCENT_SCALE, 0.0f, 200.0f);
   }
 
-  if (peakN >= 2) {
+  if (!limitedCycleWindow && peakN >= 2) {
     double mu = 0.0;
     for (int i = 0; i < peakN; ++i) mu += cyclePeaks[i];
     mu /= (double)peakN;
@@ -598,7 +593,7 @@ bool ArcDetection::compute(const uint16_t* raw, size_t n, float fs_hz,
     out.peak_fluct_cv = (float)(sqrt(vv) / (mu + 1e-9)) * FEATURE_PERCENT_SCALE;
   }
 
-  if (nmsePairs > 0) {
+  if (!limitedCycleWindow && nmsePairs > 0) {
     for (int i = 1; i < nmsePairs; ++i) {
       const float key = nmsePairsVals[i];
       int j = i - 1;

@@ -110,6 +110,13 @@ private:
     bool useFeaturePayload = false;
   };
 
+  struct ControlEvent {
+    String kind;
+    String token;
+    String source;
+    bool relayPulse = false;
+  };
+
   struct SessionSpec {
     String sessionId = "";
     String loadType = "unknown";
@@ -161,6 +168,7 @@ private:
   };
 
   static constexpr uint8_t HISTORY_QUEUE_MAX = 24;
+  static constexpr uint8_t CONTROL_EVENT_QUEUE_MAX = 6;
   static constexpr uint32_t CLOUD_TX_MIN_GAP_MS = 220UL;
   static constexpr uint32_t CLOUD_TX_RETRY_MS = 1800UL;
   static constexpr uint32_t CLOUD_CTRL_FAIL_RETRY_MS = 900UL;
@@ -197,6 +205,9 @@ private:
   bool _lastMainsPresent = false;
   String _lastTransitionEvent = "";
   uint64_t _lastTransitionEpochMs = 0;
+  bool _loadRunActive = false;
+  uint64_t _loadRunStartEpochMs = 0;
+  int8_t _loadRunFamilyCode = CONTEXT_FAMILY_UNKNOWN;
 
   bool _started = false;
   bool _synced = false;
@@ -212,6 +223,11 @@ private:
   uint8_t _historyHead = 0;
   uint8_t _historyTail = 0;
   uint8_t _historyCount = 0;
+
+  ControlEvent _controlEventQueue[CONTROL_EVENT_QUEUE_MAX];
+  uint8_t _controlEventHead = 0;
+  uint8_t _controlEventTail = 0;
+  uint8_t _controlEventCount = 0;
 
   bool _portalTokenPrimed = false;
   bool _relayOnTokenPrimed = false;
@@ -281,6 +297,8 @@ private:
   static bool timeLooksValid(time_t t);
   static String powerConditionForState(const String& state, float v);
   static bool isTransitionState(const String& state);
+  static const char* loadFamilyLabel_(int8_t code);
+  static String formatDurationHms_(uint64_t durationMs);
   static String sanitizeToken(const String& s);
   static void updateControlToken_(const String& token, bool& primed, String& cache, String& handled, bool& pendingFlag);
   void configureClient_(FirebaseData& client, uint16_t responseSize = CLOUD_RESPONSE_BUFFER_BYTES);
@@ -290,16 +308,20 @@ private:
   bool activeIsAuto() const { return (!_manualEnabled && _autoEnabled); }
 
   bool pushHistoryRecord_(const HistoryJob& job);
+  bool enqueueControlEvent_(const ControlEvent& ev);
+  bool dequeueControlEvent_(ControlEvent& ev);
   bool controlWorkPending_() const;
   void clearControlToken_(const char* path, String& cache, bool& pendingFlag);
   bool enqueueHistory_(const HistoryJob& job);
   bool dequeueHistory_(HistoryJob& job);
+  bool serviceControlEvent_();
   bool serviceLive_();
   bool serviceHistory_();
   bool serviceMlUpload_();
   void serviceMlState_();
   bool closeManualSession_(const String& finishedSessionId);
   void resetLoggerRuntime_();
+  bool manualRequestBusy_() const;
   bool captureUsefulForManual_(const FeatureFrame& f, FaultState st) const;
   float computeContinuousDurationSeconds_(const Rec* recs, uint16_t count) const;
   void ensureBuffersAllocated_();

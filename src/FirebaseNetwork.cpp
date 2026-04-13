@@ -86,6 +86,32 @@ static int8_t deviceFamilyCodeFromToken_(String token) {
   return CONTEXT_FAMILY_UNKNOWN;
 }
 
+const char* FirebaseNetwork::loadFamilyLabel_(int8_t code) {
+  switch (code) {
+    case CONTEXT_FAMILY_RESISTIVE_LINEAR: return "RESISTIVE";
+    case CONTEXT_FAMILY_INDUCTIVE_MOTOR: return "INDUCTIVE";
+    case CONTEXT_FAMILY_RECTIFIER_SMPS: return "SMPS";
+    case CONTEXT_FAMILY_PHASE_ANGLE_CONTROLLED: return "PHASE CONTROL";
+    case CONTEXT_FAMILY_BRUSH_UNIVERSAL_MOTOR: return "BRUSHED MOTOR";
+    case CONTEXT_FAMILY_OTHER_MIXED: return "OTHER";
+    default: return "UNKNOWN";
+  }
+}
+
+String FirebaseNetwork::formatDurationHms_(uint64_t durationMs) {
+  const uint64_t totalSec = durationMs / 1000ULL;
+  const uint32_t hours = (uint32_t)(totalSec / 3600ULL);
+  const uint32_t minutes = (uint32_t)((totalSec % 3600ULL) / 60ULL);
+  const uint32_t seconds = (uint32_t)(totalSec % 60ULL);
+
+  char buf[16];
+  snprintf(buf, sizeof(buf), "%02lu:%02lu:%02lu",
+           (unsigned long)hours,
+           (unsigned long)minutes,
+           (unsigned long)seconds);
+  return String(buf);
+}
+
 void FirebaseNetwork::updateControlToken_(const String& tokenIn, bool& primed, String& cache, String& handled, bool& pendingFlag) {
   String token = tokenIn;
   token.trim();
@@ -361,49 +387,21 @@ bool FirebaseNetwork::publishOtaDebug(const String& phase, const String& detail,
 }
 
 bool FirebaseNetwork::publishControlAck(const String& kind, const String& token) {
-  if (!isReady()) return false;
-
-  FirebaseJson json;
-  json.set("last_control_ack_kind", kind);
-  json.set("last_control_ack_token", token);
-  json.set("last_control_ack_server_ts/.sv", "timestamp");
-  json.set("last_control_ack_uptime_ms", (int)millis());
-  const bool ok = Firebase.RTDB.updateNode(&fbCtrl, "/live_data", &json);
-  if (!ok) {
-    recoverClient_(fbCtrl, CLOUD_CTRL_FAIL_RETRY_MS);
-  }
-  return ok;
+  ControlEvent ev;
+  ev.kind = kind;
+  ev.token = token;
+  ev.source = "device";
+  ev.relayPulse = false;
+  return enqueueControlEvent_(ev);
 }
 
 bool FirebaseNetwork::publishRelayPulseEvent(const String& kind, const String& token, const String& source) {
-  if (!isReady()) return false;
-
-  FirebaseJson json;
-  json.set("last_control_ack_kind", kind);
-  json.set("last_control_ack_token", token);
-  json.set("last_control_ack_server_ts/.sv", "timestamp");
-  json.set("last_control_ack_uptime_ms", (int)millis());
-  json.set("last_relay_pulse_kind", kind);
-  json.set("last_relay_pulse_token", token);
-  json.set("last_relay_pulse_source", source);
-  json.set("last_relay_pulse_server_ts/.sv", "timestamp");
-  json.set("last_relay_pulse_uptime_ms", (int)millis());
-  if (kind == "relay_on") {
-    json.set("relay_latched_on", true);
-    json.set("relay_pulse_active", true);
-    json.set("load_state", "LOAD ON");
-    json.set("device_phase", "LOAD ON");
-  } else if (kind == "relay_off") {
-    json.set("relay_latched_on", false);
-    json.set("relay_pulse_active", true);
-    json.set("load_state", "LOAD OFF");
-    json.set("device_phase", "LOAD OFF");
-  }
-  const bool ok = Firebase.RTDB.updateNode(&fbCtrl, "/live_data", &json);
-  if (!ok) {
-    recoverClient_(fbCtrl, CLOUD_CTRL_FAIL_RETRY_MS);
-  }
-  return ok;
+  ControlEvent ev;
+  ev.kind = kind;
+  ev.token = token;
+  ev.source = source;
+  ev.relayPulse = true;
+  return enqueueControlEvent_(ev);
 }
 
 bool FirebaseNetwork::controlWorkPending_() const {
@@ -432,6 +430,25 @@ bool FirebaseNetwork::dequeueHistory_(HistoryJob& job) {
   job = _historyQueue[_historyHead];
   _historyHead = (uint8_t)((_historyHead + 1U) % HISTORY_QUEUE_MAX);
   _historyCount--;
+  return true;
+}
+
+bool FirebaseNetwork::enqueueControlEvent_(const ControlEvent& ev) {
+  if (_controlEventCount >= CONTROL_EVENT_QUEUE_MAX) {
+    ControlEvent dropped;
+    (void)dequeueControlEvent_(dropped);
+  }
+  _controlEventQueue[_controlEventTail] = ev;
+  _controlEventTail = (uint8_t)((_controlEventTail + 1U) % CONTROL_EVENT_QUEUE_MAX);
+  if (_controlEventCount < CONTROL_EVENT_QUEUE_MAX) _controlEventCount++;
+  return true;
+}
+
+bool FirebaseNetwork::dequeueControlEvent_(ControlEvent& ev) {
+  if (_controlEventCount == 0) return false;
+  ev = _controlEventQueue[_controlEventHead];
+  _controlEventHead = (uint8_t)((_controlEventHead + 1U) % CONTROL_EVENT_QUEUE_MAX);
+  _controlEventCount--;
   return true;
 }
 
@@ -751,6 +768,51 @@ bool FirebaseNetwork::serviceHistory_() {
   return true;
 }
 
+bool FirebaseNetwork::serviceControlEvent_() {
+  if (_controlEventCount == 0 || !isReady()) return false;
+  if (!cloudHeapHealthy_()) {
+    _txBackoffUntilMs = millis() + CLOUD_TX_RETRY_MS;
+    return false;
+  }
+
+  ControlEvent ev;
+  if (!dequeueControlEvent_(ev)) return false;
+
+  FirebaseJson json;
+  json.set("last_control_ack_kind", ev.kind);
+  json.set("last_control_ack_token", ev.token);
+  json.set("last_control_ack_server_ts/.sv", "timestamp");
+  json.set("last_control_ack_uptime_ms", (int)millis());
+
+  if (ev.relayPulse) {
+    json.set("last_relay_pulse_kind", ev.kind);
+    json.set("last_relay_pulse_token", ev.token);
+    json.set("last_relay_pulse_source", ev.source);
+    json.set("last_relay_pulse_server_ts/.sv", "timestamp");
+    json.set("last_relay_pulse_uptime_ms", (int)millis());
+    if (ev.kind == "relay_on") {
+      json.set("relay_latched_on", true);
+      json.set("relay_pulse_active", true);
+      json.set("load_state", "LOAD ON");
+      json.set("device_phase", "LOAD ON");
+    } else if (ev.kind == "relay_off") {
+      json.set("relay_latched_on", false);
+      json.set("relay_pulse_active", true);
+      json.set("load_state", "LOAD OFF");
+      json.set("device_phase", "LOAD OFF");
+    }
+  }
+
+  if (!Firebase.RTDB.updateNode(&fbCtrl, "/live_data", &json)) {
+    enqueueControlEvent_(ev);
+    recoverClient_(fbCtrl, CLOUD_CTRL_FAIL_RETRY_MS);
+    return false;
+  }
+
+  _lastTxMs = millis();
+  return true;
+}
+
 bool FirebaseNetwork::serviceLive_() {
   if (!_pendingLive || !isReady()) return false;
   if (!cloudHeapHealthy_()) {
@@ -764,10 +826,30 @@ bool FirebaseNetwork::serviceLive_() {
   const bool loadDetected = (_live.c >= LOAD_ON_DETECT_A);
   const bool relayClosed = _live.relayLatchedOn;
   const String powerCondition = powerConditionForState(_live.state, _live.v);
-  const String loadState = (relayClosed || loadDetected) ? String("LOAD ON") : String("LOAD OFF");
+  const String loadState = relayClosed ? String("LOAD ON") : String("LOAD OFF");
   String devicePhase = loadState;
   if (isTransitionState(_live.state)) devicePhase = _live.state;
   else if (_live.state == "UNPLUGGED") devicePhase = "UNPLUGGED";
+
+  int8_t bestLoadFamilyCode = _live.contextFamilyCodeRuntime;
+  if (bestLoadFamilyCode == CONTEXT_FAMILY_UNKNOWN) {
+    bestLoadFamilyCode = _live.provisionalContextFamilyCode;
+  }
+  if (loadDetected) {
+    if (!_loadRunActive) {
+      _loadRunActive = true;
+      _loadRunStartEpochMs = epochMs;
+      _loadRunFamilyCode = bestLoadFamilyCode;
+    } else if (bestLoadFamilyCode != CONTEXT_FAMILY_UNKNOWN) {
+      _loadRunFamilyCode = bestLoadFamilyCode;
+    }
+  }
+
+  const uint64_t loadOnSinceEpochMs = _loadRunActive ? _loadRunStartEpochMs : 0ULL;
+  const uint64_t loadOnDurationMs =
+      (_loadRunActive && epochMs > _loadRunStartEpochMs)
+          ? (epochMs - _loadRunStartEpochMs)
+          : 0ULL;
 
   FirebaseJson json;
   json.set("wifi_connected", WiFi.status() == WL_CONNECTED);
@@ -809,6 +891,10 @@ bool FirebaseNetwork::serviceLive_() {
   json.set("device_phase", devicePhase);
   json.set("load_state", loadState);
   json.set("load_detected", loadDetected);
+  json.set("load_on_since_epoch_ms", (double)loadOnSinceEpochMs);
+  json.set("load_on_duration_ms", (double)loadOnDurationMs);
+  json.set("load_family_code_live", (int)bestLoadFamilyCode);
+  json.set("load_family_label_live", loadFamilyLabel_(bestLoadFamilyCode));
   json.set("fault_latched", _live.faultLatched);
   json.set("web_controls_locked", _live.webControlsLocked);
   json.set("relay_latched_on", _live.relayLatchedOn);
@@ -878,6 +964,27 @@ bool FirebaseNetwork::serviceLive_() {
     (void)logStatusEvent(historyStatus, _live.v, _live.c, _live.apparentPower, _live.t);
   }
 
+  if (_loadRunActive && !loadDetected) {
+    const uint64_t loadEndEpochMs = epochMs;
+    const uint64_t durationMs =
+        (loadEndEpochMs > _loadRunStartEpochMs)
+            ? (loadEndEpochMs - _loadRunStartEpochMs)
+            : 0ULL;
+    String loadStatus = "LOAD - ";
+    loadStatus += loadFamilyLabel_(_loadRunFamilyCode);
+    if (durationMs > 0ULL) {
+      loadStatus += " | ";
+      loadStatus += formatDurationHms_(durationMs);
+    }
+    (void)logStatusEvent(loadStatus, _live.v, _live.c, _live.apparentPower, _live.t);
+    _loadRunActive = false;
+    _loadRunStartEpochMs = 0ULL;
+    _loadRunFamilyCode = CONTEXT_FAMILY_UNKNOWN;
+  } else if (!_loadRunActive && !loadDetected) {
+    _loadRunStartEpochMs = 0ULL;
+    _loadRunFamilyCode = CONTEXT_FAMILY_UNKNOWN;
+  }
+
   _haveLastMains = true;
   _lastMainsPresent = mainsPresent;
   return true;
@@ -887,7 +994,17 @@ const FirebaseNetwork::SessionSpec& FirebaseNetwork::activeSpec() const {
   return _manual;
 }
 
+bool FirebaseNetwork::manualRequestBusy_() const {
+  return _manualEnabled ||
+         _mlUploadActive ||
+         _uploadFinalFlush ||
+         (_count > 0) ||
+         (_sessionStartMs != 0);
+}
+
 void FirebaseNetwork::setLogSession(const String& sessionId, const String& loadType, int labelOverride, const String& deviceFamily, const String& deviceName, int trialNumber, const String& divisionTag, const String& notes, bool trustedNormal) {
+  if (manualRequestBusy_()) return;
+
   _manual.sessionId = sanitizeToken(sessionId);
   _manual.loadType  = sanitizeToken(loadType);
   _manual.deviceFamily = sanitizeToken(deviceFamily);
@@ -964,12 +1081,14 @@ float FirebaseNetwork::computeContinuousDurationSeconds_(const Rec* recs, uint16
 }
 
 void FirebaseNetwork::setLogEnabled(bool en) {
+  if (en && manualRequestBusy_()) return;
   if (en && !_manualEnabled) resetLoggerRuntime_();
   _manualEnabled = en;
   if (en) _manualArmMs = millis();
 }
 
 void FirebaseNetwork::setLogDurationSeconds(uint16_t sec) {
+  if (manualRequestBusy_()) return;
   if (sec < ML_LOG_MIN_DURATION_S) sec = ML_LOG_MIN_DURATION_S;
   if (sec > ML_LOG_MAX_DURATION_S) sec = ML_LOG_MAX_DURATION_S;
   _manual.durationS = sec;
@@ -987,6 +1106,7 @@ void FirebaseNetwork::stopAutoCapture() {
 
 void FirebaseNetwork::ingestLog(const FeatureFrame& f, FaultState st, int arcCounter) {
   if (!logEnabled()) return;
+  if (_manualEnabled && _mlUploadActive && _uploadFinalFlush) return;
   const SessionSpec& spec = activeSpec();
   if (spec.sessionId.length() < 3 || !_buf || _maxRec == 0 || _count >= _maxRec) return;
 
@@ -1109,8 +1229,13 @@ bool FirebaseNetwork::closeManualSession_(const String& finishedSessionId) {
   _manualEnabled = false;
   if (!isReady()) return false;
 
+  const bool newerManualRequestPending =
+      _mlEnabledCache &&
+      (_mlSessionIdCache.length() >= 3) &&
+      (_mlSessionIdCache != finishedSessionId);
+
   FirebaseJson mlState;
-  mlState.set("enabled", false);
+  if (!newerManualRequestPending) mlState.set("enabled", false);
   mlState.set("last_completed_session_id", finishedSessionId);
   mlState.set("last_completed_at/.sv", "timestamp");
   if (!Firebase.RTDB.updateNode(&fbLog, "/ml_log", &mlState)) return false;
@@ -1414,6 +1539,7 @@ void FirebaseNetwork::loop() {
   if ((int32_t)(now - _txBackoffUntilMs) < 0) return;
   if ((now - _lastTxMs) < CLOUD_TX_MIN_GAP_MS) return;
 
+  if (serviceControlEvent_()) return;
   if (serviceHistory_()) return;
   if (serviceLive_()) return;
   if (!_suspendMlUpload && serviceMlUpload_()) return;

@@ -62,14 +62,9 @@ static volatile bool gSenseTaskRunning = false;
 static volatile bool gFeatTaskRunning = false;
 static volatile uint32_t gFeaturePipelineResetEpoch = 1;
 static volatile uint32_t gRelayArtifactBlankUntilMs = 0;
-static bool gManualRelayAssumedOn = false;
-static bool gManualRelayConfirmPending = false;
-static uint32_t gManualRelayCandidateSinceMs = 0;
-static uint32_t gManualRelayReleaseSinceMs = 0;
-static uint32_t gManualRelayConfirmedActiveMs = 0;
-static uint32_t gManualRelayConfirmStartedMs = 0;
-static uint32_t gManualRelayCooldownUntilMs = 0;
-static uint32_t gManualRelayWebHoldoffUntilMs = 0;
+static uint32_t gLocalRelayOnCandidateSinceMs = 0;
+static bool gStartupRelayOffPublishPending = true;
+static bool gUnpluggedRelayOffPulsePending = false;
 
 static void Core0Task(void* pv);
 static void Core1FeatureTask(void* pv);
@@ -590,12 +585,7 @@ static inline void armRelayArtifactBlank_(uint32_t extraMs = RELAY_ARTIFACT_BLAN
 }
 
 static inline void clearManualRelayAssume_() {
-  gManualRelayAssumedOn = false;
-  gManualRelayConfirmPending = false;
-  gManualRelayCandidateSinceMs = 0;
-  gManualRelayReleaseSinceMs = 0;
-  gManualRelayConfirmedActiveMs = 0;
-  gManualRelayConfirmStartedMs = 0;
+  gLocalRelayOnCandidateSinceMs = 0;
 }
 
 static bool restartSensePipelineSoft_() {
@@ -804,11 +794,23 @@ static bool stabilizeFeatureValidity(FeatureFrame& f, float vProtect, float irms
     return false;
   }
 
+  const bool idleLikeFrame =
+      mainsOn &&
+      (fabsf(irmsLogic) <= CURRENT_ANALYSIS_IDLE_A);
+  if (idleLikeFrame) {
+    zeroComputedFeatures_(f);
+    f.feat_valid = 1;
+    lastValidFeat = f;
+    haveLastValidFeat = true;
+    lastValidFeatMs = now;
+    return true;
+  }
+
   const bool bridgeAllowed =
       mainsOn &&
       !zeroTooLong &&
       haveLastValidFeat &&
-      ((now - lastValidFeatMs) <= 600UL) &&
+      ((now - lastValidFeatMs) <= FEATURE_VALID_BRIDGE_MS) &&
       ((f.current_valid != 0) || (irmsLogic > 0.03f));
 
   if (!bridgeAllowed) return false;
@@ -886,6 +888,27 @@ static float cleanLogicCurrent(float irmsRaw, bool currentValid, float vRaw, flo
   } else mainsGoneSinceMs = 0;
   if (!currentValid) return 0.0f;
   return irmsRaw;
+}
+
+static float smoothLoggedCurrent(float irmsRaw, bool currentValid, float vRaw, float vProtect) {
+  static float loggedIrms = 0.0f;
+  static uint32_t lastUpdateMs = 0;
+  const uint32_t now = millis();
+  const bool mainsGone = (vRaw <= MAINS_PRESENT_OFF_V) || (vProtect <= MAINS_PRESENT_OFF_V);
+  if (mainsGone || !currentValid) {
+    loggedIrms = 0.0f;
+    lastUpdateMs = now;
+    return 0.0f;
+  }
+
+  const uint32_t dtMs = (lastUpdateMs == 0U) ? 0U : (now - lastUpdateMs);
+  lastUpdateMs = now;
+  const float dtS = (dtMs > 0U) ? (dtMs / 1000.0f) : 0.0f;
+  const float tau = (irmsRaw >= 1.0f) ? 0.11f : 0.18f;
+  const float alpha = (dtS <= 0.0f) ? 1.0f : fminf(1.0f, dtS / fmaxf(0.02f, tau));
+  loggedIrms += alpha * (irmsRaw - loggedIrms);
+  if (loggedIrms < CURRENT_DISPLAY_OFF_A) loggedIrms = 0.0f;
+  return loggedIrms;
 }
 
 static void handleCueEvents(float vRaw, float vProtect, float irms, bool mainsPresent, bool paused, FaultState st) {
@@ -1259,6 +1282,7 @@ static void Core1FeatureTask(void* pv) {
 static void pollMlControl(FirebaseNetwork& network, Notification& notifyUi) {
   static uint32_t lastPoll = 0;
   static bool lastEnabled = false;
+  static String lastStartedRequestKey = "";
   if (millis() - lastPoll < ML_CONTROL_POLL_MS) return;
   lastPoll = millis();
 
@@ -1283,15 +1307,22 @@ static void pollMlControl(FirebaseNetwork& network, Notification& notifyUi) {
   if (trialNumber < 1) trialNumber = 1;
   if (enabled && sid.length() < 3) enabled = false;
 
+  const bool wasManualEnabled = network.manualEnabled();
   network.setLogDurationSeconds((uint16_t)dur);
   network.setLogSession(sid, load, labelOv,
                         deviceFamily, deviceName, trialNumber,
                         divisionTag, notes, trustedNormal);
   network.setLogEnabled(enabled);
-  if (enabled && !lastEnabled) {
+  const String requestKey = requestToken.length() ? requestToken : sid;
+  const bool sessionJustStarted = enabled && !wasManualEnabled && network.manualEnabled();
+  const bool requestChanged = enabled && requestKey.length() && (requestKey != lastStartedRequestKey);
+  if (sessionJustStarted && (!lastEnabled || requestChanged || lastStartedRequestKey.length() == 0)) {
     notification.notify(SND_LOGGER_ON);
     notifyUi.triggerCollecting(1000);
     if (requestToken.length()) (void)network.publishControlAck("ml_log_enable", requestToken);
+    lastStartedRequestKey = requestKey;
+  } else if (!enabled) {
+    lastStartedRequestKey = "";
   }
   lastEnabled = enabled;
 }
@@ -1386,6 +1417,11 @@ void loop() {
   lastWiFiConnected = wifiConnected;
   const bool wifiCloudWarm = wifiConnected &&
       (wifiCloudReadyAtMs == 0U || (int32_t)(millis() - wifiCloudReadyAtMs) >= 0);
+  if (!paused && !gSafeMode && wifiCloudWarm && gStartupRelayOffPublishPending) {
+    if (network.publishRelayPulseEvent("relay_off", "relay_off_startup_sync", "startup_sync")) {
+      gStartupRelayOffPublishPending = false;
+    }
+  }
 
   static FeatureFrame lastF = {};
   static bool hasLast = false;
@@ -1394,9 +1430,16 @@ void loop() {
   FeatureFrame f;
   if (qFeat) {
     bool gotAny = false;
-    FeatureFrame newest = {};
-    while (xQueueReceive(qFeat, &newest, 0) == pdTRUE) {
-      f = newest;
+    FeatureFrame next = {};
+    const bool preserveEveryFeatureFrame = network.manualEnabled();
+    const UBaseType_t queuedFeatCount = uxQueueMessagesWaiting(qFeat);
+    if (!preserveEveryFeatureFrame && queuedFeatCount > FEATURE_CONSUMER_LATEST_CATCHUP_DEPTH) {
+      while (xQueueReceive(qFeat, &next, 0) == pdTRUE) {
+        f = next;
+        gotAny = true;
+      }
+    } else if (xQueueReceive(qFeat, &next, 0) == pdTRUE) {
+      f = next;
       gotAny = true;
     }
     if (gotAny) {
@@ -1462,85 +1505,17 @@ void loop() {
 
   if (vFast <= MAINS_PRESENT_OFF_V) {
     clearManualRelayAssume_();
+    protection.setRelayOffHold(false);
   }
 
   const uint32_t manualNowMs = millis();
-  const bool manualAssistHoldoffActive = ((int32_t)(gManualRelayWebHoldoffUntilMs - manualNowMs) > 0);
-  const bool manualAssistCooldownActive = ((int32_t)(gManualRelayCooldownUntilMs - manualNowMs) > 0);
-  const bool manualRelayRearmSignal =
+  const bool relayShouldHoldOff =
       (!protection.relayLatchedOn()) &&
-      !manualAssistHoldoffActive &&
-      !manualAssistCooldownActive &&
-      (vFast >= MAINS_PRESENT_ON_V) &&
-      (f.current_valid != 0) &&
-      (irmsRawForLogic >= MANUAL_RELAY_REARM_MIN_A);
+      (vFast >= MAINS_PRESENT_ON_V);
+  protection.setRelayOffHold(relayShouldHoldOff);
 
-  if (!gManualRelayConfirmPending) {
-    if (manualRelayRearmSignal) {
-      if (gManualRelayCandidateSinceMs == 0) gManualRelayCandidateSinceMs = manualNowMs;
-      if ((manualNowMs - gManualRelayCandidateSinceMs) >= MANUAL_RELAY_REARM_DEBOUNCE_MS) {
-        const bool wasLatched = protection.relayLatchedOn();
-        protection.pulseRelayOn();
-        const bool pulseSent = protection.relayPulseActive() || (protection.relayLatchedOn() != wasLatched);
-        if (pulseSent) {
-          String localRelayToken("relay_on_local_");
-          localRelayToken += String((uint32_t)manualNowMs);
-          gManualRelayAssumedOn = true;
-          gManualRelayConfirmPending = true;
-          gManualRelayCandidateSinceMs = 0;
-          gManualRelayReleaseSinceMs = 0;
-          gManualRelayConfirmedActiveMs = 0;
-          gManualRelayConfirmStartedMs = manualNowMs;
-          gManualRelayCooldownUntilMs = 0;
-          armRelayArtifactBlank_(MANUAL_RELAY_REARM_BLANK_MS);
-          (void)network.publishRelayPulseEvent("relay_on", localRelayToken, "physical_confirm");
-          notification.notify(SND_RESET_ACK);
-        }
-      }
-    } else {
-      gManualRelayCandidateSinceMs = 0;
-    }
-  } else {
-    const bool assistCurrentActive =
-        (vFast >= MAINS_PRESENT_ON_V) &&
-        (f.current_valid != 0) &&
-        (irmsRawForLogic >= MANUAL_RELAY_REARM_MIN_A);
-    if (assistCurrentActive) {
-      if (gManualRelayConfirmStartedMs == 0) gManualRelayConfirmStartedMs = manualNowMs;
-      gManualRelayReleaseSinceMs = 0;
-      const uint32_t activeBase = (gManualRelayCandidateSinceMs != 0) ? gManualRelayCandidateSinceMs : manualNowMs;
-      const uint32_t elapsed = (manualNowMs >= activeBase) ? (manualNowMs - activeBase) : 0;
-      gManualRelayCandidateSinceMs = manualNowMs;
-      gManualRelayConfirmedActiveMs += elapsed;
-      if (gManualRelayConfirmedActiveMs >= MANUAL_RELAY_REARM_CONFIRM_MS) {
-        gManualRelayConfirmPending = false;
-        gManualRelayAssumedOn = false;
-        gManualRelayCandidateSinceMs = 0;
-        gManualRelayReleaseSinceMs = 0;
-        gManualRelayConfirmedActiveMs = MANUAL_RELAY_REARM_CONFIRM_MS;
-      }
-    } else {
-      gManualRelayCandidateSinceMs = 0;
-      if (gManualRelayReleaseSinceMs == 0) gManualRelayReleaseSinceMs = manualNowMs;
-      else if ((manualNowMs - gManualRelayReleaseSinceMs) >= MANUAL_RELAY_REARM_RELEASE_MS) {
-        const bool wasLatched = protection.relayLatchedOn();
-        protection.pulseRelayOff();
-        const bool pulseSent = protection.relayPulseActive() || (protection.relayLatchedOn() != wasLatched);
-        if (pulseSent) {
-          String localRelayToken("relay_off_local_");
-          localRelayToken += String((uint32_t)manualNowMs);
-          (void)network.publishRelayPulseEvent("relay_off", localRelayToken, "physical_rollback");
-          notification.notify(SND_RESET_ACK);
-          armRelayArtifactBlank_();
-        }
-        clearManualRelayAssume_();
-        gManualRelayCooldownUntilMs = manualNowMs + MANUAL_RELAY_REARM_COOLDOWN_MS;
-      }
-    }
-  }
-
-  const bool effectiveRelayLatchedOn = protection.relayLatchedOn() || gManualRelayAssumedOn;
-  const bool featureBridgeUsed = stabilizeFeatureValidity(f, vFast, irmsRawForLogic, !effectiveRelayLatchedOn);
+  const bool effectiveRelayLatchedOn = protection.relayLatchedOn();
+  const bool featureBridgeUsed = stabilizeFeatureValidity(f, vFast, irmsRawForLogic, false);
   (void)featureBridgeUsed;
 
   const bool relayArtifactBlankActive =
@@ -1553,6 +1528,45 @@ void loop() {
     f.feat_valid = 0;
     f.model_pred = 0;
     zeroComputedFeatures_(f);
+  }
+
+  const bool offStateGhostCurrent =
+      protection.relayOffHoldActive() &&
+      !relayArtifactBlankActive &&
+      (irmsRawForLogic > 0.0f) &&
+      (irmsRawForLogic <= RELAY_OFF_HOLD_GHOST_MAX_A);
+  if (offStateGhostCurrent) {
+    irmsRawForLogic = 0.0f;
+    f.irms = 0.0f;
+    f.current_valid = 0;
+    f.feat_valid = 0;
+    f.model_pred = 0;
+    zeroComputedFeatures_(f);
+  }
+
+  const bool localRelayOnCurrentActive =
+      protection.relayOffHoldActive() &&
+      !relayArtifactBlankActive &&
+      (vFast >= MAINS_PRESENT_ON_V) &&
+      (f.current_valid != 0) &&
+      (irmsRawForLogic >= MANUAL_RELAY_REARM_MIN_A);
+  if (localRelayOnCurrentActive) {
+    if (gLocalRelayOnCandidateSinceMs == 0) gLocalRelayOnCandidateSinceMs = manualNowMs;
+    if ((manualNowMs - gLocalRelayOnCandidateSinceMs) >= MANUAL_RELAY_REARM_CONFIRM_MS) {
+      const bool wasLatched = protection.relayLatchedOn();
+      protection.pulseRelayOn();
+      const bool pulseSent = protection.relayPulseActive() || (protection.relayLatchedOn() != wasLatched);
+      if (pulseSent) {
+        String localRelayToken("relay_on_local_");
+        localRelayToken += String((uint32_t)manualNowMs);
+        armRelayArtifactBlank_(MANUAL_RELAY_REARM_BLANK_MS);
+        (void)network.publishRelayPulseEvent("relay_on", localRelayToken, "physical_confirm");
+        notification.notify(SND_RESET_ACK);
+      }
+      clearManualRelayAssume_();
+    }
+  } else {
+    clearManualRelayAssume_();
   }
 
   static uint32_t lowIrmsSinceMs = 0;
@@ -1570,6 +1584,7 @@ void loop() {
     irmsDisplayIn = 0.0f;
   }
   f.irms = cleanDisplayCurrent(irmsDisplayIn, f.current_valid != 0, f.feat_valid != 0, vRaw, vFast);
+  const float irmsLoggedForCsv = smoothLoggedCurrent(irmsDisplayIn, f.current_valid != 0, vRaw, vFast);
 
   const float apparentPowerVa = (vRms > 0.10f && f.irms > 0.001f) ? (vRms * f.irms) : 0.0f;
   const bool voltageNormal = (vFast >= VOLT_NORMAL_MIN_V && vFast <= VOLT_NORMAL_MAX_V);
@@ -1854,6 +1869,23 @@ void loop() {
 
   static uint32_t noPowerSinceMsCtl = 0;
   const bool unpluggedLiveCtl = classifyUnpluggedSocket(vRaw, vFast, irmsRawForLogic, f.current_valid != 0, st, &noPowerSinceMsCtl);
+  static bool prevUnpluggedLiveCtl = false;
+  if (unpluggedLiveCtl && !prevUnpluggedLiveCtl) gUnpluggedRelayOffPulsePending = true;
+  if (!unpluggedLiveCtl) gUnpluggedRelayOffPulsePending = false;
+  prevUnpluggedLiveCtl = unpluggedLiveCtl;
+
+  if (!gSafeMode && gUnpluggedRelayOffPulsePending) {
+    const bool wasLatched = protection.relayLatchedOn();
+    clearManualRelayAssume_();
+    protection.pulseRelayOff();
+    const bool pulseSent = protection.relayPulseActive() || (protection.relayLatchedOn() != wasLatched);
+    if (pulseSent) {
+      armRelayArtifactBlank_();
+      if (wifiCloudWarm) (void)network.publishRelayPulseEvent("relay_off", "relay_off_unplugged_sync", "unplugged");
+      gUnpluggedRelayOffPulsePending = false;
+    }
+  }
+
   const bool controlsLocked = gSafeMode || paused || bootSettling || protectionInhibit || unpluggedLiveCtl || protection.webControlLocked() || protection.voltageLockoutActive();
   const bool portalRequested = (!gSafeMode) ? network.consumePortalRequest() : false;
   String relayOnToken = "";
@@ -1865,8 +1897,6 @@ void loop() {
     if (!controlsLocked) {
       if (relayOffRequested) {
         clearManualRelayAssume_();
-        gManualRelayCooldownUntilMs = millis() + MANUAL_RELAY_REARM_COOLDOWN_MS;
-        gManualRelayWebHoldoffUntilMs = millis() + MANUAL_RELAY_WEB_HOLDOFF_MS;
         const bool wasLatched = protection.relayLatchedOn();
         protection.pulseRelayOff();
         const bool pulseSent = protection.relayPulseActive() || (protection.relayLatchedOn() != wasLatched);
@@ -1876,7 +1906,6 @@ void loop() {
         notification.notify(SND_RESET_ACK);
       } else if (relayOnRequested) {
         clearManualRelayAssume_();
-        gManualRelayWebHoldoffUntilMs = millis() + MANUAL_RELAY_WEB_HOLDOFF_MS;
         const bool wasLatched = protection.relayLatchedOn();
         protection.pulseRelayOn();
         const bool pulseSent = protection.relayPulseActive() || (protection.relayLatchedOn() != wasLatched);
@@ -1913,14 +1942,12 @@ void loop() {
 
   if (pendingProtectionTripOff && (int32_t)(millis() - relayActionAtMs) >= 0) {
     clearManualRelayAssume_();
-    gManualRelayCooldownUntilMs = millis() + MANUAL_RELAY_REARM_COOLDOWN_MS;
     protection.pulseRelayOff();
     armRelayArtifactBlank_();
     pendingProtectionTripOff = false;
   }
   if (pendingProtectionAutoOn && (int32_t)(millis() - relayActionAtMs) >= 0) {
     clearManualRelayAssume_();
-    gManualRelayWebHoldoffUntilMs = millis() + MANUAL_RELAY_WEB_HOLDOFF_MS;
     protection.pulseRelayOn();
     armRelayArtifactBlank_(1200UL);
     pendingProtectionAutoOn = false;
@@ -1935,7 +1962,7 @@ void loop() {
 
   if (tripOffEdge && !paused && !gSafeMode) {
     FeatureFrame fTrip = f;
-    fTrip.irms = irmsRawForLogic;
+    fTrip.irms = collectionModeActive ? irmsRawForLogic : irmsLoggedForCsv;
     fTrip.log_enqueue_uptime_ms = millis();
     fTrip.timing_skew_ms = (fTrip.log_enqueue_uptime_ms >= fTrip.frame_start_uptime_ms)
         ? float(fTrip.log_enqueue_uptime_ms - fTrip.frame_start_uptime_ms)
@@ -1954,6 +1981,7 @@ void loop() {
   static uint32_t lastRelayArtifactHealMs = 0;
   const bool suspiciousRelayOffArtifact =
       !effectiveRelayLatchedOn &&
+      !protection.relayOffHoldActive() &&
       (vFast >= MAINS_PRESENT_ON_V) &&
       (irmsRawMeasured > CURRENT_DISPLAY_ON_A) &&
       (irmsRawMeasured <= RELAY_ARTIFACT_FORCE_ZERO_A);
@@ -1975,7 +2003,7 @@ void loop() {
   if (!paused && !gSafeMode) {
     static uint32_t lastLoggedFeatUptimeMs = 0;
     static uint32_t lastSeenFeatUptimeMs = 0;
-    static float logCadenceCarryMs = (float)CSV_LOG_MIN_INTERVAL_MS;
+    static float logCadenceCarryMs = CSV_LOG_TARGET_INTERVAL_MS;
     if (freshFeatThisLoop && f.uptime_ms != 0U && f.uptime_ms != lastSeenFeatUptimeMs) {
       float featGapMs = (lastSeenFeatUptimeMs != 0U && f.uptime_ms > lastSeenFeatUptimeMs)
           ? float(f.uptime_ms - lastSeenFeatUptimeMs)
@@ -1983,20 +2011,27 @@ void loop() {
       if (!isfinite(featGapMs) || featGapMs < 1.0f || featGapMs > 500.0f) featGapMs = FEATURE_FRAME_PERIOD_MS;
       lastSeenFeatUptimeMs = f.uptime_ms;
       logCadenceCarryMs += featGapMs;
-      if (logCadenceCarryMs > (float)CSV_LOG_MIN_INTERVAL_MS * 3.0f) {
-        logCadenceCarryMs = (float)CSV_LOG_MIN_INTERVAL_MS;
+      if (logCadenceCarryMs > CSV_LOG_TARGET_INTERVAL_MS * 3.0f) {
+        logCadenceCarryMs = CSV_LOG_TARGET_INTERVAL_MS;
       }
 
       const bool logCadenceReady =
           (f.uptime_ms != lastLoggedFeatUptimeMs) &&
-          (lastLoggedFeatUptimeMs == 0U || logCadenceCarryMs >= (float)CSV_LOG_MIN_INTERVAL_MS);
+          (lastLoggedFeatUptimeMs == 0U || logCadenceCarryMs >= CSV_LOG_TARGET_INTERVAL_MS);
       if (logCadenceReady) {
+        const uint32_t prevLoggedFeatUptimeMs = lastLoggedFeatUptimeMs;
         lastLoggedFeatUptimeMs = f.uptime_ms;
-        logCadenceCarryMs -= (float)CSV_LOG_MIN_INTERVAL_MS;
+        logCadenceCarryMs -= CSV_LOG_TARGET_INTERVAL_MS;
         if (logCadenceCarryMs < 0.0f) logCadenceCarryMs = 0.0f;
         const uint32_t logEnqueueMs = millis();
         FeatureFrame fLog = f;
-        fLog.irms = irmsRawForLogic;
+        fLog.irms = collectionModeActive ? irmsRawForLogic : irmsLoggedForCsv;
+        if (prevLoggedFeatUptimeMs != 0U && f.uptime_ms > prevLoggedFeatUptimeMs) {
+          const float loggedGapMs = float(f.uptime_ms - prevLoggedFeatUptimeMs);
+          if (isfinite(loggedGapMs) && loggedGapMs >= 1.0f && loggedGapMs <= 1000.0f) {
+            fLog.frame_dt_ms = loggedGapMs;
+          }
+        }
         fLog.log_enqueue_uptime_ms = logEnqueueMs;
         fLog.timing_skew_ms = (fLog.log_enqueue_uptime_ms >= fLog.frame_start_uptime_ms)
             ? float(fLog.log_enqueue_uptime_ms - fLog.frame_start_uptime_ms)

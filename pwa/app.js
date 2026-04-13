@@ -1286,6 +1286,13 @@ function renderOverview() {
   const provisionalFamily = runtimeContextFamilyLabel(live.context_family_code_provisional);
   const runtimeConfidence = Number(live.context_family_confidence);
   const provisionalConfidence = Number(live.context_family_confidence_provisional);
+  const loadOnSinceEpochMs = Number(live.load_on_since_epoch_ms || 0);
+  const loadOnDurationMsRaw = Number(live.load_on_duration_ms || 0);
+  const loadOnTimerMs = (fresh && loadDetected)
+    ? (loadOnSinceEpochMs > 0
+        ? Math.max(0, nowWithServerOffsetMs() - loadOnSinceEpochMs)
+        : Math.max(0, loadOnDurationMsRaw))
+    : 0;
 
   if (ovLoadFamily) {
     if (!fresh) ovLoadFamily.textContent = "Offline";
@@ -1309,6 +1316,10 @@ function renderOverview() {
     }
     const pieces = [ovLoadFamilySub.textContent];
     ovConnectivitySub.textContent = pieces.join(" • ") || "No live link.";
+  }
+
+  if (ovLoadFamilySub && ovConnectivitySub && loadOnTimerMs > 0) {
+    ovConnectivitySub.textContent = `${ovLoadFamilySub.textContent} | On for ${formatElapsedClock(loadOnTimerMs, false)}`;
   }
 
   if (ovProtection) {
@@ -1432,18 +1443,17 @@ function applyHistoryFilter() {
   if (historyHint) historyHint.textContent = `Showing: ${rangeLabel(key)} (${filtered.length})`;
 
   const faultSet = new Set(["ARCING","HEATING","OVERLOAD","SUSTAINED_OVERLOAD","OVERVOLTAGE","UNDERVOLTAGE","UNPLUGGED","DEVICE_DISCONNECTED","SAFE_MODE"]);
-  const renderRows = (rows, colspan = 3) => rows.length ? rows.map((r, idx) => {
+  const renderRows = (rows, colspan = 2) => rows.length ? rows.map((r, idx) => {
     const epoch = getRecordEpochMs(r);
     const timeStr = formatDisplayTimestamp(epoch);
-    const durStr = formatDurationMs(historyDurationMsDesc(filtered, idx));
-    return `<tr class="row-in" style="animation-delay:${Math.min(idx, 10) * 25}ms"><td class="mono">${timeStr}</td><td>${pillHTML(r.status)}</td><td class="mono">${durStr}</td></tr>`;
+    return `<tr class="row-in" style="animation-delay:${Math.min(idx, 10) * 25}ms"><td class="mono">${timeStr}</td><td>${pillHTML(r.status)}</td></tr>`;
   }).join("") : `<tr><td colspan="${colspan}" class="muted">No history in this range.</td></tr>`;
 
   if (historyFaultBody && historyNormalBody) {
     const faultRows = filtered.filter((r) => faultSet.has(classifyStatus(r.status || r.power_condition || "NORMAL"))).slice(0, MAX_RENDER_ROWS);
     const normalRows = filtered.filter((r) => !faultSet.has(classifyStatus(r.status || r.power_condition || "NORMAL"))).slice(0, MAX_RENDER_ROWS);
-    historyFaultBody.innerHTML = renderRows(faultRows, 3);
-    historyNormalBody.innerHTML = renderRows(normalRows, 3);
+    historyFaultBody.innerHTML = renderRows(faultRows, 2);
+    historyNormalBody.innerHTML = renderRows(normalRows, 2);
     return;
   }
 
@@ -1946,6 +1956,58 @@ function downloadTextFileGeneric(filename, text, mime="text/csv;charset=utf-8") 
   URL.revokeObjectURL(url);
 }
 
+function compareMaybeNumberAsc(a, b) {
+  const aOk = Number.isFinite(a);
+  const bOk = Number.isFinite(b);
+  if (aOk && bOk) return a - b;
+  if (aOk) return -1;
+  if (bOk) return 1;
+  return 0;
+}
+
+function sortSessionCsvLines(header, lines) {
+  const cleanHeader = String(header || "").trim();
+  if (!cleanHeader || !Array.isArray(lines) || lines.length < 2) return lines || [];
+
+  const cols = cleanHeader.split(",").map((name) => normalizeUploadedCsvHeader(name));
+  const idxFrameStart = cols.indexOf("frame_start_uptime_ms");
+  const idxUptime = cols.indexOf("uptime_ms");
+  const idxFrameEnd = cols.indexOf("frame_end_uptime_ms");
+  const idxFeatureEnd = cols.indexOf("feature_compute_end_uptime_ms");
+  const idxEpoch = cols.indexOf("epoch_ms");
+  const idxLogEnqueue = cols.indexOf("log_enqueue_uptime_ms");
+
+  const parseNum = (parts, idx) => {
+    if (idx < 0 || idx >= parts.length) return NaN;
+    const v = Number(parts[idx]);
+    return Number.isFinite(v) ? v : NaN;
+  };
+
+  return lines
+    .map((line, rowIndex) => {
+      const parts = String(line || "").split(",");
+      return {
+        line,
+        rowIndex,
+        frameStart: parseNum(parts, idxFrameStart),
+        uptime: parseNum(parts, idxUptime),
+        frameEnd: parseNum(parts, idxFrameEnd),
+        featureEnd: parseNum(parts, idxFeatureEnd),
+        epoch: parseNum(parts, idxEpoch),
+        logEnqueue: parseNum(parts, idxLogEnqueue),
+      };
+    })
+    .sort((a, b) =>
+      compareMaybeNumberAsc(a.frameStart, b.frameStart) ||
+      compareMaybeNumberAsc(a.uptime, b.uptime) ||
+      compareMaybeNumberAsc(a.frameEnd, b.frameEnd) ||
+      compareMaybeNumberAsc(a.featureEnd, b.featureEnd) ||
+      compareMaybeNumberAsc(a.epoch, b.epoch) ||
+      compareMaybeNumberAsc(a.logEnqueue, b.logEnqueue) ||
+      (a.rowIndex - b.rowIndex))
+    .map((row) => row.line);
+}
+
 
 function normalizeUploadedCsvHeader(name) {
   return String(name || "")
@@ -2153,6 +2215,7 @@ async function fetchSessionCsv(sessionId) {
     }
   }
   if (!header) return "";
+  rows = sortSessionCsvLines(header, rows);
   return header + "\n" + rows.join("\n") + "\n";
 }
 
@@ -2290,7 +2353,9 @@ async function fetchStoredCsv(path) {
       rows.push(...lines.slice(startIdx));
     }
   }
-  return header ? `${header}\n${rows.join("\n")}\n` : "";
+  if (!header) return "";
+  rows = sortSessionCsvLines(header, rows);
+  return `${header}\n${rows.join("\n")}\n`;
 }
 
 function mergeDefinedSessionFields(base = {}, patch = {}) {

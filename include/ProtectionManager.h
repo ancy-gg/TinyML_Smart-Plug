@@ -19,7 +19,9 @@ public:
   void apply(FaultState st, float vDisplay, float vProtect, float i, float t);
   void pulseRelayOn(uint32_t pulseMs = 0);
   void pulseRelayOff(uint32_t pulseMs = 0);
+  void setRelayOffHold(bool asserted);
   bool relayLatchedOn() const { return _relayLatchedOn; }
+  bool relayOffHoldActive() const { return _relayOffHoldActive; }
   bool relayPulseActive() const {
     const uint32_t now = millis();
     return (_pulseOnUntil && (int32_t)(now - _pulseOnUntil) < 0) ||
@@ -31,6 +33,7 @@ private:
   int _pinLatchOff = -1;
 
   bool _relayLatchedOn = false;
+  bool _relayOffHoldActive = false;
   uint32_t _pulseOnUntil = 0;
   uint32_t _pulseOffUntil = 0;
   uint32_t _lastRelayPulseMs = 0;
