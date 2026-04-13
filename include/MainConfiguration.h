@@ -14,7 +14,7 @@ static constexpr bool ENABLE_AUTO_ARC_CAPTURE = false;
 // Cloud / OTA configuration
 static constexpr const char* FIREBASE_API_KEY = "AIzaSyAmJlZZszyWPJFgIkTAAl_TbIySys1nvEw";
 static constexpr const char* FIREBASE_DB_URL  = "tinyml-smart-plug-default-rtdb.asia-southeast1.firebasedatabase.app";
-static constexpr const char* FW_VERSION       = "v7.4.0-c-gen0";
+static constexpr const char* FW_VERSION       = "v7.4.2-c-gen0";
 static constexpr const char* OTA_DESIRED_VERSION_PATH = "/ota/desired_version";
 static constexpr const char* OTA_FIRMWARE_URL_PATH    = "/ota/firmware_url";
 
@@ -139,6 +139,10 @@ struct FeatureFrame {
   float hf_energy_delta              = 0.0f;
   float zcv                          = 0.0f;
   float abs_irms_zscore_vs_baseline  = 0.0f;
+  float pulse_count_per_cycle        = 0.0f;
+  float zero_dwell_ratio             = 0.0f;
+  float low_current_ratio            = 0.0f;
+  float max_low_current_run_ms       = 0.0f;
 
   // Lightweight temporal / context signals.
   float fs_err_hz = 0.0f;
@@ -317,7 +321,7 @@ static constexpr float    FRAME_COMPUTE_BAD_MS           = FEATURE_FRAME_PERIOD_
 static constexpr float    FS_ERR_BAD_HZ                  = 3200.0f;
 
 
-static constexpr int   ARC_RUNTIME_FEATURE_SPACE_VERSION = 8;
+static constexpr int   ARC_RUNTIME_FEATURE_SPACE_VERSION = 9;
 static constexpr float DB_RATIO_EPS                 = 1e-6f;
 static constexpr float DB_POWER_RATIO_EPS           = 1e-6f;
 static constexpr float DB_RATIO_CLIP_MIN            = -80.0f;
@@ -339,6 +343,10 @@ static constexpr float ARC_SIG_THD_I               = 22.0f;     // percent THD
 static constexpr float ARC_SIG_HF_ENERGY_DELTA     = 1.500f;    // 10*log10(power ratio), ~1.4x HF rise
 static constexpr float ARC_SIG_ZCV                 = 0.200f;
 static constexpr float ARC_SIG_IRMS_ZSCORE         = 2.35f;
+static constexpr float ARC_SIG_PULSE_COUNT_PER_CYCLE = 0.35f;
+static constexpr float ARC_SIG_ZERO_DWELL_RATIO      = 18.0f;
+static constexpr float ARC_SIG_LOW_CURRENT_RATIO     = 10.0f;
+static constexpr float ARC_SIG_MAX_LOW_CURRENT_RUN_MS = 1.10f;
 static constexpr int   ARC_LEAKY_SCORE_STEP        = 7;         // +7 per suspicious 100 ms frame
 static constexpr int   ARC_LEAKY_SCORE_DECAY       = 1;         // -1 per quiet frame
 static constexpr int   ARC_LEAKY_SCORE_FIRE        = 10;        // 2 back-to-back suspicious frames arm the gate
@@ -477,6 +485,7 @@ static constexpr float ZC_HYS_LOWCURRENT_RETRY_MAX_A = 0.180f;
 static constexpr float ZC_HYS_LOWCURRENT_RETRY_SCALE = 0.72f;
 static constexpr float ZC_DWELL_THR_FRAC            = 0.10f;
 static constexpr float ZC_DWELL_THR_MIN_A           = 0.035f;
+static constexpr float LOW_CURRENT_RATIO_THR_FRAC   = 0.06f;
 static constexpr float PULSE_MIN_WIDTH_US           = 20.0f;
 static constexpr float PULSE_MAX_WIDTH_US           = 500.0f;
 static constexpr float PULSE_THRESH_RMS_MUL         = 7.0f;

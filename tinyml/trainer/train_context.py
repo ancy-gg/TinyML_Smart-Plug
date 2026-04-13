@@ -1,5 +1,6 @@
 import argparse
 import json
+import sys
 import warnings
 from pathlib import Path
 
@@ -17,11 +18,36 @@ from tinyml_common import (
     DEVICE_FAMILY_NAME_FROM_CODE,
     DEVICE_FAMILY_UNKNOWN_CODE,
     apply_scaffold_gap_fill_cap,
+    build_mismatch_summary,
     clean_df,
     normalize_feature_names,
     save_context_bundle,
     validate_feature_subset,
 )
+try:
+    from generation_paths import (
+        apply_generation_defaults,
+        archive_generation_exports,
+        cli_flag_present,
+        ensure_generation_dirs,
+        next_generation_tag,
+        normalize_generation_tag,
+        resolve_generation_paths,
+        update_generation_manifest,
+        validate_generation_workspace,
+    )
+except Exception:
+    from trainer.generation_paths import (
+        apply_generation_defaults,
+        archive_generation_exports,
+        cli_flag_present,
+        ensure_generation_dirs,
+        next_generation_tag,
+        normalize_generation_tag,
+        resolve_generation_paths,
+        update_generation_manifest,
+        validate_generation_workspace,
+    )
 
 SCRIPT_DIR = Path(__file__).resolve().parent
 TINYML_DIR = SCRIPT_DIR.parent
@@ -60,7 +86,7 @@ def _load_feature_list_from_report(report_path: str | None) -> list[str] | None:
     return out or None
 
 
-def resolve_context_features(explicit_features=None, feature_report: str | None = None) -> list[str]:
+def resolve_context_features(explicit_features=None, feature_report: str | None = None, *, allow_legacy_default_report: bool = True) -> list[str]:
     explicit = [str(x).strip() for x in (explicit_features or []) if str(x).strip()]
     explicit = [x for x in explicit if x in CONTEXT_SWEEP_FEATURES]
     if explicit:
@@ -68,7 +94,7 @@ def resolve_context_features(explicit_features=None, feature_report: str | None 
     from_report = _load_feature_list_from_report(feature_report)
     if from_report:
         return validate_feature_subset(from_report, allowed_features=CONTEXT_SWEEP_FEATURES, role="context training")
-    auto_report = _load_feature_list_from_report(DEFAULT_FEATURE_REPORT)
+    auto_report = _load_feature_list_from_report(DEFAULT_FEATURE_REPORT) if allow_legacy_default_report else None
     if auto_report:
         return validate_feature_subset(auto_report, allowed_features=CONTEXT_SWEEP_FEATURES, role="context training")
     return list(CONTEXT_FEATURES)
@@ -192,11 +218,13 @@ def prototype_predict_proba(x_std: np.ndarray, centroids: np.ndarray, active_cla
 
 
 def main():
+    argv = sys.argv[1:]
     ap = argparse.ArgumentParser()
     ap.add_argument("--csv", default=CSV_PATH)
     ap.add_argument("--out_header", default=OUT_HEADER)
     ap.add_argument("--out_joblib", default=OUT_JOBLIB)
     ap.add_argument("--out_report", default=OUT_REPORT)
+    ap.add_argument("--generation", default=None)
     ap.add_argument("--n_iter", type=int, default=1)
     ap.add_argument("--min_recall", type=float, default=0.0)
     ap.add_argument("--min_precision", type=float, default=0.0)
@@ -207,7 +235,27 @@ def main():
     ap.add_argument("--features", nargs="*", default=None)
     args = ap.parse_args()
 
-    selected_features = resolve_context_features(args.features, args.feature_report)
+    generation_paths = None
+    selected_generation = None
+    if args.generation:
+        selected_generation = normalize_generation_tag(args.generation)
+        generation_paths = resolve_generation_paths(PROJECT_ROOT, selected_generation)
+        ensure_generation_dirs(generation_paths)
+        apply_generation_defaults(
+            args,
+            argv,
+            {
+                "csv": ("--csv", generation_paths.context_csv),
+                "out_report": ("--out_report", generation_paths.context_report),
+                "feature_report": ("--feature_report", generation_paths.context_subset_report),
+            },
+        )
+        if not cli_flag_present("--csv", argv):
+            errors = validate_generation_workspace(generation_paths, require_context_csv=True, require_nonempty_context_csv=True)
+            if errors:
+                raise ValueError(" ; ".join(errors))
+
+    selected_features = resolve_context_features(args.features, args.feature_report, allow_legacy_default_report=(selected_generation is None))
     raw_df = pd.read_csv(args.csv)
     ctx_df = build_context_frame(raw_df, selected_features)
     class_counts = ctx_df["device_family"].value_counts().to_dict()
@@ -316,8 +364,13 @@ def main():
             "active_in_model": bool(active_class_mask[fam_idx]),
         })
 
+    heldout_accuracy = float(accuracy_score(y_test, pred)) if len(y_test) else 0.0
+    heldout_balanced_accuracy = float(balanced_accuracy_score(y_test, pred)) if len(np.unique(y_test)) > 1 else 0.0
+    raw_mismatch_summary = build_mismatch_summary(raw_df, current_training_generation=selected_generation)
+
     report = {
         "model_name": "ContextPrototype",
+        "selected_generation": str(selected_generation or "legacy"),
         "feature_names": selected_features,
         "class_labels": DEVICE_FAMILY_CLASSES,
         "unknown_confidence_threshold": unknown_conf,
@@ -334,8 +387,11 @@ def main():
         "export_zero_centroid_classes": zero_centroid_labels,
         "active_class_mask": active_class_mask,
         "warnings": training_warnings,
-        "accuracy": float(accuracy_score(y_test, pred)) if len(y_test) else 0.0,
-        "balanced_accuracy": float(balanced_accuracy_score(y_test, pred)) if len(np.unique(y_test)) > 1 else 0.0,
+        "dataset_mismatch_summary": raw_mismatch_summary,
+        "context_window_mismatch_summary": build_mismatch_summary(ctx_df, current_training_generation=selected_generation),
+        "source_model_generation_summary": raw_mismatch_summary.get("source_model_generation_counts", {}),
+        "accuracy": heldout_accuracy,
+        "balanced_accuracy": heldout_balanced_accuracy,
         "accuracy_with_unknown_gate": float(np.mean(pred_with_unknown == y_test)) if len(y_test) else 0.0,
         "mean_confidence": float(np.mean(conf)) if len(conf) else 0.0,
         "unknown_rate": pred_unknown_rate,
@@ -353,6 +409,25 @@ def main():
             "centroids": centroid_map,
             "active_class_mask": list(active_class_mask),
         },
+        "resolved_paths": {
+            "selected_generation": str(selected_generation or "legacy"),
+            "resolved_context_dataset_path": str(args.csv),
+            "resolved_feature_report_path": str(args.feature_report or DEFAULT_FEATURE_REPORT),
+            "resolved_report_path": str(args.out_report),
+            "benchmark_folder": str(getattr(generation_paths, "benchmark_dir", "")),
+            "generation_manifest_path": str(getattr(generation_paths, "manifest_path", "")),
+        },
+        "archive_output_paths": generation_paths.archive_output_paths() if generation_paths is not None else {},
+        "canonical_export_paths": generation_paths.canonical_export_paths() if generation_paths is not None else {},
+        "generation_advancement_assessment": {
+            "justified": bool(heldout_accuracy >= 0.80 and pred_unknown_rate <= 0.40),
+            "basis": "Held-out context balanced-accuracy and unknown-rate checks only.",
+            "held_out_snapshot": {
+                "accuracy": heldout_accuracy,
+                "balanced_accuracy": heldout_balanced_accuracy,
+                "unknown_rate": pred_unknown_rate,
+            },
+        },
     }
 
     settings = {
@@ -366,6 +441,7 @@ def main():
         "feature_report": args.feature_report,
         "features": list(selected_features),
         "model": "context",
+        "generation": str(selected_generation or "legacy"),
     }
 
     save_context_bundle(
@@ -375,6 +451,33 @@ def main():
         out_report=args.out_report,
         settings=settings,
     )
+
+    if generation_paths is not None:
+        archived = archive_generation_exports(generation_paths, kinds=["context"])
+        update_generation_manifest(
+            generation_paths,
+            {
+                "selected_generation": selected_generation,
+                "source_model_generations_seen": sorted(report.get("source_model_generation_summary", {}).keys()),
+                "trainer_settings_snapshot": {"context": settings},
+                "context_training": {
+                    "report_path": str(args.out_report),
+                    "feature_report_path": str(args.feature_report or DEFAULT_FEATURE_REPORT),
+                    "feature_names": list(selected_features),
+                    "archive_outputs": archived,
+                    "generation_advancement_assessment": report.get("generation_advancement_assessment", {}),
+                },
+                "recommended_next_action": (
+                    f"Trained on {selected_generation}. "
+                    f"Canonical context header remains the active deployment target. "
+                    + (
+                        f"Place next collection raw CSVs in tinyml/data/{next_generation_tag(selected_generation)}/raw."
+                        if next_generation_tag(selected_generation)
+                        else "Review class coverage before advancing beyond the current generation."
+                    )
+                ),
+            },
+        )
 
     print(json.dumps({
         "model_name": report["model_name"],
@@ -388,6 +491,8 @@ def main():
         "feature_count": len(selected_features),
         "features": selected_features,
     }, indent=2))
+    if selected_generation:
+        print("Selected generation:", selected_generation)
     print("Saved:", args.out_joblib)
     print("Saved:", args.out_header)
     print("Saved:", args.out_report)

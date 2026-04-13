@@ -310,6 +310,14 @@ static inline void sanitizeArcDetectionResult_(ArcDetectionResult& out) {
       tinymlClampFeatureValue(TINYML_FEATURE_MIDBAND_RESIDUAL_RATIO, out.midband_residual_ratio);
   out.zcv =
       tinymlClampFeatureValue(TINYML_FEATURE_ZCV, out.zcv);
+  out.pulse_count_per_cycle =
+      tinymlClampFeatureValue(TINYML_FEATURE_PULSE_COUNT_PER_CYCLE, out.pulse_count_per_cycle);
+  out.zero_dwell_ratio =
+      tinymlClampFeatureValue(TINYML_FEATURE_ZERO_DWELL_RATIO, out.zero_dwell_ratio);
+  out.low_current_ratio =
+      tinymlClampFeatureValue(TINYML_FEATURE_LOW_CURRENT_RATIO, out.low_current_ratio);
+  out.max_low_current_run_ms =
+      tinymlClampFeatureValue(TINYML_FEATURE_MAX_LOW_CURRENT_RUN_MS, out.max_low_current_run_ms);
   out.spectral_flux_midhf =
       tinymlClampFeatureValue(TINYML_FEATURE_SPECTRAL_FLUX_MIDHF, out.spectral_flux_midhf);
   out.peak_fluct_cv =
@@ -525,6 +533,44 @@ bool ArcDetection::compute(const uint16_t* raw, size_t n, float fs_hz,
   } else if (crossAllN >= 3) {
     out.zcv = pairIntervalJitterMs_(crossAll, crossAllN, fs_hz);
   }
+
+  const float zeroDwellThr = fmaxf(ZC_DWELL_THR_MIN_A, ZC_DWELL_THR_FRAC * fmaxf(irms, 0.10f));
+  const float avgHalfSamp = (crossAllN >= 4)
+      ? (float)((crossAll[crossAllN - 1] - crossAll[0]) / (float)(crossAllN - 1))
+      : (fs_hz / (mainsHz * 2.0f));
+  const int halfWin = clampi((int)lroundf(avgHalfSamp * 0.12f), 3, 100);
+
+  int zeroWindowTotal = 0;
+  int zeroWindowDwell = 0;
+  for (int ci = 0; ci < crossAllN; ++ci) {
+    const int c = (int)lroundf(crossAll[ci]);
+    const int a = clampi(c - halfWin, 0, (int)n - 1);
+    const int b = clampi(c + halfWin, 0, (int)n - 1);
+    for (int i = a; i <= b; ++i) {
+      zeroWindowTotal++;
+      if (fabsf(sigClean[i]) <= zeroDwellThr) zeroWindowDwell++;
+    }
+  }
+  if (zeroWindowTotal > 0) {
+    out.zero_dwell_ratio = ((float)zeroWindowDwell / (float)zeroWindowTotal) * FEATURE_PERCENT_SCALE;
+  }
+
+  const float lowCurrentThr = fmaxf(ZC_DWELL_THR_MIN_A, LOW_CURRENT_RATIO_THR_FRAC * fmaxf(irms, 0.10f));
+  int lowCurrentCount = 0;
+  int lowCurrentRun = 0;
+  int maxLowCurrentRun = 0;
+  for (size_t i = 0; i < n; ++i) {
+    if (fabsf(sigClean[i]) <= lowCurrentThr) {
+      lowCurrentCount++;
+      lowCurrentRun++;
+      if (lowCurrentRun > maxLowCurrentRun) maxLowCurrentRun = lowCurrentRun;
+    } else {
+      lowCurrentRun = 0;
+    }
+  }
+  out.low_current_ratio = ((float)lowCurrentCount / (float)n) * FEATURE_PERCENT_SCALE;
+  out.max_low_current_run_ms = (1000.0f * (float)maxLowCurrentRun) / fmaxf(fs_hz, 1.0f);
+
   const int cycleCount = crossPosN - 1;
   const bool useHalfCycleShapeFallback = (cycleCount <= 0) && (crossAllN >= 3);
   const bool limitedCycleWindow = (cycleCount <= 0) && !useHalfCycleShapeFallback;
@@ -536,6 +582,15 @@ bool ArcDetection::compute(const uint16_t* raw, size_t n, float fs_hz,
   int peakN = 0;
   float nmsePairsVals[24];
   int nmsePairs = 0;
+  float pulsePerCycleAcc = 0.0f;
+  int pulseCycles = 0;
+
+  const float pulseThrFloor = fmaxf(PULSE_THRESH_MIN_A, 0.10f * fmaxf(irms, 0.10f));
+  const bool pulseEligible = (strongActivity || weakArcWindow) &&
+                             (residRms >= (PULSE_ANALYSIS_MIN_RESID_A * 0.75f));
+  const float pulseThr = fmaxf(pulseThrFloor, PULSE_THRESH_RMS_MUL * residRms);
+  const int pulseMinW = clampi((int)lroundf((PULSE_MIN_WIDTH_US * 1e-6f) * fs_hz), 1, 32);
+  const int pulseMaxW = clampi((int)lroundf((PULSE_MAX_WIDTH_US * 1e-6f) * fs_hz), pulseMinW, 512);
 
   static constexpr int RSZ = 64;
   float prevCycle[RSZ];
@@ -561,6 +616,29 @@ bool ArcDetection::compute(const uint16_t* raw, size_t n, float fs_hz,
 
     const float cycRms = (len > 0) ? sqrtf((float)(cycSq / (double)len)) : 0.0f;
     if (cycRms <= 1e-5f) continue;
+
+    int pulseCount = 0;
+    if (pulseEligible) {
+      bool inPulse = false;
+      int pulseStart = a;
+      for (int i = a; i < b; ++i) {
+        const bool over = fabsf(resid[i]) >= pulseThr;
+        if (over && !inPulse) {
+          inPulse = true;
+          pulseStart = i;
+        } else if (!over && inPulse) {
+          const int w = i - pulseStart;
+          if (w >= pulseMinW && w <= pulseMaxW) pulseCount++;
+          inPulse = false;
+        }
+      }
+      if (inPulse) {
+        const int w = b - pulseStart;
+        if (w >= pulseMinW && w <= pulseMaxW) pulseCount++;
+      }
+    }
+    pulsePerCycleAcc += (float)pulseCount;
+    pulseCycles++;
 
     cyclePeaks[peakN] = peak;
     cycleRmsVals[peakN] = cycRms;
@@ -628,6 +706,10 @@ bool ArcDetection::compute(const uint16_t* raw, size_t n, float fs_hz,
     const float negRms = sqrtf((float)(negHalfSq / (double)negHalfN));
     const float denom = fmaxf(0.01f, 0.5f * (posRms + negRms));
     out.halfcycle_asymmetry = clampf((fabsf(posRms - negRms) / denom) * FEATURE_PERCENT_SCALE, 0.0f, 200.0f);
+  }
+
+  if (pulseCycles > 0) {
+    out.pulse_count_per_cycle = pulsePerCycleAcc / (float)pulseCycles;
   }
 
   if (!limitedCycleWindow && peakN >= 2) {
@@ -978,6 +1060,10 @@ struct ArcModelFeatureSnapshot {
   float hf_energy_delta;
   float zcv;
   float abs_irms_zscore_vs_baseline;
+  float pulse_count_per_cycle;
+  float zero_dwell_ratio;
+  float low_current_ratio;
+  float max_low_current_run_ms;
   float suspicious_run_energy;
   float delta_irms_abs;
   float delta_hf_energy;
@@ -992,6 +1078,14 @@ static inline float arcFeatureValueById_(const ArcModelFeatureSnapshot& x, int f
   switch (featureId) {
     case TINYML_FEATURE_ABS_IRMS_ZSCORE_VS_BASELINE:
       return tinymlClampFeatureValue(featureId, x.abs_irms_zscore_vs_baseline);
+    case TINYML_FEATURE_PULSE_COUNT_PER_CYCLE:
+      return tinymlClampFeatureValue(featureId, x.pulse_count_per_cycle);
+    case TINYML_FEATURE_ZERO_DWELL_RATIO:
+      return tinymlClampFeatureValue(featureId, x.zero_dwell_ratio);
+    case TINYML_FEATURE_LOW_CURRENT_RATIO:
+      return tinymlClampFeatureValue(featureId, x.low_current_ratio);
+    case TINYML_FEATURE_MAX_LOW_CURRENT_RUN_MS:
+      return tinymlClampFeatureValue(featureId, x.max_low_current_run_ms);
     case TINYML_FEATURE_DELTA_IRMS_ABS:
       return tinymlClampFeatureValue(featureId, x.delta_irms_abs);
     case TINYML_FEATURE_HALFCYCLE_ASYMMETRY:
@@ -1037,6 +1131,10 @@ static inline float arcFeatureValueById_(const ArcModelFeatureSnapshot& x, int f
 static inline float arcPositiveThresholdById_(int featureId) {
   switch (featureId) {
     case TINYML_FEATURE_ABS_IRMS_ZSCORE_VS_BASELINE: return ARC_SIG_IRMS_ZSCORE;
+    case TINYML_FEATURE_PULSE_COUNT_PER_CYCLE: return ARC_SIG_PULSE_COUNT_PER_CYCLE;
+    case TINYML_FEATURE_ZERO_DWELL_RATIO: return ARC_SIG_ZERO_DWELL_RATIO;
+    case TINYML_FEATURE_LOW_CURRENT_RATIO: return ARC_SIG_LOW_CURRENT_RATIO;
+    case TINYML_FEATURE_MAX_LOW_CURRENT_RUN_MS: return ARC_SIG_MAX_LOW_CURRENT_RUN_MS;
     case TINYML_FEATURE_DELTA_IRMS_ABS: return 0.12f;
     case TINYML_FEATURE_HALFCYCLE_ASYMMETRY: return 10.0f;
     case TINYML_FEATURE_SUSPICIOUS_RUN_ENERGY: return 1.60f;
@@ -1068,6 +1166,10 @@ static inline void fillArcModelInput_(double* dst,
                                      float hf_energy_delta,
                                      float zcv,
                                      float abs_irms_zscore_vs_baseline,
+                                     float pulse_count_per_cycle,
+                                     float zero_dwell_ratio,
+                                     float low_current_ratio,
+                                     float max_low_current_run_ms,
                                      float suspicious_run_energy,
                                      float delta_irms_abs,
                                      float delta_hf_energy,
@@ -1088,6 +1190,10 @@ static inline void fillArcModelInput_(double* dst,
     hf_energy_delta,
     zcv,
     abs_irms_zscore_vs_baseline,
+    pulse_count_per_cycle,
+    zero_dwell_ratio,
+    low_current_ratio,
+    max_low_current_run_ms,
     suspicious_run_energy,
     delta_irms_abs,
     delta_hf_energy,
@@ -1178,6 +1284,10 @@ static inline int unknownContextArcVotes_(float spectral_flux_midhf,
                                           float hf_energy_delta,
                                           float zcv,
                                           float abs_irms_zscore_vs_baseline,
+                                          float pulse_count_per_cycle,
+                                          float zero_dwell_ratio,
+                                          float low_current_ratio,
+                                          float max_low_current_run_ms,
                                           float suspicious_run_energy,
                                           float delta_irms_abs,
                                           float delta_hf_energy,
@@ -1195,6 +1305,10 @@ static inline int unknownContextArcVotes_(float spectral_flux_midhf,
     hf_energy_delta,
     zcv,
     abs_irms_zscore_vs_baseline,
+    pulse_count_per_cycle,
+    zero_dwell_ratio,
+    low_current_ratio,
+    max_low_current_run_ms,
     suspicious_run_energy,
     delta_irms_abs,
     delta_hf_energy,
@@ -1291,11 +1405,27 @@ static inline int unknownContextArcVotes_(float spectral_flux_midhf,
 #endif
 }
 
+
+static inline int physicsArcVotes_(const ArcModelFeatureSnapshot& snapshot) {
+  int votes = 0;
+  if (snapshot.pulse_count_per_cycle >= ARC_SIG_PULSE_COUNT_PER_CYCLE) votes += 2;
+  if (snapshot.zero_dwell_ratio >= ARC_SIG_ZERO_DWELL_RATIO) votes += 1;
+  if (snapshot.low_current_ratio >= ARC_SIG_LOW_CURRENT_RATIO) votes += 1;
+  if (snapshot.max_low_current_run_ms >= ARC_SIG_MAX_LOW_CURRENT_RUN_MS) votes += 2;
+  if (snapshot.delta_irms_abs >= 0.12f) votes += 1;
+  if (snapshot.zcv >= ARC_SIG_ZCV) votes += 1;
+  if (snapshot.abs_irms_zscore_vs_baseline >= ARC_SIG_IRMS_ZSCORE) votes += 1;
+  if (snapshot.halfcycle_asymmetry >= 10.0f) votes += 1;
+  return votes;
+}
+
 int ArcDetection::predictWithContext(float spectral_flux_midhf, float residual_crest_factor,
                                      float edge_spike_ratio, float midband_residual_ratio,
                                      float cycle_nmse, float peak_fluct_cv,
                                      float thd_i, float hf_energy_delta,
                                      float zcv, float abs_irms_zscore_vs_baseline,
+                                     float pulse_count_per_cycle, float zero_dwell_ratio,
+                                     float low_current_ratio, float max_low_current_run_ms,
                                      float suspicious_run_energy, float delta_irms_abs,
                                      float delta_hf_energy, float delta_flux,
                                      float halfcycle_asymmetry, float v_sag_pct,
@@ -1315,6 +1445,10 @@ int ArcDetection::predictWithContext(float spectral_flux_midhf, float residual_c
                      hf_energy_delta,
                      zcv,
                      abs_irms_zscore_vs_baseline,
+                     pulse_count_per_cycle,
+                     zero_dwell_ratio,
+                     low_current_ratio,
+                     max_low_current_run_ms,
                      suspicious_run_energy,
                      delta_irms_abs,
                      delta_hf_energy,
@@ -1327,6 +1461,30 @@ int ArcDetection::predictWithContext(float spectral_flux_midhf, float residual_c
   arc_rf_predict(input_features, output_probs);
   const float threshold = contextAwareArcThresholdFor_(ctxFamily, ctxConfidence);
   const bool unknown_ctx = !((ctxFamily >= 0) && (ctxFamily < FAMILY_COUNT) && (ctxConfidence >= ARC_CONTEXT_CONFIDENCE_MIN));
+  const ArcModelFeatureSnapshot snapshot = {
+    spectral_flux_midhf,
+    residual_crest_factor,
+    edge_spike_ratio,
+    midband_residual_ratio,
+    cycle_nmse,
+    peak_fluct_cv,
+    thd_i,
+    hf_energy_delta,
+    zcv,
+    abs_irms_zscore_vs_baseline,
+    pulse_count_per_cycle,
+    zero_dwell_ratio,
+    low_current_ratio,
+    max_low_current_run_ms,
+    suspicious_run_energy,
+    delta_irms_abs,
+    delta_hf_energy,
+    delta_flux,
+    halfcycle_asymmetry,
+    v_sag_pct,
+    ctxFamily,
+    ctxConfidence,
+  };
   if (unknown_ctx) {
     const int votes = unknownContextArcVotes_(spectral_flux_midhf,
                                               residual_crest_factor,
@@ -1338,6 +1496,10 @@ int ArcDetection::predictWithContext(float spectral_flux_midhf, float residual_c
                                               hf_energy_delta,
                                               zcv,
                                               abs_irms_zscore_vs_baseline,
+                                              pulse_count_per_cycle,
+                                              zero_dwell_ratio,
+                                              low_current_ratio,
+                                              max_low_current_run_ms,
                                               suspicious_run_energy,
                                               delta_irms_abs,
                                               delta_hf_energy,
@@ -1346,7 +1508,14 @@ int ArcDetection::predictWithContext(float spectral_flux_midhf, float residual_c
                                               v_sag_pct);
     if (votes < ARC_UNKNOWN_MIN_FEATURE_VOTES) return 0;
   }
-  return (output_probs[1] >= threshold) ? 1 : 0;
+  const int physicsVotes = physicsArcVotes_(snapshot);
+  const bool modelPositive = (output_probs[1] >= threshold);
+  const bool strongModelPositive = (output_probs[1] >= (threshold + 0.18f));
+  const bool nearThreshold = (output_probs[1] >= (threshold - 0.06f));
+  const bool mediumPhysics = (physicsVotes >= 2);
+  const bool strongPhysics = (physicsVotes >= 4);
+  return ((modelPositive && (mediumPhysics || strongModelPositive)) ||
+          (!modelPositive && strongPhysics && nearThreshold)) ? 1 : 0;
 #else
   (void)v_rms; (void)i_rms; (void)temp_c;
   float score = 0.0f;
@@ -1372,6 +1541,8 @@ int ArcDetection::predict(float spectral_flux_midhf, float residual_crest_factor
                           float cycle_nmse, float peak_fluct_cv,
                           float thd_i, float hf_energy_delta,
                           float zcv, float abs_irms_zscore_vs_baseline,
+                          float pulse_count_per_cycle, float zero_dwell_ratio,
+                          float low_current_ratio, float max_low_current_run_ms,
                           float suspicious_run_energy, float delta_irms_abs,
                           float delta_hf_energy, float delta_flux,
                           float halfcycle_asymmetry, float v_sag_pct,
@@ -1386,6 +1557,10 @@ int ArcDetection::predict(float spectral_flux_midhf, float residual_crest_factor
                             hf_energy_delta,
                             zcv,
                             abs_irms_zscore_vs_baseline,
+                            pulse_count_per_cycle,
+                            zero_dwell_ratio,
+                            low_current_ratio,
+                            max_low_current_run_ms,
                             suspicious_run_energy,
                             delta_irms_abs,
                             delta_hf_energy,
@@ -1422,6 +1597,10 @@ int ArcDetection::computeAndPredict(const uint16_t* raw, size_t n, float fs_hz,
                      out.hf_energy_delta,
                      out.zcv,
                      out.abs_irms_zscore_vs_baseline,
+                     out.pulse_count_per_cycle,
+                     out.zero_dwell_ratio,
+                     out.low_current_ratio,
+                     out.max_low_current_run_ms,
                      out.suspicious_run_energy,
                      out.delta_irms_abs,
                      out.delta_hf_energy,
@@ -1434,6 +1613,30 @@ int ArcDetection::computeAndPredict(const uint16_t* raw, size_t n, float fs_hz,
   arc_rf_predict(input_features, output_probs);
   const float threshold = contextAwareArcThreshold_();
   const bool unknown_ctx = !((s_ctxFamily >= 0) && (s_ctxFamily < FAMILY_COUNT) && (s_ctxConfidence >= ARC_CONTEXT_CONFIDENCE_MIN));
+  const ArcModelFeatureSnapshot snapshot = {
+    out.spectral_flux_midhf,
+    out.residual_crest_factor,
+    out.edge_spike_ratio,
+    out.midband_residual_ratio,
+    out.cycle_nmse,
+    out.peak_fluct_cv,
+    out.thd_i,
+    out.hf_energy_delta,
+    out.zcv,
+    out.abs_irms_zscore_vs_baseline,
+    out.pulse_count_per_cycle,
+    out.zero_dwell_ratio,
+    out.low_current_ratio,
+    out.max_low_current_run_ms,
+    out.suspicious_run_energy,
+    out.delta_irms_abs,
+    out.delta_hf_energy,
+    out.delta_flux,
+    out.halfcycle_asymmetry,
+    out.v_sag_pct,
+    s_ctxFamily,
+    s_ctxConfidence,
+  };
   if (unknown_ctx) {
     const int votes = unknownContextArcVotes_(out.spectral_flux_midhf,
                                               out.residual_crest_factor,
@@ -1445,6 +1648,10 @@ int ArcDetection::computeAndPredict(const uint16_t* raw, size_t n, float fs_hz,
                                               out.hf_energy_delta,
                                               out.zcv,
                                               out.abs_irms_zscore_vs_baseline,
+                                              out.pulse_count_per_cycle,
+                                              out.zero_dwell_ratio,
+                                              out.low_current_ratio,
+                                              out.max_low_current_run_ms,
                                               out.suspicious_run_energy,
                                               out.delta_irms_abs,
                                               out.delta_hf_energy,
@@ -1456,7 +1663,14 @@ int ArcDetection::computeAndPredict(const uint16_t* raw, size_t n, float fs_hz,
       return 0;
     }
   }
-  out.model_pred = (output_probs[1] >= threshold) ? 1 : 0;
+  const int physicsVotes = physicsArcVotes_(snapshot);
+  const bool modelPositive = (output_probs[1] >= threshold);
+  const bool strongModelPositive = (output_probs[1] >= (threshold + 0.18f));
+  const bool nearThreshold = (output_probs[1] >= (threshold - 0.06f));
+  const bool mediumPhysics = (physicsVotes >= 2);
+  const bool strongPhysics = (physicsVotes >= 4);
+  out.model_pred = ((modelPositive && (mediumPhysics || strongModelPositive)) ||
+                    (!modelPositive && strongPhysics && nearThreshold)) ? 1 : 0;
   return out.model_pred;
 #elif defined(ARC_MODEL_FEATURE_VERSION) && (ARC_MODEL_FEATURE_VERSION >= 4)
   double input_features[10] = {
@@ -1486,6 +1700,10 @@ int ArcDetection::computeAndPredict(const uint16_t* raw, size_t n, float fs_hz,
                                     out.hf_energy_delta,
                                     out.zcv,
                                     out.abs_irms_zscore_vs_baseline,
+                                    out.pulse_count_per_cycle,
+                                    out.zero_dwell_ratio,
+                                    out.low_current_ratio,
+                                    out.max_low_current_run_ms,
                                     out.suspicious_run_energy,
                                     out.delta_irms_abs,
                                     out.delta_hf_energy,

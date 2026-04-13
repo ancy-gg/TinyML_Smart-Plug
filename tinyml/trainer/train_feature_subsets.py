@@ -4,6 +4,7 @@ import itertools
 import json
 import os
 import math
+import sys
 import time
 from pathlib import Path
 
@@ -18,6 +19,7 @@ from tinyml_common import (
     CONTEXT_SWEEP_FEATURES,
     DEVICE_FAMILY_CLASSES,
     MODEL_CONFIGS,
+    build_mismatch_summary,
     compose_arc_training_view,
     ensure_dir,
     evaluate_binary_scores,
@@ -30,6 +32,26 @@ from tinyml_common import (
     estimate_search_plan,
 )
 from train_context import build_context_frame, prototype_predict_proba, weighted_standardize
+try:
+    from generation_paths import (
+        apply_generation_defaults,
+        cli_flag_present,
+        ensure_generation_dirs,
+        normalize_generation_tag,
+        resolve_generation_paths,
+        update_generation_manifest,
+        validate_generation_workspace,
+    )
+except Exception:
+    from trainer.generation_paths import (
+        apply_generation_defaults,
+        cli_flag_present,
+        ensure_generation_dirs,
+        normalize_generation_tag,
+        resolve_generation_paths,
+        update_generation_manifest,
+        validate_generation_workspace,
+    )
 
 SCRIPT_DIR = Path(__file__).resolve().parent
 TINYML_DIR = SCRIPT_DIR.parent
@@ -931,6 +953,11 @@ def run_arc_dual_sweep(args, tracker: dict | None = None) -> tuple[dict, pd.Data
         include_invalid=args.include_invalid,
         feature_names=full_feature_names,
         arc_tolerance=arc_tolerance,
+        current_training_generation=getattr(args, "_selected_generation", None),
+        mismatch_fp_boost=float(getattr(args, "mismatch_fp_boost", 1.0)),
+        mismatch_fn_boost=float(getattr(args, "mismatch_fn_boost", 1.0)),
+        mismatch_focus_ratio=float(getattr(args, "mismatch_focus_ratio", 0.0)),
+        mismatch_verified_only=bool(getattr(args, "mismatch_verified_only", False)),
     )
     splits = make_group_splits(X_all, y, groups)
     train_idx = splits["train_idx"]
@@ -967,6 +994,8 @@ def run_arc_dual_sweep(args, tracker: dict | None = None) -> tuple[dict, pd.Data
         positive_oversample=sweep_positive_oversample,
         random_state=42,
         min_negative_rows=256,
+        mismatch_focus_ratio=float(getattr(args, "mismatch_focus_ratio", 0.0)),
+        mismatch_verified_only=bool(getattr(args, "mismatch_verified_only", False)),
     )
     X_train_final, y_train_final, groups_train_final, w_train_final, meta_train_final, final_view_info = compose_arc_training_view(
         X_train_base,
@@ -978,6 +1007,8 @@ def run_arc_dual_sweep(args, tracker: dict | None = None) -> tuple[dict, pd.Data
         positive_oversample=final_positive_oversample,
         random_state=84,
         min_negative_rows=512,
+        mismatch_focus_ratio=float(getattr(args, "mismatch_focus_ratio", 0.0)),
+        mismatch_verified_only=bool(getattr(args, "mismatch_verified_only", False)),
     )
 
     combos = _arc_feature_combinations(
@@ -1421,9 +1452,19 @@ def run_arc_dual_sweep(args, tracker: dict | None = None) -> tuple[dict, pd.Data
     et_best = practical_section.get("overall_best_et", {}) or {}
     best_by_feature_count = practical_section.get("best_by_feature_count", []) or []
     deployment_model_key, deployment_row = _pick_arc_deployment_row(rf_best, et_best, combined_best)
+    dataset_mismatch_summary = build_mismatch_summary(df_meta, current_training_generation=getattr(args, "_selected_generation", None))
+    selected_generation = str(getattr(args, "_selected_generation", None) or "legacy")
+    generation_paths = getattr(args, "_generation_paths", None)
+    justified = bool(
+        float(combined_best.get("combined_validation_recall_mean", 0.0) or 0.0) >= float(args.min_recall)
+        and float(combined_best.get("combined_validation_precision_mean", 0.0) or 0.0) >= float(args.min_precision)
+        and float(combined_best.get("combined_validation_fpr_mean", 1.0) or 1.0) <= float(args.max_fpr)
+        and int(combined_best.get("combined_validation_event_fn", 0) or 0) <= 1
+    )
 
     report = {
         "task": "arc_dual_model_staged",
+        "selected_generation": selected_generation,
         "models": ["rf", "et"],
         "feature_pool_role": "arc_base_features",
         "feature_pool": feature_pool,
@@ -1465,6 +1506,28 @@ def run_arc_dual_sweep(args, tracker: dict | None = None) -> tuple[dict, pd.Data
         "best_by_feature_count_validation_cost": ranking_sections.get("validation_cost", {}).get("best_by_feature_count", []) or [],
         "best_by_feature_count_fn_first": ranking_sections.get("fn_first", {}).get("best_by_feature_count", []) or [],
         "best_by_feature_count_accuracy": ranking_sections.get("accuracy", {}).get("best_by_feature_count", []) or [],
+        "dataset_mismatch_summary": dataset_mismatch_summary,
+        "source_model_generation_summary": dataset_mismatch_summary.get("source_model_generation_counts", {}),
+        "resolved_paths": {
+            "selected_generation": selected_generation,
+            "resolved_arc_dataset_path": str(args.arc_csv),
+            "resolved_report_path": str(args.out_report),
+            "resolved_results_csv_path": str(args.out_csv),
+            "benchmark_folder": str(getattr(generation_paths, "benchmark_dir", "")),
+            "generation_manifest_path": str(getattr(generation_paths, "manifest_path", "")),
+        },
+        "archive_output_paths": generation_paths.archive_output_paths() if generation_paths is not None else {},
+        "canonical_export_paths": generation_paths.canonical_export_paths() if generation_paths is not None else {},
+        "generation_advancement_assessment": {
+            "justified": justified,
+            "basis": "Held-out subset-sweep validation metrics only; feature-combo fit on the training split is not used.",
+            "held_out_snapshot": {
+                "validation_recall": float(combined_best.get("combined_validation_recall_mean", 0.0) or 0.0),
+                "validation_precision": float(combined_best.get("combined_validation_precision_mean", 0.0) or 0.0),
+                "validation_fpr": float(combined_best.get("combined_validation_fpr_mean", 1.0) or 1.0),
+                "validation_missed_event_count": int(combined_best.get("combined_validation_event_fn", 0) or 0),
+            },
+        },
         "stage_summaries": [
             {
                 "stage": "prescreen_et",
@@ -1519,6 +1582,11 @@ def run_arc_dual_sweep(args, tracker: dict | None = None) -> tuple[dict, pd.Data
             "feature_count_min": feature_count_min,
             "feature_count_max": feature_count_max,
             "max_combinations": int(args.max_combinations),
+            "mismatch_fp_boost": float(getattr(args, "mismatch_fp_boost", 1.0)),
+            "mismatch_fn_boost": float(getattr(args, "mismatch_fn_boost", 1.0)),
+            "mismatch_focus_ratio": float(getattr(args, "mismatch_focus_ratio", 0.0)),
+            "mismatch_verified_only": bool(getattr(args, "mismatch_verified_only", False)),
+            "generation": selected_generation,
             "arc_time_budget_minutes": float(budget_minutes),
             "arc_shard_size": int(shard_size),
             "arc_keep_per_shard": int(keep_per_shard),
@@ -1742,6 +1810,7 @@ def run_context_sweep(args, tracker: dict | None = None) -> tuple[dict, pd.DataF
 
     report = {
         "task": "context",
+        "selected_generation": str(getattr(args, "_selected_generation", None) or "legacy"),
         "model": "context_prototype",
         "feature_pool_role": "context_features",
         "feature_pool": feature_pool,
@@ -1752,6 +1821,18 @@ def run_context_sweep(args, tracker: dict | None = None) -> tuple[dict, pd.DataF
         "recommended_features": list(best_row.get("features", [])),
         "overall_best_tradeoff": best_row,
         "best_by_feature_count": best_by_feature_count,
+        "dataset_mismatch_summary": build_mismatch_summary(ctx_df, current_training_generation=getattr(args, "_selected_generation", None)),
+        "source_model_generation_summary": build_mismatch_summary(ctx_df, current_training_generation=getattr(args, "_selected_generation", None)).get("source_model_generation_counts", {}),
+        "resolved_paths": {
+            "selected_generation": str(getattr(args, "_selected_generation", None) or "legacy"),
+            "resolved_context_dataset_path": str(args.context_csv),
+            "resolved_report_path": str(args.context_out_report),
+            "resolved_results_csv_path": str(args.context_out_csv),
+            "benchmark_folder": str(getattr(getattr(args, "_generation_paths", None), "benchmark_dir", "")),
+            "generation_manifest_path": str(getattr(getattr(args, "_generation_paths", None), "manifest_path", "")),
+        },
+        "archive_output_paths": getattr(getattr(args, "_generation_paths", None), "archive_output_paths", lambda: {})(),
+        "canonical_export_paths": getattr(getattr(args, "_generation_paths", None), "canonical_export_paths", lambda: {})(),
         "settings": {
             "context_csv": args.context_csv,
             "unknown_confidence": args.unknown_confidence,
@@ -1759,12 +1840,14 @@ def run_context_sweep(args, tracker: dict | None = None) -> tuple[dict, pd.DataF
             "feature_count_min": feature_count_min,
             "feature_count_max": feature_count_max,
             "max_combinations": int(args.context_max_combinations),
+            "generation": str(getattr(args, "_selected_generation", None) or "legacy"),
         },
     }
     return report, results_df
 
 
 def main():
+    argv = sys.argv[1:]
     ap = argparse.ArgumentParser()
     ap.add_argument("--task", default="auto", choices=["auto", "arc", "context"])
     ap.add_argument("--arc_csv", default=ARC_CSV_PATH)
@@ -1773,6 +1856,7 @@ def main():
     ap.add_argument("--out_csv", default=ARC_OUT_CSV)
     ap.add_argument("--context_out_report", default=CONTEXT_OUT_REPORT)
     ap.add_argument("--context_out_csv", default=CONTEXT_OUT_CSV)
+    ap.add_argument("--generation", default=None)
     ap.add_argument("--include_invalid", action="store_true")
     ap.add_argument("--fn_weight", type=float, default=80.0)
     ap.add_argument("--fp_weight", type=float, default=4.0)
@@ -1804,6 +1888,10 @@ def main():
     ap.add_argument("--sweep_positive_oversample", type=float, default=1.25)
     ap.add_argument("--final_negative_ratio", type=float, default=0.0)
     ap.add_argument("--final_positive_oversample", type=float, default=1.0)
+    ap.add_argument("--mismatch_fp_boost", type=float, default=1.0)
+    ap.add_argument("--mismatch_fn_boost", type=float, default=1.0)
+    ap.add_argument("--mismatch_focus_ratio", type=float, default=0.0)
+    ap.add_argument("--mismatch_verified_only", action="store_true")
     ap.add_argument("--context_feature_count_min", type=int, default=1)
     ap.add_argument("--context_feature_count_max", type=int, default=len(CONTEXT_SWEEP_FEATURES))
     ap.add_argument("--context_max_combinations", type=int, default=0)
@@ -1811,6 +1899,35 @@ def main():
     ap.add_argument("--context_repeats", type=int, default=24)
     ap.add_argument("--unknown_confidence", type=float, default=0.45)
     args = ap.parse_args()
+
+    generation_paths = None
+    selected_generation = None
+    if args.generation:
+        selected_generation = normalize_generation_tag(args.generation)
+        generation_paths = resolve_generation_paths(PROJECT_ROOT, selected_generation)
+        ensure_generation_dirs(generation_paths)
+        apply_generation_defaults(
+            args,
+            argv,
+            {
+                "arc_csv": ("--arc_csv", generation_paths.arc_csv),
+                "context_csv": ("--context_csv", generation_paths.context_csv),
+                "out_report": ("--out_report", generation_paths.arc_subset_report),
+                "out_csv": ("--out_csv", generation_paths.arc_subset_results_csv),
+                "context_out_report": ("--context_out_report", generation_paths.context_subset_report),
+                "context_out_csv": ("--context_out_csv", generation_paths.context_subset_results_csv),
+            },
+        )
+        if args.task in ("auto", "arc") and not cli_flag_present("--arc_csv", argv):
+            errors = validate_generation_workspace(generation_paths, require_arc_csv=True, require_nonempty_arc_csv=True)
+            if errors:
+                raise ValueError(" ; ".join(errors))
+        if args.task in ("auto", "context") and not cli_flag_present("--context_csv", argv):
+            errors = validate_generation_workspace(generation_paths, require_context_csv=True, require_nonempty_context_csv=True)
+            if errors:
+                raise ValueError(" ; ".join(errors))
+    args._selected_generation = selected_generation
+    args._generation_paths = generation_paths
 
     if args.n_jobs != 0:
         os.environ["TINYML_N_JOBS"] = str(args.n_jobs)
@@ -1846,6 +1963,48 @@ def main():
         Path(args.context_out_report).write_text(json.dumps(context_report, indent=2), encoding="utf-8")
         print("Saved context subset CSV:", args.context_out_csv)
         print("Saved context subset report:", args.context_out_report)
+
+    if generation_paths is not None:
+        update_generation_manifest(
+            generation_paths,
+            {
+                "selected_generation": selected_generation,
+                "source_model_generations_seen": sorted(
+                    set(
+                        list((arc_report if args.task in ("auto", "arc") else {}).get("source_model_generation_summary", {}).keys())
+                        + list((context_report if args.task in ("auto", "context") else {}).get("source_model_generation_summary", {}).keys())
+                    )
+                ),
+                "trainer_settings_snapshot": {
+                    "subset_sweep": {
+                        "task": args.task,
+                        "n_iter": int(args.n_iter),
+                        "feature_count_min": int(args.feature_count_min),
+                        "feature_count_max": int(args.feature_count_max),
+                        "context_feature_count_min": int(args.context_feature_count_min),
+                        "context_feature_count_max": int(args.context_feature_count_max),
+                        "mismatch_fp_boost": float(args.mismatch_fp_boost),
+                        "mismatch_fn_boost": float(args.mismatch_fn_boost),
+                        "mismatch_focus_ratio": float(args.mismatch_focus_ratio),
+                        "mismatch_verified_only": bool(args.mismatch_verified_only),
+                    }
+                },
+                "subset_sweep": {
+                    "arc_report_path": str(args.out_report),
+                    "arc_results_csv_path": str(args.out_csv),
+                    "context_report_path": str(args.context_out_report),
+                    "context_results_csv_path": str(args.context_out_csv),
+                    "arc_recommended_features": list((arc_report if args.task in ("auto", "arc") else {}).get("recommended_arc_base_features_global", []) or []),
+                    "context_recommended_features": list((context_report if args.task in ("auto", "context") else {}).get("recommended_context_features", []) or []),
+                },
+                "recommended_next_action": (
+                    f"Review subset sweep outputs in tinyml/benchmark/{selected_generation} and then train RF/ET/King on {selected_generation}."
+                ),
+            },
+        )
+
+    if selected_generation:
+        print("Selected generation:", selected_generation)
 
     _progress_advance(tracker, 1, {
         "task": args.task,

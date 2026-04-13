@@ -3,13 +3,43 @@ import json
 import glob
 import os
 import re
+import sys
 import time
 from pathlib import Path
 
 import numpy as np
 import pandas as pd
 
-from tinyml_common import FEATURES, ARC_SWEEP_FEATURES, CONTEXT_SWEEP_FEATURES, TARGET, ensure_dir, pick_group_column
+from tinyml_common import (
+    FEATURES,
+    ARC_SWEEP_FEATURES,
+    CONTEXT_SWEEP_FEATURES,
+    TARGET,
+    annotate_generation_and_mismatch_columns,
+    build_mismatch_summary,
+    ensure_dir,
+    pick_group_column,
+)
+try:
+    from generation_paths import (
+        apply_generation_defaults,
+        cli_flag_present,
+        ensure_generation_dirs,
+        normalize_generation_tag,
+        resolve_generation_paths,
+        update_generation_manifest,
+        validate_generation_workspace,
+    )
+except Exception:
+    from trainer.generation_paths import (
+        apply_generation_defaults,
+        cli_flag_present,
+        ensure_generation_dirs,
+        normalize_generation_tag,
+        resolve_generation_paths,
+        update_generation_manifest,
+        validate_generation_workspace,
+    )
 
 
 SCRIPT_DIR = Path(__file__).resolve().parent
@@ -98,7 +128,7 @@ FILENAME_PREFIX_TOKENS = {
     "log",
 }
 
-DB_FEATURE_SPACE_VERSION = 8
+DB_FEATURE_SPACE_VERSION = 9
 DB_RATIO_FLOOR = 1e-6
 DB_POWER_RATIO_FLOOR = 1e-6
 DB_RATIO_CLIP = (-80.0, 20.0)
@@ -123,6 +153,10 @@ FEATURE_CLIP_BOUNDS = {
     "delta_flux": (0.0, 200.0),
     "halfcycle_asymmetry": (0.0, 200.0),
     "v_sag_pct": (0.0, 100.0),
+    "pulse_count_per_cycle": (0.0, 16.0),
+    "zero_dwell_ratio": (0.0, 100.0),
+    "low_current_ratio": (0.0, 100.0),
+    "max_low_current_run_ms": (0.0, 25.0),
     "context_family_confidence": (0.0, 1.0),
     "v_rms": (0.0, 400.0),
     "i_rms": (0.0, 40.0),
@@ -628,9 +662,9 @@ def infer_source_kind(path: str):
 
 
 
-def load_and_tag_csvs(csv_files):
+def load_and_tag_csvs(csv_files, *, raw_root: Path | None = None, current_training_generation: str | None = None):
     frames = []
-    raw_root = (PROJECT_ROOT / "tinyml" / "data" / "raw").resolve()
+    raw_root = (raw_root or (PROJECT_ROOT / "tinyml" / "data" / "raw")).resolve()
 
     for i, path in enumerate(csv_files):
         print(f"[{i + 1}/{len(csv_files)}] Loading: {path}")
@@ -682,6 +716,10 @@ def load_and_tag_csvs(csv_files):
         df["section_key"] = file_tokens.get("section_key", "unknown")
         if "rf_train_row" not in df.columns:
             df["rf_train_row"] = 1
+        df = annotate_generation_and_mismatch_columns(
+            df,
+            current_training_generation=current_training_generation,
+        )
         frames.append(df)
 
     return pd.concat(frames, ignore_index=True)
@@ -739,18 +777,26 @@ def build_quality_scores(df: pd.DataFrame) -> tuple[pd.Series, pd.Series]:
     hf_delta_neg = _db_negative_score(_num(df, "hf_energy_delta"), neutral_db=0.0, floor_db=-6.0)
     zcv = _clip_score(_num(df, "zcv"), 0.20)
     iz = _clip_score(_num(df, "abs_irms_zscore_vs_baseline"), 2.35)
+    pulse = _clip_score(_num(df, "pulse_count_per_cycle"), 0.35)
+    zero_dwell = _clip_score(_num(df, "zero_dwell_ratio"), 18.0)
+    low_ratio = _clip_score(_num(df, "low_current_ratio"), 10.0)
+    low_run = _clip_score(_num(df, "max_low_current_run_ms"), 1.10)
 
     arc_base = (
-        0.20 * flux
-        + 0.14 * crest
-        + 0.18 * edge
-        + 0.14 * mid
-        + 0.11 * nmse
-        + 0.07 * peak
+        0.16 * flux
+        + 0.11 * crest
+        + 0.14 * edge
+        + 0.11 * mid
+        + 0.08 * nmse
+        + 0.05 * peak
         + 0.04 * thd
-        + 0.06 * hf_delta_pos
+        + 0.05 * hf_delta_pos
         + 0.03 * zcv
-        + 0.03 * iz
+        + 0.04 * iz
+        + 0.10 * pulse
+        + 0.06 * zero_dwell
+        + 0.06 * low_ratio
+        + 0.07 * low_run
     )
 
     if "session_id" in df.columns:
@@ -993,10 +1039,14 @@ def attach_training_metadata(df: pd.DataFrame) -> tuple[pd.DataFrame, dict]:
         df["conflict_scope"] = df.get("parsed_load_type", pd.Series("unknown", index=df.index, dtype=object)).astype(str)
 
     sig_cols = [c for c in FEATURES if c in df.columns]
-    rounded_exact = df[sig_cols].round(4).astype(str)
-    rounded_coarse = df[sig_cols].round(CONFLICT_ROUND_DECIMALS).astype(str)
-    df["_feature_sig"] = rounded_exact.agg("|".join, axis=1)
-    df["_conflict_sig"] = rounded_coarse.agg("|".join, axis=1)
+    if df.empty or not sig_cols:
+        df["_feature_sig"] = pd.Series("", index=df.index, dtype=object)
+        df["_conflict_sig"] = pd.Series("", index=df.index, dtype=object)
+    else:
+        rounded_exact = df[sig_cols].round(4).astype(str)
+        rounded_coarse = df[sig_cols].round(CONFLICT_ROUND_DECIMALS).astype(str)
+        df["_feature_sig"] = rounded_exact.agg("|".join, axis=1)
+        df["_conflict_sig"] = rounded_coarse.agg("|".join, axis=1)
 
     df, scaffold_summary = apply_scaffold_gap_fill_weights(df)
 
@@ -1137,6 +1187,18 @@ def clean_dataset(df: pd.DataFrame, augment_unknown_context: bool = False) -> tu
     df = coerce_numeric_if_present(df, maybe_numeric)
     before = len(df)
 
+    division_series = df.get("division_tag", pd.Series("", index=df.index, dtype=object)).astype(str).str.lower()
+    raw_target = pd.to_numeric(df[TARGET], errors="coerce")
+    context_only_placeholder_mask = division_series.isin(["start", "startup"]) & ~raw_target.isin([0, 1])
+    df["arc_truth_available"] = raw_target.isin([0, 1]).astype(int)
+    df["context_only_placeholder_arc_target"] = context_only_placeholder_mask.astype(int)
+    if bool(context_only_placeholder_mask.any()):
+        df.loc[context_only_placeholder_mask, TARGET] = 0
+        if "label_truth_source" in df.columns:
+            placeholder_source = df["label_truth_source"].astype(str).replace({"": "human_label"})
+            placeholder_source.loc[context_only_placeholder_mask] = "context_family_only"
+            df["label_truth_source"] = placeholder_source
+
     df = df[df[TARGET].isin([0, 1])].copy()
     x = df[FEATURES].replace([np.inf, -np.inf], np.nan)
     df = df.loc[x.notna().all(axis=1)].copy()
@@ -1224,6 +1286,8 @@ def clean_dataset(df: pd.DataFrame, augment_unknown_context: bool = False) -> tu
         "rows_before_cleaning": int(before),
         "rows_after_cleaning": int(base_rows_after),
         "rows_removed": int(rows_removed),
+        "context_only_placeholder_rows_preserved": int(pd.to_numeric(df.get("context_only_placeholder_arc_target", pd.Series(0, index=df.index)), errors="coerce").fillna(0).astype(int).sum()),
+        "arc_truth_available_rows": int(pd.to_numeric(df.get("arc_truth_available", pd.Series(0, index=df.index)), errors="coerce").fillna(0).astype(int).sum()),
         "augmentation_rows_added": int(augmentation_rows),
         "rows_after_cleaning_with_augmentation": int(len(df)),
         "trainable_rows": int(df["rf_train_row"].sum()),
@@ -1236,7 +1300,10 @@ def clean_dataset(df: pd.DataFrame, augment_unknown_context: bool = False) -> tu
             if "conflict_policy" in df.columns
             else {}
         ),
-        "quality_summary": {str(k): int(v) for k, v in quality_summary.items()},
+        "quality_summary": {
+            str(k): (float(v) if isinstance(v, (float, np.floating)) and not float(v).is_integer() else int(v) if isinstance(v, (int, np.integer, float, np.floating)) else v)
+            for k, v in quality_summary.items()
+        },
         "division_counts": ({str(k): int(v) for k, v in df["division_tag"].fillna("").replace("", "unknown").value_counts().to_dict().items()} if "division_tag" in df.columns else {}),
         "trial_counts": ({str(k): int(v) for k, v in df["trial_id"].astype(str).value_counts().to_dict().items()} if "trial_id" in df.columns else {}),
         "device_family_counts": ({str(k): int(v) for k, v in df["device_family"].astype(str).value_counts().to_dict().items()} if "device_family" in df.columns else {}),
@@ -1336,7 +1403,35 @@ def _numeric_feature_stats(df: pd.DataFrame) -> dict:
     return stats
 
 
-def build_prepare_report(full_df: pd.DataFrame, arc_df: pd.DataFrame, context_df: pd.DataFrame, summary: dict, csv_files, arc_output: str, context_output: str, elapsed_s: float) -> dict:
+def _numeric_feature_rows(df: pd.DataFrame) -> list[dict]:
+    stats = _numeric_feature_stats(df)
+    rows = []
+    for feature_name, values in stats.items():
+        rows.append({
+            "feature": str(feature_name),
+            "rows": int(values.get("rows", 0)),
+            "mean": float(values.get("mean", 0.0)),
+            "std": float(values.get("std", 0.0)),
+            "min": float(values.get("min", 0.0)),
+            "max": float(values.get("max", 0.0)),
+        })
+    return rows
+
+
+def build_prepare_report(
+    full_df: pd.DataFrame,
+    arc_df: pd.DataFrame,
+    context_df: pd.DataFrame,
+    summary: dict,
+    csv_files,
+    csv_glob: str,
+    arc_output: str,
+    context_output: str,
+    elapsed_s: float,
+    *,
+    selected_generation: str | None = None,
+    generation_paths=None,
+) -> dict:
     warnings = []
     arc_divs = sorted(set(arc_df.get("division_tag", pd.Series(dtype=object)).astype(str).str.lower().tolist())) if len(arc_df) else []
     ctx_divs = sorted(set(context_df.get("division_tag", pd.Series(dtype=object)).astype(str).str.lower().tolist())) if len(context_df) else []
@@ -1348,20 +1443,59 @@ def build_prepare_report(full_df: pd.DataFrame, arc_df: pd.DataFrame, context_df
         warnings.append("load_context_is_empty")
     if len(arc_df) == 0:
         warnings.append("arc_training_is_empty")
+    if int(summary.get("context_only_placeholder_rows_preserved", 0) or 0) > 0:
+        warnings.append("context_only_rows_used_placeholder_arc_target")
+
+    active_generation = str(selected_generation or "legacy")
+    resolved_paths = {
+        "selected_generation": active_generation,
+        "resolved_raw_input_glob": str(csv_glob),
+        "resolved_arc_dataset_path": str(arc_output),
+        "resolved_context_dataset_path": str(context_output),
+        "benchmark_folder": str(getattr(generation_paths, "benchmark_dir", "")),
+        "manifest_path": str(getattr(generation_paths, "manifest_path", "")),
+        "archive_output_paths": getattr(generation_paths, "archive_output_paths", lambda: {})(),
+        "canonical_export_paths": getattr(generation_paths, "canonical_export_paths", lambda: {})(),
+    }
+
+    full_mismatch = build_mismatch_summary(full_df, current_training_generation=selected_generation)
+    arc_mismatch = build_mismatch_summary(arc_df, current_training_generation=selected_generation)
+    context_mismatch = build_mismatch_summary(context_df, current_training_generation=selected_generation)
+    feature_stats = {
+        "arc_training": _numeric_feature_rows(arc_df),
+        "load_context": _numeric_feature_rows(context_df),
+    }
 
     return {
         "report_type": "prepare_data_report",
+        "selected_generation": active_generation,
+        "current_training_generation": active_generation,
         "feature_names": list(FEATURES),
         "source_csv_count": int(len(csv_files or [])),
         "source_csv_files": [str(p) for p in (csv_files or [])],
+        "input_files": {
+            "count": int(len(csv_files or [])),
+            "files": [str(p) for p in (csv_files or [])],
+        },
         "elapsed_seconds": float(elapsed_s),
         "elapsed_hms": time.strftime("%H:%M:%S", time.gmtime(max(0.0, float(elapsed_s)))),
+        "timing": {
+            "duration_seconds": float(elapsed_s),
+            "duration_hms": time.strftime("%H:%M:%S", time.gmtime(max(0.0, float(elapsed_s)))),
+        },
         "summary": dict(summary or {}),
+        "resolved_paths": resolved_paths,
         "outputs": {
             "arc_training_path": str(arc_output),
             "load_context_path": str(context_output),
             "arc_training_rows": int(len(arc_df)),
             "load_context_rows": int(len(context_df)),
+        },
+        "warnings": warnings,
+        "division_counts": {
+            "cleaned_all": _value_counts_dict(full_df.get("division_tag", pd.Series(dtype=object))),
+            "arc_training": _value_counts_dict(arc_df.get("division_tag", pd.Series(dtype=object))),
+            "load_context": _value_counts_dict(context_df.get("division_tag", pd.Series(dtype=object))),
         },
         "split_checks": {
             "arc_training_division_counts": _value_counts_dict(arc_df.get("division_tag", pd.Series(dtype=object))),
@@ -1376,6 +1510,11 @@ def build_prepare_report(full_df: pd.DataFrame, arc_df: pd.DataFrame, context_df
             "label_counts": {str(k): int(v) for k, v in pd.to_numeric(full_df.get(TARGET, pd.Series(dtype=float)), errors="coerce").fillna(-1).astype(int).value_counts().to_dict().items()} if TARGET in full_df.columns else {},
             "device_family_counts": _value_counts_dict(full_df.get("device_family", pd.Series(dtype=object))),
         },
+        "mismatch_summary": full_mismatch,
+        "arc_training_mismatch_summary": arc_mismatch,
+        "load_context_mismatch_summary": context_mismatch,
+        "source_model_generation_summary": full_mismatch.get("source_model_generation_counts", {}),
+        "feature_stats": feature_stats,
         "arc_training_feature_stats": _numeric_feature_stats(arc_df),
         "load_context_feature_stats": _numeric_feature_stats(context_df),
     }
@@ -1383,21 +1522,54 @@ def build_prepare_report(full_df: pd.DataFrame, arc_df: pd.DataFrame, context_df
 
 
 def main():
+    argv = sys.argv[1:]
     ap = argparse.ArgumentParser()
     ap.add_argument("--csv_glob", default=DEFAULT_INPUT_GLOB)
     ap.add_argument("--output", default=DEFAULT_OUTPUT)
     ap.add_argument("--arc_output", default=None)
     ap.add_argument("--context_output", default=DEFAULT_CONTEXT_OUTPUT)
     ap.add_argument("--out_report", default=DEFAULT_REPORT)
+    ap.add_argument("--generation", default=None)
     ap.add_argument("--augment_unknown_context", action="store_true")
     args = ap.parse_args()
 
     t0 = time.time()
+    generation_paths = None
+    selected_generation = None
+    if args.generation:
+        selected_generation = normalize_generation_tag(args.generation)
+        generation_paths = resolve_generation_paths(PROJECT_ROOT, selected_generation)
+        ensure_generation_dirs(generation_paths)
+        apply_generation_defaults(
+            args,
+            argv,
+            {
+                "csv_glob": ("--csv_glob", str(generation_paths.raw_dir / "**" / "*.csv")),
+                "output": ("--output", generation_paths.arc_csv),
+                "arc_output": ("--arc_output", generation_paths.arc_csv),
+                "context_output": ("--context_output", generation_paths.context_csv),
+                "out_report": ("--out_report", generation_paths.prepare_report),
+            },
+        )
+        if not cli_flag_present("--csv_glob", argv):
+            validation_errors = validate_generation_workspace(
+                generation_paths,
+                require_raw_folder=True,
+                require_raw_csv=True,
+            )
+            if validation_errors:
+                raise ValueError(" ; ".join(validation_errors))
+
     arc_output = args.arc_output or args.output
 
     csv_files = resolve_csv_files(args.csv_glob, arc_output)
-    df = load_and_tag_csvs(csv_files)
+    df = load_and_tag_csvs(
+        csv_files,
+        raw_root=getattr(generation_paths, "raw_dir", None),
+        current_training_generation=selected_generation,
+    )
     df, summary = clean_dataset(df, augment_unknown_context=args.augment_unknown_context)
+    df = annotate_generation_and_mismatch_columns(df, current_training_generation=selected_generation)
 
     division = df.get("division_tag", pd.Series("steady", index=df.index)).astype(str).str.lower()
     arc_df = reorder_export_columns(df[division.isin(["steady", "arc"])].copy())
@@ -1415,8 +1587,13 @@ def main():
     summary["context_feature_count_available"] = int(len([c for c in CONTEXT_SWEEP_FEATURES if c in context_df.columns]))
     summary["arc_training_path"] = arc_output
     summary["load_context_path"] = args.context_output
+    summary["selected_generation"] = str(selected_generation or "legacy")
+    summary["resolved_raw_input_glob"] = str(args.csv_glob)
     summary["elapsed_seconds"] = elapsed_s
     summary["elapsed_hms"] = time.strftime("%H:%M:%S", time.gmtime(max(0.0, elapsed_s)))
+    summary["mismatch_rows"] = int(build_mismatch_summary(df).get("mismatch_rows", 0))
+    summary["fp_override_rows"] = int(build_mismatch_summary(df).get("fp_override_rows", 0))
+    summary["fn_override_rows"] = int(build_mismatch_summary(df).get("fn_override_rows", 0))
 
     report = build_prepare_report(
         full_df=df,
@@ -1424,9 +1601,12 @@ def main():
         context_df=context_df,
         summary=summary,
         csv_files=csv_files,
+        csv_glob=args.csv_glob,
         arc_output=arc_output,
         context_output=args.context_output,
         elapsed_s=elapsed_s,
+        selected_generation=selected_generation,
+        generation_paths=generation_paths,
     )
 
     if args.out_report:
@@ -1435,6 +1615,35 @@ def main():
             json.dump(report, f, indent=2)
         print("Saved prepare report to:", args.out_report)
 
+    if generation_paths is not None:
+        update_generation_manifest(
+            generation_paths,
+            {
+                "selected_generation": selected_generation,
+                "source_csv_count": int(len(csv_files)),
+                "source_model_generations_seen": sorted(
+                    {
+                        str(v)
+                        for v in annotate_generation_and_mismatch_columns(df, current_training_generation=selected_generation)
+                        .get("source_model_generation", pd.Series(dtype=object))
+                        .astype(str)
+                        .tolist()
+                        if str(v).strip()
+                    }
+                ),
+                "prepare_data": {
+                    "report_path": str(args.out_report),
+                    "csv_glob": str(args.csv_glob),
+                    "arc_training_path": str(arc_output),
+                    "load_context_path": str(args.context_output),
+                    "summary": dict(summary or {}),
+                },
+                "recommended_next_action": f"Run subset sweep or training for {selected_generation} after reviewing tinyml/benchmark/{selected_generation}.",
+            },
+        )
+
+    if selected_generation:
+        print(f"Selected generation: {selected_generation}")
     print("Saved arc training dataset to:", arc_output)
     print("Saved load context dataset to:", args.context_output)
     print("__CLEANER_SUMMARY__ " + json.dumps(summary, sort_keys=True))

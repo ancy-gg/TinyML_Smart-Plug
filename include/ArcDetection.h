@@ -16,6 +16,10 @@ struct ArcDetectionResult {
   float hf_energy_delta             = 0.0f;
   float zcv                         = 0.0f;
   float abs_irms_zscore_vs_baseline = 0.0f;
+  float pulse_count_per_cycle       = 0.0f;
+  float zero_dwell_ratio            = 0.0f;
+  float low_current_ratio           = 0.0f;
+  float max_low_current_run_ms      = 0.0f;
   float suspicious_run_energy       = 0.0f;
   float delta_irms_abs              = 0.0f;
   float delta_hf_energy             = 0.0f;
@@ -41,6 +45,8 @@ public:
               float cycle_nmse, float peak_fluct_cv,
               float thd_i, float hf_energy_delta,
               float zcv, float abs_irms_zscore_vs_baseline,
+              float pulse_count_per_cycle, float zero_dwell_ratio,
+              float low_current_ratio, float max_low_current_run_ms,
               float suspicious_run_energy, float delta_irms_abs,
               float delta_hf_energy, float delta_flux,
               float halfcycle_asymmetry, float v_sag_pct,
@@ -50,6 +56,8 @@ public:
                          float cycle_nmse, float peak_fluct_cv,
                          float thd_i, float hf_energy_delta,
                          float zcv, float abs_irms_zscore_vs_baseline,
+                         float pulse_count_per_cycle, float zero_dwell_ratio,
+                         float low_current_ratio, float max_low_current_run_ms,
                          float suspicious_run_energy, float delta_irms_abs,
                          float delta_hf_energy, float delta_flux,
                          float halfcycle_asymmetry, float v_sag_pct,

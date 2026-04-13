@@ -12,6 +12,10 @@ except Exception:
     m2c = None
 import numpy as np
 import pandas as pd
+try:
+    from generation_paths import normalize_generation_tag
+except Exception:
+    from trainer.generation_paths import normalize_generation_tag
 
 from sklearn.ensemble import ExtraTreesClassifier, RandomForestClassifier
 from sklearn.metrics import (
@@ -35,7 +39,7 @@ except Exception:
     StratifiedGroupKFold = None
 
 
-ALL_COMPUTED_FEATURES = [
+LEGACY_COMPUTED_FEATURES = [
     "abs_irms_zscore_vs_baseline",
     "delta_irms_abs",
     "halfcycle_asymmetry",
@@ -54,43 +58,89 @@ ALL_COMPUTED_FEATURES = [
     "cycle_nmse",
 ]
 
+EXTRA_COMPUTED_FEATURES = [
+    "pulse_count_per_cycle",
+    "zero_dwell_ratio",
+    "low_current_ratio",
+    "max_low_current_run_ms",
+]
+
+ALL_COMPUTED_FEATURES = list(LEGACY_COMPUTED_FEATURES) + list(EXTRA_COMPUTED_FEATURES)
+
 # Curated candidate pool for subset sweep. Keep this pool intentionally smaller
 # than the full computed feature space so combination search remains practical,
-# but do not confuse it with the final deployed model feature count. The RF
-# export stays variable-size and will use whichever subset the trainer/report
-# selects.
+# but bias it toward restrike / zero-current-gap features because those map better
+# to separation-recontact arcs than generic temporal deltas alone.
 ARC_SWEEP_FEATURES = [
+    "pulse_count_per_cycle",
+    "max_low_current_run_ms",
+    "zero_dwell_ratio",
+    "low_current_ratio",
+    "abs_irms_zscore_vs_baseline",
+    "delta_irms_abs",
+    "halfcycle_asymmetry",
+    "zcv",
+    "midband_residual_ratio",
+    "edge_spike_ratio",
+    "residual_crest_factor",
+    "thd_i",
+    "spectral_flux_midhf",
+    "hf_energy_delta",
+    "peak_fluct_cv",
+]
+
+CONTEXT_SWEEP_FEATURES = [
+    "delta_irms_abs",
+    "halfcycle_asymmetry",
+    "midband_residual_ratio",
+    "abs_irms_zscore_vs_baseline",
+    "zcv",
+    "residual_crest_factor",
+    "peak_fluct_cv",
+    "thd_i",
+    "spectral_flux_midhf",
+    "hf_energy_delta",
+]
+
+ARC_PWA_VISIBLE_FEATURES = [
+    "pulse_count_per_cycle",
+    "max_low_current_run_ms",
+    "zero_dwell_ratio",
+    "low_current_ratio",
     "thd_i",
     "spectral_flux_midhf",
     "hf_energy_delta",
     "residual_crest_factor",
     "peak_fluct_cv",
     "zcv",
-    "cycle_nmse",
-    "delta_hf_energy",
-    "delta_flux",
     "delta_irms_abs",
     "midband_residual_ratio",
     "edge_spike_ratio",
 ]
-
-CONTEXT_SWEEP_FEATURES = [
-    "delta_irms_abs",
-    "halfcycle_asymmetry",
-    "suspicious_run_energy",
-    "hf_energy_delta",
-    "midband_residual_ratio",
-    "abs_irms_zscore_vs_baseline",
-    "zcv",
-    "delta_flux",
-    "residual_crest_factor",
-    "peak_fluct_cv",
-]
-
-ARC_PWA_VISIBLE_FEATURES = list(ARC_SWEEP_FEATURES)
 ARC_DEFAULT_BASE_FEATURES = list(ALL_COMPUTED_FEATURES)
 CONTEXT_DEFAULT_FEATURES = list(CONTEXT_SWEEP_FEATURES)
-ARC_BASE_FEATURES_RANKED = list(ALL_COMPUTED_FEATURES)
+ARC_BASE_FEATURES_RANKED = [
+    "pulse_count_per_cycle",
+    "max_low_current_run_ms",
+    "zero_dwell_ratio",
+    "low_current_ratio",
+    "abs_irms_zscore_vs_baseline",
+    "delta_irms_abs",
+    "halfcycle_asymmetry",
+    "zcv",
+    "midband_residual_ratio",
+    "edge_spike_ratio",
+    "residual_crest_factor",
+    "thd_i",
+    "spectral_flux_midhf",
+    "hf_energy_delta",
+    "peak_fluct_cv",
+    "cycle_nmse",
+    "suspicious_run_energy",
+    "delta_hf_energy",
+    "delta_flux",
+    "v_sag_pct",
+]
 ARC_ALL_COMPUTED_FEATURES = list(ALL_COMPUTED_FEATURES)
 CONTEXT_ALL_COMPUTED_FEATURES = list(ALL_COMPUTED_FEATURES)
 
@@ -111,14 +161,14 @@ ARC_CONTEXT_FEATURES = [f"ctx_family_{fam}" for fam in DEVICE_FAMILY_CLASSES] + 
 ARC_FEATURES = list(ARC_DEFAULT_BASE_FEATURES) + list(ARC_CONTEXT_FEATURES)
 CONTEXT_FEATURES = list(CONTEXT_DEFAULT_FEATURES)
 FEATURES = list(ALL_COMPUTED_FEATURES)
-MODEL_INPUT_FEATURE_ORDER = list(ALL_COMPUTED_FEATURES) + list(ARC_CONTEXT_FEATURES)
+MODEL_INPUT_FEATURE_ORDER = list(LEGACY_COMPUTED_FEATURES) + list(ARC_CONTEXT_FEATURES) + list(EXTRA_COMPUTED_FEATURES)
 MODEL_INPUT_FEATURE_ID_MAP = {name: idx for idx, name in enumerate(MODEL_INPUT_FEATURE_ORDER)}
 
 TARGET = "label_arc"
 CONTEXT_TARGET = "device_family_code"
 GROUP_COL_CANDIDATES = ["trial_id", "session_id", "section_id", "session", "sid"]
 
-DB_FEATURE_SPACE_VERSION = 8
+DB_FEATURE_SPACE_VERSION = 9
 DB_RATIO_FLOOR = 1e-6
 DB_POWER_RATIO_FLOOR = 1e-6
 DB_RATIO_CLIP = (-80.0, 20.0)
@@ -143,6 +193,10 @@ FEATURE_CLIP_BOUNDS = {
     "delta_flux": (0.0, 200.0),
     "halfcycle_asymmetry": (0.0, 200.0),
     "v_sag_pct": (0.0, 100.0),
+    "pulse_count_per_cycle": (0.0, 16.0),
+    "zero_dwell_ratio": (0.0, 100.0),
+    "low_current_ratio": (0.0, 100.0),
+    "max_low_current_run_ms": (0.0, 25.0),
     "context_family_confidence": (0.0, 1.0),
     "v_rms": (0.0, 400.0),
     "i_rms": (0.0, 40.0),
@@ -705,6 +759,259 @@ def ensure_dir(path: str) -> None:
     folder = os.path.dirname(path)
     if folder:
         os.makedirs(folder, exist_ok=True)
+
+
+def _series_boolish_to_int(series, index, default: int = 0) -> pd.Series:
+    if isinstance(series, pd.Series):
+        raw = series.reindex(index)
+    else:
+        raw = pd.Series(default, index=index)
+    if raw.dtype == bool:
+        return raw.fillna(False).astype(int)
+    text = raw.astype(str).str.strip().str.lower()
+    truthy = text.isin({"1", "true", "t", "yes", "y", "verified", "human_verified"})
+    falsy = text.isin({"0", "false", "f", "no", "n", "", "nan", "none"})
+    numeric = pd.to_numeric(raw, errors="coerce")
+    out = pd.Series(default, index=index, dtype=int)
+    out.loc[numeric.notna()] = (numeric.loc[numeric.notna()] > 0).astype(int)
+    out.loc[truthy] = 1
+    out.loc[falsy] = 0
+    return out.astype(int)
+
+
+def normalize_training_generation(value: str | None, *, fallback: str = "legacy") -> str:
+    try:
+        normalized = normalize_generation_tag(value, allow_none=True)
+    except Exception:
+        normalized = None
+    return str(normalized or fallback)
+
+
+def annotate_generation_and_mismatch_columns(
+    df: pd.DataFrame,
+    *,
+    current_training_generation: str | None = None,
+) -> pd.DataFrame:
+    work = df.copy()
+    current_generation = normalize_training_generation(current_training_generation)
+
+    score_alias = None
+    for candidate in ("model_arc_score", "arc_model_score", "model_score", "arc_score"):
+        if candidate in work.columns:
+            score_alias = candidate
+            break
+    if score_alias is not None:
+        work["model_arc_score"] = pd.to_numeric(work[score_alias], errors="coerce")
+    else:
+        work["model_arc_score"] = np.nan
+
+    pred_alias = None
+    for candidate in ("model_arc_pred", "model_pred", "arc_model_pred"):
+        if candidate in work.columns:
+            pred_alias = candidate
+            break
+    if pred_alias is not None:
+        model_pred = pd.to_numeric(work[pred_alias], errors="coerce")
+        valid_pred = model_pred.isin([0, 1])
+        work["model_arc_pred"] = np.where(valid_pred, model_pred.astype(float), np.nan)
+    else:
+        work["model_arc_pred"] = np.nan
+
+    work["label_verified"] = _series_boolish_to_int(work.get("label_verified"), work.index, default=0)
+
+    if "current_training_generation" in work.columns and current_training_generation is None:
+        current_series = work["current_training_generation"].astype(str).map(lambda v: normalize_training_generation(v, fallback=current_generation))
+    else:
+        current_series = pd.Series(current_generation, index=work.index, dtype=object)
+    work["current_training_generation"] = current_series.astype(str)
+
+    if "source_model_generation" in work.columns:
+        raw_source_generation = work["source_model_generation"]
+    elif "model_generation" in work.columns:
+        raw_source_generation = work["model_generation"]
+    else:
+        raw_source_generation = pd.Series("", index=work.index, dtype=object)
+    source_model_generation = raw_source_generation.astype(str).map(
+        lambda v: normalize_training_generation(v, fallback="unknown") if str(v).strip() else "unknown"
+    )
+    work["source_model_generation"] = source_model_generation.astype(str)
+    work["generation_tag"] = source_model_generation.where(source_model_generation.ne("unknown"), current_series.astype(str))
+
+    if "label_truth_source" not in work.columns:
+        truth_source = np.where(
+            work["label_verified"].astype(int) == 1,
+            "human_verified",
+            "human_label",
+        )
+        work["label_truth_source"] = pd.Series(truth_source, index=work.index, dtype=object)
+    else:
+        work["label_truth_source"] = work["label_truth_source"].fillna("human_label").astype(str)
+
+    labels = pd.to_numeric(work.get(TARGET, pd.Series(np.nan, index=work.index)), errors="coerce")
+    preds = pd.to_numeric(work["model_arc_pred"], errors="coerce")
+    mismatch_mask = labels.isin([0, 1]) & preds.isin([0, 1]) & labels.ne(preds)
+    mismatch_type = pd.Series("", index=work.index, dtype=object)
+    mismatch_type.loc[(preds == 1) & (labels == 0)] = "fp_override"
+    mismatch_type.loc[(preds == 0) & (labels == 1)] = "fn_override"
+    work["reality_predict_mismatch"] = mismatch_mask.astype(int)
+    work["mismatch_type"] = mismatch_type.astype(str)
+    return work
+
+
+def build_mismatch_summary(df: pd.DataFrame, *, current_training_generation: str | None = None) -> dict:
+    if not isinstance(df, pd.DataFrame) or df.empty:
+        return {
+            "rows": 0,
+            "rows_with_model_output": 0,
+            "mismatch_rows": 0,
+            "mismatch_rate": 0.0,
+            "fp_override_rows": 0,
+            "fn_override_rows": 0,
+            "verified_rows": 0,
+            "verified_mismatch_rows": 0,
+            "source_model_generation_counts": {},
+            "per_generation_mismatch_counts": {},
+            "per_family_mismatch_counts": {},
+            "per_device_mismatch_counts": {},
+        }
+
+    work = annotate_generation_and_mismatch_columns(df, current_training_generation=current_training_generation)
+    model_pred = pd.to_numeric(work.get("model_arc_pred", pd.Series(np.nan, index=work.index)), errors="coerce")
+    has_model_output = model_pred.isin([0, 1]) | pd.to_numeric(work.get("model_arc_score", pd.Series(np.nan, index=work.index)), errors="coerce").notna()
+    mismatch = pd.to_numeric(work.get("reality_predict_mismatch", pd.Series(0, index=work.index)), errors="coerce").fillna(0).astype(int) == 1
+    mismatch_type = work.get("mismatch_type", pd.Series("", index=work.index)).astype(str)
+    verified = _series_boolish_to_int(work.get("label_verified"), work.index, default=0) == 1
+
+    def _counts(series: pd.Series, mask: pd.Series | None = None) -> dict[str, int]:
+        src = series if mask is None else series.loc[mask]
+        if src.empty:
+            return {}
+        src = src.fillna("unknown").astype(str).str.strip()
+        src = src.replace("", "unknown")
+        return {str(k): int(v) for k, v in src.value_counts().to_dict().items()}
+
+    family_series = work.get("device_family", pd.Series("unknown", index=work.index)).astype(str)
+    device_series = work.get("device_name", pd.Series("unknown_device", index=work.index)).astype(str)
+    source_generation_series = work.get("source_model_generation", pd.Series("unknown", index=work.index)).astype(str)
+
+    rows_with_model_output = int(has_model_output.sum())
+    mismatch_rows = int(mismatch.sum())
+    mismatch_rate = float(mismatch_rows / rows_with_model_output) if rows_with_model_output > 0 else 0.0
+    return {
+        "rows": int(len(work)),
+        "rows_with_model_output": rows_with_model_output,
+        "mismatch_rows": mismatch_rows,
+        "mismatch_rate": mismatch_rate,
+        "fp_override_rows": int(((mismatch_type == "fp_override") & mismatch).sum()),
+        "fn_override_rows": int(((mismatch_type == "fn_override") & mismatch).sum()),
+        "verified_rows": int(verified.sum()),
+        "verified_mismatch_rows": int((verified & mismatch).sum()),
+        "source_model_generation_counts": _counts(source_generation_series, has_model_output),
+        "per_generation_mismatch_counts": _counts(source_generation_series, mismatch),
+        "per_family_mismatch_counts": _counts(family_series, mismatch),
+        "per_device_mismatch_counts": _counts(device_series, mismatch),
+        "current_training_generation_counts": _counts(work.get("current_training_generation", pd.Series("legacy", index=work.index)).astype(str)),
+    }
+
+
+def build_holdout_mismatch_summary(
+    meta_df: pd.DataFrame | None,
+    y_true,
+    y_score,
+    threshold: float,
+    current_training_generation: str | None = None,
+) -> dict:
+    if meta_df is None or not isinstance(meta_df, pd.DataFrame) or meta_df.empty:
+        out = build_mismatch_summary(pd.DataFrame())
+        out.update({
+            "held_out_rows": 0,
+            "threshold": float(threshold),
+            "current_model_correct_rows": 0,
+            "current_model_error_rows": 0,
+            "current_model_correction_rate": 0.0,
+        })
+        return out
+
+    work = annotate_generation_and_mismatch_columns(meta_df, current_training_generation=current_training_generation)
+    summary = build_mismatch_summary(work)
+    mismatch_mask = pd.to_numeric(work.get("reality_predict_mismatch", pd.Series(0, index=work.index)), errors="coerce").fillna(0).astype(int) == 1
+    y_true_arr = np.asarray(y_true).astype(int)
+    y_pred_arr = (np.asarray(y_score).astype(float) >= float(threshold)).astype(int)
+    if len(y_true_arr) != len(work):
+        summary.update({
+            "held_out_rows": int(len(work)),
+            "threshold": float(threshold),
+            "current_model_correct_rows": 0,
+            "current_model_error_rows": 0,
+            "current_model_correction_rate": 0.0,
+        })
+        return summary
+    if bool(mismatch_mask.any()):
+        current_model_correct = int(np.sum(y_pred_arr[mismatch_mask.to_numpy()] == y_true_arr[mismatch_mask.to_numpy()]))
+        current_model_error = int(np.sum(y_pred_arr[mismatch_mask.to_numpy()] != y_true_arr[mismatch_mask.to_numpy()]))
+        correction_rate = float(current_model_correct / int(mismatch_mask.sum())) if int(mismatch_mask.sum()) > 0 else 0.0
+    else:
+        current_model_correct = 0
+        current_model_error = 0
+        correction_rate = 0.0
+    summary.update({
+        "held_out_rows": int(len(work)),
+        "threshold": float(threshold),
+        "current_model_correct_rows": current_model_correct,
+        "current_model_error_rows": current_model_error,
+        "current_model_correction_rate": correction_rate,
+    })
+    return summary
+
+
+def assess_next_generation_readiness(
+    result: dict,
+    *,
+    min_recall: float,
+    min_precision: float,
+    max_fpr: float,
+) -> dict:
+    validation_recall = float(result.get("holdout_validation_recall", result.get("validation_recall", 0.0)) or 0.0)
+    validation_precision = float(result.get("holdout_validation_precision", result.get("validation_precision", 0.0)) or 0.0)
+    validation_fpr = float(result.get("validation_fpr", 1.0) or 1.0)
+    validation_event = result.get("validation_event_level_metrics") or {}
+    missed_events = int(validation_event.get("missed_event_count", 0) or 0)
+    false_alarms = float(validation_event.get("false_alarms_per_session", 0.0) or 0.0)
+    justified = bool(
+        validation_recall >= float(min_recall)
+        and validation_precision >= float(min_precision)
+        and validation_fpr <= float(max_fpr)
+        and missed_events <= 1
+    )
+    reasons = []
+    if validation_recall < float(min_recall):
+        reasons.append(f"holdout recall {validation_recall:.4f} < {float(min_recall):.4f}")
+    if validation_precision < float(min_precision):
+        reasons.append(f"holdout precision {validation_precision:.4f} < {float(min_precision):.4f}")
+    if validation_fpr > float(max_fpr):
+        reasons.append(f"holdout FPR {validation_fpr:.4f} > {float(max_fpr):.4f}")
+    if missed_events > 1:
+        reasons.append(f"validation missed events {missed_events} > 1")
+    if not reasons:
+        reasons.append("Held-out precision/recall/FPR and event-miss checks are within the configured generation gate.")
+    return {
+        "justified": justified,
+        "basis": "Held-out validation metrics only; training-set agreement is not used as the advancement criterion.",
+        "criteria": {
+            "min_recall": float(min_recall),
+            "min_precision": float(min_precision),
+            "max_fpr": float(max_fpr),
+            "max_validation_event_misses": 1,
+        },
+        "held_out_snapshot": {
+            "validation_recall": validation_recall,
+            "validation_precision": validation_precision,
+            "validation_fpr": validation_fpr,
+            "validation_missed_event_count": missed_events,
+            "validation_false_alarms_per_session": false_alarms,
+        },
+        "reason": "; ".join(reasons),
+    }
 
 
 def pick_group_column(df: pd.DataFrame) -> str | None:
@@ -1693,17 +2000,43 @@ def load_clean_dataset(
     target_col: str = TARGET,
     augment_unknown_context: bool = True,
     arc_tolerance: ArcToleranceConfig | dict | None = None,
+    current_training_generation: str | None = None,
+    mismatch_fp_boost: float = 1.0,
+    mismatch_fn_boost: float = 1.0,
+    mismatch_focus_ratio: float = 0.0,
+    mismatch_verified_only: bool = False,
 ):
     if not os.path.isfile(csv_path):
         raise ValueError(f"Merged dataset not found: {csv_path}")
 
     raw_df = pd.read_csv(csv_path)
     raw_df = normalize_feature_names(raw_df)
+    raw_df = annotate_generation_and_mismatch_columns(raw_df, current_training_generation=current_training_generation)
     feature_names = list(feature_names or default_feature_names_for_target(target_col))
     df = clean_df(raw_df, include_invalid=include_invalid, feature_names=feature_names, target_col=target_col)
     df = apply_scaffold_gap_fill_cap(df, target_col=target_col)
     if target_col == TARGET:
         df = apply_arc_tolerance_policy(df, target_col=target_col, tolerance=arc_tolerance)
+        df = annotate_generation_and_mismatch_columns(df, current_training_generation=current_training_generation)
+        eligible_mismatch = pd.to_numeric(
+            df.get("reality_predict_mismatch", pd.Series(0, index=df.index)),
+            errors="coerce",
+        ).fillna(0).astype(int) == 1
+        if bool(mismatch_verified_only):
+            eligible_mismatch &= _series_boolish_to_int(df.get("label_verified"), df.index, default=0) == 1
+        mismatch_type = df.get("mismatch_type", pd.Series("", index=df.index)).astype(str)
+        fp_multiplier = float(np.clip(float(mismatch_fp_boost), 0.10, 20.0))
+        fn_multiplier = float(np.clip(float(mismatch_fn_boost), 0.10, 20.0))
+        df["mismatch_weight_multiplier"] = 1.0
+        df.loc[eligible_mismatch & mismatch_type.eq("fp_override"), "mismatch_weight_multiplier"] = fp_multiplier
+        df.loc[eligible_mismatch & mismatch_type.eq("fn_override"), "mismatch_weight_multiplier"] = fn_multiplier
+        if "sample_weight" in df.columns:
+            df["sample_weight"] = (
+                pd.to_numeric(df["sample_weight"], errors="coerce").fillna(1.0)
+                * pd.to_numeric(df["mismatch_weight_multiplier"], errors="coerce").fillna(1.0)
+            )
+        df["mismatch_focus_ratio"] = float(np.clip(float(mismatch_focus_ratio), 0.0, 1.0))
+        df["mismatch_verified_only"] = 1 if bool(mismatch_verified_only) else 0
 
     if augment_unknown_context and target_col == TARGET and any(str(name).startswith("ctx_family_") for name in feature_names):
         already_augmented = pd.Series(False, index=df.index)
@@ -1901,6 +2234,8 @@ def compose_arc_training_view(
     positive_oversample: float = 1.0,
     random_state: int = 42,
     min_negative_rows: int = 256,
+    mismatch_focus_ratio: float = 0.0,
+    mismatch_verified_only: bool = False,
 ) -> tuple[pd.DataFrame, pd.Series, pd.Series, np.ndarray, pd.DataFrame | None, dict]:
     X_df = X.copy()
     y_ser = pd.Series(np.asarray(y).astype(int), index=X_df.index)
@@ -1919,9 +2254,12 @@ def compose_arc_training_view(
         "negative_rows": int(neg_mask.sum()),
         "negative_ratio_requested": float(negative_ratio),
         "positive_oversample": float(positive_oversample),
+        "mismatch_focus_ratio": float(np.clip(float(mismatch_focus_ratio), 0.0, 1.0)),
         "hard_negative_kept": 0,
         "transition_negative_kept": 0,
         "near_arc_negative_kept": 0,
+        "mismatch_fp_negatives_kept": 0,
+        "mismatch_fn_positives": 0,
     }
 
     selected_neg_idx = neg_idx
@@ -1935,6 +2273,11 @@ def compose_arc_training_view(
             transition_normal = pd.to_numeric(work_meta.get("transition_normal", pd.Series(0, index=X_df.index)), errors="coerce").fillna(0).astype(int)
             near_arc_negative = pd.to_numeric(work_meta.get("near_arc_hard_negative", pd.Series(0, index=X_df.index)), errors="coerce").fillna(0).astype(int)
             trusted_normal = pd.to_numeric(work_meta.get("trusted_normal_session", pd.Series(0, index=X_df.index)), errors="coerce").fillna(0).astype(int)
+            mismatch_type = work_meta.get("mismatch_type", pd.Series("", index=X_df.index)).astype(str)
+            verified_mask = _series_boolish_to_int(work_meta.get("label_verified"), X_df.index, default=0) == 1
+            mismatch_fp = mismatch_type.eq("fp_override")
+            if bool(mismatch_verified_only):
+                mismatch_fp &= verified_mask
             start_like = pd.Series(False, index=X_df.index, dtype=bool)
             if "division_tag" in work_meta.columns:
                 start_like = work_meta["division_tag"].astype(str).str.lower().str.contains("start", na=False)
@@ -1947,6 +2290,7 @@ def compose_arc_training_view(
                 + np.clip(arc_like.to_numpy(dtype=float), 0.0, 3.0)
                 + (0.9 * start_like.to_numpy(dtype=float))
                 - (0.45 * trusted_normal.to_numpy(dtype=float))
+                + (4.2 * mismatch_fp.to_numpy(dtype=float))
             )
             hardness = np.clip(hardness, 0.05, None)
             neg_positions = np.where(neg_mask.to_numpy(dtype=bool))[0]
@@ -1954,9 +2298,30 @@ def compose_arc_training_view(
             neg_probs = np.clip(neg_probs, 1e-6, None)
             neg_probs = neg_probs / neg_probs.sum()
             rng = np.random.default_rng(int(random_state))
-            chosen_pos = rng.choice(neg_positions, size=target_neg, replace=False, p=neg_probs)
-            selected_neg_idx = X_df.index[np.sort(chosen_pos)]
+            reserve_count = 0
+            reserved_positions = np.asarray([], dtype=int)
+            focus_ratio = float(np.clip(float(mismatch_focus_ratio), 0.0, 1.0))
+            if focus_ratio > 0.0:
+                eligible_reserved = np.where((neg_mask.to_numpy(dtype=bool)) & mismatch_fp.to_numpy(dtype=bool))[0]
+                if len(eligible_reserved) > 0:
+                    reserve_count = min(len(eligible_reserved), int(round(target_neg * focus_ratio)))
+                    if reserve_count > 0:
+                        reserve_scores = hardness[eligible_reserved] * np.clip(w_arr[eligible_reserved], 0.05, None)
+                        order = np.argsort(-reserve_scores)
+                        reserved_positions = np.sort(eligible_reserved[order[:reserve_count]])
+            remaining_target = max(0, int(target_neg) - int(len(reserved_positions)))
+            remaining_positions = np.array([pos for pos in neg_positions if pos not in set(reserved_positions.tolist())], dtype=int)
+            if remaining_target > 0 and len(remaining_positions) > 0:
+                remaining_probs = hardness[remaining_positions] * np.clip(w_arr[remaining_positions], 0.05, None)
+                remaining_probs = np.clip(remaining_probs, 1e-6, None)
+                remaining_probs = remaining_probs / remaining_probs.sum()
+                chosen_pos = rng.choice(remaining_positions, size=min(remaining_target, len(remaining_positions)), replace=False, p=remaining_probs)
+                combined_positions = np.unique(np.concatenate([reserved_positions, np.sort(chosen_pos)]))
+            else:
+                combined_positions = np.unique(reserved_positions)
+            selected_neg_idx = X_df.index[np.sort(combined_positions)]
             info["negative_rows_selected"] = int(target_neg)
+            info["mismatch_fp_negatives_kept"] = int(len(reserved_positions))
         else:
             info["negative_rows_selected"] = int(len(neg_idx))
     else:
@@ -1974,6 +2339,12 @@ def compose_arc_training_view(
         info["hard_negative_kept"] = int(pd.to_numeric(meta_sel.get("hard_negative", pd.Series(0, index=meta_sel.index)), errors="coerce").fillna(0).astype(int).sum())
         info["transition_negative_kept"] = int(pd.to_numeric(meta_sel.get("transition_normal", pd.Series(0, index=meta_sel.index)), errors="coerce").fillna(0).astype(int).sum())
         info["near_arc_negative_kept"] = int(pd.to_numeric(meta_sel.get("near_arc_hard_negative", pd.Series(0, index=meta_sel.index)), errors="coerce").fillna(0).astype(int).sum())
+        mismatch_type_meta = meta_sel.get("mismatch_type", pd.Series("", index=meta_sel.index)).astype(str)
+        verified_meta = _series_boolish_to_int(meta_sel.get("label_verified"), meta_sel.index, default=0) == 1
+        mismatch_fn_mask = mismatch_type_meta.eq("fn_override")
+        if bool(mismatch_verified_only):
+            mismatch_fn_mask &= verified_meta
+        info["mismatch_fn_positives"] = int(mismatch_fn_mask.sum())
 
     oversample = max(1.0, float(positive_oversample))
     extra_repeats = int(np.floor(oversample) - 1)
@@ -3872,6 +4243,7 @@ def save_duel_bundle(
     winner_policy: dict | None = None,
     feature_names=None,
     function_name: str = "arc_rf_predict",
+    report_overrides: dict | None = None,
 ) -> None:
     ensure_dir(out_joblib)
     ensure_dir(out_report)
@@ -3900,5 +4272,7 @@ def save_duel_bundle(
         "winner_policy": winner_policy or {},
         "settings": settings,
     }
+    if report_overrides:
+        report.update(report_overrides)
     with open(out_report, "w", encoding="utf-8") as f:
         json.dump(report, f, indent=2)

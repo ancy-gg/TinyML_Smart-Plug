@@ -20,6 +20,30 @@ from tinyml_common import (
     strip_estimator,
     validate_feature_subset,
 )
+try:
+    from generation_paths import (
+        apply_generation_defaults,
+        archive_generation_exports,
+        cli_flag_present,
+        ensure_generation_dirs,
+        next_generation_tag,
+        normalize_generation_tag,
+        resolve_generation_paths,
+        update_generation_manifest,
+        validate_generation_workspace,
+    )
+except Exception:
+    from trainer.generation_paths import (
+        apply_generation_defaults,
+        archive_generation_exports,
+        cli_flag_present,
+        ensure_generation_dirs,
+        next_generation_tag,
+        normalize_generation_tag,
+        resolve_generation_paths,
+        update_generation_manifest,
+        validate_generation_workspace,
+    )
 
 SCRIPT_DIR = Path(__file__).resolve().parent
 TINYML_DIR = SCRIPT_DIR.parent
@@ -61,7 +85,7 @@ def emit_progress(current: int, total: int, payload: dict) -> None:
 
 
 def _shared_arc_training_args(args) -> list[str]:
-    return [
+    out = [
         "--arc_tolerance_mode", str(args.arc_tolerance_mode),
         "--pre_arc_window", str(int(args.pre_arc_window)),
         "--post_arc_window", str(int(args.post_arc_window)),
@@ -70,7 +94,13 @@ def _shared_arc_training_args(args) -> list[str]:
         "--hard_negative_ring", str(int(args.hard_negative_ring)),
         "--final_negative_ratio", str(float(args.final_negative_ratio)),
         "--positive_oversample", str(float(args.positive_oversample)),
+        "--mismatch_fp_boost", str(float(getattr(args, "mismatch_fp_boost", 1.0))),
+        "--mismatch_fn_boost", str(float(getattr(args, "mismatch_fn_boost", 1.0))),
+        "--mismatch_focus_ratio", str(float(getattr(args, "mismatch_focus_ratio", 0.0))),
     ]
+    if bool(getattr(args, "mismatch_verified_only", False)):
+        out.append("--mismatch_verified_only")
+    return out
 
 
 def _prefer_rf_deployment_winner(ranked_results: list[dict], winner_policy: dict) -> tuple[dict | None, dict]:
@@ -158,9 +188,11 @@ def resolve_arc_features_by_model(args, model_key: str) -> tuple[list[str], list
         base = validate_feature_subset(common_explicit, allowed_features=ARC_SWEEP_FEATURES, role=f"{model_key} arc training")
     else:
         report_path = getattr(args, report_attr, None) or args.feature_report
+        allow_legacy_default_report = not bool(getattr(args, "_selected_generation", None) or getattr(args, "generation", None))
+        default_report_features = _load_feature_list_from_report(DEFAULT_FEATURE_REPORT, model_key) if allow_legacy_default_report else None
         base = (
             _load_feature_list_from_report(report_path, model_key)
-            or _load_feature_list_from_report(DEFAULT_FEATURE_REPORT, model_key)
+            or default_report_features
             or list(ARC_SWEEP_FEATURES)
         )
     return list(base), list(base) + list(ARC_CONTEXT_FEATURES)
@@ -207,6 +239,8 @@ def _build_child_command(model_key: str, args, n_jobs: int) -> list[str]:
         "--n_jobs",
         str(n_jobs),
     ]
+    if getattr(args, "generation", None):
+        cmd.extend(["--generation", str(args.generation)])
     if args.include_invalid:
         cmd.append("--include_invalid")
     if getattr(args, f"{model_key}_feature_report", None):
@@ -269,6 +303,7 @@ def main():
     ap.add_argument("--out_report", default=OUT_REPORT)
     ap.add_argument("--rf_out_report", default=RF_REPORT)
     ap.add_argument("--et_out_report", default=ET_REPORT)
+    ap.add_argument("--generation", default=None)
     ap.add_argument("--include_invalid", action="store_true")
     ap.add_argument("--fn_weight", type=float, default=80.0)
     ap.add_argument("--fp_weight", type=float, default=4.0)
@@ -295,7 +330,34 @@ def main():
     ap.add_argument("--hard_negative_ring", type=int, default=2)
     ap.add_argument("--final_negative_ratio", type=float, default=0.0)
     ap.add_argument("--positive_oversample", type=float, default=1.0)
+    ap.add_argument("--mismatch_fp_boost", type=float, default=1.0)
+    ap.add_argument("--mismatch_fn_boost", type=float, default=1.0)
+    ap.add_argument("--mismatch_focus_ratio", type=float, default=0.0)
+    ap.add_argument("--mismatch_verified_only", action="store_true")
     args = ap.parse_args()
+
+    argv = sys.argv[1:]
+    generation_paths = None
+    selected_generation = None
+    if args.generation:
+        selected_generation = normalize_generation_tag(args.generation)
+        generation_paths = resolve_generation_paths(PROJECT_ROOT, selected_generation)
+        ensure_generation_dirs(generation_paths)
+        apply_generation_defaults(
+            args,
+            argv,
+            {
+                "csv": ("--csv", generation_paths.arc_csv),
+                "out_report": ("--out_report", generation_paths.duel_report),
+                "rf_out_report": ("--rf_out_report", generation_paths.rf_report),
+                "et_out_report": ("--et_out_report", generation_paths.et_report),
+                "feature_report": ("--feature_report", generation_paths.arc_subset_report),
+            },
+        )
+        if not cli_flag_present("--csv", argv):
+            errors = validate_generation_workspace(generation_paths, require_arc_csv=True, require_nonempty_arc_csv=True)
+            if errors:
+                raise ValueError(" ; ".join(errors))
 
     plan = estimate_search_plan(args.n_iter)
     print("Search plan per model:", plan)
@@ -451,10 +513,32 @@ def main():
         "hard_negative_ring": int(args.hard_negative_ring),
         "final_negative_ratio": float(args.final_negative_ratio),
         "positive_oversample": float(args.positive_oversample),
+        "mismatch_fp_boost": float(args.mismatch_fp_boost),
+        "mismatch_fn_boost": float(args.mismatch_fn_boost),
+        "mismatch_focus_ratio": float(args.mismatch_focus_ratio),
+        "mismatch_verified_only": bool(args.mismatch_verified_only),
+        "generation": str(selected_generation or "legacy"),
         "model_features": {
             str(r.get("model_key", r.get("model_name", ""))): list(r.get("arc_base_feature_names", []) or [])
             for r in ranked_results
         },
+    }
+    report_overrides = {
+        "selected_generation": str(selected_generation or "legacy"),
+        "source_model_generation_summary": dict((winner.get("source_model_generation_summary") or {})),
+        "resolved_paths": {
+            "selected_generation": str(selected_generation or "legacy"),
+            "resolved_arc_dataset_path": str(args.csv),
+            "resolved_feature_report_path": str(args.feature_report or DEFAULT_FEATURE_REPORT),
+            "resolved_report_path": str(args.out_report),
+            "resolved_rf_report_path": str(args.rf_out_report),
+            "resolved_et_report_path": str(args.et_out_report),
+            "benchmark_folder": str(getattr(generation_paths, "benchmark_dir", "")),
+            "generation_manifest_path": str(getattr(generation_paths, "manifest_path", "")),
+        },
+        "archive_output_paths": generation_paths.archive_output_paths() if generation_paths is not None else {},
+        "canonical_export_paths": generation_paths.canonical_export_paths() if generation_paths is not None else {},
+        "generation_advancement_assessment": winner.get("generation_advancement_assessment", {}),
     }
     save_duel_bundle(
         winner=winner,
@@ -465,6 +549,7 @@ def main():
         settings=settings,
         winner_policy=winner_policy,
         feature_names=winner.get("feature_names", ARC_FEATURES),
+        report_overrides=report_overrides,
     )
 
     companion_map = {
@@ -493,6 +578,42 @@ def main():
             json.dump(payload, f, indent=2)
         print("Saved:", out_path)
 
+    if generation_paths is not None:
+        archived = archive_generation_exports(generation_paths, kinds=["duel"])
+        update_generation_manifest(
+            generation_paths,
+            {
+                "selected_generation": selected_generation,
+                "source_model_generations_seen": sorted(
+                    set(
+                        key
+                        for result in ranked_results
+                        for key in (result.get("source_model_generation_summary") or {}).keys()
+                    )
+                ),
+                "trainer_settings_snapshot": {"duel": settings},
+                "duel_training": {
+                    "report_path": str(args.out_report),
+                    "rf_report_path": str(args.rf_out_report),
+                    "et_report_path": str(args.et_out_report),
+                    "winner_model": str(winner.get("model_name", "")),
+                    "winner_model_key": str(winner.get("model_key", "")),
+                    "winner_features": list(winner.get("arc_base_feature_names", []) or []),
+                    "archive_outputs": archived,
+                    "generation_advancement_assessment": winner.get("generation_advancement_assessment", {}),
+                },
+                "recommended_next_action": (
+                    f"Trained on {selected_generation}. "
+                    f"The canonical duel export is now the active deployment target. "
+                    + (
+                        f"Place next collection raw CSVs in tinyml/data/{next_generation_tag(selected_generation)}/raw."
+                        if next_generation_tag(selected_generation)
+                        else "Review held-out winner metrics before advancing beyond the current generation."
+                    )
+                ),
+            },
+        )
+
     final_total = int(sum(max(1, v.get("total", 1)) for v in tracker.values()))
     emit_progress(
         final_total,
@@ -504,6 +625,8 @@ def main():
         },
     )
 
+    if selected_generation:
+        print("Selected generation:", selected_generation)
     print("Saved:", args.out_joblib)
     print("Saved:", args.out_header)
     print("Saved:", args.out_report)

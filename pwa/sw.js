@@ -1,4 +1,4 @@
-const BUILD_VERSION = "Web-v7.3.10";
+const BUILD_VERSION = "Web-v7.4.2";
 const CACHE_NAME = `tsp-shell-${BUILD_VERSION}`;
 const APP_SHELL = [
   "./",

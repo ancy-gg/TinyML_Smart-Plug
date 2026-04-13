@@ -44,6 +44,8 @@ public:
   void requestLiveUpdate(float v, float c, float apparentPower, float t,
                          float abs_irms_zscore_vs_baseline, float delta_irms_abs,
                          float halfcycle_asymmetry, float suspicious_run_energy,
+                         float pulse_count_per_cycle, float zero_dwell_ratio,
+                         float low_current_ratio, float max_low_current_run_ms,
                          float delta_hf_energy, float delta_flux, float v_sag_pct,
                          float midband_residual_ratio, float zcv,
                          float spectral_flux_midhf, float peak_fluct_cv,
@@ -82,6 +84,8 @@ private:
     float v = 0.0f, c = 0.0f, apparentPower = 0.0f, t = 0.0f;
     float abs_irms_zscore_vs_baseline = 0.0f, delta_irms_abs = 0.0f;
     float halfcycle_asymmetry = 0.0f, cycle_nmse = 0.0f;
+    float pulse_count_per_cycle = 0.0f, zero_dwell_ratio = 0.0f;
+    float low_current_ratio = 0.0f, max_low_current_run_ms = 0.0f;
     float delta_hf_energy = 0.0f, v_sag_pct = 0.0f;
     float suspicious_run_energy = 0.0f, delta_flux = 0.0f;
     float midband_residual_ratio = 0.0f, zcv = 0.0f;
@@ -144,6 +148,7 @@ private:
     uint16_t hop_samples;
     float spectral_flux_midhf, residual_crest_factor, edge_spike_ratio, midband_residual_ratio, cycle_nmse;
     float peak_fluct_cv, thd_i, hf_energy_delta, zcv, abs_irms_zscore_vs_baseline;
+    float pulse_count_per_cycle, zero_dwell_ratio, low_current_ratio, max_low_current_run_ms;
     float fs_err_hz, suspicious_run_energy, delta_irms_abs, delta_hf_energy, delta_flux, v_sag_pct, halfcycle_asymmetry;
     float v_rms, i_rms, temp_c;
     uint32_t queue_drop_count;

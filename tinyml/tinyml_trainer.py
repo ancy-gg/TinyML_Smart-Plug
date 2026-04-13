@@ -36,20 +36,26 @@ except Exception:
         "edge_spike_ratio",
         "v_sag_pct",
         "cycle_nmse",
+        "pulse_count_per_cycle",
+        "zero_dwell_ratio",
+        "low_current_ratio",
+        "max_low_current_run_ms",
     ]
     ARC_SWEEP_FEATURES = [
+        "pulse_count_per_cycle",
+        "max_low_current_run_ms",
+        "zero_dwell_ratio",
+        "low_current_ratio",
         "thd_i",
         "spectral_flux_midhf",
         "hf_energy_delta",
         "residual_crest_factor",
         "peak_fluct_cv",
         "zcv",
-        "cycle_nmse",
-        "delta_hf_energy",
-        "delta_flux",
         "delta_irms_abs",
         "midband_residual_ratio",
         "edge_spike_ratio",
+        "halfcycle_asymmetry",
     ]
     CONTEXT_SWEEP_FEATURES = [
         "delta_irms_abs",
@@ -63,6 +69,20 @@ except Exception:
         "residual_crest_factor",
         "peak_fluct_cv",
     ]
+try:
+    from trainer.generation_paths import (
+        init_generation_folders,
+        next_generation_tag,
+        normalize_generation_tag,
+        resolve_generation_paths,
+    )
+except Exception:
+    from generation_paths import (
+        init_generation_folders,
+        next_generation_tag,
+        normalize_generation_tag,
+        resolve_generation_paths,
+    )
 SUBSET_SWEEP_SEARCH_DEPTH = 24
 APP_BG = "#26282d"
 CARD_BG = "#2f3339"
@@ -132,6 +152,10 @@ class TinyMLTrainerGUI(tk.Tk):
         self.paths_visible = False
         default_project_root = Path(__file__).resolve().parent.parent
         self.project_root = tk.StringVar(value=str(default_project_root))
+        self.current_generation = tk.StringVar(value="gen0")
+        self.active_generation_text = tk.StringVar(value="Active Generation: gen0")
+        self.generation_workflow_note = tk.StringVar(value="")
+        self.post_training_hint = tk.StringVar(value="")
         self.python_exe = tk.StringVar(value=sys.executable)
         self.prepare_script = tk.StringVar(value="tinyml/trainer/prepare_data.py")
         self.rf_script = tk.StringVar(value="tinyml/trainer/train_rf.py")
@@ -139,17 +163,23 @@ class TinyMLTrainerGUI(tk.Tk):
         self.duel_script = tk.StringVar(value="tinyml/trainer/train_duel.py")
         self.context_script = tk.StringVar(value="tinyml/trainer/train_context.py")
         self.subset_script = tk.StringVar(value="tinyml/trainer/train_feature_subsets.py")
-        self.cleaned_csv = tk.StringVar(value="tinyml/data/arc_training.csv")
-        self.context_csv = tk.StringVar(value="tinyml/data/load_context.csv")
-        self.rf_report = tk.StringVar(value="tinyml/benchmark/TinyMLTreeEnsemble_RF_report.json")
-        self.et_report = tk.StringVar(value="tinyml/benchmark/TinyMLTreeEnsemble_ET_report.json")
-        self.duel_report = tk.StringVar(value="tinyml/benchmark/benchmark_report.json")
-        self.context_report = tk.StringVar(value="tinyml/benchmark/TinyMLContextModel_report.json")
-        self.prepare_report = tk.StringVar(value="tinyml/benchmark/prepare_data_report.json")
-        self.subset_report = tk.StringVar(value="tinyml/benchmark/TinyMLFeatureSubsetSweep_report.json")
-        self.subset_csv = tk.StringVar(value="tinyml/benchmark/TinyMLFeatureSubsetSweep_results.csv")
-        self.context_subset_report = tk.StringVar(value="tinyml/benchmark/TinyMLContextFeatureSubsetSweep_report.json")
-        self.context_subset_csv = tk.StringVar(value="tinyml/benchmark/TinyMLContextFeatureSubsetSweep_results.csv")
+        self.cleaned_csv = tk.StringVar(value="")
+        self.context_csv = tk.StringVar(value="")
+        self.rf_report = tk.StringVar(value="")
+        self.et_report = tk.StringVar(value="")
+        self.duel_report = tk.StringVar(value="")
+        self.context_report = tk.StringVar(value="")
+        self.prepare_report = tk.StringVar(value="")
+        self.subset_report = tk.StringVar(value="")
+        self.subset_csv = tk.StringVar(value="")
+        self.context_subset_report = tk.StringVar(value="")
+        self.context_subset_csv = tk.StringVar(value="")
+        self.resolved_raw_folder = tk.StringVar(value="")
+        self.resolved_benchmark_folder = tk.StringVar(value="")
+        self.resolved_model_archive_folder = tk.StringVar(value="")
+        self.resolved_manifest_path = tk.StringVar(value="")
+        self.resolved_canonical_headers = tk.StringVar(value="")
+        self.resolved_canonical_joblibs = tk.StringVar(value="")
         self.subset_task = tk.StringVar(value="Arc + Context")
         self.subset_feature_min = tk.StringVar(value="1")
         self.subset_feature_max = tk.StringVar(value=str(len(ARC_SWEEP_FEATURES)))
@@ -175,6 +205,10 @@ class TinyMLTrainerGUI(tk.Tk):
         self.sweep_positive_oversample = tk.StringVar(value="1.25")
         self.final_negative_ratio = tk.StringVar(value="0")
         self.final_positive_oversample = tk.StringVar(value="1.0")
+        self.mismatch_fp_boost = tk.StringVar(value="1.0")
+        self.mismatch_fn_boost = tk.StringVar(value="1.0")
+        self.mismatch_focus_ratio = tk.StringVar(value="0.0")
+        self.mismatch_verified_only = tk.BooleanVar(value=False)
         self.subset_n_jobs = tk.StringVar(value="1")
         self.search_iters = tk.StringVar(value="120")
         self.max_search_iters = tk.StringVar(value="240")
@@ -213,6 +247,9 @@ class TinyMLTrainerGUI(tk.Tk):
         self._adaptive_labels = []
         self._build_styles()
         self._build_ui()
+        self.current_generation.trace_add("write", self._on_generation_changed)
+        self.project_root.trace_add("write", self._on_generation_changed)
+        self._refresh_generation_paths()
         self._refresh_feature_selection_summary()
         self.bind("<Configure>", self._on_window_resize)
         self.after(120, self._drain_logs)
@@ -277,6 +314,145 @@ class TinyMLTrainerGUI(tk.Tk):
             lightcolor=ACCENT,
             darkcolor=ACCENT,
         )
+    def _validated_generation(self):
+        raw = str(self.current_generation.get() or "").strip()
+        if not raw:
+            raise ValueError("Generation is required. Use gen0..gen20.")
+        return normalize_generation_tag(raw)
+
+    def _generation_error_message(self) -> str | None:
+        try:
+            self._validated_generation()
+        except Exception as exc:
+            return str(exc)
+        return None
+
+    def _normalized_generation(self):
+        return self._validated_generation()
+    def _generation_paths(self):
+        return resolve_generation_paths(self.project_root.get(), self._validated_generation())
+    def _to_project_relative(self, path_value):
+        try:
+            return os.path.relpath(str(path_value), self.project_root.get())
+        except Exception:
+            return str(path_value)
+    def _refresh_generation_paths(self):
+        try:
+            gp = self._generation_paths()
+        except Exception as exc:
+            raw = str(self.current_generation.get() or "").strip() or "—"
+            self.active_generation_text.set(f"Active Generation: invalid ({raw})")
+            self.resolved_raw_folder.set("")
+            self.resolved_benchmark_folder.set("")
+            self.resolved_model_archive_folder.set("")
+            self.resolved_manifest_path.set("")
+            self.resolved_canonical_headers.set("")
+            self.resolved_canonical_joblibs.set("")
+            self.generation_workflow_note.set(str(exc))
+            self.post_training_hint.set("")
+            return
+
+        gen = gp.generation
+        if str(self.current_generation.get() or "").strip() != gen:
+            self.current_generation.set(gen)
+            return
+        self.active_generation_text.set(f"Active Generation: {gen}")
+        self.cleaned_csv.set(self._to_project_relative(gp.arc_csv))
+        self.context_csv.set(self._to_project_relative(gp.context_csv))
+        self.rf_report.set(self._to_project_relative(gp.rf_report))
+        self.et_report.set(self._to_project_relative(gp.et_report))
+        self.duel_report.set(self._to_project_relative(gp.duel_report))
+        self.context_report.set(self._to_project_relative(gp.context_report))
+        self.prepare_report.set(self._to_project_relative(gp.prepare_report))
+        self.subset_report.set(self._to_project_relative(gp.arc_subset_report))
+        self.subset_csv.set(self._to_project_relative(gp.arc_subset_results_csv))
+        self.context_subset_report.set(self._to_project_relative(gp.context_subset_report))
+        self.context_subset_csv.set(self._to_project_relative(gp.context_subset_results_csv))
+        self.resolved_raw_folder.set(str(gp.raw_dir))
+        self.resolved_benchmark_folder.set(str(gp.benchmark_dir))
+        self.resolved_model_archive_folder.set(str(gp.model_archive_dir))
+        self.resolved_manifest_path.set(str(gp.manifest_path))
+        self.resolved_canonical_headers.set("\n".join([
+            self._to_project_relative(gp.rf_active_header),
+            self._to_project_relative(gp.et_active_header),
+            self._to_project_relative(gp.duel_active_header),
+            self._to_project_relative(gp.context_active_header),
+        ]))
+        self.resolved_canonical_joblibs.set("\n".join([
+            self._to_project_relative(gp.rf_active_joblib),
+            self._to_project_relative(gp.et_active_joblib),
+            self._to_project_relative(gp.duel_active_joblib),
+            self._to_project_relative(gp.context_active_joblib),
+        ]))
+        next_gen = next_generation_tag(gen)
+        self.generation_workflow_note.set(
+            "Raw CSVs go in tinyml/data/{gen}/raw. Cleaner writes arc_training.csv and load_context.csv into "
+            "tinyml/data/{gen}. Reports for this run are stored in tinyml/benchmark/{gen}. Canonical model headers "
+            "remain the active deployment outputs, while generation-tagged archive copies are kept for backtracking.".format(gen=gen)
+        )
+        if next_gen:
+            self.post_training_hint.set(
+                f"Trained on {gen}. This exported canonical model is the active deployment target. Place next collection raw CSVs in tinyml/data/{next_gen}/raw."
+            )
+        else:
+            self.post_training_hint.set(
+                f"Trained on {gen}. This exported canonical model is the active deployment target."
+            )
+    def _on_generation_changed(self, *_args):
+        self.after_idle(self._refresh_generation_paths)
+    def _validate_generation_requirements(self, workflow_kind):
+        gen_error = self._generation_error_message()
+        if gen_error:
+            return [gen_error]
+
+        gp = self._generation_paths()
+        gp.benchmark_dir.mkdir(parents=True, exist_ok=True)
+        gp.model_archive_dir.mkdir(parents=True, exist_ok=True)
+        gp.trainer_lib_archive_dir.mkdir(parents=True, exist_ok=True)
+        kind = str(workflow_kind or "").strip().lower()
+        errors = []
+
+        def _csv_has_rows(path: Path) -> bool:
+            if not path.exists():
+                return False
+            try:
+                with open(path, "r", encoding="utf-8", errors="ignore") as handle:
+                    next(handle, None)
+                    for line in handle:
+                        if str(line).strip():
+                            return True
+            except Exception:
+                return False
+            return False
+
+        if kind == "cleaner":
+            if not gp.raw_dir.is_dir():
+                errors.append(f"Raw folder does not exist: {gp.raw_dir}")
+            elif not any(gp.raw_dir.rglob('*.csv')):
+                errors.append(f"Raw folder is empty: {gp.raw_dir}")
+        if kind in {"rf", "et", "duel"}:
+            if not gp.arc_csv.exists():
+                errors.append(f"Arc training CSV not found for {gp.generation}: {gp.arc_csv}")
+            elif not _csv_has_rows(gp.arc_csv):
+                errors.append(f"Arc training CSV is empty for {gp.generation}: {gp.arc_csv}")
+        if kind == "context":
+            if not gp.context_csv.exists():
+                errors.append(f"Load-context CSV not found for {gp.generation}: {gp.context_csv}")
+            elif not _csv_has_rows(gp.context_csv):
+                errors.append(f"Load-context CSV is empty for {gp.generation}: {gp.context_csv}")
+        if kind == "subset":
+            task_label = (self.subset_task.get() or "Arc + Context").strip().lower()
+            needs_arc = "context" not in task_label or "arc" in task_label
+            needs_context = "context" in task_label
+            if needs_arc and not gp.arc_csv.exists():
+                errors.append(f"Arc training CSV not found for {gp.generation}: {gp.arc_csv}")
+            elif needs_arc and not _csv_has_rows(gp.arc_csv):
+                errors.append(f"Arc training CSV is empty for {gp.generation}: {gp.arc_csv}")
+            if needs_context and not gp.context_csv.exists():
+                errors.append(f"Load-context CSV not found for {gp.generation}: {gp.context_csv}")
+            elif needs_context and not _csv_has_rows(gp.context_csv):
+                errors.append(f"Load-context CSV is empty for {gp.generation}: {gp.context_csv}")
+        return errors
     def _build_ui(self):
         self.columnconfigure(0, weight=1)
         self.rowconfigure(0, weight=1)
@@ -294,15 +470,39 @@ class TinyMLTrainerGUI(tk.Tk):
         outer.bind("<Configure>", lambda _e: self._root_canvas.configure(scrollregion=self._root_canvas.bbox("all")))
         self._root_canvas.bind("<Configure>", self._on_root_canvas_resize)
         outer.columnconfigure(0, weight=1)
-        outer.rowconfigure(2, weight=1)
+        outer.rowconfigure(3, weight=1)
         top = ttk.Frame(outer)
         top.grid(row=0, column=0, sticky="ew")
-        top.columnconfigure(1, weight=1)
+        top.columnconfigure(4, weight=1)
         ttk.Label(top, text="TinyML Trainer", style="Title.TLabel").grid(
             row=0, column=0, sticky="w"
         )
+        tk.Label(top, textvariable=self.active_generation_text, bg=APP_BG, fg=ACCENT, font=("Segoe UI", 10, "bold")).grid(row=0, column=1, sticky="w", padx=(16, 12))
+        tk.Label(top, text="Current Generation", bg=APP_BG, fg=MUTED, font=("Segoe UI", 9)).grid(row=0, column=2, sticky="e", padx=(0, 8))
+        ttk.Entry(top, textvariable=self.current_generation, width=10).grid(row=0, column=3, sticky="w")
+        ttk.Button(top, text="Init Gen Folders", command=self._init_generation_folders).grid(row=0, column=4, sticky="e", padx=(12, 8))
         self.paths_btn = ttk.Button(top, text="Show Paths", command=self.toggle_paths)
-        self.paths_btn.grid(row=0, column=1, sticky="e")
+        self.paths_btn.grid(row=0, column=5, sticky="e")
+        self.resolved_paths_card = tk.Frame(
+            outer,
+            bg=CARD_BG,
+            highlightthickness=1,
+            highlightbackground=BORDER,
+            padx=14,
+            pady=14,
+        )
+        self.resolved_paths_card.columnconfigure(1, weight=1)
+        self._card_label(self.resolved_paths_card, "Resolved Generation Paths", 0)
+        self._readonly_path_row(self.resolved_paths_card, 1, "Selected generation", self.current_generation)
+        self._readonly_path_row(self.resolved_paths_card, 2, "Raw folder", self.resolved_raw_folder)
+        self._readonly_path_row(self.resolved_paths_card, 3, "Arc training CSV", self.cleaned_csv)
+        self._readonly_path_row(self.resolved_paths_card, 4, "Load context CSV", self.context_csv)
+        self._readonly_path_row(self.resolved_paths_card, 5, "Benchmark folder", self.resolved_benchmark_folder)
+        self._readonly_path_row(self.resolved_paths_card, 6, "Model archive folder", self.resolved_model_archive_folder)
+        self._readonly_path_row(self.resolved_paths_card, 7, "Generation manifest", self.resolved_manifest_path)
+        self._readonly_path_row(self.resolved_paths_card, 8, "Active canonical headers", self.resolved_canonical_headers)
+        self._readonly_path_row(self.resolved_paths_card, 9, "Active canonical joblibs", self.resolved_canonical_joblibs)
+        self.resolved_paths_card.grid(row=1, column=0, sticky="ew", pady=(14, 0))
         self.paths_card = tk.Frame(
             outer,
             bg=CARD_BG,
@@ -339,7 +539,7 @@ class TinyMLTrainerGUI(tk.Tk):
             padx=14,
             pady=14,
         )
-        main_card.grid(row=2, column=0, sticky="nsew", pady=(14, 0))
+        main_card.grid(row=3, column=0, sticky="nsew", pady=(14, 0))
         main_card.columnconfigure(0, weight=1)
         main_card.rowconfigure(6, weight=1)
         self._card_label(main_card, "Actions", 0)
@@ -428,6 +628,13 @@ class TinyMLTrainerGUI(tk.Tk):
         ttk.Entry(options, textvariable=self.final_negative_ratio, width=10).grid(row=13, column=2, sticky="ew", padx=(0, 8), pady=(4, 0))
         tk.Label(options, text="Final pos over", bg=CARD_BG_2, fg=MUTED, font=("Segoe UI", 9)).grid(row=12, column=3, sticky="w", pady=(10, 0))
         ttk.Entry(options, textvariable=self.final_positive_oversample, width=10).grid(row=13, column=3, sticky="ew", padx=(0, 8), pady=(4, 0))
+        tk.Label(options, text="Mismatch FP boost", bg=CARD_BG_2, fg=MUTED, font=("Segoe UI", 9)).grid(row=14, column=0, sticky="w", pady=(10, 0))
+        ttk.Entry(options, textvariable=self.mismatch_fp_boost, width=10).grid(row=15, column=0, sticky="ew", padx=(0, 8), pady=(4, 0))
+        tk.Label(options, text="Mismatch FN boost", bg=CARD_BG_2, fg=MUTED, font=("Segoe UI", 9)).grid(row=14, column=1, sticky="w", pady=(10, 0))
+        ttk.Entry(options, textvariable=self.mismatch_fn_boost, width=10).grid(row=15, column=1, sticky="ew", padx=(0, 8), pady=(4, 0))
+        tk.Label(options, text="Mismatch focus", bg=CARD_BG_2, fg=MUTED, font=("Segoe UI", 9)).grid(row=14, column=2, sticky="w", pady=(10, 0))
+        ttk.Entry(options, textvariable=self.mismatch_focus_ratio, width=10).grid(row=15, column=2, sticky="ew", padx=(0, 8), pady=(4, 0))
+        ttk.Checkbutton(options, text="Mismatch verified only", variable=self.mismatch_verified_only).grid(row=15, column=3, sticky="w", padx=(0, 8), pady=(4, 0))
         subset_note = tk.Label(
             options,
             text=(
@@ -442,12 +649,15 @@ class TinyMLTrainerGUI(tk.Tk):
             anchor="w",
             wraplength=1180,
         )
-        subset_note.grid(row=14, column=0, columnspan=6, sticky="ew", pady=(10, 0))
+        subset_note.grid(row=16, column=0, columnspan=6, sticky="ew", pady=(10, 0))
         self._adaptive_labels.append((subset_note, 0.78, 440))
         self.workflow_scope_text = tk.StringVar(value="RF / ET / King train on the selected arc base features below, then append the fixed 7 runtime context inputs at export/runtime. Context training uses the selected context-only features below on start-only data. Cleaner rebuilds the datasets only. Subset Sweep can run Arc, Context, or both; for Arc it now budgets time, shards prescreen work, and reranks finalists without changing the full CSV schema.")
         scope_label = tk.Label(options, textvariable=self.workflow_scope_text, bg=CARD_BG_2, fg=MUTED, justify="left", anchor="w", wraplength=1180)
-        scope_label.grid(row=15, column=0, columnspan=6, sticky="ew", pady=(10, 0))
+        scope_label.grid(row=17, column=0, columnspan=6, sticky="ew", pady=(10, 0))
         self._adaptive_labels.append((scope_label, 0.78, 440))
+        workflow_note_label = tk.Label(options, textvariable=self.generation_workflow_note, bg=CARD_BG_2, fg=MUTED, justify="left", anchor="w", wraplength=1180)
+        workflow_note_label.grid(row=18, column=0, columnspan=6, sticky="ew", pady=(10, 0))
+        self._adaptive_labels.append((workflow_note_label, 0.78, 440))
         self._build_feature_selection_card(main_card, 3)
         status = tk.Frame(main_card, bg=CARD_BG)
         status.grid(row=4, column=0, sticky="ew", pady=(0, 8))
@@ -511,6 +721,21 @@ class TinyMLTrainerGUI(tk.Tk):
         )
         self.command_label.grid(row=3, column=1, columnspan=3, sticky="ew", padx=(8, 0), pady=(10, 0))
         self._adaptive_labels.append((self.command_label, 0.74, 380))
+        tk.Label(status, text="Generation hint", bg=CARD_BG, fg=MUTED, font=("Segoe UI", 9)).grid(
+            row=4, column=0, sticky="w", pady=(10, 0)
+        )
+        generation_hint_label = tk.Label(
+            status,
+            textvariable=self.post_training_hint,
+            bg=CARD_BG,
+            fg=MUTED,
+            font=("Segoe UI", 9),
+            justify="left",
+            anchor="w",
+            wraplength=1120,
+        )
+        generation_hint_label.grid(row=4, column=1, columnspan=3, sticky="ew", padx=(8, 0), pady=(10, 0))
+        self._adaptive_labels.append((generation_hint_label, 0.74, 380))
         self.pb = ttk.Progressbar(main_card, mode="determinate", maximum=100.0, value=0.0)
         self.pb.grid(row=5, column=0, sticky="ew", pady=(0, 12))
         notebook = ttk.Notebook(main_card)
@@ -561,10 +786,32 @@ class TinyMLTrainerGUI(tk.Tk):
             ttk.Button(parent, text="Browse", command=lambda: self._browse_file(var)).grid(
                 row=row, column=2, sticky="ew", pady=4
             )
+    def _readonly_path_row(self, parent, row, label, var):
+        tk.Label(parent, text=label, bg=CARD_BG, fg=MUTED, font=("Segoe UI", 9)).grid(
+            row=row, column=0, sticky="w", pady=4
+        )
+        tk.Label(
+            parent,
+            textvariable=var,
+            bg=CARD_BG,
+            fg=TEXT,
+            font=("Consolas", 9),
+            justify="left",
+            anchor="w",
+            wraplength=980,
+        ).grid(row=row, column=1, sticky="ew", padx=(10, 0), pady=4)
     def _btn(self, parent, text, cmd, row, col):
         ttk.Button(parent, text=text, command=cmd).grid(
             row=row, column=col, sticky="ew", padx=4, pady=4
         )
+    def _init_generation_folders(self):
+        created = init_generation_folders(self.project_root.get(), start=0, end=20)
+        if created:
+            self.log("\nInitialized generation folders:\n" + "\n".join(created) + "\n")
+            self.status_text.set("Initialized generation folders gen0..gen20")
+        else:
+            self.log("\nGeneration folders already existed for gen0..gen20.\n")
+            self.status_text.set("Generation folders already ready")
     def _build_feature_selection_card(self, parent, row):
         card = tk.Frame(
             parent,
@@ -1159,8 +1406,10 @@ class TinyMLTrainerGUI(tk.Tk):
         if kind == "subset":
             return self.subset_script
         return self.duel_script
+    def _generation_args(self):
+        return ["--generation", self._normalized_generation()]
     def _arc_training_flags(self, n_iter):
-        return [
+        flags = [
             "--n_iter", str(int(n_iter)),
             "--min_recall", f"{self._get_float(self.min_recall_goal, 0.98, 0.0, 1.0):.6f}",
             "--min_precision", f"{self._get_float(self.min_precision_goal, 0.90, 0.0, 1.0):.6f}",
@@ -1174,7 +1423,13 @@ class TinyMLTrainerGUI(tk.Tk):
             "--hard_negative_ring", str(self._get_int(self.hard_negative_ring, 2, 0)),
             "--final_negative_ratio", f"{self._get_float(self.final_negative_ratio, 0.0, 0.0, None):.6f}",
             "--positive_oversample", f"{self._get_float(self.final_positive_oversample, 1.0, 1.0, None):.6f}",
+            "--mismatch_fp_boost", f"{self._get_float(self.mismatch_fp_boost, 1.0, 0.10, 20.0):.6f}",
+            "--mismatch_fn_boost", f"{self._get_float(self.mismatch_fn_boost, 1.0, 0.10, 20.0):.6f}",
+            "--mismatch_focus_ratio", f"{self._get_float(self.mismatch_focus_ratio, 0.0, 0.0, 1.0):.6f}",
         ]
+        if bool(self.mismatch_verified_only.get()):
+            flags.append("--mismatch_verified_only")
+        return flags
     def _context_training_flags(self, n_iter):
         return ["--n_iter", str(int(n_iter))]
     def _subset_training_flags(self):
@@ -1192,7 +1447,7 @@ class TinyMLTrainerGUI(tk.Tk):
         ctx_feature_max = self._get_int(self.context_subset_feature_max, len(CONTEXT_SWEEP_FEATURES), ctx_feature_min)
         ctx_max_combos = self._get_int(self.context_subset_max_combinations, 0, 0)
         shortlist_depth = max(1, int(round(float(SUBSET_SWEEP_SEARCH_DEPTH) * 0.25)))
-        return [
+        flags = [
             "--task", task,
             "--out_report", str(self._project_path(self.subset_report.get())),
             "--out_csv", str(self._project_path(self.subset_csv.get())),
@@ -1220,6 +1475,9 @@ class TinyMLTrainerGUI(tk.Tk):
             "--sweep_positive_oversample", f"{self._get_float(self.sweep_positive_oversample, 1.25, 1.0, None):.6f}",
             "--final_negative_ratio", f"{self._get_float(self.final_negative_ratio, 0.0, 0.0, None):.6f}",
             "--final_positive_oversample", f"{self._get_float(self.final_positive_oversample, 1.0, 1.0, None):.6f}",
+            "--mismatch_fp_boost", f"{self._get_float(self.mismatch_fp_boost, 1.0, 0.10, 20.0):.6f}",
+            "--mismatch_fn_boost", f"{self._get_float(self.mismatch_fn_boost, 1.0, 0.10, 20.0):.6f}",
+            "--mismatch_focus_ratio", f"{self._get_float(self.mismatch_focus_ratio, 0.0, 0.0, 1.0):.6f}",
             "--context_feature_count_min", str(ctx_feature_min),
             "--context_feature_count_max", str(ctx_feature_max),
             "--context_max_combinations", str(ctx_max_combos),
@@ -1228,6 +1486,9 @@ class TinyMLTrainerGUI(tk.Tk):
             "--max_fpr", f"{self._get_float(self.max_fpr_goal, 0.03, 0.0, 1.0):.6f}",
             "--min_threshold", f"{self._get_float(self.min_threshold_goal, 0.08, 0.0, 0.99):.6f}",
         ]
+        if bool(self.mismatch_verified_only.get()):
+            return flags + ["--mismatch_verified_only"]
+        return flags
     def _winner_mode_arg(self):
         label = (self.winner_mode.get() or "Balanced").strip()
         return {
@@ -1240,6 +1501,7 @@ class TinyMLTrainerGUI(tk.Tk):
             self.python_exe.get(),
             str(self._project_path(self._trainer_script_var_for_kind(kind).get())),
         ]
+        cmd.extend(self._generation_args())
         if kind == "rf":
             cmd.extend([
                 "--csv", str(self._project_path(self.cleaned_csv.get())),
@@ -1342,6 +1604,12 @@ class TinyMLTrainerGUI(tk.Tk):
         if self.proc is not None:
             messagebox.showwarning("Busy", "Another process is already running.")
             return
+        errors = self._validate_generation_requirements(kind)
+        if errors:
+            self.status_text.set("Blocked")
+            self.progress_text.set(errors[0])
+            messagebox.showerror("Generation Validation", "\n".join(errors))
+            return
         base_n_iter = self._get_int(self.search_iters, 120, 1)
         max_n_iter = self._get_int(self.max_search_iters, max(base_n_iter, 240), 1)
         growth = self._get_float(self.iter_growth, 2.0, 1.1, 8.0)
@@ -1375,8 +1643,9 @@ class TinyMLTrainerGUI(tk.Tk):
             "context": "Context Trainer",
             "subset": "Subset Sweep",
         }.get(kind, kind)
-        self.status_text.set(f"Running {label} (n_iter={current_n_iter}, attempt {workflow['attempt']})…")
-        self.progress_text.set(f"Preparing {label} search with n_iter={current_n_iter}")
+        gen = self._normalized_generation()
+        self.status_text.set(f"Running {label} [{gen}] (n_iter={current_n_iter}, attempt {workflow['attempt']})…")
+        self.progress_text.set(f"Preparing {label} search for {gen} with n_iter={current_n_iter}")
         self._start_subprocess(
             cmd,
             on_finish=lambda rc, wf=workflow: self._after_training_attempt(wf, rc),
@@ -1420,7 +1689,7 @@ class TinyMLTrainerGUI(tk.Tk):
     def toggle_paths(self):
         self.paths_visible = not self.paths_visible
         if self.paths_visible:
-            self.paths_card.grid(row=1, column=0, sticky="ew", pady=(14, 12))
+            self.paths_card.grid(row=2, column=0, sticky="ew", pady=(14, 12))
             self.paths_btn.config(text="Hide Paths")
         else:
             self.paths_card.grid_forget()
@@ -1668,7 +1937,7 @@ class TinyMLTrainerGUI(tk.Tk):
         elapsed = None
         if self._process_started_at is not None:
             elapsed = max(0.0, time.monotonic() - self._process_started_at)
-        self.status_text.set(f"Finished (exit code {rc})")
+        self.status_text.set(f"Finished [{self._normalized_generation()}] (exit code {rc})")
         if self._progress_payload is not None:
             self._update_progress(self._progress_payload)
         elif rc == 0:
@@ -1689,6 +1958,8 @@ class TinyMLTrainerGUI(tk.Tk):
         self._last_progress_stage = None
         if on_finish is not None:
             on_finish(rc)
+        if rc == 0:
+            self.post_training_hint.set(self.post_training_hint.get())
         self.refresh_views()
     def _handle_subprocess_failure(self, message):
         self.status_text.set("Failed")
@@ -1707,8 +1978,8 @@ class TinyMLTrainerGUI(tk.Tk):
         self._process_started_at = time.monotonic()
         self._last_progress_sample = (self._process_started_at, 0.0)
         self._last_progress_stage = ""
-        self.status_text.set("Running…")
-        self.progress_text.set("Starting process…")
+        self.status_text.set(f"Running [{self._normalized_generation()}]…")
+        self.progress_text.set(f"Starting process for {self._normalized_generation()}…")
         self.progress_percent_text.set("0%")
         if cmd and Path(cmd[1]).name == "prepare_data.py":
             self._pending_cleaner_summary = None
@@ -1751,30 +2022,38 @@ class TinyMLTrainerGUI(tk.Tk):
             self.log(f"\nStop failed: {e}\n")
     def run_cleaner(self):
         self.current_workflow = None
-        self.workflow_scope_text.set("Running Cleaner. This workflow rebuilds the prepared arc/context datasets and cleaner report only; it does not change the selected final-training feature lists.")
-        self.status_text.set("Running Cleaner…")
-        self.progress_text.set("Cleaner rebuilds arc_training.csv and load_context.csv while preserving the full 16-feature logging schema.")
+        errors = self._validate_generation_requirements("cleaner")
+        if errors:
+            self.status_text.set("Blocked")
+            self.progress_text.set(errors[0])
+            messagebox.showerror("Generation Validation", "\n".join(errors))
+            return
+        gen = self._normalized_generation()
+        self.workflow_scope_text.set(f"Running Cleaner for {gen}. This workflow rebuilds only the selected generation's prepared arc/context datasets and cleaner report; it does not change the selected final-training feature lists.")
+        self.status_text.set(f"Running Cleaner [{gen}]...")
+        self.progress_text.set(f"Cleaner rebuilds {gen}/arc_training.csv and {gen}/load_context.csv while preserving the full computed-feature logging schema.")
         self._start_subprocess([
             self.python_exe.get(),
             str(self._project_path(self.prepare_script.get())),
+            "--generation", gen,
             "--output", str(self._project_path(self.cleaned_csv.get())),
             "--context_output", str(self._project_path(self.context_csv.get())),
             "--out_report", str(self._project_path(self.prepare_report.get())),
         ])
     def run_rf_only(self):
-        self.workflow_scope_text.set("Running Random Forest on the currently selected arc base features. Export/runtime metadata will keep those base inputs explicit and append the fixed 7 context inputs automatically.")
+        self.workflow_scope_text.set(f"Running Random Forest for {self._normalized_generation()} on the currently selected arc base features. Export/runtime metadata will keep those base inputs explicit and append the fixed 7 context inputs automatically.")
         self._start_training_workflow("rf")
     def run_et_only(self):
-        self.workflow_scope_text.set("Running Extra Trees on the currently selected arc base features. Export/runtime metadata will keep those base inputs explicit and append the fixed 7 context inputs automatically.")
+        self.workflow_scope_text.set(f"Running Extra Trees for {self._normalized_generation()} on the currently selected arc base features. Export/runtime metadata will keep those base inputs explicit and append the fixed 7 context inputs automatically.")
         self._start_training_workflow("et")
     def run_duel(self):
-        self.workflow_scope_text.set("Running King Training on the currently selected arc base features. RF and ET benchmark the same selected arc inputs, then the winner export carries explicit input metadata for firmware assembly.")
+        self.workflow_scope_text.set(f"Running King Training for {self._normalized_generation()} on the currently selected arc base features. RF and ET benchmark the same selected arc inputs, then the winner export carries explicit input metadata for firmware assembly.")
         self._start_training_workflow("duel")
     def run_context(self):
-        self.workflow_scope_text.set("Running Context Trainer on the currently selected context-only features using start-data rows from load_context.csv. Exported context metadata will drive firmware-side input ordering.")
+        self.workflow_scope_text.set(f"Running Context Trainer for {self._normalized_generation()} on the currently selected context-only features using start-data rows from load_context.csv. Exported context metadata will drive firmware-side input ordering.")
         self._start_training_workflow("context")
     def run_subset_sweep(self):
-        self.workflow_scope_text.set(f"Running Subset Sweep. Arc sweep uses the locked 12-feature arc pool and evaluates RF + ET together at depth {SUBSET_SWEEP_SEARCH_DEPTH} per model. Context sweep uses the locked 10-feature start-data pool and runs separately at {SUBSET_SWEEP_SEARCH_DEPTH} repeats per combo.")
+        self.workflow_scope_text.set(f"Running Subset Sweep for {self._normalized_generation()}. Arc sweep uses the curated subset candidate pool and evaluates RF + ET together at depth {SUBSET_SWEEP_SEARCH_DEPTH} per model. Context sweep uses the curated start-data pool and runs separately at {SUBSET_SWEEP_SEARCH_DEPTH} repeats per combo.")
         self._start_training_workflow("subset")
     def refresh_views(self):
         self._refresh_dataset_view()
@@ -1785,7 +2064,32 @@ class TinyMLTrainerGUI(tk.Tk):
         self._refresh_single_report("duel")
         self._refresh_single_report("context")
         self._refresh_subset_report()
+        self._stamp_generation_on_summaries()
         self._auto_apply_feature_recommendations(force=False)
+    def _stamp_generation_on_summaries(self):
+        generation = self._normalized_generation()
+        summary_vars = [
+            getattr(self, "prepare_summary", None),
+            getattr(self, "compare_summary", None),
+            getattr(self, "subset_summary", None),
+            getattr(self, "rf_summary", None),
+            getattr(self, "et_summary", None),
+            getattr(self, "duel_summary", None),
+            getattr(self, "context_summary", None),
+        ]
+        for var in summary_vars:
+            if var is None:
+                continue
+            try:
+                text = str(var.get() or "")
+            except Exception:
+                continue
+            if not text:
+                continue
+            if text.startswith("Generation: "):
+                parts = text.split("\n", 1)
+                text = parts[1] if len(parts) > 1 else ""
+            var.set(f"Generation: {generation}\n{text}" if text else f"Generation: {generation}")
     def _refresh_dataset_view(self):
         for row in self.dataset_tree.get_children():
             self.dataset_tree.delete(row)
@@ -1813,6 +2117,7 @@ class TinyMLTrainerGUI(tk.Tk):
         conflict_policy_counts = df["conflict_policy"].value_counts().to_dict() if "conflict_policy" in df.columns else {}
         family_counts = df["device_family"].value_counts().to_dict() if "device_family" in df.columns else {}
         self.dataset_summary.set(
+            f"Generation: {self._normalized_generation()}\n"
             f"Rows: {rows}\n"
             f"Trainable rows: {trainable}\n"
             f"Trusted normal rows: {trusted_normal}\n"
@@ -2076,20 +2381,24 @@ class TinyMLTrainerGUI(tk.Tk):
         context_settings = (context_report or {}).get("settings", {}) or {}
         arc_src = self._project_path(self.subset_report.get())
         ctx_src = self._project_path(self.context_subset_report.get())
+        loaded_generation = (report or context_report or {}).get("selected_generation") or self._normalized_generation()
         if report and context_report:
             self.subset_summary.set(
+                f"Generation: {loaded_generation}\n"
                 f"Arc report: {arc_src}\n"
                 f"Context report: {ctx_src}\n"
                 f"Arc combinations: {report.get('total_combinations', '—')} | Context combinations: {context_report.get('total_combinations', '—')}"
             )
         elif report:
             self.subset_summary.set(
+                f"Generation: {loaded_generation}\n"
                 f"Arc report: {arc_src}\n"
                 f"Models: {report.get('models', '—')} | Total combinations: {report.get('total_combinations', '—')}\n"
                 f"CSV: {report.get('all_results_csv', self._project_path(self.subset_csv.get()))}"
             )
         else:
             self.subset_summary.set(
+                f"Generation: {loaded_generation}\n"
                 f"Context report: {ctx_src}\n"
                 f"Total combinations: {context_report.get('total_combinations', '—')}\n"
                 f"CSV: {context_report.get('all_results_csv', self._project_path(self.context_subset_csv.get()))}"
@@ -2301,7 +2610,9 @@ class TinyMLTrainerGUI(tk.Tk):
         elapsed_seconds = float(report.get("elapsed_seconds", summary.get("elapsed_seconds", 0.0)) or 0.0)
         arc_rows = outputs.get("arc_training_rows", summary.get("arc_training_rows", "â€”"))
         context_rows = outputs.get("load_context_rows", summary.get("load_context_rows", "â€”"))
+        loaded_generation = report.get("selected_generation") or self._normalized_generation()
         self.prepare_summary.set(
+            f"Generation: {loaded_generation}\n"
             f"Source: {self._project_path(self.prepare_report.get())}\n"
             f"Rows before/after: {summary.get('rows_before_cleaning', 'â€”')} â†’ {summary.get('rows_after_cleaning_with_augmentation', summary.get('rows_after_cleaning', 'â€”'))}\n"
             f"Arc rows: {arc_rows} | Context rows: {context_rows} | Duration: {self._fmt_duration(elapsed_seconds)}\n"
@@ -2468,7 +2779,8 @@ class TinyMLTrainerGUI(tk.Tk):
         context_settings = (context_report or {}).get("settings", {}) or {}
         arc_src = self._project_path(self.subset_report.get())
         ctx_src = self._project_path(self.context_subset_report.get())
-        summary_lines = []
+        loaded_generation = (arc_report or context_report or {}).get("selected_generation") or self._normalized_generation()
+        summary_lines = [f"Generation: {loaded_generation}"]
         if arc_report:
             summary_lines.append(f"Arc report: {arc_src}")
             summary_lines.append(

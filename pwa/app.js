@@ -110,8 +110,6 @@ const DISPLAY_TZ = "Asia/Manila";
 const STALE_MS = 22000;
 const HISTORY_LIMIT = 1000;
 
-cycleNmseVal?.closest(".feature-card")?.classList.add("hidden");
-deltaHfEnergyVal?.closest(".feature-card")?.classList.add("hidden");
 const MAX_RENDER_ROWS = 180;
 
 const OTA_RELEASE_BASE = "https://github.com/ancy-gg/TinyML_Smart-Plug/releases/download/";
@@ -1607,7 +1605,9 @@ function updateLiveDom(data) {
   const iz  = formatFeatureValue("abs_irms_zscore_vs_baseline", data.abs_irms_zscore_vs_baseline);
   const di  = formatFeatureValue("delta_irms_abs", data.delta_irms_abs);
   const ha  = formatFeatureValue("halfcycle_asymmetry", data.halfcycle_asymmetry);
-  const dfl = formatFeatureValue("v_sag_pct", data.v_sag_pct);
+  const dfl = formatFeatureValue("low_current_ratio", data.low_current_ratio);
+  const plc = formatFeatureValue("pulse_count_per_cycle", data.pulse_count_per_cycle);
+  const mlr = formatFeatureValue("max_low_current_run_ms", data.max_low_current_run_ms);
   const mrr = formatFeatureValue("midband_residual_ratio", data.midband_residual_ratio);
 
   const z   = formatFeatureValue("zcv", data.zcv);
@@ -1626,6 +1626,8 @@ function updateLiveDom(data) {
   if (irmsZscoreVal && irmsZscoreVal.textContent !== iz) { irmsZscoreVal.textContent = iz; animateNumber(irmsZscoreVal); }
   if (deltaIrmsVal && deltaIrmsVal.textContent !== di) { deltaIrmsVal.textContent = di; animateNumber(deltaIrmsVal); }
   if (halfcycleAsymVal && halfcycleAsymVal.textContent !== ha) { halfcycleAsymVal.textContent = ha; animateNumber(halfcycleAsymVal); }
+  if (cycleNmseVal && cycleNmseVal.textContent !== plc) { cycleNmseVal.textContent = plc; animateNumber(cycleNmseVal); }
+  if (deltaHfEnergyVal && deltaHfEnergyVal.textContent !== mlr) { deltaHfEnergyVal.textContent = mlr; animateNumber(deltaHfEnergyVal); }
   if (vSagPctVal && vSagPctVal.textContent !== dfl) { vSagPctVal.textContent = dfl; animateNumber(vSagPctVal); }
   if (midbandRatioVal && midbandRatioVal.textContent !== mrr) { midbandRatioVal.textContent = mrr; animateNumber(midbandRatioVal); }
 
@@ -2339,7 +2341,7 @@ async function fetchStoredCsv(path) {
   const chunksObj = snap.val() || {};
   const keys = Object.keys(chunksObj).sort((a, b) => String(a).localeCompare(String(b)));
   let header = "";
-  const rows = [];
+  let rows = [];
   for (const k of keys) {
     const csv = chunksObj[k]?.csv || "";
     if (!csv) continue;

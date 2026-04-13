@@ -1,6 +1,7 @@
 import argparse
 import json
 import os
+import sys
 from pathlib import Path
 
 from tinyml_common import (
@@ -18,14 +19,41 @@ from tinyml_common import (
     build_subset_metrics_report,
     calibrate_family_threshold_policy,
     compose_arc_training_view,
+    build_holdout_mismatch_summary,
+    build_mismatch_summary,
     evaluate_threshold_policy,
     load_clean_dataset,
     make_group_splits,
     save_model_bundle,
     train_one_model,
+    assess_next_generation_readiness,
     estimate_search_plan,
     validate_feature_subset,
 )
+try:
+    from generation_paths import (
+        apply_generation_defaults,
+        archive_generation_exports,
+        cli_flag_present,
+        ensure_generation_dirs,
+        next_generation_tag,
+        normalize_generation_tag,
+        resolve_generation_paths,
+        update_generation_manifest,
+        validate_generation_workspace,
+    )
+except Exception:
+    from trainer.generation_paths import (
+        apply_generation_defaults,
+        archive_generation_exports,
+        cli_flag_present,
+        ensure_generation_dirs,
+        next_generation_tag,
+        normalize_generation_tag,
+        resolve_generation_paths,
+        update_generation_manifest,
+        validate_generation_workspace,
+    )
 
 SCRIPT_DIR = Path(__file__).resolve().parent
 TINYML_DIR = SCRIPT_DIR.parent
@@ -80,25 +108,28 @@ def _load_feature_list_from_report(report_path: str | None, model_key: str) -> l
     return out or None
 
 
-def resolve_arc_feature_names(explicit_features=None, feature_report: str | None = None, model_key: str = "rf") -> tuple[list[str], list[str]]:
+def resolve_arc_feature_names(explicit_features=None, feature_report: str | None = None, model_key: str = "rf", *, allow_legacy_default_report: bool = True) -> tuple[list[str], list[str]]:
     explicit = [str(x).strip() for x in (explicit_features or []) if str(x).strip() in ARC_SWEEP_FEATURES]
     if explicit:
         base_features = validate_feature_subset(explicit, allowed_features=ARC_SWEEP_FEATURES, role="arc training")
     else:
+        default_report_features = _load_feature_list_from_report(DEFAULT_FEATURE_REPORT, model_key) if allow_legacy_default_report else None
         base_features = (
             _load_feature_list_from_report(feature_report, model_key)
-            or _load_feature_list_from_report(DEFAULT_FEATURE_REPORT, model_key)
+            or default_report_features
             or list(ARC_SWEEP_FEATURES)
         )
     return list(base_features), list(base_features) + list(ARC_CONTEXT_FEATURES)
 
 
 def main():
+    argv = sys.argv[1:]
     ap = argparse.ArgumentParser()
     ap.add_argument("--csv", default=CSV_PATH)
     ap.add_argument("--out_header", default=OUT_HEADER)
     ap.add_argument("--out_joblib", default=OUT_JOBLIB)
     ap.add_argument("--out_report", default=OUT_REPORT)
+    ap.add_argument("--generation", default=None)
     ap.add_argument("--include_invalid", action="store_true")
     ap.add_argument("--fn_weight", type=float, default=80.0)
     ap.add_argument("--fp_weight", type=float, default=4.0)
@@ -118,13 +149,37 @@ def main():
     ap.add_argument("--hard_negative_ring", type=int, default=2)
     ap.add_argument("--final_negative_ratio", type=float, default=0.0)
     ap.add_argument("--positive_oversample", type=float, default=1.0)
+    ap.add_argument("--mismatch_fp_boost", type=float, default=1.0)
+    ap.add_argument("--mismatch_fn_boost", type=float, default=1.0)
+    ap.add_argument("--mismatch_focus_ratio", type=float, default=0.0)
+    ap.add_argument("--mismatch_verified_only", action="store_true")
     ap.add_argument("--search_profile", default="final_rf")
     args = ap.parse_args()
+
+    generation_paths = None
+    selected_generation = None
+    if args.generation:
+        selected_generation = normalize_generation_tag(args.generation)
+        generation_paths = resolve_generation_paths(PROJECT_ROOT, selected_generation)
+        ensure_generation_dirs(generation_paths)
+        apply_generation_defaults(
+            args,
+            argv,
+            {
+                "csv": ("--csv", generation_paths.arc_csv),
+                "out_report": ("--out_report", generation_paths.rf_report),
+                "feature_report": ("--feature_report", generation_paths.arc_subset_report),
+            },
+        )
+        if not cli_flag_present("--csv", argv):
+            errors = validate_generation_workspace(generation_paths, require_arc_csv=True, require_nonempty_arc_csv=True)
+            if errors:
+                raise ValueError(" ; ".join(errors))
 
     if args.n_jobs != 0:
         os.environ["TINYML_N_JOBS"] = str(args.n_jobs)
 
-    selected_base_features, selected_feature_names = resolve_arc_feature_names(args.features, args.feature_report, model_key="rf")
+    selected_base_features, selected_feature_names = resolve_arc_feature_names(args.features, args.feature_report, model_key="rf", allow_legacy_default_report=(selected_generation is None))
     print("Selected arc base features:", selected_base_features)
     print("Selected full feature names:", selected_feature_names)
 
@@ -133,6 +188,11 @@ def main():
         include_invalid=args.include_invalid,
         feature_names=selected_feature_names,
         arc_tolerance=_arc_tolerance_dict(args),
+        current_training_generation=selected_generation,
+        mismatch_fp_boost=float(args.mismatch_fp_boost),
+        mismatch_fn_boost=float(args.mismatch_fn_boost),
+        mismatch_focus_ratio=float(args.mismatch_focus_ratio),
+        mismatch_verified_only=bool(args.mismatch_verified_only),
     )
     splits = make_group_splits(X, y, groups)
     print("CV split summary:", splits.get("cv_group_summary", {}))
@@ -155,6 +215,8 @@ def main():
         positive_oversample=float(args.positive_oversample),
         random_state=42,
         min_negative_rows=512,
+        mismatch_focus_ratio=float(args.mismatch_focus_ratio),
+        mismatch_verified_only=bool(args.mismatch_verified_only),
     )
 
     result = train_one_model(
@@ -254,6 +316,37 @@ def main():
     result["leave_one_load_type_out_inventory"] = build_group_inventory_report(df_meta, full_load_col) if full_load_col is not None else []
     result["leave_one_device_out_inventory"] = build_group_inventory_report(df_meta, "device_name") if "device_name" in df_meta.columns else []
     result["training_view"] = training_view
+    result["selected_generation"] = str(selected_generation or "legacy")
+    result["dataset_mismatch_summary"] = build_mismatch_summary(df_meta)
+    result["validation_holdout_mismatch_summary"] = build_holdout_mismatch_summary(
+        val_meta,
+        splits["y_train_full"].iloc[val_idx].to_numpy(),
+        val_score,
+        result["threshold"],
+    )
+    result["test_holdout_mismatch_summary"] = build_holdout_mismatch_summary(
+        test_meta,
+        splits["y_test"].to_numpy(),
+        y_score,
+        result["threshold"],
+    )
+    result["source_model_generation_summary"] = dict(result["dataset_mismatch_summary"].get("source_model_generation_counts", {}))
+    result["resolved_paths"] = {
+        "selected_generation": str(selected_generation or "legacy"),
+        "resolved_arc_dataset_path": str(args.csv),
+        "resolved_feature_report_path": str(args.feature_report or DEFAULT_FEATURE_REPORT),
+        "resolved_report_path": str(args.out_report),
+        "benchmark_folder": str(getattr(generation_paths, "benchmark_dir", "")),
+        "generation_manifest_path": str(getattr(generation_paths, "manifest_path", "")),
+    }
+    result["archive_output_paths"] = generation_paths.archive_output_paths() if generation_paths is not None else {}
+    result["canonical_export_paths"] = generation_paths.canonical_export_paths() if generation_paths is not None else {}
+    result["generation_advancement_assessment"] = assess_next_generation_readiness(
+        result,
+        min_recall=float(args.min_recall),
+        min_precision=float(args.min_precision),
+        max_fpr=float(args.max_fpr),
+    )
 
     search_plan = estimate_search_plan(args.n_iter)
     print("Search plan:", search_plan)
@@ -290,6 +383,11 @@ def main():
         "hard_negative_ring": int(args.hard_negative_ring),
         "final_negative_ratio": float(args.final_negative_ratio),
         "positive_oversample": float(args.positive_oversample),
+        "mismatch_fp_boost": float(args.mismatch_fp_boost),
+        "mismatch_fn_boost": float(args.mismatch_fn_boost),
+        "mismatch_focus_ratio": float(args.mismatch_focus_ratio),
+        "mismatch_verified_only": bool(args.mismatch_verified_only),
+        "generation": str(selected_generation or "legacy"),
         "search_profile": args.search_profile,
     }
     save_model_bundle(
@@ -301,6 +399,35 @@ def main():
         feature_names=selected_feature_names,
     )
 
+    if generation_paths is not None:
+        archived = archive_generation_exports(generation_paths, kinds=["rf"])
+        update_generation_manifest(
+            generation_paths,
+            {
+                "selected_generation": selected_generation,
+                "source_model_generations_seen": sorted(result["source_model_generation_summary"].keys()),
+                "trainer_settings_snapshot": {"rf": settings},
+                "rf_training": {
+                    "report_path": str(args.out_report),
+                    "feature_report_path": str(args.feature_report or DEFAULT_FEATURE_REPORT),
+                    "feature_names": list(selected_base_features),
+                    "archive_outputs": archived,
+                    "generation_advancement_assessment": result.get("generation_advancement_assessment", {}),
+                },
+                "recommended_next_action": (
+                    f"Trained on {selected_generation}. "
+                    f"Canonical RF export remains the active deployment target. "
+                    + (
+                        f"Place next collection raw CSVs in tinyml/data/{next_generation_tag(selected_generation)}/raw."
+                        if next_generation_tag(selected_generation)
+                        else "Review held-out metrics before advancing beyond the current generation."
+                    )
+                ),
+            },
+        )
+
+    if selected_generation:
+        print("Selected generation:", selected_generation)
     print("Saved:", args.out_joblib)
     print("Saved:", args.out_header)
     print("Saved:", args.out_report)

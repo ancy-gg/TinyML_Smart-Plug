@@ -156,6 +156,10 @@ static inline float frameComputedFeatureById_(const FeatureFrame& f, int feature
     case TINYML_FEATURE_DELTA_FLUX: return f.delta_flux;
     case TINYML_FEATURE_MIDBAND_RESIDUAL_RATIO: return f.midband_residual_ratio;
     case TINYML_FEATURE_ZCV: return f.zcv;
+    case TINYML_FEATURE_PULSE_COUNT_PER_CYCLE: return f.pulse_count_per_cycle;
+    case TINYML_FEATURE_ZERO_DWELL_RATIO: return f.zero_dwell_ratio;
+    case TINYML_FEATURE_LOW_CURRENT_RATIO: return f.low_current_ratio;
+    case TINYML_FEATURE_MAX_LOW_CURRENT_RUN_MS: return f.max_low_current_run_ms;
     case TINYML_FEATURE_SPECTRAL_FLUX_MIDHF: return f.spectral_flux_midhf;
     case TINYML_FEATURE_PEAK_FLUCT_CV: return f.peak_fluct_cv;
     case TINYML_FEATURE_RESIDUAL_CREST_FACTOR: return f.residual_crest_factor;
@@ -178,6 +182,10 @@ static inline void setFrameComputedFeatureById_(FeatureFrame& f, int featureId, 
     case TINYML_FEATURE_DELTA_FLUX: f.delta_flux = value; break;
     case TINYML_FEATURE_MIDBAND_RESIDUAL_RATIO: f.midband_residual_ratio = value; break;
     case TINYML_FEATURE_ZCV: f.zcv = value; break;
+    case TINYML_FEATURE_PULSE_COUNT_PER_CYCLE: f.pulse_count_per_cycle = value; break;
+    case TINYML_FEATURE_ZERO_DWELL_RATIO: f.zero_dwell_ratio = value; break;
+    case TINYML_FEATURE_LOW_CURRENT_RATIO: f.low_current_ratio = value; break;
+    case TINYML_FEATURE_MAX_LOW_CURRENT_RUN_MS: f.max_low_current_run_ms = value; break;
     case TINYML_FEATURE_SPECTRAL_FLUX_MIDHF: f.spectral_flux_midhf = value; break;
     case TINYML_FEATURE_PEAK_FLUCT_CV: f.peak_fluct_cv = value; break;
     case TINYML_FEATURE_RESIDUAL_CREST_FACTOR: f.residual_crest_factor = value; break;
@@ -200,6 +208,10 @@ static inline float arcResultComputedFeatureById_(const ArcDetectionResult& out,
     case TINYML_FEATURE_DELTA_FLUX: return out.delta_flux;
     case TINYML_FEATURE_MIDBAND_RESIDUAL_RATIO: return out.midband_residual_ratio;
     case TINYML_FEATURE_ZCV: return out.zcv;
+    case TINYML_FEATURE_PULSE_COUNT_PER_CYCLE: return out.pulse_count_per_cycle;
+    case TINYML_FEATURE_ZERO_DWELL_RATIO: return out.zero_dwell_ratio;
+    case TINYML_FEATURE_LOW_CURRENT_RATIO: return out.low_current_ratio;
+    case TINYML_FEATURE_MAX_LOW_CURRENT_RUN_MS: return out.max_low_current_run_ms;
     case TINYML_FEATURE_SPECTRAL_FLUX_MIDHF: return out.spectral_flux_midhf;
     case TINYML_FEATURE_PEAK_FLUCT_CV: return out.peak_fluct_cv;
     case TINYML_FEATURE_RESIDUAL_CREST_FACTOR: return out.residual_crest_factor;
@@ -673,21 +685,28 @@ static bool arcEventSignature(const FeatureFrame& f, float irmsLogic) {
   if ((f.feat_valid == 0) || (irmsLogic < ARC_SOFT_MIN_IRMS_A)) return false;
 
   int hits = 0;
-  if (f.abs_irms_zscore_vs_baseline >= ARC_SIG_IRMS_ZSCORE) hits += 3;
+  if (f.pulse_count_per_cycle >= ARC_SIG_PULSE_COUNT_PER_CYCLE) hits += 3;
+  if (f.max_low_current_run_ms >= ARC_SIG_MAX_LOW_CURRENT_RUN_MS) hits += 3;
+  if (f.zero_dwell_ratio >= ARC_SIG_ZERO_DWELL_RATIO) hits += 2;
+  if (f.low_current_ratio >= ARC_SIG_LOW_CURRENT_RATIO) hits += 2;
+  if (f.abs_irms_zscore_vs_baseline >= ARC_SIG_IRMS_ZSCORE) hits += 2;
   if (f.delta_irms_abs >= 0.12f) hits += 2;
-  if (f.halfcycle_asymmetry >= 10.0f) hits += 2;
-  if (f.delta_hf_energy >= 0.70f) hits += 2;
-  if (f.delta_flux >= 4.0f) hits += 2;
-  if (f.midband_residual_ratio >= ARC_SIG_MIDBAND_RATIO) hits += 1;
+  if (f.halfcycle_asymmetry >= 10.0f) hits += 1;
   if (f.zcv >= ARC_SIG_ZCV) hits += 1;
-  if (f.spectral_flux_midhf >= ARC_SIG_SPECTRAL_FLUX) hits += 1;
-  if (f.peak_fluct_cv >= ARC_SIG_PEAK_FLUCT) hits += 1;
+  if (f.midband_residual_ratio >= ARC_SIG_MIDBAND_RATIO) hits += 1;
+  if (f.edge_spike_ratio >= ARC_SIG_EDGE_SPIKE_RATIO) hits += 1;
   if (f.residual_crest_factor >= ARC_SIG_RESIDUAL_CF) hits += 1;
   if (f.thd_i >= ARC_SIG_THD_I) hits += 1;
-  if (f.hf_energy_delta >= ARC_SIG_HF_ENERGY_DELTA) hits += 1;
-  if (f.edge_spike_ratio >= ARC_SIG_EDGE_SPIKE_RATIO) hits += 1;
 
-  return hits >= 5;
+  const bool restrikeLike =
+      (f.pulse_count_per_cycle >= ARC_SIG_PULSE_COUNT_PER_CYCLE &&
+       (f.delta_irms_abs >= 0.12f || f.zcv >= ARC_SIG_ZCV)) ||
+      (f.max_low_current_run_ms >= ARC_SIG_MAX_LOW_CURRENT_RUN_MS &&
+       f.low_current_ratio >= ARC_SIG_LOW_CURRENT_RATIO) ||
+      (f.zero_dwell_ratio >= ARC_SIG_ZERO_DWELL_RATIO &&
+       f.abs_irms_zscore_vs_baseline >= 1.20f);
+
+  return restrikeLike && (hits >= 6);
 }
 
 static bool softArcBurstEvent(const FeatureFrame& f,
@@ -700,27 +719,26 @@ static bool softArcBurstEvent(const FeatureFrame& f,
   if (vProtect < VOLT_NORMAL_MIN_V || vProtect > VOLT_NORMAL_MAX_V) return false;
 
   int hits = 0;
-  if (f.abs_irms_zscore_vs_baseline >= ARC_SIG_IRMS_ZSCORE) hits += 3;
+  if (f.pulse_count_per_cycle >= ARC_SIG_PULSE_COUNT_PER_CYCLE) hits += 3;
+  if (f.max_low_current_run_ms >= ARC_SIG_MAX_LOW_CURRENT_RUN_MS) hits += 3;
+  if (f.zero_dwell_ratio >= ARC_SIG_ZERO_DWELL_RATIO) hits += 2;
+  if (f.low_current_ratio >= ARC_SIG_LOW_CURRENT_RATIO) hits += 2;
+  if (f.abs_irms_zscore_vs_baseline >= ARC_SIG_IRMS_ZSCORE) hits += 2;
   if (f.delta_irms_abs >= 0.12f) hits += 2;
-  if (f.halfcycle_asymmetry >= 10.0f) hits += 2;
-  if (f.delta_hf_energy >= 0.70f) hits += 2;
-  if (f.delta_flux >= 4.0f) hits += 2;
-  if (f.midband_residual_ratio >= ARC_SIG_MIDBAND_RATIO) hits += 1;
+  if (f.halfcycle_asymmetry >= 10.0f) hits += 1;
   if (f.zcv >= ARC_SIG_ZCV) hits += 1;
-  if (f.spectral_flux_midhf >= ARC_SIG_SPECTRAL_FLUX) hits += 1;
-  if (f.peak_fluct_cv >= ARC_SIG_PEAK_FLUCT) hits += 1;
+  if (f.midband_residual_ratio >= ARC_SIG_MIDBAND_RATIO) hits += 1;
+  if (f.edge_spike_ratio >= ARC_SIG_EDGE_SPIKE_RATIO) hits += 1;
   if (f.residual_crest_factor >= ARC_SIG_RESIDUAL_CF) hits += 1;
   if (f.thd_i >= ARC_SIG_THD_I) hits += 1;
-  if (f.hf_energy_delta >= ARC_SIG_HF_ENERGY_DELTA) hits += 1;
-  if (f.edge_spike_ratio >= ARC_SIG_EDGE_SPIKE_RATIO) hits += 1;
 
   const bool primaryBurst =
-      (f.abs_irms_zscore_vs_baseline >= ARC_SIG_IRMS_ZSCORE) ||
-      (f.delta_irms_abs >= 0.12f) ||
-      (f.delta_hf_energy >= 0.70f && f.delta_flux >= 4.0f) ||
-      (f.halfcycle_asymmetry >= 10.0f);
+      (f.pulse_count_per_cycle >= ARC_SIG_PULSE_COUNT_PER_CYCLE) ||
+      (f.max_low_current_run_ms >= ARC_SIG_MAX_LOW_CURRENT_RUN_MS) ||
+      (f.zero_dwell_ratio >= ARC_SIG_ZERO_DWELL_RATIO && f.low_current_ratio >= (ARC_SIG_LOW_CURRENT_RATIO * 0.80f)) ||
+      (f.abs_irms_zscore_vs_baseline >= ARC_SIG_IRMS_ZSCORE && f.delta_irms_abs >= 0.12f);
 
-  return primaryBurst && (hits >= 6);
+  return primaryBurst && (hits >= 7);
 }
 
 static bool debouncedMainsPresentForState(float vProtect) {
@@ -797,12 +815,36 @@ static bool stabilizeFeatureValidity(FeatureFrame& f, float vProtect, float irms
   const bool idleLikeFrame =
       mainsOn &&
       (fabsf(irmsLogic) <= CURRENT_ANALYSIS_IDLE_A);
+  const bool recentFeatureBridge =
+      mainsOn &&
+      !zeroTooLong &&
+      haveLastValidFeat &&
+      ((now - lastValidFeatMs) <= FEATURE_VALID_BRIDGE_MS);
+
   if (idleLikeFrame) {
-    zeroComputedFeatures_(f);
+    if (!recentFeatureBridge) {
+      zeroComputedFeatures_(f);
+      f.feat_valid = 0;
+      return false;
+    }
+
+    f.spectral_flux_midhf = lastValidFeat.spectral_flux_midhf;
+    f.residual_crest_factor = lastValidFeat.residual_crest_factor;
+    f.edge_spike_ratio = lastValidFeat.edge_spike_ratio;
+    f.midband_residual_ratio = lastValidFeat.midband_residual_ratio;
+    f.cycle_nmse = lastValidFeat.cycle_nmse;
+    f.peak_fluct_cv = lastValidFeat.peak_fluct_cv;
+    f.thd_i = lastValidFeat.thd_i;
+    f.hf_energy_delta = lastValidFeat.hf_energy_delta;
+    f.zcv = lastValidFeat.zcv;
+    f.abs_irms_zscore_vs_baseline = lastValidFeat.abs_irms_zscore_vs_baseline;
+    f.halfcycle_asymmetry = lastValidFeat.halfcycle_asymmetry;
+    f.suspicious_run_energy = lastValidFeat.suspicious_run_energy;
+    f.delta_hf_energy = lastValidFeat.delta_hf_energy;
+    f.delta_flux = lastValidFeat.delta_flux;
+    f.v_sag_pct = lastValidFeat.v_sag_pct;
+    f.adc_fs_hz = lastValidFeat.adc_fs_hz;
     f.feat_valid = 1;
-    lastValidFeat = f;
-    haveLastValidFeat = true;
-    lastValidFeatMs = now;
     return true;
   }
 
@@ -825,6 +867,11 @@ static bool stabilizeFeatureValidity(FeatureFrame& f, float vProtect, float irms
   f.hf_energy_delta = lastValidFeat.hf_energy_delta;
   f.zcv = lastValidFeat.zcv;
   f.abs_irms_zscore_vs_baseline = lastValidFeat.abs_irms_zscore_vs_baseline;
+  f.halfcycle_asymmetry = lastValidFeat.halfcycle_asymmetry;
+  f.suspicious_run_energy = lastValidFeat.suspicious_run_energy;
+  f.delta_hf_energy = lastValidFeat.delta_hf_energy;
+  f.delta_flux = lastValidFeat.delta_flux;
+  f.v_sag_pct = lastValidFeat.v_sag_pct;
   f.adc_fs_hz = lastValidFeat.adc_fs_hz;
   f.feat_valid = 1;
   return true;
@@ -1781,6 +1828,10 @@ void loop() {
                                            f.hf_energy_delta,
                                            f.zcv,
                                            f.abs_irms_zscore_vs_baseline,
+                                           f.pulse_count_per_cycle,
+                                           f.zero_dwell_ratio,
+                                           f.low_current_ratio,
+                                           f.max_low_current_run_ms,
                                            f.suspicious_run_energy,
                                            f.delta_irms_abs,
                                            f.delta_hf_energy,
@@ -1800,9 +1851,10 @@ void loop() {
       effectiveRelayLatchedOn &&
       hadSteadyLoad &&
       ((f.invalid_loaded_flag != 0 && invalidLoadedRunLen >= 2U) ||
-       (f.delta_flux >= 4.0f && f.delta_hf_energy >= 0.70f) ||
-       (f.v_sag_pct >= 3.0f && f.delta_flux >= 3.0f) ||
-       (f.halfcycle_asymmetry >= 10.0f && f.delta_irms_abs >= 0.12f));
+       (f.pulse_count_per_cycle >= ARC_SIG_PULSE_COUNT_PER_CYCLE && f.delta_irms_abs >= 0.10f) ||
+       (f.max_low_current_run_ms >= ARC_SIG_MAX_LOW_CURRENT_RUN_MS && f.low_current_ratio >= ARC_SIG_LOW_CURRENT_RATIO) ||
+       (f.zero_dwell_ratio >= ARC_SIG_ZERO_DWELL_RATIO && f.abs_irms_zscore_vs_baseline >= 1.20f) ||
+       (f.halfcycle_asymmetry >= 10.0f && f.zcv >= 0.12f));
 
   bool suspiciousFrame =
       ((rawPred == 1) || fallbackArcEvent || softFallbackArcEvent || temporalKick);
@@ -2100,6 +2152,8 @@ void loop() {
     network.requestLiveUpdate(vRms, f.irms, apparentPowerVa, tC,
                               f.abs_irms_zscore_vs_baseline, f.delta_irms_abs,
                               f.halfcycle_asymmetry, f.suspicious_run_energy,
+                              f.pulse_count_per_cycle, f.zero_dwell_ratio,
+                              f.low_current_ratio, f.max_low_current_run_ms,
                               f.delta_hf_energy, f.delta_flux, f.v_sag_pct,
                               f.midband_residual_ratio, f.zcv,
                               f.spectral_flux_midhf, f.peak_fluct_cv,
