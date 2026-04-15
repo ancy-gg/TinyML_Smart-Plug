@@ -1032,7 +1032,8 @@ function setLiveZeroes() {
   const zeroMap = [
     [vVal, "0.0"], [iVal, "0.000"], [pVal, "0.0"], [tVal, "0.0"],
     [irmsZscoreVal, "0.000"], [deltaIrmsVal, "0.000"], [halfcycleAsymVal, "0.000"],
-    [vSagPctVal, "0.00"], [midbandRatioVal, "0.000"], [zcvVal, "0.000"], [spectralFluxVal, "0.000"],
+    [cycleNmseVal, "0.000"], [deltaHfEnergyVal, "0.000"], [vSagPctVal, "0.00"],
+    [midbandRatioVal, "0.000"], [zcvVal, "0.000"], [spectralFluxVal, "0.000"],
     [peakFluctVal, "0.000"], [residualCrestVal, "0.000"], [thdIVal, "0.000"],
     [hfEnergyDeltaVal, "0.000"], [edgeSpikeVal, "0.000"]
   ];
@@ -1095,7 +1096,8 @@ function deriveLiveStatus(data) {
 function setLiveUnavailable() {
   const unavailableMap = [
     vVal, iVal, pVal, tVal,
-    irmsZscoreVal, deltaIrmsVal, halfcycleAsymVal, vSagPctVal,
+    irmsZscoreVal, deltaIrmsVal, halfcycleAsymVal,
+    cycleNmseVal, deltaHfEnergyVal, vSagPctVal,
     midbandRatioVal, zcvVal, spectralFluxVal,
     peakFluctVal, residualCrestVal, thdIVal, hfEnergyDeltaVal, edgeSpikeVal
   ];

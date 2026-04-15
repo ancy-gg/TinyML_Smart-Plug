@@ -77,7 +77,7 @@ void ProtectionManager::resetLatch() {
   _arcCnt = 0; _heatFrames = 0; _arcHoldUntil = 0; _heatHoldUntil = 0;
   _underVoltSince = 0; _overVoltSince = 0; _overloadSince = 0; _sustainedOverloadSince = 0;
   _voltageLockout = false; _voltageLockoutKind = STATE_NORMAL; _voltageRecoverySince = 0;
-  _tripOffEdge = false; _autoOnEdge = false; _webLockout = false; _resetRequired = false;
+  _tripOffEdge = false; _autoOnEdge = false; _webLockout = false; _resetRequired = false; _latchedFaultState = STATE_NORMAL;
   _loadOn = false; _loadOnSince = 0; _loadOffSince = 0; _prevSustainedTrip = false;
   _prevArcActive = false; _prevHeatTrip = false; _prevOverloadTrip = false;
   setRelayOffHold(false);
@@ -87,7 +87,10 @@ bool ProtectionManager::consumeAutoOnEdge()  { const bool v = _autoOnEdge; _auto
 
 FaultState ProtectionManager::update(float vProtect, float vRaw, float tempC, float irmsA, int arcModelOut, bool arcEligible) {
   const uint32_t now = millis();
-  if (!arcEligible || irmsA < ARC_MIN_IRMS_A) arcModelOut = 0;
+  // Arc eligibility is decided upstream by the feature/model window logic.
+  // Do not hard-zero arc output here just because current briefly collapsed
+  // to 0 A during a restrike / detach gap.
+  if (!arcEligible) arcModelOut = 0;
 
   if (arcModelOut == 1) _arcCnt += ARC_CNT_INC; else _arcCnt -= ARC_CNT_DEC;
   _arcCnt = clampi(_arcCnt, 0, ARC_CNT_MAX);
@@ -100,6 +103,7 @@ FaultState ProtectionManager::update(float vProtect, float vRaw, float tempC, fl
   _voltageLockout = false;
   _voltageLockoutKind = STATE_NORMAL;
   _voltageRecoverySince = 0;
+  _latchedFaultState = STATE_NORMAL;
 
   if (!_loadOn) {
     if (irmsA >= LOAD_ON_DETECT_A) {
@@ -121,6 +125,7 @@ FaultState ProtectionManager::update(float vProtect, float vRaw, float tempC, fl
   if (arcActive && !_prevArcActive) {
     _tripOffEdge = true;
     _resetRequired = true;
+    _latchedFaultState = STATE_ARCING;
   }
   _prevArcActive = arcActive;
 
@@ -132,6 +137,7 @@ FaultState ProtectionManager::update(float vProtect, float vRaw, float tempC, fl
   if (heatTripActive && !_prevHeatTrip) {
     _tripOffEdge = true;
     _resetRequired = true;
+    _latchedFaultState = STATE_HEATING;
   }
   _prevHeatTrip = heatTripActive;
 
@@ -186,21 +192,24 @@ FaultState ProtectionManager::update(float vProtect, float vRaw, float tempC, fl
   if (sustainedOverloadActive && !_prevOverloadTrip) {
     _tripOffEdge = true;
     _resetRequired = true;
+    _latchedFaultState = STATE_SUSTAINED_OVERLOAD;
   }
   _prevOverloadTrip = sustainedOverloadActive;
   _prevSustainedTrip = sustainedOverloadActive;
 
   if (mainsGoneLike) {
     _voltageRecoverySince = 0; _voltageLockout = false; _voltageLockoutKind = STATE_NORMAL;
+    if (!_resetRequired) _latchedFaultState = STATE_NORMAL;
   } else if ((underVoltValid && !arcActive) || overVoltValid) {
     const FaultState kind = overVoltValid ? STATE_OVERVOLTAGE : STATE_UNDERVOLTAGE;
     if (!_voltageLockout || _voltageLockoutKind != kind) _tripOffEdge = true;
-    _voltageLockout = true; _voltageLockoutKind = kind; _voltageRecoverySince = 0;
+    _voltageLockout = true; _voltageLockoutKind = kind; _voltageRecoverySince = 0; _latchedFaultState = kind;
   } else if (_voltageLockout) {
     if (rawHealthyWindow && !underVoltCandidate && !overVoltCandidate) {
       if (_voltageRecoverySince == 0) _voltageRecoverySince = now;
       if ((now - _voltageRecoverySince) >= VOLTAGE_RECLOSE_STABLE_MS) {
         _voltageLockout = false; _voltageLockoutKind = STATE_NORMAL; _voltageRecoverySince = 0; _autoOnEdge = true;
+        if (!_resetRequired) _latchedFaultState = STATE_NORMAL;
       }
     } else {
       _voltageRecoverySince = 0;
@@ -227,6 +236,7 @@ FaultState ProtectionManager::update(float vProtect, float vRaw, float tempC, fl
   else if (sustainedOverloadActive) st = STATE_SUSTAINED_OVERLOAD;
   else if (overloadWarnActive) st = STATE_OVERLOAD;
 
+  if (!_resetRequired && !_voltageLockout) _latchedFaultState = STATE_NORMAL;
   _webLockout = _resetRequired || arcActive || heatTripActive || sustainedOverloadActive || _voltageLockout;
   return st;
 }

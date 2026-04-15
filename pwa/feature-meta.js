@@ -23,18 +23,19 @@
   ]);
 
   const pwaFeatureOrder = Object.freeze([
+    "abs_irms_zscore_vs_baseline",
+    "delta_irms_abs",
+    "halfcycle_asymmetry",
     "pulse_count_per_cycle",
     "max_low_current_run_ms",
-    "zero_dwell_ratio",
     "low_current_ratio",
-    "thd_i",
-    "spectral_flux_midhf",
-    "hf_energy_delta",
-    "residual_crest_factor",
-    "peak_fluct_cv",
-    "zcv",
-    "delta_irms_abs",
     "midband_residual_ratio",
+    "zcv",
+    "spectral_flux_midhf",
+    "peak_fluct_cv",
+    "residual_crest_factor",
+    "thd_i",
+    "hf_energy_delta",
     "edge_spike_ratio",
   ]);
 

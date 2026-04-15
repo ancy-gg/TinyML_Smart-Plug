@@ -2223,6 +2223,77 @@ def make_group_splits(X, y, groups, test_size=0.20):
     }
 
 
+
+
+def rebalance_family_class_weights(
+    meta_df: pd.DataFrame | None,
+    y,
+    sample_weight,
+    *,
+    family_col: str = "device_family",
+    max_scale: float = 3.0,
+    min_scale: float = 0.33,
+    include_unknown: bool = False,
+) -> tuple[np.ndarray, dict]:
+    weights = np.asarray(sample_weight, dtype=float).copy()
+    info = {
+        "enabled": False,
+        "family_col": family_col,
+        "class_targets": {},
+        "family_class_weight_before": {},
+        "family_class_weight_after": {},
+        "family_class_scale": {},
+    }
+    if meta_df is None or not isinstance(meta_df, pd.DataFrame) or len(meta_df) != len(weights):
+        return weights, info
+
+    frame = meta_df.copy()
+    labels = pd.Series(np.asarray(y).astype(int), index=frame.index)
+    fam = frame.get(family_col, pd.Series("unknown", index=frame.index)).astype(str).map(_normalize_device_family_name)
+    fam = pd.Series(fam, index=frame.index, dtype=object)
+    known_mask = fam.ne("unknown") if not bool(include_unknown) else pd.Series(True, index=frame.index, dtype=bool)
+    if int(known_mask.sum()) <= 0:
+        return weights, info
+
+    info["enabled"] = True
+    weight_ser = pd.Series(weights, index=frame.index, dtype=float)
+    scale_ser = pd.Series(1.0, index=frame.index, dtype=float)
+
+    for label in (0, 1):
+        mask = known_mask & labels.eq(int(label))
+        if int(mask.sum()) <= 0:
+            continue
+        grouped = weight_ser.loc[mask].groupby(fam.loc[mask], sort=False).sum()
+        grouped = grouped[grouped > 0.0]
+        if len(grouped) <= 1:
+            continue
+        target = float(np.median(grouped.to_numpy(dtype=float)))
+        info["class_targets"][str(int(label))] = target
+        for family_name, total_weight in grouped.items():
+            total_weight = float(total_weight)
+            if total_weight <= 0.0:
+                continue
+            scale = float(target / total_weight)
+            scale = float(np.clip(scale, float(min_scale), float(max_scale)))
+            fam_mask = mask & fam.eq(str(family_name))
+            scale_ser.loc[fam_mask] *= scale
+            key = f"{family_name}|{int(label)}"
+            info["family_class_weight_before"][key] = total_weight
+            info["family_class_scale"][key] = scale
+
+    balanced = np.clip(weight_ser.to_numpy(dtype=float) * scale_ser.to_numpy(dtype=float), 0.05, 100.0)
+    balanced_ser = pd.Series(balanced, index=frame.index, dtype=float)
+    for label in (0, 1):
+        mask = known_mask & labels.eq(int(label))
+        if int(mask.sum()) <= 0:
+            continue
+        grouped = balanced_ser.loc[mask].groupby(fam.loc[mask], sort=False).sum()
+        for family_name, total_weight in grouped.items():
+            key = f"{family_name}|{int(label)}"
+            info["family_class_weight_after"][key] = float(total_weight)
+    return balanced, info
+
+
 def compose_arc_training_view(
     X,
     y,
@@ -2236,6 +2307,9 @@ def compose_arc_training_view(
     min_negative_rows: int = 256,
     mismatch_focus_ratio: float = 0.0,
     mismatch_verified_only: bool = False,
+    family_balance: bool = True,
+    family_balance_max_scale: float = 3.0,
+    family_balance_min_scale: float = 0.33,
 ) -> tuple[pd.DataFrame, pd.Series, pd.Series, np.ndarray, pd.DataFrame | None, dict]:
     X_df = X.copy()
     y_ser = pd.Series(np.asarray(y).astype(int), index=X_df.index)
@@ -2260,6 +2334,9 @@ def compose_arc_training_view(
         "near_arc_negative_kept": 0,
         "mismatch_fp_negatives_kept": 0,
         "mismatch_fn_positives": 0,
+        "family_balance_enabled": bool(family_balance),
+        "family_balance_max_scale": float(family_balance_max_scale),
+        "family_balance_min_scale": float(family_balance_min_scale),
     }
 
     selected_neg_idx = neg_idx
@@ -2377,6 +2454,26 @@ def compose_arc_training_view(
             info["positive_rows_oversampled_extra"] = 0
     else:
         info["positive_rows_oversampled_extra"] = 0
+
+    family_balance_info = {
+        "enabled": False,
+        "family_col": "device_family",
+        "class_targets": {},
+        "family_class_weight_before": {},
+        "family_class_weight_after": {},
+        "family_class_scale": {},
+    }
+    if bool(family_balance) and meta_sel is not None and not meta_sel.empty:
+        w_sel, family_balance_info = rebalance_family_class_weights(
+            meta_sel,
+            y_sel,
+            w_sel,
+            family_col="device_family",
+            max_scale=float(family_balance_max_scale),
+            min_scale=float(family_balance_min_scale),
+            include_unknown=False,
+        )
+    info["family_balance"] = family_balance_info
 
     info["final_rows"] = int(len(X_sel))
     info["final_positive_rows"] = int(np.sum(np.asarray(y_sel).astype(int) == 1))
@@ -3189,11 +3286,16 @@ def calibrate_family_threshold_policy(
     work["_y_true"] = y_true
     work["_y_score"] = y_score
 
+    if "device_family_code" in work.columns:
+        truth_family_code = pd.to_numeric(work["device_family_code"], errors="coerce").fillna(-1).astype(int)
+    elif "context_family_code_runtime" in work.columns:
+        truth_family_code = pd.to_numeric(work["context_family_code_runtime"], errors="coerce").fillna(-1).astype(int)
+    else:
+        truth_family_code = pd.Series(DEVICE_FAMILY_UNKNOWN_CODE, index=work.index, dtype=int)
+    work["device_family_code"] = truth_family_code
+
     if "context_family_code_runtime" not in work.columns:
-        if "device_family_code" in work.columns:
-            work["context_family_code_runtime"] = pd.to_numeric(work["device_family_code"], errors="coerce").fillna(-1).astype(int)
-        else:
-            work["context_family_code_runtime"] = DEVICE_FAMILY_UNKNOWN_CODE
+        work["context_family_code_runtime"] = truth_family_code.astype(int)
     else:
         work["context_family_code_runtime"] = pd.to_numeric(work["context_family_code_runtime"], errors="coerce").fillna(-1).astype(int)
 
@@ -3202,24 +3304,36 @@ def calibrate_family_threshold_policy(
     else:
         work["context_family_confidence"] = pd.to_numeric(work["context_family_confidence"], errors="coerce").fillna(0.0).clip(0.0, 1.0)
 
-    known_rows = work[work["context_family_confidence"] >= float(known_confidence_min)].copy()
+    truth_known_rows = work[work["device_family_code"] >= 0].copy()
+    runtime_known_rows = work[
+        (work["context_family_code_runtime"] >= 0)
+        & (work["context_family_confidence"] >= float(known_confidence_min))
+    ].copy()
+
     per_family = {}
+    pending_unknown_fallback = []
+    family_assignment_source = "device_family_code"
     for fam_idx, fam_name in DEVICE_FAMILY_NAME_FROM_CODE.items():
-        group = known_rows[known_rows["context_family_code_runtime"] == int(fam_idx)].copy()
-        source = "fallback_global"
+        truth_group = truth_known_rows[truth_known_rows["device_family_code"] == int(fam_idx)].copy()
+        runtime_group = runtime_known_rows[runtime_known_rows["context_family_code_runtime"] == int(fam_idx)].copy()
+        calibration_group = truth_group if len(truth_group) else runtime_group
+        source = "fallback_unknown"
         details = {
             "family": fam_name,
             "family_code": int(fam_idx),
-            "rows": int(len(group)),
-            "positive_rows": int(group["_y_true"].sum()) if len(group) else 0,
-            "negative_rows": int((group["_y_true"] == 0).sum()) if len(group) else 0,
+            "rows": int(len(calibration_group)),
+            "positive_rows": int(calibration_group["_y_true"].sum()) if len(calibration_group) else 0,
+            "negative_rows": int((calibration_group["_y_true"] == 0).sum()) if len(calibration_group) else 0,
+            "truth_family_rows": int(len(truth_group)),
+            "runtime_known_rows": int(len(runtime_group)),
+            "calibration_family_source": "device_family_code" if len(truth_group) else ("context_family_runtime" if len(runtime_group) else "none"),
         }
-        thr = float(base_threshold)
+        thr = None
         thr_meta = None
-        if len(group) >= family_min_rows and group["_y_true"].nunique() >= 2:
+        if len(calibration_group) >= family_min_rows and calibration_group["_y_true"].nunique() >= 2:
             thr_meta = select_threshold_cost(
-                group["_y_true"].to_numpy(),
-                group["_y_score"].to_numpy(),
+                calibration_group["_y_true"].to_numpy(),
+                calibration_group["_y_score"].to_numpy(),
                 fn_weight=fn_weight,
                 fp_weight=fp_weight,
                 min_recall=min_recall,
@@ -3229,13 +3343,22 @@ def calibrate_family_threshold_policy(
             )
             thr = float(thr_meta["thr"])
             source = "family_validation"
-        elif len(group) >= family_min_rows and int(group["_y_true"].sum()) == 0:
-            neg = np.sort(group["_y_score"].to_numpy())
+        elif len(calibration_group) >= family_min_rows and int(calibration_group["_y_true"].sum()) == 0:
+            neg = np.sort(calibration_group["_y_score"].to_numpy())
             if neg.size:
                 thr = float(min(0.995, max(base_threshold, np.quantile(neg, 0.995) + 0.01)))
                 source = "family_negative_only"
+        elif len(calibration_group) >= family_min_rows and int((calibration_group["_y_true"] == 1).sum()) == len(calibration_group):
+            pos = np.sort(calibration_group["_y_score"].to_numpy())
+            if pos.size:
+                # Positive-only family support is weaker than mixed validation, but still better than
+                # silently treating a present family as unknown. Keep the threshold conservative.
+                thr = float(max(min_threshold, min(base_threshold, np.quantile(pos, 0.20))))
+                source = "family_positive_only"
+        else:
+            pending_unknown_fallback.append(str(int(fam_idx)))
         per_family[str(int(fam_idx))] = {
-            "threshold": float(thr),
+            "threshold": None if thr is None else float(thr),
             "source": source,
             "selection": thr_meta,
             **details,
@@ -3264,10 +3387,17 @@ def calibrate_family_threshold_policy(
             unknown_threshold = float(min(0.999, max(unknown_threshold, np.quantile(neg, 0.999) + 0.01)))
             unknown_source = "unknown_negative_only"
 
+    for fam_key in pending_unknown_fallback:
+        if fam_key in per_family:
+            per_family[fam_key]["threshold"] = float(unknown_threshold)
+            per_family[fam_key]["source"] = "fallback_unknown"
+
     return {
         "policy_type": "family_conditioned_thresholds",
         "base_threshold": float(base_threshold),
         "known_confidence_min": float(known_confidence_min),
+        "family_assignment_source": family_assignment_source,
+        "family_min_rows": int(family_min_rows),
         "family_thresholds": per_family,
         "unknown_threshold": float(unknown_threshold),
         "unknown_policy": {

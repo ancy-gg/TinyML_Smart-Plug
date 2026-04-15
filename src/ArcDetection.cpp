@@ -343,6 +343,7 @@ static float s_prevSpectralFluxFeature = 0.0f;
 static float s_prevHfEnergyDeltaFeature = 0.0f;
 static float s_suspiciousRunEnergyState = 0.0f;
 static uint32_t s_lastTemporalFeatureMs = 0;
+static uint32_t s_temporalIdleSinceMs = 0;
 static RollingBaselineTracker s_baseline;
 static int8_t s_ctxFamily = CONTEXT_FAMILY_UNKNOWN;
 static float s_ctxConfidence = 0.0f;
@@ -356,6 +357,7 @@ void ArcDetection::resetRuntime() {
   s_prevHfEnergyDeltaFeature = 0.0f;
   s_suspiciousRunEnergyState = 0.0f;
   s_lastTemporalFeatureMs = 0;
+  s_temporalIdleSinceMs = 0;
   s_baseline.reset();
   s_ctxFamily = CONTEXT_FAMILY_UNKNOWN;
   s_ctxConfidence = 0.0f;
@@ -1085,8 +1087,21 @@ bool ArcDetection::compute(const uint16_t* raw, size_t n, float fs_hz,
   s_suspiciousRunEnergyState = fminf(
       20.0f,
       (s_suspiciousRunEnergyState * suspiciousDecay) + suspiciousInstant);
-  if (out.irms_a <= CURRENT_ANALYSIS_IDLE_A && suspiciousInstant < 0.05f) {
-    s_suspiciousRunEnergyState *= 0.60f;
+
+  const bool temporalIdleNow = (!out.current_valid) || (out.irms_a <= CURRENT_ANALYSIS_IDLE_A);
+  if (temporalIdleNow) {
+    if (s_temporalIdleSinceMs == 0U) s_temporalIdleSinceMs = temporalNowMs;
+    if ((temporalNowMs - s_temporalIdleSinceMs) >= 350UL) {
+      s_suspiciousRunEnergyState = 0.0f;
+      s_haveTemporalHistory = false;
+      s_prevIrmsFeature = 0.0f;
+      s_prevSpectralFluxFeature = 0.0f;
+      s_prevHfEnergyDeltaFeature = 0.0f;
+    } else if (suspiciousInstant < 0.05f) {
+      s_suspiciousRunEnergyState *= 0.35f;
+    }
+  } else {
+    s_temporalIdleSinceMs = 0U;
   }
   out.suspicious_run_energy = s_suspiciousRunEnergyState;
 

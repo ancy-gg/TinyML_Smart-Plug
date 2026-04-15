@@ -433,12 +433,20 @@ static void updateContextTracker_(const FeatureFrame& f, float vProtect, float i
       (activeWindowMs >= CONTEXT_PROVISIONAL_MIN_MS) &&
       (gContext.provisionalFamily != CONTEXT_FAMILY_UNKNOWN) &&
       (gContext.provisionalConfidence >= CONTEXT_MIN_CONFIDENCE);
+  const bool unknownReady =
+      (activeWindowMs >= CONTEXT_ACQUIRE_WINDOW_MS) &&
+      (gContext.stableAccumMs >= CONTEXT_PROVISIONAL_MIN_MS);
 
   if ((activeWindowMs >= CONTEXT_ACQUIRE_WINDOW_MS) && provisionalReady) {
     gContext.ready = true;
     gContext.family = gContext.provisionalFamily;
     gContext.confidence = gContext.provisionalConfidence;
     arcDetect.setContext(gContext.family, gContext.confidence);
+  } else if (unknownReady) {
+    gContext.ready = true;
+    gContext.family = CONTEXT_FAMILY_UNKNOWN;
+    gContext.confidence = 0.0f;
+    arcDetect.setContext(CONTEXT_FAMILY_UNKNOWN, 0.0f);
   } else if (provisionalReady) {
     arcDetect.setContext(gContext.provisionalFamily, gContext.provisionalConfidence);
   } else {
@@ -612,6 +620,54 @@ static bool restartSensePipelineSoft_() {
   resetArcRuntime_();
   delay(40);
   return startSensePipeline_();
+}
+
+static bool updateArcModelWindowLatch_(bool clearState,
+                                      bool mainsOn,
+                                      bool relayOn,
+                                      bool currentValid,
+                                      float irms,
+                                      float loadRefA) {
+  static bool latched = false;
+  static uint32_t onSinceMs = 0;
+  static uint32_t offSinceMs = 0;
+
+  const uint32_t now = millis();
+  if (clearState || !relayOn || !mainsOn) {
+    latched = false;
+    onSinceMs = 0;
+    offSinceMs = 0;
+    return false;
+  }
+
+  const bool activeNow =
+      ((currentValid && (irms >= ARC_MODEL_LATCH_MIN_A)) ||
+       (loadRefA >= ARC_MODEL_LATCH_MIN_A));
+
+  if (!latched) {
+    if (activeNow) {
+      if (onSinceMs == 0U) onSinceMs = now;
+      if ((now - onSinceMs) >= ARC_MODEL_LATCH_ON_MS) {
+        latched = true;
+        offSinceMs = 0U;
+      }
+    } else {
+      onSinceMs = 0U;
+    }
+    return latched;
+  }
+
+  if (!activeNow && (irms <= ARC_MODEL_LATCH_RELEASE_A) && (loadRefA < ARC_MODEL_LATCH_MIN_A)) {
+    if (offSinceMs == 0U) offSinceMs = now;
+    if ((now - offSinceMs) >= ARC_MODEL_LATCH_OFF_MS) {
+      latched = false;
+      onSinceMs = 0U;
+    }
+  } else {
+    offSinceMs = 0U;
+  }
+
+  return latched;
 }
 
 static bool arcInputStable(bool currentValid, float irms) {
@@ -1452,6 +1508,9 @@ void loop() {
   static FeatureFrame lastF = {};
   static bool hasLast = false;
   static uint32_t lastFeatRxMs = 0;
+  static FeatureFrame lastModelInferenceFeat = {};
+  static bool haveLastModelInferenceFeat = false;
+  static uint32_t lastModelInferenceFeatMs = 0;
   bool freshFeatThisLoop = false;
   FeatureFrame f;
   if (qFeat) {
@@ -1521,6 +1580,8 @@ void loop() {
     requestFeaturePipelineReset_();
     resetArcRuntime_();
     resetContextTracker_();
+    haveLastModelInferenceFeat = false;
+    lastModelInferenceFeatMs = 0;
     if (mainsPresentForFeat) armRelayArtifactBlank_(1200UL);
   }
   lastMainsPresentForFeat = mainsPresentForFeat;
@@ -1614,21 +1675,17 @@ void loop() {
 
   const float apparentPowerVa = (vRms > 0.10f && f.irms > 0.001f) ? (vRms * f.irms) : 0.0f;
   const bool voltageNormal = (vFast >= VOLT_NORMAL_MIN_V && vFast <= VOLT_NORMAL_MAX_V);
-  const bool arcTurnOnBlankActive =
+  bool arcTurnOnBlankActive =
       arcTurnOnBlanking(effectiveRelayLatchedOn,
                         f.current_valid != 0,
                         vFast,
                         irmsRawForLogic);
 
-  const bool arcTransientBlankActive =
+  bool arcTransientBlankActive =
       arcTransientBlanking(effectiveRelayLatchedOn,
                            f.current_valid != 0,
                            vFast,
                            irmsRawForLogic);
-
-  const bool arcBlankActive =
-      arcTurnOnBlankActive || arcTransientBlankActive;
-  const bool mlEventLike = arcEventSignature(f, irmsRawForLogic);
 
   static float loadRefA = 0.0f;
   static float prevIrmsLogic = 0.0f;
@@ -1647,16 +1704,55 @@ void loop() {
   static bool prevSuspiciousFrame = false;
   static uint32_t restrikeTimes[6] = {0,0,0,0,0,0};
   static uint8_t restrikeHead = 0;
+  static uint32_t noConfirmedLoadSinceMs = 0;
 
-  if (effectiveRelayLatchedOn && vFast >= MAINS_PRESENT_ON_V && irmsRawForLogic >= 0.50f) {
-    loadRefA += 0.10f * (irmsRawForLogic - loadRefA);
-  } else if (!effectiveRelayLatchedOn || vFast <= MAINS_PRESENT_OFF_V) {
+  if (effectiveRelayLatchedOn && vFast >= MAINS_PRESENT_ON_V) {
+    const float targetLoadA = (irmsRawForLogic >= 0.50f) ? irmsRawForLogic : 0.0f;
+    const float loadAlpha = (targetLoadA > loadRefA) ? 0.10f : ((targetLoadA > 0.05f) ? 0.18f : 0.28f);
+    loadRefA += loadAlpha * (targetLoadA - loadRefA);
+    if (loadRefA < 0.02f) loadRefA = 0.0f;
+  } else {
     loadRefA = 0.0f;
+    noConfirmedLoadSinceMs = 0;
   }
 
   const bool hadSteadyLoad = (loadRefA >= 0.80f);
   const bool energizedArcWindow = (vFast >= 170.0f);
-  const bool invalidWhileLoaded = energizedArcWindow && hadSteadyLoad && (f.feat_valid == 0);
+  const bool noConfirmedLoadNow =
+      effectiveRelayLatchedOn &&
+      (vFast >= MAINS_PRESENT_ON_V) &&
+      (loadRefA < 0.12f) &&
+      (fabsf(irmsRawForLogic) <= 0.06f);
+  if (noConfirmedLoadNow) {
+    if (noConfirmedLoadSinceMs == 0U) noConfirmedLoadSinceMs = millis();
+  } else {
+    noConfirmedLoadSinceMs = 0U;
+  }
+  const bool staleNoLoadState =
+      (noConfirmedLoadSinceMs != 0U) &&
+      ((millis() - noConfirmedLoadSinceMs) >= 350UL);
+
+  if (staleNoLoadState) {
+    loadRefA = 0.0f;
+    invalidBurstSinceMs = 0;
+    collapseSinceMs = 0;
+    voltDipSinceMs = 0;
+    suspiciousRunLen = 0;
+    invalidLoadedRunLen = 0;
+    suspiciousRunEnergy = 0.0f;
+    arcLeakyScore = 0;
+    prevSuspiciousFrame = false;
+    memset(restrikeTimes, 0, sizeof(restrikeTimes));
+    restrikeHead = 0;
+    haveLastModelInferenceFeat = false;
+    lastModelInferenceFeatMs = 0;
+  }
+
+  const bool invalidWhileLoaded =
+      energizedArcWindow &&
+      hadSteadyLoad &&
+      !staleNoLoadState &&
+      (f.feat_valid == 0);
   const bool invalidOff = (!energizedArcWindow) && (f.feat_valid == 0) && (f.current_valid == 0);
   const bool irmsCollapse =
       energizedArcWindow &&
@@ -1667,6 +1763,41 @@ void loop() {
       hadSteadyLoad &&
       (prevVFast >= VOLT_NORMAL_MIN_V) &&
       ((prevVFast - vFast) >= 20.0f);
+
+  static uint32_t loadedArcGapRecoveryUntilMs = 0;
+  const bool loadedArcGapFeatureBurst =
+      effectiveRelayLatchedOn &&
+      (gContext.ready) &&
+      hadSteadyLoad &&
+      energizedArcWindow &&
+      (f.feat_valid != 0) &&
+      ((f.max_low_current_run_ms >= ARC_SIG_MAX_LOW_CURRENT_RUN_MS) ||
+       (f.zero_dwell_ratio >= ARC_SIG_ZERO_DWELL_RATIO &&
+        f.low_current_ratio >= (ARC_SIG_LOW_CURRENT_RATIO * 0.70f)) ||
+       (f.pulse_count_per_cycle >= ARC_SIG_PULSE_COUNT_PER_CYCLE &&
+        f.delta_irms_abs >= 0.10f));
+  const bool loadedArcGapCandidate =
+      effectiveRelayLatchedOn &&
+      (gContext.ready) &&
+      energizedArcWindow &&
+      hadSteadyLoad &&
+      (irmsCollapse || fastVoltDip || loadedArcGapFeatureBurst);
+  if (loadedArcGapCandidate) {
+    loadedArcGapRecoveryUntilMs = millis() + 700UL;
+  }
+  const bool loadedArcGapRecoveryActive =
+      ((int32_t)(loadedArcGapRecoveryUntilMs - millis()) > 0) &&
+      (gContext.ready);
+
+  if (loadedArcGapCandidate || loadedArcGapRecoveryActive) {
+    arcTurnOnBlankActive = false;
+    arcTransientBlankActive = false;
+  }
+
+  const bool arcBlankActive =
+      arcTurnOnBlankActive || arcTransientBlankActive;
+  const bool stableForArcInference =
+      arcInputStable(f.current_valid != 0, irmsRawForLogic) || loadedArcGapRecoveryActive;
 
   if (voltageNormal && effectiveRelayLatchedOn && !arcBlankActive) {
     if (healthyVoltageBaseline <= 1.0f) healthyVoltageBaseline = vFast;
@@ -1711,15 +1842,17 @@ void loop() {
   }
 
   const bool fallbackArcEvent =
+      gContext.ready &&
       effectiveRelayLatchedOn &&
       (((invalidBurstSinceMs && (millis() - invalidBurstSinceMs) >= 80UL)) ||
        ((collapseSinceMs && (millis() - collapseSinceMs) >= 40UL)) ||
        ((voltDipSinceMs && (millis() - voltDipSinceMs) >= 40UL)));
 
   const bool softFallbackArcEvent =
+      gContext.ready &&
       effectiveRelayLatchedOn &&
       !arcBlankActive &&
-      arcInputStable(f.current_valid != 0, irmsRawForLogic) &&
+      stableForArcInference &&
       softArcBurstEvent(f, irmsRawForLogic, hadSteadyLoad, vFast);
 
   const bool haveUsableFeatures = (f.feat_valid != 0);
@@ -1728,10 +1861,11 @@ void loop() {
        !paused &&
        !bootSettling &&
        !protectionInhibit &&
+       gContext.ready &&
        !arcBlankActive &&
        voltageNormal &&
        haveUsableFeatures &&
-       arcInputStable(f.current_valid != 0, irmsRawForLogic));
+       stableForArcInference);
 
   static uint32_t relayActionAtMs = 0;
   static uint32_t relayNetQuietUntilMs = 0;
@@ -1795,53 +1929,105 @@ void loop() {
   applyContextToFrame_(f);
   sanitizeFeatureFrame_(f);
 
+  const bool arcContextLatched = (gContext.ready || (f.context_latched != 0));
+
+  const bool arcModelWindowLatched = updateArcModelWindowLatch_(
+      faultClearSuppressActive || bootSettling || gSafeMode,
+      (vFast >= MAINS_PRESENT_ON_V),
+      effectiveRelayLatchedOn,
+      (f.current_valid != 0),
+      irmsRawForLogic,
+      loadRefA);
+
+  if (arcContextLatched &&
+      (f.current_valid != 0) &&
+      (f.feat_valid != 0) &&
+      (irmsRawForLogic >= ARC_SOFT_MIN_IRMS_A)) {
+    lastModelInferenceFeat = f;
+    haveLastModelInferenceFeat = true;
+    lastModelInferenceFeatMs = millis();
+  } else if (!arcModelWindowLatched || !arcContextLatched || vFast <= MAINS_PRESENT_OFF_V) {
+    haveLastModelInferenceFeat = false;
+    lastModelInferenceFeatMs = 0;
+  }
+
+  const bool modelInferenceBridgeActive =
+      arcContextLatched &&
+      arcModelWindowLatched &&
+      haveLastModelInferenceFeat &&
+      ((millis() - lastModelInferenceFeatMs) <= ARC_MODEL_FEATURE_HOLD_MS) &&
+      ((((f.feat_valid == 0) || (f.current_valid == 0)) ||
+        (irmsRawForLogic < ARC_SOFT_MIN_IRMS_A) ||
+        loadedArcGapRecoveryActive));
+
+  FeatureFrame inferF = f;
+  if (modelInferenceBridgeActive) {
+    copyComputedFeaturesBetweenFrames_(inferF, lastModelInferenceFeat);
+    inferF.adc_fs_hz = lastModelInferenceFeat.adc_fs_hz;
+    inferF.feat_valid = 1;
+    inferF.current_valid = 1;
+  }
+
+  const float inferIrmsForModel =
+      modelInferenceBridgeActive ? fmaxf(irmsRawForLogic, ARC_SOFT_MIN_IRMS_A) : irmsRawForLogic;
+  const bool modelWindowActive =
+      arcContextLatched &&
+      (arcModelWindowLatched ||
+       hadSteadyLoad ||
+       (irmsRawForLogic >= 0.20f) ||
+       (gContext.ready));
   int rawPred = 0;
-  if (!faultClearSuppressActive && mlArcEligible) {
-    rawPred = arcDetect.predictWithContext(f.spectral_flux_midhf,
-                                           f.residual_crest_factor,
-                                           f.edge_spike_ratio,
-                                           f.midband_residual_ratio,
-                                           f.cycle_nmse,
-                                           f.peak_fluct_cv,
-                                           f.thd_i,
-                                           f.hf_energy_delta,
-                                           f.zcv,
-                                           f.abs_irms_zscore_vs_baseline,
-                                           f.pulse_count_per_cycle,
-                                           f.zero_dwell_ratio,
-                                           f.low_current_ratio,
-                                           f.max_low_current_run_ms,
-                                           f.suspicious_run_energy,
-                                           f.delta_irms_abs,
-                                           f.delta_hf_energy,
-                                           f.delta_flux,
-                                           f.halfcycle_asymmetry,
-                                           f.v_sag_pct,
-                                           f.vrms,
-                                           irmsRawForLogic,
-                                           f.temp_c,
-                                           f.context_family_code_runtime,
-                                           f.context_family_confidence);
-    if (rawPred == 1 && !mlEventLike) rawPred = 0;
+  const bool modelInferenceEligible = mlArcEligible || modelInferenceBridgeActive;
+  if (!faultClearSuppressActive && modelInferenceEligible && modelWindowActive) {
+    rawPred = arcDetect.predictWithContext(inferF.spectral_flux_midhf,
+                                           inferF.residual_crest_factor,
+                                           inferF.edge_spike_ratio,
+                                           inferF.midband_residual_ratio,
+                                           inferF.cycle_nmse,
+                                           inferF.peak_fluct_cv,
+                                           inferF.thd_i,
+                                           inferF.hf_energy_delta,
+                                           inferF.zcv,
+                                           inferF.abs_irms_zscore_vs_baseline,
+                                           inferF.pulse_count_per_cycle,
+                                           inferF.zero_dwell_ratio,
+                                           inferF.low_current_ratio,
+                                           inferF.max_low_current_run_ms,
+                                           inferF.suspicious_run_energy,
+                                           inferF.delta_irms_abs,
+                                           inferF.delta_hf_energy,
+                                           inferF.delta_flux,
+                                           inferF.halfcycle_asymmetry,
+                                           inferF.v_sag_pct,
+                                           inferF.vrms,
+                                           inferIrmsForModel,
+                                           inferF.temp_c,
+                                           inferF.context_family_code_runtime,
+                                           inferF.context_family_confidence);
+    if (rawPred == 1 && !arcEventSignature(inferF, inferIrmsForModel) && !modelInferenceBridgeActive) rawPred = 0;
   }
 
   const bool temporalKick =
+      gContext.ready &&
       !arcBlankActive &&
       effectiveRelayLatchedOn &&
       hadSteadyLoad &&
       ((f.invalid_loaded_flag != 0 && invalidLoadedRunLen >= 2U) ||
-       (f.pulse_count_per_cycle >= ARC_SIG_PULSE_COUNT_PER_CYCLE && f.delta_irms_abs >= 0.10f) ||
-       (f.max_low_current_run_ms >= ARC_SIG_MAX_LOW_CURRENT_RUN_MS && f.low_current_ratio >= ARC_SIG_LOW_CURRENT_RATIO) ||
-       (f.zero_dwell_ratio >= ARC_SIG_ZERO_DWELL_RATIO && f.abs_irms_zscore_vs_baseline >= 1.20f) ||
-       (f.halfcycle_asymmetry >= 10.0f && f.zcv >= 0.12f));
+       (inferF.pulse_count_per_cycle >= ARC_SIG_PULSE_COUNT_PER_CYCLE && inferF.delta_irms_abs >= 0.10f) ||
+       (inferF.max_low_current_run_ms >= ARC_SIG_MAX_LOW_CURRENT_RUN_MS && inferF.low_current_ratio >= ARC_SIG_LOW_CURRENT_RATIO) ||
+       (inferF.zero_dwell_ratio >= ARC_SIG_ZERO_DWELL_RATIO && inferF.abs_irms_zscore_vs_baseline >= 1.20f) ||
+       (inferF.halfcycle_asymmetry >= 10.0f && inferF.zcv >= 0.12f));
 
-  bool suspiciousFrame =
-      ((rawPred == 1) || fallbackArcEvent || softFallbackArcEvent || temporalKick);
+  // Model-only prediction path:
+  // - suspicious run bookkeeping remains available for CSV/debug
+  // - but only the model output may arm the leaky integrator
+  // - fallback / temporal heuristics no longer force model_pred high
+  bool suspiciousFrame = (rawPred == 1);
   if (arcBlankActive || relayArtifactBlankActive || invalidOff) suspiciousFrame = false;
 
   if (suspiciousFrame) {
     if (suspiciousRunLen < 65535U) suspiciousRunLen++;
-    suspiciousRunEnergy = fminf(12.0f, suspiciousRunEnergy * 0.82f + 1.10f + (temporalKick ? 0.25f : 0.0f));
+    suspiciousRunEnergy = fminf(12.0f, suspiciousRunEnergy * 0.82f + 1.10f);
     arcLeakyScore = (arcLeakyScore + ARC_LEAKY_SCORE_STEP > ARC_LEAKY_SCORE_MAX) ? ARC_LEAKY_SCORE_MAX : (arcLeakyScore + ARC_LEAKY_SCORE_STEP);
   } else {
     if (suspiciousRunLen > 0) suspiciousRunLen--;
@@ -1861,16 +2047,9 @@ void loop() {
   }
 
   int pred = 0;
-  if (!faultClearSuppressActive && !arcBlankActive) {
+  if (!faultClearSuppressActive && arcContextLatched && !arcBlankActive) {
     const bool leakyArmed = (arcLeakyScore >= ARC_LEAKY_SCORE_FIRE);
-    // Keep logging suspicious_run_energy for future dataset analysis, but do not
-    // let its direct magnitude force a live arc decision path.
-    const bool sustainedSuspicion = (suspiciousRunLen >= 2U) || leakyArmed;
-    const bool hardContextBurst = fallbackArcEvent || (softFallbackArcEvent && leakyArmed);
-    const bool temporalBurst =
-        temporalKick &&
-        ((arcLeakyScore >= ARC_LEAKY_SCORE_STRONG) || (invalidLoadedRunLen >= 3U) || (restrikeCountShort >= 2U));
-    if (hardContextBurst || temporalBurst || (rawPred == 1 && sustainedSuspicion)) pred = 1;
+    if ((rawPred == 1) || (leakyArmed && arcModelWindowLatched)) pred = 1;
   }
 
   f.suspicious_run_len = suspiciousRunLen;
@@ -1882,8 +2061,9 @@ void loop() {
   if (!bootSettling && !faultClearSuppressActive) {
     const bool arcProtectionEligible =
         !collectionModeActive &&
+        arcContextLatched &&
         !arcBlankActive &&
-        (mlArcEligible || fallbackArcEvent || softFallbackArcEvent || temporalKick);
+        (modelInferenceEligible || arcModelWindowLatched || fallbackArcEvent || softFallbackArcEvent || temporalKick || (f.model_pred != 0));
     st = protection.update(vFast,
                            vRaw,
                            tC,
@@ -2002,7 +2182,10 @@ void loop() {
   }
 
   protection.apply(st, vRms, vFast, irmsRawForLogic, tC);
-  notification.updateBuzzer(st, vFast, irmsRawForLogic, tC);
+  const FaultState liveFaultState =
+      (st != STATE_NORMAL) ? st :
+      (protection.faultLatched() ? protection.latchedFaultState() : STATE_NORMAL);
+  notification.updateBuzzer(liveFaultState, vFast, irmsRawForLogic, tC);
   const bool mainsPresentStable = debouncedMainsPresentForState(vFast);
 #if PROTECTION
   handleCueEvents(vRaw, vFast, irmsRawForLogic, mainsPresentStable, paused || gSafeMode || protectionInhibit, st);
@@ -2075,12 +2258,17 @@ void loop() {
   static FaultState displayFaultState = STATE_NORMAL;
   static uint32_t displayFaultUntil = 0;
   if (faultClearRequested) { displayFaultState = STATE_NORMAL; displayFaultUntil = 0; }
-  if (!faultClearSuppressActive && st != STATE_NORMAL) { displayFaultState = st; displayFaultUntil = millis() + FAULT_ALERT_MIN_MS; }
-  else if (displayFaultState != STATE_NORMAL && (int32_t)(millis() - displayFaultUntil) >= 0) { displayFaultState = STATE_NORMAL; displayFaultUntil = 0; }
+  if (!faultClearSuppressActive && liveFaultState != STATE_NORMAL) {
+    displayFaultState = liveFaultState;
+    displayFaultUntil = millis() + FAULT_ALERT_MIN_MS;
+  } else if (displayFaultState != STATE_NORMAL && (int32_t)(millis() - displayFaultUntil) >= 0) {
+    displayFaultState = STATE_NORMAL;
+    displayFaultUntil = 0;
+  }
   const bool displayFaultActive = (displayFaultState != STATE_NORMAL) && ((int32_t)(displayFaultUntil - millis()) > 0);
 
   static uint32_t noPowerSinceMsOled = 0;
-  const bool unpluggedLiveOled = classifyUnpluggedSocket(vRaw, vFast, irmsRawForLogic, f.current_valid != 0, st, &noPowerSinceMsOled);
+  const bool unpluggedLiveOled = classifyUnpluggedSocket(vRaw, vFast, irmsRawForLogic, f.current_valid != 0, liveFaultState, &noPowerSinceMsOled);
   OledOverlay ov = OledOverlay::NONE;
   if (!gPauseByOta && !bootSettling) {
     if (displayFaultActive) {
@@ -2092,7 +2280,9 @@ void loop() {
     } else if (unpluggedLiveOled) ov = OledOverlay::UNPLUGGED;
   }
 
-  notification.setOverlay(ov); notification.setState(displayFaultActive ? displayFaultState : st); notification.setMeasurements(vRms, f.irms, apparentPowerVa, tC);
+  notification.setOverlay(ov);
+  notification.setState(displayFaultActive ? displayFaultState : liveFaultState);
+  notification.setMeasurements(vRms, f.irms, apparentPowerVa, tC);
   const bool showWifiWait = (!wifiConnected && (wifiPhase == WifiHandler::PHASE_CONNECTING || wifiPhase == WifiHandler::PHASE_AP_WAIT_CLIENT || wifiPhase == WifiHandler::PHASE_PORTAL_ACTIVE)) &&
                             ((wifiBannerUntilMs == 0) || ((int32_t)(wifiBannerUntilMs - millis()) > 0) || portalActive || wifiPhase == WifiHandler::PHASE_AP_WAIT_CLIENT);
   notification.setWiFi(wifiConnected, wifiMgr.rssi(), wifiMgr.isBlockingPhase(), portalActive, wifiTimedOutUi, wifiPhase == WifiHandler::PHASE_AP_WAIT_CLIENT);
@@ -2100,7 +2290,7 @@ void loop() {
   static uint32_t lastUiRenderMs = 0;
   static OledOverlay lastUiOv = OledOverlay::NONE;
   static FaultState lastUiState = STATE_NORMAL;
-  const FaultState uiState = displayFaultActive ? displayFaultState : st;
+  const FaultState uiState = displayFaultActive ? displayFaultState : liveFaultState;
   const bool uiUrgent = (ov != lastUiOv) || (uiState != lastUiState);
   if (uiUrgent || ((millis() - lastUiRenderMs) >= OLED_RENDER_INTERVAL_MS)) {
     notification.render();
@@ -2121,13 +2311,13 @@ void loop() {
   if (!paused && !relayNetQuietActive && (millis() - lastLive >= LIVE_REQUEST_UPDATE_MS)) {
     lastLive = millis();
     static uint32_t noPowerSinceMs = 0;
-    const bool unpluggedLive = classifyUnpluggedSocket(vRaw, vFast, irmsRawForLogic, f.current_valid != 0, st, &noPowerSinceMs);
+    const bool unpluggedLive = classifyUnpluggedSocket(vRaw, vFast, irmsRawForLogic, f.current_valid != 0, liveFaultState, &noPowerSinceMs);
     String stateStr;
     if (portalActive) stateStr = "CONFIG_PORTAL";
     else if (bootSettling || protectionInhibit) stateStr = "STARTUP_STABILIZING";
     else if (gSafeMode) stateStr = "SAFE_MODE";
-    else if (unpluggedLive && st != STATE_ARCING && st != STATE_HEATING) stateStr = "UNPLUGGED";
-    else stateStr = String(stateToCstr(st));
+    else if (unpluggedLive && liveFaultState != STATE_ARCING && liveFaultState != STATE_HEATING) stateStr = "UNPLUGGED";
+    else stateStr = String(stateToCstr(liveFaultState));
     network.requestLiveUpdate(vRms, f.irms, apparentPowerVa, tC,
                               f.abs_irms_zscore_vs_baseline, f.delta_irms_abs,
                               f.halfcycle_asymmetry, f.suspicious_run_energy,

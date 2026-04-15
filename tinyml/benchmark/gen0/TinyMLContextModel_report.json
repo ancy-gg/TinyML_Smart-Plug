@@ -426,7 +426,7 @@
   ],
   "settings": {
     "csv": "C:\\Disk\\Ancy\\Platform IO\\TinyML_Smart-Plug\\tinyml\\data\\gen0\\load_context.csv",
-    "n_iter": 240,
+    "n_iter": 24,
     "min_recall": 0.0,
     "min_precision": 0.0,
     "max_fpr": 1.0,

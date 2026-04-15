@@ -14,6 +14,7 @@ public:
   bool webControlLocked() const { return _webLockout; }
   bool voltageLockoutActive() const { return _voltageLockout; }
   bool faultLatched() const { return _resetRequired || _voltageLockout; }
+  FaultState latchedFaultState() const { return _latchedFaultState; }
   const char* loadState() const { return _loadOn ? "LOAD ON" : "LOAD OFF"; }
 
   void apply(FaultState st, float vDisplay, float vProtect, float i, float t);
@@ -53,6 +54,7 @@ private:
   bool _autoOnEdge = false;
   bool _webLockout = false;
   bool _resetRequired = false;
+  FaultState _latchedFaultState = STATE_NORMAL;
   bool _loadOn = false;
   uint32_t _loadOnSince = 0;
   uint32_t _loadOffSince = 0;
