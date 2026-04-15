@@ -1705,6 +1705,8 @@ void loop() {
   static uint32_t restrikeTimes[6] = {0,0,0,0,0,0};
   static uint8_t restrikeHead = 0;
   static uint32_t noConfirmedLoadSinceMs = 0;
+  static uint32_t steadyLoadGapSinceMs = 0;
+  static uint32_t deliberateReloadSuppressUntilMs = 0;
 
   if (effectiveRelayLatchedOn && vFast >= MAINS_PRESENT_ON_V) {
     const float targetLoadA = (irmsRawForLogic >= 0.50f) ? irmsRawForLogic : 0.0f;
@@ -1714,6 +1716,8 @@ void loop() {
   } else {
     loadRefA = 0.0f;
     noConfirmedLoadSinceMs = 0;
+    steadyLoadGapSinceMs = 0;
+    deliberateReloadSuppressUntilMs = 0;
   }
 
   const bool hadSteadyLoad = (loadRefA >= 0.80f);
@@ -1732,6 +1736,24 @@ void loop() {
       (noConfirmedLoadSinceMs != 0U) &&
       ((millis() - noConfirmedLoadSinceMs) >= 350UL);
 
+  const bool steadyLoadGapNow =
+      energizedArcWindow &&
+      effectiveRelayLatchedOn &&
+      (steadyLoadGapSinceMs != 0U || hadSteadyLoad) &&
+      (((f.current_valid == 0) && (fabsf(irmsRawForLogic) <= ARC_RESTRIKE_GAP_CURRENT_MAX_A)) ||
+       (fabsf(irmsRawForLogic) <= ARC_RESTRIKE_GAP_CURRENT_MAX_A));
+  if (steadyLoadGapNow) {
+    if (steadyLoadGapSinceMs == 0U) steadyLoadGapSinceMs = millis();
+  } else if (steadyLoadGapSinceMs != 0U) {
+    const uint32_t gapDurMs = millis() - steadyLoadGapSinceMs;
+    if (gapDurMs > ARC_RESTRIKE_VALID_WINDOW_MS) {
+      deliberateReloadSuppressUntilMs = millis() + ARC_RESTRIKE_VALID_WINDOW_MS;
+    }
+    steadyLoadGapSinceMs = 0U;
+  }
+  const bool deliberateReloadSuppressActive =
+      ((int32_t)(deliberateReloadSuppressUntilMs - millis()) > 0);
+
   if (staleNoLoadState) {
     loadRefA = 0.0f;
     invalidBurstSinceMs = 0;
@@ -1744,6 +1766,7 @@ void loop() {
     prevSuspiciousFrame = false;
     memset(restrikeTimes, 0, sizeof(restrikeTimes));
     restrikeHead = 0;
+    deliberateReloadSuppressUntilMs = 0;
     haveLastModelInferenceFeat = false;
     lastModelInferenceFeatMs = 0;
   }
@@ -1904,6 +1927,8 @@ void loop() {
     prevSuspiciousFrame = false;
     memset(restrikeTimes, 0, sizeof(restrikeTimes));
     restrikeHead = 0;
+    steadyLoadGapSinceMs = 0;
+    deliberateReloadSuppressUntilMs = 0;
     healthyVoltageBaseline = 0.0f;
     prevFlux = f.spectral_flux_midhf;
     prevHfDelta = f.hf_energy_delta;
@@ -1978,6 +2003,7 @@ void loop() {
        (gContext.ready));
   int rawPred = 0;
   const bool modelInferenceEligible = mlArcEligible || modelInferenceBridgeActive;
+  const bool modelArcSignature = arcEventSignature(inferF, inferIrmsForModel);
   if (!faultClearSuppressActive && modelInferenceEligible && modelWindowActive) {
     rawPred = arcDetect.predictWithContext(inferF.spectral_flux_midhf,
                                            inferF.residual_crest_factor,
@@ -2004,7 +2030,8 @@ void loop() {
                                            inferF.temp_c,
                                            inferF.context_family_code_runtime,
                                            inferF.context_family_confidence);
-    if (rawPred == 1 && !arcEventSignature(inferF, inferIrmsForModel) && !modelInferenceBridgeActive) rawPred = 0;
+    if (rawPred == 1 && !modelArcSignature && !modelInferenceBridgeActive) rawPred = 0;
+    if (rawPred == 1 && deliberateReloadSuppressActive && modelArcSignature) rawPred = 0;
   }
 
   const bool temporalKick =
@@ -2018,16 +2045,13 @@ void loop() {
        (inferF.zero_dwell_ratio >= ARC_SIG_ZERO_DWELL_RATIO && inferF.abs_irms_zscore_vs_baseline >= 1.20f) ||
        (inferF.halfcycle_asymmetry >= 10.0f && inferF.zcv >= 0.12f));
 
-  // Model-only prediction path:
-  // - suspicious run bookkeeping remains available for CSV/debug
-  // - but only the model output may arm the leaky integrator
-  // - fallback / temporal heuristics no longer force model_pred high
-  bool suspiciousFrame = (rawPred == 1);
+  bool suspiciousFrame =
+      ((rawPred == 1) || fallbackArcEvent || softFallbackArcEvent || temporalKick);
   if (arcBlankActive || relayArtifactBlankActive || invalidOff) suspiciousFrame = false;
 
   if (suspiciousFrame) {
     if (suspiciousRunLen < 65535U) suspiciousRunLen++;
-    suspiciousRunEnergy = fminf(12.0f, suspiciousRunEnergy * 0.82f + 1.10f);
+    suspiciousRunEnergy = fminf(12.0f, suspiciousRunEnergy * 0.82f + 1.10f + (temporalKick ? 0.25f : 0.0f));
     arcLeakyScore = (arcLeakyScore + ARC_LEAKY_SCORE_STEP > ARC_LEAKY_SCORE_MAX) ? ARC_LEAKY_SCORE_MAX : (arcLeakyScore + ARC_LEAKY_SCORE_STEP);
   } else {
     if (suspiciousRunLen > 0) suspiciousRunLen--;
@@ -2049,7 +2073,18 @@ void loop() {
   int pred = 0;
   if (!faultClearSuppressActive && arcContextLatched && !arcBlankActive) {
     const bool leakyArmed = (arcLeakyScore >= ARC_LEAKY_SCORE_FIRE);
-    if ((rawPred == 1) || (leakyArmed && arcModelWindowLatched)) pred = 1;
+    // Keep logging suspicious_run_energy for future dataset analysis, but do not
+    // let its direct magnitude force a live arc decision path.
+    const bool sustainedSuspicion = (suspiciousRunLen >= 2U) || leakyArmed;
+    const bool hardContextBurst = fallbackArcEvent || (softFallbackArcEvent && leakyArmed);
+    const bool temporalBurst =
+        temporalKick &&
+        ((arcLeakyScore >= ARC_LEAKY_SCORE_STRONG) || (invalidLoadedRunLen >= 3U) || (restrikeCountShort >= 2U));
+    const bool bridgedModelHold =
+        modelInferenceBridgeActive &&
+        arcModelWindowLatched &&
+        (suspiciousRunLen >= 1U || leakyArmed || rawPred == 1);
+    if (hardContextBurst || temporalBurst || (rawPred == 1 && sustainedSuspicion) || bridgedModelHold) pred = 1;
   }
 
   f.suspicious_run_len = suspiciousRunLen;

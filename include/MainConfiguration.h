@@ -14,7 +14,7 @@ static constexpr bool ENABLE_AUTO_ARC_CAPTURE = false;
 // Cloud / OTA configuration
 static constexpr const char* FIREBASE_API_KEY = "AIzaSyAmJlZZszyWPJFgIkTAAl_TbIySys1nvEw";
 static constexpr const char* FIREBASE_DB_URL  = "tinyml-smart-plug-default-rtdb.asia-southeast1.firebasedatabase.app";
-static constexpr const char* FW_VERSION       = "v7.6.6-p-gen0";
+static constexpr const char* FW_VERSION       = "v7.6.7-p-gen0";
 static constexpr const char* OTA_DESIRED_VERSION_PATH = "/ota/desired_version";
 static constexpr const char* OTA_FIRMWARE_URL_PATH    = "/ota/firmware_url";
 
@@ -296,9 +296,9 @@ static constexpr float VOLTAGE_SNAP_RESTORE_V = 200.0f;
 // Leaky integrator / fault display hold
 // =========================
 static constexpr int ARC_CNT_INC  = 2;
-static constexpr int ARC_CNT_DEC  = 1;
+static constexpr int ARC_CNT_DEC  = 3;
 static constexpr int ARC_CNT_TRIP = 6;
-static constexpr int ARC_CNT_MAX  = 16;
+static constexpr int ARC_CNT_MAX  = 12;
 static constexpr uint32_t ARC_HOLD_MS  = 800;
 static constexpr uint32_t HEAT_HOLD_MS = 1200;
 static constexpr uint32_t FAULT_ALERT_MIN_MS = 3000UL;
@@ -353,6 +353,8 @@ static constexpr int   ARC_LEAKY_SCORE_FIRE        = 10;        // 2 back-to-bac
 static constexpr int   ARC_LEAKY_SCORE_STRONG      = 14;        // stronger gate for temporal-only kicks
 static constexpr int   ARC_LEAKY_SCORE_MAX         = 35;        // short memory without long sticky tails
 static constexpr float ARC_SOFT_MIN_IRMS_A         = 0.08f;
+static constexpr float ARC_RESTRIKE_GAP_CURRENT_MAX_A = 0.06f;
+static constexpr uint32_t ARC_RESTRIKE_VALID_WINDOW_MS = 300UL;
 
 static constexpr float BASELINE_STABLE_RESIDUAL_CF_DB    = 9.542f;   // 20*log10(3.0)
 static constexpr float BASELINE_STABLE_EDGE_SPIKE_DB     = -20.000f; // 20*log10(0.10)
