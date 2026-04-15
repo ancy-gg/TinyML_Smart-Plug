@@ -1,6 +1,10 @@
 #include "TempSensor.h"
 #include <math.h>
 
+static inline float clampf_ts(float x, float lo, float hi) {
+  return (x < lo) ? lo : ((x > hi) ? hi : x);
+}
+
 TempSensor::TempSensor(int pin) {
   _pin = pin;
 }
@@ -30,7 +34,7 @@ float TempSensor::readTempC() {
 
   float steinhart = rNtc / R_NTC_NOMINAL;
   steinhart = logf(steinhart);
-  steinhart /= B_COEFF;
+  steinhart /= TEMP_NTC_BETA;
   steinhart += 1.0f / (TEMP_NOMINAL + 273.15f);
   steinhart = 1.0f / steinhart;
   steinhart -= 273.15f;
@@ -56,4 +60,24 @@ float TempSensor::readTempC() {
   }
 
   return _filtTempC;
+}
+
+float TempSensor::estimateSocketTempC(float ntcTempC, float irmsA) const {
+  if (!isfinite(ntcTempC)) return 0.0f;
+
+  const float centered = ntcTempC - TEMP_SOCKET_CURVE_REF_C;
+  const float fitted = TEMP_SOCKET_CURVE_C0
+                     + (TEMP_SOCKET_CURVE_C1 * centered)
+                     + (TEMP_SOCKET_CURVE_C2 * centered * centered);
+
+  float blend = 0.0f;
+  if (TEMP_SOCKET_BLEND_FULL_A > TEMP_SOCKET_BLEND_START_A) {
+    blend = (irmsA - TEMP_SOCKET_BLEND_START_A) /
+            (TEMP_SOCKET_BLEND_FULL_A - TEMP_SOCKET_BLEND_START_A);
+  }
+  blend = clampf_ts(blend, 0.0f, 1.0f);
+
+  const float idleEstimate = ntcTempC + TEMP_SOCKET_IDLE_BIAS_C;
+  const float est = idleEstimate + blend * (fitted - idleEstimate);
+  return clampf_ts(est, TEMP_SOCKET_EST_MIN_C, TEMP_SOCKET_EST_MAX_C);
 }

@@ -1133,6 +1133,12 @@
       v_rms: "v_rms",
       voltage: "voltage",
       temp_c: "temp_c",
+      temp_ntc_c: "temp_ntc_c",
+      temp_ntc: "temp_ntc_c",
+      ntc_temp_c: "temp_ntc_c",
+      thermistor_temperature: "temp_ntc_c",
+      estimated_socket_temp: "temp_c",
+      socket_temperature: "temp_c",
       temperature: "temp_c",
       model_pred: "model_pred",
       label_arc: "label_arc",
@@ -1183,6 +1189,7 @@ const PREFERRED_EXPORT_HEADER_ORDER = FEATURE_SCHEMA?.csvHeaderOrder || [
   "i_rms",
   "current",
   "temp_c",
+  "temp_ntc_c",
   "temperature",
 
   "abs_irms_zscore_vs_baseline",
@@ -1650,8 +1657,9 @@ function orderCsvHeaders(headers) {
     current: { label: "Current", unit: "A", decimals: 3 },
     v_rms: { label: "Voltage", unit: "V", decimals: 1 },
     voltage: { label: "Voltage", unit: "V", decimals: 1 },
-    temp_c: { label: "Temperature", unit: "°C", decimals: 1 },
-    temp: { label: "Temperature", unit: "°C", decimals: 1 },
+    temp_c: { label: "Estimated Socket Temperature", unit: "°C", decimals: 1 },
+    temp_ntc_c: { label: "Thermistor Temperature", unit: "°C", decimals: 1 },
+    temp: { label: "Estimated Socket Temperature", unit: "°C", decimals: 1 },
     label_arc: { label: "Arc Label", unit: "", decimals: 0 },
     model_pred: { label: "Model Prediction", unit: "", decimals: 0 },
     feat_valid: { label: "Feature Valid", unit: "", decimals: 0 },
@@ -1699,7 +1707,7 @@ function orderCsvHeaders(headers) {
   }
 
   const DEFAULT_ON = new Set(["voltage", "v_rms", "current", "i_rms"]);
-  const DEFAULT_Y2 = new Set(["residual_crest_factor", "edge_spike_ratio", "midband_residual_ratio", "hf_energy_delta", "i_rms", "current", "temp_c", "temp"]);
+  const DEFAULT_Y2 = new Set(["residual_crest_factor", "edge_spike_ratio", "midband_residual_ratio", "hf_energy_delta", "i_rms", "current", "temp_c", "temp", "temp_ntc_c"]);
 
   setViewerOpen(false);
   ensureArcEditorControls();

@@ -1424,7 +1424,7 @@ void setup() {
 
   curCalib.cubic3 = CURRENT_CAL_C3; curCalib.cubic2 = CURRENT_CAL_C2; curCalib.cubic1 = CURRENT_CAL_C1; curCalib.cubic0 = CURRENT_CAL_C0;
   curSensor.setCalib(curCalib);
-  tempSensor.begin(); tempSensor.setLongAverage(8.0f, 1.0f);
+  tempSensor.begin(); tempSensor.setLongAverage(3.0f, 0.75f);
 
   network.begin(FIREBASE_API_KEY, FIREBASE_DB_URL);
   network.setFirmwareVersion(FW_VERSION);
@@ -1565,11 +1565,11 @@ void loop() {
     f.hop_samples = ARC_RUNTIME_HOP_SAMPLES;
   }
 
-  static float vRms = 0.0f, vFast = 0.0f, vRaw = 0.0f, tC = 0.0f;
+  static float vRms = 0.0f, vFast = 0.0f, vRaw = 0.0f, tNtcC = 0.0f, tSocketC = 0.0f;
   static uint32_t tTemp = 0;
   float newV = voltSensor.update();
   if (newV >= 0.0f) { vRms = newV; vFast = voltSensor.protectVrms(); vRaw = voltSensor.rawVrms(); }
-  if (millis() - tTemp >= 500) { tTemp = millis(); float newT = tempSensor.readTempC(); if (newT > -50.0f && newT < 150.0f) tC = newT; }
+  if (millis() - tTemp >= 500) { tTemp = millis(); float newT = tempSensor.readTempC(); if (newT > -50.0f && newT < 150.0f) tNtcC = newT; }
 
   static bool lastMainsPresentForFeat = false;
   const bool mainsPresentForFeat = (vFast >= MAINS_PRESENT_ON_V);
@@ -1586,9 +1586,12 @@ void loop() {
   }
   lastMainsPresentForFeat = mainsPresentForFeat;
 
-  f.vrms = vRms; f.temp_c = tC;
+  f.vrms = vRms;
   const float irmsRawMeasured = f.irms;
   float irmsRawForLogic = cleanLogicCurrent(irmsRawMeasured, f.current_valid != 0, vRaw, vFast);
+  tSocketC = tempSensor.estimateSocketTempC(tNtcC, irmsRawForLogic);
+  f.temp_c = tSocketC;
+  f.temp_ntc_c = tNtcC;
 
   if (vFast <= MAINS_PRESENT_OFF_V) {
     clearManualRelayAssume_();
@@ -2101,7 +2104,7 @@ void loop() {
         (modelInferenceEligible || arcModelWindowLatched || fallbackArcEvent || softFallbackArcEvent || temporalKick || (f.model_pred != 0));
     st = protection.update(vFast,
                            vRaw,
-                           tC,
+                           tSocketC,
                            irmsRawForLogic,
                            collectionModeActive ? 0 : f.model_pred,
                            arcProtectionEligible);
@@ -2317,7 +2320,7 @@ void loop() {
 
   notification.setOverlay(ov);
   notification.setState(displayFaultActive ? displayFaultState : liveFaultState);
-  notification.setMeasurements(vRms, f.irms, apparentPowerVa, tC);
+  notification.setMeasurements(vRms, f.irms, apparentPowerVa, tSocketC);
   const bool showWifiWait = (!wifiConnected && (wifiPhase == WifiHandler::PHASE_CONNECTING || wifiPhase == WifiHandler::PHASE_AP_WAIT_CLIENT || wifiPhase == WifiHandler::PHASE_PORTAL_ACTIVE)) &&
                             ((wifiBannerUntilMs == 0) || ((int32_t)(wifiBannerUntilMs - millis()) > 0) || portalActive || wifiPhase == WifiHandler::PHASE_AP_WAIT_CLIENT);
   notification.setWiFi(wifiConnected, wifiMgr.rssi(), wifiMgr.isBlockingPhase(), portalActive, wifiTimedOutUi, wifiPhase == WifiHandler::PHASE_AP_WAIT_CLIENT);
@@ -2353,7 +2356,7 @@ void loop() {
     else if (gSafeMode) stateStr = "SAFE_MODE";
     else if (unpluggedLive && liveFaultState != STATE_ARCING && liveFaultState != STATE_HEATING) stateStr = "UNPLUGGED";
     else stateStr = String(stateToCstr(liveFaultState));
-    network.requestLiveUpdate(vRms, f.irms, apparentPowerVa, tC,
+    network.requestLiveUpdate(vRms, f.irms, apparentPowerVa, tSocketC, tNtcC,
                               f.abs_irms_zscore_vs_baseline, f.delta_irms_abs,
                               f.halfcycle_asymmetry, f.suspicious_run_energy,
                               f.pulse_count_per_cycle, f.zero_dwell_ratio,

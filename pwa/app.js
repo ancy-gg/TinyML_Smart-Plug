@@ -62,10 +62,12 @@ const liveStateHints = Array.from(document.querySelectorAll("[data-live-state-hi
 const vVal   = el("vVal");
 const iVal   = el("iVal");
 const pVal   = el("pVal");
+const tNtcVal = el("tNtcVal");
 const tVal   = el("tVal");
 const vHint  = el("vHint");
 const iHint  = el("iHint");
 const pHint  = el("pHint");
+const tNtcHint = el("tNtcHint");
 const tHint  = el("tHint");
 
 const irmsZscoreVal = el("irmsZscoreVal");
@@ -1030,7 +1032,7 @@ function animateNumber(node) {
 
 function setLiveZeroes() {
   const zeroMap = [
-    [vVal, "0.0"], [iVal, "0.000"], [pVal, "0.0"], [tVal, "0.0"],
+    [vVal, "0.0"], [iVal, "0.000"], [tNtcVal, "0.0"], [tVal, "0.0"], [pVal, "0.0"],
     [irmsZscoreVal, "0.000"], [deltaIrmsVal, "0.000"], [halfcycleAsymVal, "0.000"],
     [cycleNmseVal, "0.000"], [deltaHfEnergyVal, "0.000"], [vSagPctVal, "0.00"],
     [midbandRatioVal, "0.000"], [zcvVal, "0.000"], [spectralFluxVal, "0.000"],
@@ -1095,7 +1097,7 @@ function deriveLiveStatus(data) {
 
 function setLiveUnavailable() {
   const unavailableMap = [
-    vVal, iVal, pVal, tVal,
+    vVal, iVal, tNtcVal, tVal, pVal,
     irmsZscoreVal, deltaIrmsVal, halfcycleAsymVal,
     cycleNmseVal, deltaHfEnergyVal, vSagPctVal,
     midbandRatioVal, zcvVal, spectralFluxVal,
@@ -1175,13 +1177,14 @@ function applyMetricHints(data) {
     if (vHint) vHint.textContent = "—";
     if (iHint) iHint.textContent = "—";
     if (pHint) pHint.textContent = "—";
+    if (tNtcHint) tNtcHint.textContent = "—";
     if (tHint) tHint.textContent = "—";
     return;
   }
 
   const i = Number(data?.current ?? 0);
   const p = Number(data?.apparent_power ?? 0);
-  const t = Number(data?.temp ?? 0);
+  const t = Number(data?.estimated_socket_temp ?? data?.temp ?? 0);
   const powerKind = effectivePowerCondition();
 
   if (vHint) {
@@ -1208,6 +1211,10 @@ function applyMetricHints(data) {
     else if (p >= 300) pHint.textContent = "Active";
     else if (p >= UI_ACTIVE_POWER_VA) pHint.textContent = "Light";
     else pHint.textContent = "Idle";
+  }
+
+  if (tNtcHint) {
+    tNtcHint.textContent = "Raw thermistor";
   }
 
   if (tHint) {
@@ -1602,7 +1609,8 @@ function updateLiveDom(data) {
   const v   = toFixedOrDash(data.voltage, 1);
   const i   = toFixedOrDash(data.current, 3);
   const p   = toFixedOrDash(data.apparent_power, 1);
-  const t   = toFixedOrDash(data.temp, 1);
+  const tNtc = toFixedOrDash(data.temp_ntc ?? data.temp_ntc_c, 1);
+  const t   = toFixedOrDash(data.estimated_socket_temp ?? data.temp, 1);
 
   const iz  = formatFeatureValue("abs_irms_zscore_vs_baseline", data.abs_irms_zscore_vs_baseline);
   const di  = formatFeatureValue("delta_irms_abs", data.delta_irms_abs);
@@ -1622,8 +1630,9 @@ function updateLiveDom(data) {
 
   if (vVal && vVal.textContent !== v) { vVal.textContent = v; animateNumber(vVal); }
   if (iVal && iVal.textContent !== i) { iVal.textContent = i; animateNumber(iVal); }
-  if (pVal && pVal.textContent !== p) { pVal.textContent = p; animateNumber(pVal); }
+  if (tNtcVal && tNtcVal.textContent !== tNtc) { tNtcVal.textContent = tNtc; animateNumber(tNtcVal); }
   if (tVal && tVal.textContent !== t) { tVal.textContent = t; animateNumber(tVal); }
+  if (pVal && pVal.textContent !== p) { pVal.textContent = p; animateNumber(pVal); }
 
   if (irmsZscoreVal && irmsZscoreVal.textContent !== iz) { irmsZscoreVal.textContent = iz; animateNumber(irmsZscoreVal); }
   if (deltaIrmsVal && deltaIrmsVal.textContent !== di) { deltaIrmsVal.textContent = di; animateNumber(deltaIrmsVal); }

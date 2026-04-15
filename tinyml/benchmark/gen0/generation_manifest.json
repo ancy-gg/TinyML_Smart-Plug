@@ -1,0 +1,80 @@
+{
+  "generation": "gen0",
+  "raw_folder": "C:\\Disk\\Ancy\\Platform IO\\TinyML_Smart-Plug\\tinyml\\data\\gen0\\raw",
+  "arc_training_csv": "C:\\Disk\\Ancy\\Platform IO\\TinyML_Smart-Plug\\tinyml\\data\\gen0\\arc_training.csv",
+  "load_context_csv": "C:\\Disk\\Ancy\\Platform IO\\TinyML_Smart-Plug\\tinyml\\data\\gen0\\load_context.csv",
+  "report_paths": {
+    "prepare_data_report": "C:\\Disk\\Ancy\\Platform IO\\TinyML_Smart-Plug\\tinyml\\benchmark\\gen0\\prepare_data_report.json",
+    "arc_subset_report": "C:\\Disk\\Ancy\\Platform IO\\TinyML_Smart-Plug\\tinyml\\benchmark\\gen0\\TinyMLFeatureSubsetSweep_report.json",
+    "arc_subset_results_csv": "C:\\Disk\\Ancy\\Platform IO\\TinyML_Smart-Plug\\tinyml\\benchmark\\gen0\\TinyMLFeatureSubsetSweep_results.csv",
+    "context_subset_report": "C:\\Disk\\Ancy\\Platform IO\\TinyML_Smart-Plug\\tinyml\\benchmark\\gen0\\TinyMLContextFeatureSubsetSweep_report.json",
+    "context_subset_results_csv": "C:\\Disk\\Ancy\\Platform IO\\TinyML_Smart-Plug\\tinyml\\benchmark\\gen0\\TinyMLContextFeatureSubsetSweep_results.csv",
+    "rf_report": "C:\\Disk\\Ancy\\Platform IO\\TinyML_Smart-Plug\\tinyml\\benchmark\\gen0\\TinyMLTreeEnsemble_RF_report.json",
+    "et_report": "C:\\Disk\\Ancy\\Platform IO\\TinyML_Smart-Plug\\tinyml\\benchmark\\gen0\\TinyMLTreeEnsemble_ET_report.json",
+    "duel_report": "C:\\Disk\\Ancy\\Platform IO\\TinyML_Smart-Plug\\tinyml\\benchmark\\gen0\\benchmark_report.json",
+    "context_report": "C:\\Disk\\Ancy\\Platform IO\\TinyML_Smart-Plug\\tinyml\\benchmark\\gen0\\TinyMLContextModel_report.json",
+    "generation_manifest": "C:\\Disk\\Ancy\\Platform IO\\TinyML_Smart-Plug\\tinyml\\benchmark\\gen0\\generation_manifest.json"
+  },
+  "model_archive_paths": {
+    "headers": {
+      "rf": "C:\\Disk\\Ancy\\Platform IO\\TinyML_Smart-Plug\\tinyml\\model\\archive\\gen0\\TinyMLTreeEnsemble_RF.h",
+      "et": "C:\\Disk\\Ancy\\Platform IO\\TinyML_Smart-Plug\\tinyml\\model\\archive\\gen0\\TinyMLTreeEnsemble_ET.h",
+      "duel": "C:\\Disk\\Ancy\\Platform IO\\TinyML_Smart-Plug\\tinyml\\model\\archive\\gen0\\TinyMLTreeEnsemble.h",
+      "context": "C:\\Disk\\Ancy\\Platform IO\\TinyML_Smart-Plug\\tinyml\\model\\archive\\gen0\\TinyMLContextModel.h"
+    },
+    "joblibs": {
+      "rf": "C:\\Disk\\Ancy\\Platform IO\\TinyML_Smart-Plug\\tinyml\\trainer\\lib\\archive\\gen0\\TinyMLTreeEnsemble_RF.joblib",
+      "et": "C:\\Disk\\Ancy\\Platform IO\\TinyML_Smart-Plug\\tinyml\\trainer\\lib\\archive\\gen0\\TinyMLTreeEnsemble_ET.joblib",
+      "duel": "C:\\Disk\\Ancy\\Platform IO\\TinyML_Smart-Plug\\tinyml\\trainer\\lib\\archive\\gen0\\TinyMLTreeEnsemble.joblib",
+      "context": "C:\\Disk\\Ancy\\Platform IO\\TinyML_Smart-Plug\\tinyml\\trainer\\lib\\archive\\gen0\\TinyMLContextModel.joblib"
+    }
+  },
+  "canonical_export_paths": {
+    "headers": {
+      "rf": "C:\\Disk\\Ancy\\Platform IO\\TinyML_Smart-Plug\\tinyml\\model\\TinyMLTreeEnsemble_RF.h",
+      "et": "C:\\Disk\\Ancy\\Platform IO\\TinyML_Smart-Plug\\tinyml\\model\\TinyMLTreeEnsemble_ET.h",
+      "duel": "C:\\Disk\\Ancy\\Platform IO\\TinyML_Smart-Plug\\tinyml\\model\\TinyMLTreeEnsemble.h",
+      "context": "C:\\Disk\\Ancy\\Platform IO\\TinyML_Smart-Plug\\tinyml\\model\\TinyMLContextModel.h"
+    },
+    "joblibs": {
+      "rf": "C:\\Disk\\Ancy\\Platform IO\\TinyML_Smart-Plug\\tinyml\\trainer\\lib\\TinyMLTreeEnsemble_RF.joblib",
+      "et": "C:\\Disk\\Ancy\\Platform IO\\TinyML_Smart-Plug\\tinyml\\trainer\\lib\\TinyMLTreeEnsemble_ET.joblib",
+      "duel": "C:\\Disk\\Ancy\\Platform IO\\TinyML_Smart-Plug\\tinyml\\trainer\\lib\\TinyMLTreeEnsemble.joblib",
+      "context": "C:\\Disk\\Ancy\\Platform IO\\TinyML_Smart-Plug\\tinyml\\trainer\\lib\\TinyMLContextModel.joblib"
+    }
+  },
+  "timestamp": "2026-04-15T18:17:02+08:00",
+  "selected_generation": "gen0",
+  "source_model_generations_seen": [
+    "unknown"
+  ],
+  "trainer_settings_snapshot": {
+    "subset_sweep": {
+      "task": "arc",
+      "n_iter": 24,
+      "feature_count_min": 1,
+      "feature_count_max": 10,
+      "context_feature_count_min": 1,
+      "context_feature_count_max": 10,
+      "mismatch_fp_boost": 1.0,
+      "mismatch_fn_boost": 1.0,
+      "mismatch_focus_ratio": 0.0,
+      "mismatch_verified_only": false
+    }
+  },
+  "subset_sweep": {
+    "arc_report_path": "C:\\Disk\\Ancy\\Platform IO\\TinyML_Smart-Plug\\tinyml\\benchmark\\gen0\\TinyMLFeatureSubsetSweep_report.json",
+    "arc_results_csv_path": "C:\\Disk\\Ancy\\Platform IO\\TinyML_Smart-Plug\\tinyml\\benchmark\\gen0\\TinyMLFeatureSubsetSweep_results.csv",
+    "context_report_path": "C:\\Disk\\Ancy\\Platform IO\\TinyML_Smart-Plug\\tinyml\\benchmark\\gen0\\TinyMLContextFeatureSubsetSweep_report.json",
+    "context_results_csv_path": "C:\\Disk\\Ancy\\Platform IO\\TinyML_Smart-Plug\\tinyml\\benchmark\\gen0\\TinyMLContextFeatureSubsetSweep_results.csv",
+    "arc_recommended_features": [
+      "max_low_current_run_ms",
+      "zero_dwell_ratio",
+      "low_current_ratio",
+      "abs_irms_zscore_vs_baseline",
+      "hf_energy_delta"
+    ],
+    "context_recommended_features": []
+  },
+  "recommended_next_action": "Review subset sweep outputs in tinyml/benchmark/gen0 and then train RF/ET/King on gen0."
+}

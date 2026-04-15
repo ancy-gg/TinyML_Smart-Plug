@@ -125,6 +125,7 @@ struct FeatureFrame {
   float vrms   = 0.0f;
   float irms   = 0.0f;
   float temp_c = 0.0f;
+  float temp_ntc_c = 0.0f;
 
   // Keep the full computed feature space available for logging, future retraining,
   // and metadata-driven model input assembly. Exported models decide which subset
@@ -279,10 +280,30 @@ static constexpr float OVERLOAD_WARN_A      = 10.0f;
 static constexpr float SUSTAINED_OVERLOAD_TRIP_A = 14.5f;
 static constexpr uint32_t SUSTAINED_OVERLOAD_TRIP_MS = 60UL * 1000UL;
 
-static constexpr float TEMP_WARN_C          = 60.0f;
-static constexpr float TEMP_TRIP_C          = 70.0f;
-static constexpr float TEMP_DATA_WARN_C     = 70.0f;
-static constexpr float TEMP_DATA_HARD_C     = 80.0f;
+static constexpr float TEMP_WARN_C          = 45.0f;
+static constexpr float TEMP_TRIP_C          = 55.0f;
+static constexpr float TEMP_DATA_WARN_C     = 45.0f;
+static constexpr float TEMP_DATA_HARD_C     = 55.0f;
+
+// =========================
+// Socket temperature estimation
+// =========================
+// The NTC still measures the thermistor / device-body temperature.
+// temp_c below is now treated as the estimated socket hotspot temperature
+// used by protection, OLED, live data, and CSV logging.
+//
+// Default fit source: user-supplied heating calibration points from a 12 A run.
+// Edit these constants later if you collect a better calibration dataset.
+static constexpr float TEMP_NTC_BETA                = 4050.0f;
+static constexpr float TEMP_SOCKET_IDLE_BIAS_C      = 0.0f;
+static constexpr float TEMP_SOCKET_BLEND_START_A    = 0.50f;
+static constexpr float TEMP_SOCKET_BLEND_FULL_A     = 12.0f;
+static constexpr float TEMP_SOCKET_CURVE_REF_C      = 30.0f;
+static constexpr float TEMP_SOCKET_CURVE_C0         = 29.93173035f;
+static constexpr float TEMP_SOCKET_CURVE_C1         = -2.11183783f;
+static constexpr float TEMP_SOCKET_CURVE_C2         = 0.73889793f;
+static constexpr float TEMP_SOCKET_EST_MIN_C        = -20.0f;
+static constexpr float TEMP_SOCKET_EST_MAX_C        = 125.0f;
 
 static constexpr float MAINS_PRESENT_OFF_V  = 12.0f;
 static constexpr float MAINS_PRESENT_ON_V   = 28.0f;

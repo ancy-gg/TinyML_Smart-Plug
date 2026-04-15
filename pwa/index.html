@@ -224,16 +224,22 @@
               <div id="iHint" class="metric-note">—</div>
             </div>
 
+            <div class="card live-card" data-hold-hint="Temperature measured directly at the thermistor inside the device. This is the raw sensor temperature before socket-hotspot compensation.">
+              <div class="card-label">Temperature (Sensor)</div>
+              <div class="card-value"><span id="tNtcVal">—</span><span class="unit">°C</span></div>
+              <div id="tNtcHint" class="metric-note">—</div>
+            </div>
+
+            <div class="card live-card" data-hold-hint="Estimated hotspot temperature at the socket, derived from the thermistor plus load-aware compensation. This is the temperature used by thermal protection.">
+              <div class="card-label">Estimated Socket Temperature</div>
+              <div class="card-value"><span id="tVal">—</span><span class="unit">°C</span></div>
+              <div id="tHint" class="metric-note">—</div>
+            </div>
+
             <div class="card live-card" data-hold-hint="Apparent power computed from voltage and current. Hold to read its purpose.">
               <div class="card-label">Apparent Power</div>
               <div class="card-value"><span id="pVal">—</span><span class="unit">VA</span></div>
               <div id="pHint" class="metric-note">—</div>
-            </div>
-
-            <div class="card live-card" data-hold-hint="Socket or device temperature used by thermal protection. Hold to read its purpose.">
-              <div class="card-label">Temperature</div>
-              <div class="card-value"><span id="tVal">—</span><span class="unit">°C</span></div>
-              <div id="tHint" class="metric-note">—</div>
             </div>
           </div>
         </section>
