@@ -1,0 +1,255 @@
+{
+  "task": "context",
+  "selected_generation": "gen0",
+  "model": "context_prototype",
+  "feature_pool_role": "context_features",
+  "feature_pool": [
+    "delta_irms_abs",
+    "halfcycle_asymmetry",
+    "midband_residual_ratio",
+    "thd_i",
+    "spectral_flux_midhf",
+    "hf_energy_delta"
+  ],
+  "feature_pool_size": 6,
+  "total_combinations": 63,
+  "all_results_csv": "C:\\Disk\\Ancy\\Platform IO\\TinyML_Smart-Plug\\tinyml\\benchmark\\gen0\\TinyMLContextFeatureSubsetSweep_results.csv",
+  "recommended_context_features": [
+    "delta_irms_abs",
+    "halfcycle_asymmetry",
+    "midband_residual_ratio",
+    "thd_i",
+    "spectral_flux_midhf",
+    "hf_energy_delta"
+  ],
+  "recommended_features": [
+    "delta_irms_abs",
+    "halfcycle_asymmetry",
+    "midband_residual_ratio",
+    "thd_i",
+    "spectral_flux_midhf",
+    "hf_energy_delta"
+  ],
+  "overall_best_tradeoff": {
+    "task": "context",
+    "feature_count": 6,
+    "feature_combo": "delta_irms_abs|halfcycle_asymmetry|midband_residual_ratio|thd_i|spectral_flux_midhf|hf_energy_delta",
+    "features": [
+      "delta_irms_abs",
+      "halfcycle_asymmetry",
+      "midband_residual_ratio",
+      "thd_i",
+      "spectral_flux_midhf",
+      "hf_energy_delta"
+    ],
+    "row_count": 50,
+    "valid_class_count": 6,
+    "missing_classes": [],
+    "repeats": 24,
+    "mean_accuracy": 0.96875,
+    "mean_balanced_accuracy": 0.9523148148148147,
+    "mean_unknown_rate": 0.01736111111111111,
+    "mean_confidence": 0.8569695490717931,
+    "mean_active_class_count": 6.0
+  },
+  "best_by_feature_count": [
+    {
+      "feature_count": 1,
+      "best_overall": {
+        "task": "context",
+        "feature_count": 1,
+        "feature_combo": "midband_residual_ratio",
+        "features": [
+          "midband_residual_ratio"
+        ],
+        "row_count": 50,
+        "valid_class_count": 6,
+        "missing_classes": [],
+        "repeats": 24,
+        "mean_accuracy": 0.8680555555555557,
+        "mean_balanced_accuracy": 0.8287037037037036,
+        "mean_unknown_rate": 0.9166666666666666,
+        "mean_confidence": 0.3776287389019147,
+        "mean_active_class_count": 6.0
+      }
+    },
+    {
+      "feature_count": 2,
+      "best_overall": {
+        "task": "context",
+        "feature_count": 2,
+        "feature_combo": "midband_residual_ratio|thd_i",
+        "features": [
+          "midband_residual_ratio",
+          "thd_i"
+        ],
+        "row_count": 50,
+        "valid_class_count": 6,
+        "missing_classes": [],
+        "repeats": 24,
+        "mean_accuracy": 0.9409722222222223,
+        "mean_balanced_accuracy": 0.9467592592592591,
+        "mean_unknown_rate": 0.84375,
+        "mean_confidence": 0.4349503481802421,
+        "mean_active_class_count": 6.0
+      }
+    },
+    {
+      "feature_count": 3,
+      "best_overall": {
+        "task": "context",
+        "feature_count": 3,
+        "feature_combo": "midband_residual_ratio|thd_i|spectral_flux_midhf",
+        "features": [
+          "midband_residual_ratio",
+          "thd_i",
+          "spectral_flux_midhf"
+        ],
+        "row_count": 50,
+        "valid_class_count": 6,
+        "missing_classes": [],
+        "repeats": 24,
+        "mean_accuracy": 0.9444444444444443,
+        "mean_balanced_accuracy": 0.949074074074074,
+        "mean_unknown_rate": 0.6006944444444445,
+        "mean_confidence": 0.465696157985736,
+        "mean_active_class_count": 6.0
+      }
+    },
+    {
+      "feature_count": 4,
+      "best_overall": {
+        "task": "context",
+        "feature_count": 4,
+        "feature_combo": "delta_irms_abs|midband_residual_ratio|thd_i|spectral_flux_midhf",
+        "features": [
+          "delta_irms_abs",
+          "midband_residual_ratio",
+          "thd_i",
+          "spectral_flux_midhf"
+        ],
+        "row_count": 50,
+        "valid_class_count": 6,
+        "missing_classes": [],
+        "repeats": 24,
+        "mean_accuracy": 0.9513888888888888,
+        "mean_balanced_accuracy": 0.9638888888888889,
+        "mean_unknown_rate": 0.07638888888888888,
+        "mean_confidence": 0.6854202684877055,
+        "mean_active_class_count": 6.0
+      }
+    },
+    {
+      "feature_count": 5,
+      "best_overall": {
+        "task": "context",
+        "feature_count": 5,
+        "feature_combo": "delta_irms_abs|halfcycle_asymmetry|midband_residual_ratio|thd_i|hf_energy_delta",
+        "features": [
+          "delta_irms_abs",
+          "halfcycle_asymmetry",
+          "midband_residual_ratio",
+          "thd_i",
+          "hf_energy_delta"
+        ],
+        "row_count": 50,
+        "valid_class_count": 6,
+        "missing_classes": [],
+        "repeats": 24,
+        "mean_accuracy": 0.954861111111111,
+        "mean_balanced_accuracy": 0.9449074074074074,
+        "mean_unknown_rate": 0.01736111111111111,
+        "mean_confidence": 0.8431758630138638,
+        "mean_active_class_count": 6.0
+      }
+    },
+    {
+      "feature_count": 6,
+      "best_overall": {
+        "task": "context",
+        "feature_count": 6,
+        "feature_combo": "delta_irms_abs|halfcycle_asymmetry|midband_residual_ratio|thd_i|spectral_flux_midhf|hf_energy_delta",
+        "features": [
+          "delta_irms_abs",
+          "halfcycle_asymmetry",
+          "midband_residual_ratio",
+          "thd_i",
+          "spectral_flux_midhf",
+          "hf_energy_delta"
+        ],
+        "row_count": 50,
+        "valid_class_count": 6,
+        "missing_classes": [],
+        "repeats": 24,
+        "mean_accuracy": 0.96875,
+        "mean_balanced_accuracy": 0.9523148148148147,
+        "mean_unknown_rate": 0.01736111111111111,
+        "mean_confidence": 0.8569695490717931,
+        "mean_active_class_count": 6.0
+      }
+    }
+  ],
+  "dataset_mismatch_summary": {
+    "rows": 50,
+    "rows_with_model_output": 0,
+    "mismatch_rows": 0,
+    "mismatch_rate": 0.0,
+    "fp_override_rows": 0,
+    "fn_override_rows": 0,
+    "verified_rows": 0,
+    "verified_mismatch_rows": 0,
+    "source_model_generation_counts": {},
+    "per_generation_mismatch_counts": {},
+    "per_family_mismatch_counts": {},
+    "per_device_mismatch_counts": {},
+    "current_training_generation_counts": {
+      "gen0": 50
+    }
+  },
+  "source_model_generation_summary": {},
+  "resolved_paths": {
+    "selected_generation": "gen0",
+    "resolved_context_dataset_path": "C:\\Disk\\Ancy\\Platform IO\\TinyML_Smart-Plug\\tinyml\\data\\gen0\\load_context.csv",
+    "resolved_report_path": "C:\\Disk\\Ancy\\Platform IO\\TinyML_Smart-Plug\\tinyml\\benchmark\\gen0\\TinyMLContextFeatureSubsetSweep_report.json",
+    "resolved_results_csv_path": "C:\\Disk\\Ancy\\Platform IO\\TinyML_Smart-Plug\\tinyml\\benchmark\\gen0\\TinyMLContextFeatureSubsetSweep_results.csv",
+    "benchmark_folder": "C:\\Disk\\Ancy\\Platform IO\\TinyML_Smart-Plug\\tinyml\\benchmark\\gen0",
+    "generation_manifest_path": "C:\\Disk\\Ancy\\Platform IO\\TinyML_Smart-Plug\\tinyml\\benchmark\\gen0\\generation_manifest.json"
+  },
+  "archive_output_paths": {
+    "headers": {
+      "rf": "C:\\Disk\\Ancy\\Platform IO\\TinyML_Smart-Plug\\tinyml\\model\\archive\\gen0\\TinyMLTreeEnsemble_RF.h",
+      "et": "C:\\Disk\\Ancy\\Platform IO\\TinyML_Smart-Plug\\tinyml\\model\\archive\\gen0\\TinyMLTreeEnsemble_ET.h",
+      "duel": "C:\\Disk\\Ancy\\Platform IO\\TinyML_Smart-Plug\\tinyml\\model\\archive\\gen0\\TinyMLTreeEnsemble.h",
+      "context": "C:\\Disk\\Ancy\\Platform IO\\TinyML_Smart-Plug\\tinyml\\model\\archive\\gen0\\TinyMLContextModel.h"
+    },
+    "joblibs": {
+      "rf": "C:\\Disk\\Ancy\\Platform IO\\TinyML_Smart-Plug\\tinyml\\trainer\\lib\\archive\\gen0\\TinyMLTreeEnsemble_RF.joblib",
+      "et": "C:\\Disk\\Ancy\\Platform IO\\TinyML_Smart-Plug\\tinyml\\trainer\\lib\\archive\\gen0\\TinyMLTreeEnsemble_ET.joblib",
+      "duel": "C:\\Disk\\Ancy\\Platform IO\\TinyML_Smart-Plug\\tinyml\\trainer\\lib\\archive\\gen0\\TinyMLTreeEnsemble.joblib",
+      "context": "C:\\Disk\\Ancy\\Platform IO\\TinyML_Smart-Plug\\tinyml\\trainer\\lib\\archive\\gen0\\TinyMLContextModel.joblib"
+    }
+  },
+  "canonical_export_paths": {
+    "headers": {
+      "rf": "C:\\Disk\\Ancy\\Platform IO\\TinyML_Smart-Plug\\tinyml\\model\\TinyMLTreeEnsemble_RF.h",
+      "et": "C:\\Disk\\Ancy\\Platform IO\\TinyML_Smart-Plug\\tinyml\\model\\TinyMLTreeEnsemble_ET.h",
+      "duel": "C:\\Disk\\Ancy\\Platform IO\\TinyML_Smart-Plug\\tinyml\\model\\TinyMLTreeEnsemble.h",
+      "context": "C:\\Disk\\Ancy\\Platform IO\\TinyML_Smart-Plug\\tinyml\\model\\TinyMLContextModel.h"
+    },
+    "joblibs": {
+      "rf": "C:\\Disk\\Ancy\\Platform IO\\TinyML_Smart-Plug\\tinyml\\trainer\\lib\\TinyMLTreeEnsemble_RF.joblib",
+      "et": "C:\\Disk\\Ancy\\Platform IO\\TinyML_Smart-Plug\\tinyml\\trainer\\lib\\TinyMLTreeEnsemble_ET.joblib",
+      "duel": "C:\\Disk\\Ancy\\Platform IO\\TinyML_Smart-Plug\\tinyml\\trainer\\lib\\TinyMLTreeEnsemble.joblib",
+      "context": "C:\\Disk\\Ancy\\Platform IO\\TinyML_Smart-Plug\\tinyml\\trainer\\lib\\TinyMLContextModel.joblib"
+    }
+  },
+  "settings": {
+    "context_csv": "C:\\Disk\\Ancy\\Platform IO\\TinyML_Smart-Plug\\tinyml\\data\\gen0\\load_context.csv",
+    "unknown_confidence": 0.45,
+    "context_repeats": 24,
+    "feature_count_min": 1,
+    "feature_count_max": 6,
+    "max_combinations": 0,
+    "generation": "gen0"
+  }
+}

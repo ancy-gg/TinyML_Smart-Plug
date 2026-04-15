@@ -1,0 +1,447 @@
+{
+  "model_name": "ContextPrototype",
+  "selected_generation": "gen0",
+  "feature_names": [
+    "delta_irms_abs",
+    "halfcycle_asymmetry",
+    "midband_residual_ratio",
+    "thd_i",
+    "spectral_flux_midhf",
+    "hf_energy_delta"
+  ],
+  "class_labels": [
+    "resistive_linear",
+    "inductive_motor",
+    "rectifier_smps",
+    "phase_angle_controlled",
+    "brush_universal_motor",
+    "other_mixed"
+  ],
+  "unknown_confidence_threshold": 0.45,
+  "row_count": 50,
+  "train_rows": 38,
+  "test_rows": 12,
+  "class_counts": {
+    "resistive_linear": 20,
+    "inductive_motor": 10,
+    "brush_universal_motor": 5,
+    "other_mixed": 5,
+    "phase_angle_controlled": 5,
+    "rectifier_smps": 5
+  },
+  "effective_class_weight": {
+    "resistive_linear": 49.96040000000001,
+    "inductive_motor": 26.160400000000003,
+    "rectifier_smps": 14.000000000000004,
+    "phase_angle_controlled": 13.832000000000004,
+    "brush_universal_motor": 12.6728,
+    "other_mixed": 13.706000000000003
+  },
+  "source_counts": {
+    "real": 50
+  },
+  "real_rows": 50,
+  "scaffold_rows": 0,
+  "valid_classes": [
+    "resistive_linear",
+    "inductive_motor",
+    "rectifier_smps",
+    "phase_angle_controlled",
+    "brush_universal_motor",
+    "other_mixed"
+  ],
+  "missing_classes": [],
+  "export_zero_centroid_classes": [],
+  "active_class_mask": [
+    1,
+    1,
+    1,
+    1,
+    1,
+    1
+  ],
+  "warnings": [],
+  "dataset_mismatch_summary": {
+    "rows": 18475,
+    "rows_with_model_output": 18475,
+    "mismatch_rows": 3088,
+    "mismatch_rate": 0.1671447902571042,
+    "fp_override_rows": 3088,
+    "fn_override_rows": 0,
+    "verified_rows": 0,
+    "verified_mismatch_rows": 0,
+    "source_model_generation_counts": {
+      "unknown": 18475
+    },
+    "per_generation_mismatch_counts": {
+      "unknown": 3088
+    },
+    "per_family_mismatch_counts": {
+      "resistive_linear": 1995,
+      "brush_universal_motor": 704,
+      "inductive_motor": 389
+    },
+    "per_device_mismatch_counts": {
+      "handheld_vacuum": 704,
+      "manual_air_fryer": 542,
+      "halogen_lamp": 521,
+      "water_heater": 494,
+      "electric_kettle": 438,
+      "40w_electric_fan": 389
+    },
+    "current_training_generation_counts": {
+      "gen0": 18475
+    }
+  },
+  "context_window_mismatch_summary": {
+    "rows": 50,
+    "rows_with_model_output": 0,
+    "mismatch_rows": 0,
+    "mismatch_rate": 0.0,
+    "fp_override_rows": 0,
+    "fn_override_rows": 0,
+    "verified_rows": 0,
+    "verified_mismatch_rows": 0,
+    "source_model_generation_counts": {},
+    "per_generation_mismatch_counts": {},
+    "per_family_mismatch_counts": {},
+    "per_device_mismatch_counts": {},
+    "current_training_generation_counts": {
+      "gen0": 50
+    }
+  },
+  "source_model_generation_summary": {
+    "unknown": 18475
+  },
+  "accuracy": 0.9166666666666666,
+  "balanced_accuracy": 0.8333333333333334,
+  "accuracy_with_unknown_gate": 0.9166666666666666,
+  "mean_confidence": 0.8393254677837901,
+  "unknown_rate": 0.0,
+  "confusion_matrix": [
+    [
+      5,
+      0,
+      0,
+      0,
+      0,
+      0
+    ],
+    [
+      0,
+      3,
+      0,
+      0,
+      0,
+      0
+    ],
+    [
+      0,
+      0,
+      1,
+      0,
+      0,
+      0
+    ],
+    [
+      0,
+      0,
+      0,
+      1,
+      0,
+      0
+    ],
+    [
+      0,
+      0,
+      0,
+      0,
+      1,
+      0
+    ],
+    [
+      0,
+      0,
+      0,
+      0,
+      1,
+      0
+    ]
+  ],
+  "per_class": [
+    {
+      "family": "resistive_linear",
+      "family_code": 0,
+      "rows": 5,
+      "accuracy": 1.0,
+      "mean_confidence": 0.8297223639168368,
+      "unknown_rate": 0.0,
+      "precision": 1.0,
+      "recall": 1.0,
+      "f1": 1.0,
+      "support": 5,
+      "predicted_rows": 5,
+      "active_in_model": true
+    },
+    {
+      "family": "inductive_motor",
+      "family_code": 1,
+      "rows": 3,
+      "accuracy": 1.0,
+      "mean_confidence": 0.8517105655561134,
+      "unknown_rate": 0.0,
+      "precision": 1.0,
+      "recall": 1.0,
+      "f1": 1.0,
+      "support": 3,
+      "predicted_rows": 3,
+      "active_in_model": true
+    },
+    {
+      "family": "rectifier_smps",
+      "family_code": 2,
+      "rows": 1,
+      "accuracy": 1.0,
+      "mean_confidence": 0.903715193127286,
+      "unknown_rate": 0.0,
+      "precision": 1.0,
+      "recall": 1.0,
+      "f1": 1.0,
+      "support": 1,
+      "predicted_rows": 1,
+      "active_in_model": true
+    },
+    {
+      "family": "phase_angle_controlled",
+      "family_code": 3,
+      "rows": 1,
+      "accuracy": 1.0,
+      "mean_confidence": 0.9999995951647938,
+      "unknown_rate": 0.0,
+      "precision": 1.0,
+      "recall": 1.0,
+      "f1": 1.0,
+      "support": 1,
+      "predicted_rows": 1,
+      "active_in_model": true
+    },
+    {
+      "family": "brush_universal_motor",
+      "family_code": 4,
+      "rows": 1,
+      "accuracy": 1.0,
+      "mean_confidence": 0.9362093003214863,
+      "unknown_rate": 0.0,
+      "precision": 0.5,
+      "recall": 1.0,
+      "f1": 0.6666666666666666,
+      "support": 1,
+      "predicted_rows": 2,
+      "active_in_model": true
+    },
+    {
+      "family": "other_mixed",
+      "family_code": 5,
+      "rows": 1,
+      "accuracy": 0.0,
+      "mean_confidence": 0.5282380085393892,
+      "unknown_rate": 0.0,
+      "precision": 0.0,
+      "recall": 0.0,
+      "f1": 0.0,
+      "support": 1,
+      "predicted_rows": 0,
+      "active_in_model": true
+    }
+  ],
+  "classification_report": {
+    "resistive_linear": {
+      "precision": 1.0,
+      "recall": 1.0,
+      "f1-score": 1.0,
+      "support": 5.0
+    },
+    "inductive_motor": {
+      "precision": 1.0,
+      "recall": 1.0,
+      "f1-score": 1.0,
+      "support": 3.0
+    },
+    "rectifier_smps": {
+      "precision": 1.0,
+      "recall": 1.0,
+      "f1-score": 1.0,
+      "support": 1.0
+    },
+    "phase_angle_controlled": {
+      "precision": 1.0,
+      "recall": 1.0,
+      "f1-score": 1.0,
+      "support": 1.0
+    },
+    "brush_universal_motor": {
+      "precision": 0.5,
+      "recall": 1.0,
+      "f1-score": 0.6666666666666666,
+      "support": 1.0
+    },
+    "other_mixed": {
+      "precision": 0.0,
+      "recall": 0.0,
+      "f1-score": 0.0,
+      "support": 1.0
+    },
+    "accuracy": 0.9166666666666666,
+    "macro avg": {
+      "precision": 0.75,
+      "recall": 0.8333333333333334,
+      "f1-score": 0.7777777777777778,
+      "support": 12.0
+    },
+    "weighted avg": {
+      "precision": 0.875,
+      "recall": 0.9166666666666666,
+      "f1-score": 0.8888888888888888,
+      "support": 12.0
+    }
+  },
+  "means": [
+    0.18319957113743654,
+    17.583012408329523,
+    -40.75590899969829,
+    36.11161072902484,
+    33.4589692073002,
+    13.615040481438488
+  ],
+  "stds": [
+    0.14229579791244376,
+    4.13009678902557,
+    15.480604760805262,
+    27.852116918885887,
+    15.256420960189566,
+    3.2770481150059596
+  ],
+  "centroids": {
+    "resistive_linear": [
+      0.8727482101033048,
+      -0.06697562451001661,
+      -0.8534545042477026,
+      -0.5672572125219649,
+      -0.6602350425621899,
+      -1.0670843762595354
+    ],
+    "inductive_motor": [
+      -1.0868899751801933,
+      0.20400102444962015,
+      -0.1454794507561634,
+      -0.5292532890571984,
+      -0.2375218618414302,
+      0.5842088672478634
+    ],
+    "rectifier_smps": [
+      -1.0190029379972037,
+      1.0900411023376142,
+      0.689129036916473,
+      0.7880006726200788,
+      0.18011979479790471,
+      0.983591465685772
+    ],
+    "phase_angle_controlled": [
+      -1.0289187845693155,
+      -1.3130956097907935,
+      2.3064877209638865,
+      2.5460870791089647,
+      2.6616186712272913,
+      1.3380821289996636
+    ],
+    "brush_universal_motor": [
+      0.6572501480917841,
+      -1.358029277545171,
+      -0.35635032585893406,
+      -0.39253047576603,
+      -0.20040968738112006,
+      -0.5278210957599928
+    ],
+    "other_mixed": [
+      0.3028598656088627,
+      1.3616553374883975,
+      0.44907563791694066,
+      -0.20109553085000262,
+      -0.04103627818310499,
+      0.8023887714865312
+    ]
+  },
+  "resolved_paths": {
+    "selected_generation": "gen0",
+    "resolved_context_dataset_path": "C:\\Disk\\Ancy\\Platform IO\\TinyML_Smart-Plug\\tinyml\\data\\gen0\\load_context.csv",
+    "resolved_feature_report_path": "C:\\Disk\\Ancy\\Platform IO\\TinyML_Smart-Plug\\tinyml\\benchmark\\gen0\\TinyMLContextFeatureSubsetSweep_report.json",
+    "resolved_report_path": "C:\\Disk\\Ancy\\Platform IO\\TinyML_Smart-Plug\\tinyml\\benchmark\\gen0\\TinyMLContextModel_report.json",
+    "benchmark_folder": "C:\\Disk\\Ancy\\Platform IO\\TinyML_Smart-Plug\\tinyml\\benchmark\\gen0",
+    "generation_manifest_path": "C:\\Disk\\Ancy\\Platform IO\\TinyML_Smart-Plug\\tinyml\\benchmark\\gen0\\generation_manifest.json"
+  },
+  "archive_output_paths": {
+    "headers": {
+      "rf": "C:\\Disk\\Ancy\\Platform IO\\TinyML_Smart-Plug\\tinyml\\model\\archive\\gen0\\TinyMLTreeEnsemble_RF.h",
+      "et": "C:\\Disk\\Ancy\\Platform IO\\TinyML_Smart-Plug\\tinyml\\model\\archive\\gen0\\TinyMLTreeEnsemble_ET.h",
+      "duel": "C:\\Disk\\Ancy\\Platform IO\\TinyML_Smart-Plug\\tinyml\\model\\archive\\gen0\\TinyMLTreeEnsemble.h",
+      "context": "C:\\Disk\\Ancy\\Platform IO\\TinyML_Smart-Plug\\tinyml\\model\\archive\\gen0\\TinyMLContextModel.h"
+    },
+    "joblibs": {
+      "rf": "C:\\Disk\\Ancy\\Platform IO\\TinyML_Smart-Plug\\tinyml\\trainer\\lib\\archive\\gen0\\TinyMLTreeEnsemble_RF.joblib",
+      "et": "C:\\Disk\\Ancy\\Platform IO\\TinyML_Smart-Plug\\tinyml\\trainer\\lib\\archive\\gen0\\TinyMLTreeEnsemble_ET.joblib",
+      "duel": "C:\\Disk\\Ancy\\Platform IO\\TinyML_Smart-Plug\\tinyml\\trainer\\lib\\archive\\gen0\\TinyMLTreeEnsemble.joblib",
+      "context": "C:\\Disk\\Ancy\\Platform IO\\TinyML_Smart-Plug\\tinyml\\trainer\\lib\\archive\\gen0\\TinyMLContextModel.joblib"
+    }
+  },
+  "canonical_export_paths": {
+    "headers": {
+      "rf": "C:\\Disk\\Ancy\\Platform IO\\TinyML_Smart-Plug\\tinyml\\model\\TinyMLTreeEnsemble_RF.h",
+      "et": "C:\\Disk\\Ancy\\Platform IO\\TinyML_Smart-Plug\\tinyml\\model\\TinyMLTreeEnsemble_ET.h",
+      "duel": "C:\\Disk\\Ancy\\Platform IO\\TinyML_Smart-Plug\\tinyml\\model\\TinyMLTreeEnsemble.h",
+      "context": "C:\\Disk\\Ancy\\Platform IO\\TinyML_Smart-Plug\\tinyml\\model\\TinyMLContextModel.h"
+    },
+    "joblibs": {
+      "rf": "C:\\Disk\\Ancy\\Platform IO\\TinyML_Smart-Plug\\tinyml\\trainer\\lib\\TinyMLTreeEnsemble_RF.joblib",
+      "et": "C:\\Disk\\Ancy\\Platform IO\\TinyML_Smart-Plug\\tinyml\\trainer\\lib\\TinyMLTreeEnsemble_ET.joblib",
+      "duel": "C:\\Disk\\Ancy\\Platform IO\\TinyML_Smart-Plug\\tinyml\\trainer\\lib\\TinyMLTreeEnsemble.joblib",
+      "context": "C:\\Disk\\Ancy\\Platform IO\\TinyML_Smart-Plug\\tinyml\\trainer\\lib\\TinyMLContextModel.joblib"
+    }
+  },
+  "generation_advancement_assessment": {
+    "justified": true,
+    "basis": "Held-out context balanced-accuracy and unknown-rate checks only.",
+    "held_out_snapshot": {
+      "accuracy": 0.9166666666666666,
+      "balanced_accuracy": 0.8333333333333334,
+      "unknown_rate": 0.0
+    }
+  },
+  "model_input_feature_ids": [
+    1,
+    2,
+    6,
+    11,
+    8,
+    12
+  ],
+  "settings": {
+    "csv": "C:\\Disk\\Ancy\\Platform IO\\TinyML_Smart-Plug\\tinyml\\data\\gen0\\load_context.csv",
+    "n_iter": 240,
+    "min_recall": 0.0,
+    "min_precision": 0.0,
+    "max_fpr": 1.0,
+    "min_threshold": 0.0,
+    "unknown_confidence": 0.45,
+    "feature_report": "C:\\Disk\\Ancy\\Platform IO\\TinyML_Smart-Plug\\tinyml\\benchmark\\gen0\\TinyMLContextFeatureSubsetSweep_report.json",
+    "features": [
+      "delta_irms_abs",
+      "halfcycle_asymmetry",
+      "midband_residual_ratio",
+      "thd_i",
+      "spectral_flux_midhf",
+      "hf_energy_delta"
+    ],
+    "model": "context",
+    "generation": "gen0"
+  }
+}

@@ -260,56 +260,97 @@ def apply_scaffold_gap_fill_weights(df: pd.DataFrame) -> tuple[pd.DataFrame, dic
     if work.empty:
         return work, {"scaffold_rows": 0, "scaffold_scaled_rows": 0, "scaffold_effective_weight": 0.0}
 
-    work["sample_weight"] = pd.to_numeric(_series_from_default(work.index, work.get("sample_weight", None), default=1.0), errors="coerce").fillna(1.0).clip(SCAFFOLD_MIN_ROW_WEIGHT, 100.0)
+    work["sample_weight"] = pd.to_numeric(
+        _series_from_default(work.index, work.get("sample_weight", None), default=1.0),
+        errors="coerce"
+    ).fillna(1.0).clip(SCAFFOLD_MIN_ROW_WEIGHT, 100.0)
+
     scaffold_mask = _scaffold_mask(work)
     work["is_scaffold"] = scaffold_mask.astype(int)
-    work["scaffold_weight_scale"] = pd.to_numeric(_series_from_default(work.index, work.get("scaffold_weight_scale", None), default=1.0), errors="coerce").fillna(1.0)
-    work["scaffold_cap_reason"] = work.get("scaffold_cap_reason", pd.Series("", index=work.index, dtype=object)).astype(str)
+    work["scaffold_weight_scale"] = pd.to_numeric(
+        _series_from_default(work.index, work.get("scaffold_weight_scale", None), default=1.0),
+        errors="coerce"
+    ).fillna(1.0)
+    work["scaffold_cap_reason"] = work.get(
+        "scaffold_cap_reason",
+        pd.Series("", index=work.index, dtype=object)
+    ).astype(str)
 
-    trainable_mask = pd.to_numeric(_series_from_default(work.index, work.get("rf_train_row", None), default=1), errors="coerce").fillna(1).astype(int) == 1
+    trainable_mask = pd.to_numeric(
+        _series_from_default(work.index, work.get("rf_train_row", None), default=1),
+        errors="coerce"
+    ).fillna(1).astype(int) == 1
 
     def _apply(cols: list[str], tag: str):
         if not cols:
             return
+
         eligible = work.loc[trainable_mask].copy()
         if eligible.empty:
             return
-        for _, idx in eligible.groupby(cols, dropna=False, sort=False).indices.items():
-            idx = list(idx)
-            g = work.loc[idx]
+
+        # IMPORTANT: iterate grouped frames directly so we keep original index labels
+        for _, g in eligible.groupby(cols, dropna=False, sort=False):
+            idx = g.index
             s_mask = scaffold_mask.loc[idx]
+
             if not bool(s_mask.any()):
                 continue
-            real_sum = float(pd.to_numeric(g.loc[~s_mask, "sample_weight"], errors="coerce").fillna(0.0).sum())
-            scaff_sum = float(pd.to_numeric(g.loc[s_mask, "sample_weight"], errors="coerce").fillna(0.0).sum())
+
+            real_sum = float(pd.to_numeric(
+                g.loc[~s_mask, "sample_weight"], errors="coerce"
+            ).fillna(0.0).sum())
+
+            scaff_sum = float(pd.to_numeric(
+                g.loc[s_mask, "sample_weight"], errors="coerce"
+            ).fillna(0.0).sum())
+
             if scaff_sum <= 0.0:
                 continue
+
             if real_sum > 0.0:
                 allowed = max(SCAFFOLD_MIN_ROW_WEIGHT, SCAFFOLD_MAX_SHARE_OF_REAL * real_sum)
                 reason = f"cap_vs_real_{tag}"
             else:
                 allowed = SCAFFOLD_MAX_BUCKET_WEIGHT_NO_REAL
                 reason = f"gap_fill_only_{tag}"
+
             scale = min(1.0, allowed / max(scaff_sum, 1e-9))
             if scale >= 0.999999:
                 continue
-            s_idx = g.index[s_mask]
-            work.loc[s_idx, "sample_weight"] = np.maximum(SCAFFOLD_MIN_ROW_WEIGHT, pd.to_numeric(work.loc[s_idx, "sample_weight"], errors="coerce").fillna(0.0) * scale)
-            work.loc[s_idx, "scaffold_weight_scale"] = np.minimum(pd.to_numeric(work.loc[s_idx, "scaffold_weight_scale"], errors="coerce").fillna(1.0), scale)
+
+            s_idx = g.index[s_mask.to_numpy()]
+
+            work.loc[s_idx, "sample_weight"] = np.maximum(
+                SCAFFOLD_MIN_ROW_WEIGHT,
+                pd.to_numeric(work.loc[s_idx, "sample_weight"], errors="coerce").fillna(0.0) * scale
+            )
+            work.loc[s_idx, "scaffold_weight_scale"] = np.minimum(
+                pd.to_numeric(work.loc[s_idx, "scaffold_weight_scale"], errors="coerce").fillna(1.0),
+                scale
+            )
+
             empty_reason = work.loc[s_idx, "scaffold_cap_reason"].astype(str).str.len() == 0
-            work.loc[s_idx[empty_reason], "scaffold_cap_reason"] = reason
+            work.loc[s_idx[empty_reason.to_numpy()], "scaffold_cap_reason"] = reason
 
     family_cols = [c for c in ["device_family", TARGET] if c in work.columns]
     device_cols = [c for c in ["device_family", "device_name", TARGET] if c in work.columns]
+
     _apply(family_cols, "family")
     _apply(device_cols, "device")
 
     summary = {
         "scaffold_rows": int(scaffold_mask.sum()),
         "scaffold_trainable_rows": int((scaffold_mask & trainable_mask).sum()),
-        "scaffold_scaled_rows": int((scaffold_mask & (pd.to_numeric(work["scaffold_weight_scale"], errors="coerce").fillna(1.0) < 0.999999)).sum()),
-        "scaffold_effective_weight": float(pd.to_numeric(work.loc[scaffold_mask, "sample_weight"], errors="coerce").fillna(0.0).sum()),
-        "real_effective_weight": float(pd.to_numeric(work.loc[~scaffold_mask, "sample_weight"], errors="coerce").fillna(0.0).sum()),
+        "scaffold_scaled_rows": int(
+            (scaffold_mask & (pd.to_numeric(work["scaffold_weight_scale"], errors="coerce").fillna(1.0) < 0.999999)).sum()
+        ),
+        "scaffold_effective_weight": float(
+            pd.to_numeric(work.loc[scaffold_mask, "sample_weight"], errors="coerce").fillna(0.0).sum()
+        ),
+        "real_effective_weight": float(
+            pd.to_numeric(work.loc[~scaffold_mask, "sample_weight"], errors="coerce").fillna(0.0).sum()
+        ),
     }
     return work, summary
 
@@ -690,7 +731,6 @@ def load_and_tag_csvs(csv_files, *, raw_root: Path | None = None, current_traini
             df["session_id"] = f"section__{section_prefix}"
         else:
             df[group_col] = section_prefix + "__" + df[group_col].astype(str)
-        df["trial_id"] = trial_prefix
         df["section_id"] = section_prefix
 
         device_family_series = text_series(df, "device_family", "family", default=file_tokens.get("device_family", "unknown")).map(normalize_device_family_token)
@@ -699,6 +739,11 @@ def load_and_tag_csvs(csv_files, *, raw_root: Path | None = None, current_traini
         trial_series = pd.to_numeric(df["trial_number"], errors="coerce").fillna(file_tokens.get("trial_number", 1)).astype(int) if "trial_number" in df.columns else pd.Series(int(file_tokens.get("trial_number", 1)), index=df.index, dtype=int)
         notes_series = text_series(df, "notes", default="").map(lambda v: str(v).strip())
         trusted_series = pd.to_numeric(df.get("trusted_normal_session", pd.Series(int(trusted_normal_session), index=df.index)), errors="coerce").fillna(int(trusted_normal_session)).astype(int)
+
+        division_group_suffix = division_series.map(
+            lambda v: "start_ctx" if str(v) in {"start", "startup"} else ("steady_ref" if str(v) == "steady" else ("arc_capture" if str(v) == "arc" else str(v)))
+        )
+        df["trial_id"] = trial_prefix + "__" + division_group_suffix.astype(str)
 
         df["_source_file"] = str(rel_path).replace(chr(92), "/")
         df["_source_folder"] = source_folder
@@ -871,7 +916,7 @@ def _build_label_trust(df: pd.DataFrame) -> pd.Series:
     base = np.clip(base, 0.05, 2.00)
     return pd.Series(base, index=df.index, dtype=float)
 
-
+    df = df.reset_index(drop=True)
 
 def attach_training_metadata(df: pd.DataFrame) -> tuple[pd.DataFrame, dict]:
     df = df.copy()
@@ -1189,14 +1234,31 @@ def clean_dataset(df: pd.DataFrame, augment_unknown_context: bool = False) -> tu
 
     division_series = df.get("division_tag", pd.Series("", index=df.index, dtype=object)).astype(str).str.lower()
     raw_target = pd.to_numeric(df[TARGET], errors="coerce")
-    context_only_placeholder_mask = division_series.isin(["start", "startup"]) & ~raw_target.isin([0, 1])
-    df["arc_truth_available"] = raw_target.isin([0, 1]).astype(int)
+    explicit_arc_truth_mask = raw_target.isin([0, 1])
+    context_only_placeholder_mask = division_series.isin(["start", "startup"]) & ~explicit_arc_truth_mask
+    arc_training_placeholder_mask = division_series.isin(["steady", "arc"]) & ~explicit_arc_truth_mask
+
+    df["arc_truth_available"] = explicit_arc_truth_mask.astype(int)
     df["context_only_placeholder_arc_target"] = context_only_placeholder_mask.astype(int)
+    df["arc_training_placeholder_arc_target"] = arc_training_placeholder_mask.astype(int)
+
+    # Keep unlabeled start rows for the context dataset only. These get a benign
+    # placeholder arc target of 0 but remain marked as context-only placeholders.
     if bool(context_only_placeholder_mask.any()):
         df.loc[context_only_placeholder_mask, TARGET] = 0
         if "label_truth_source" in df.columns:
             placeholder_source = df["label_truth_source"].astype(str).replace({"": "human_label"})
             placeholder_source.loc[context_only_placeholder_mask] = "context_family_only"
+            df["label_truth_source"] = placeholder_source
+
+    # Keep unlabeled steady rows and unlabeled non-event rows inside arc captures as
+    # explicit negatives for arc training. This is required because field CSVs often
+    # mark only the spark frames as 1 and leave all other rows as -1.
+    if bool(arc_training_placeholder_mask.any()):
+        df.loc[arc_training_placeholder_mask, TARGET] = 0
+        if "label_truth_source" in df.columns:
+            placeholder_source = df["label_truth_source"].astype(str).replace({"": "human_label"})
+            placeholder_source.loc[arc_training_placeholder_mask] = "division_default_negative"
             df["label_truth_source"] = placeholder_source
 
     df = df[df[TARGET].isin([0, 1])].copy()
@@ -1287,6 +1349,7 @@ def clean_dataset(df: pd.DataFrame, augment_unknown_context: bool = False) -> tu
         "rows_after_cleaning": int(base_rows_after),
         "rows_removed": int(rows_removed),
         "context_only_placeholder_rows_preserved": int(pd.to_numeric(df.get("context_only_placeholder_arc_target", pd.Series(0, index=df.index)), errors="coerce").fillna(0).astype(int).sum()),
+        "arc_training_placeholder_rows_preserved": int(pd.to_numeric(df.get("arc_training_placeholder_arc_target", pd.Series(0, index=df.index)), errors="coerce").fillna(0).astype(int).sum()),
         "arc_truth_available_rows": int(pd.to_numeric(df.get("arc_truth_available", pd.Series(0, index=df.index)), errors="coerce").fillna(0).astype(int).sum()),
         "augmentation_rows_added": int(augmentation_rows),
         "rows_after_cleaning_with_augmentation": int(len(df)),

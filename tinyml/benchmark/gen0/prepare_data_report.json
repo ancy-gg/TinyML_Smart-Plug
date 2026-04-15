@@ -1,0 +1,1249 @@
+{
+  "report_type": "prepare_data_report",
+  "selected_generation": "gen0",
+  "current_training_generation": "gen0",
+  "feature_names": [
+    "abs_irms_zscore_vs_baseline",
+    "delta_irms_abs",
+    "halfcycle_asymmetry",
+    "suspicious_run_energy",
+    "delta_hf_energy",
+    "delta_flux",
+    "midband_residual_ratio",
+    "zcv",
+    "spectral_flux_midhf",
+    "peak_fluct_cv",
+    "residual_crest_factor",
+    "thd_i",
+    "hf_energy_delta",
+    "edge_spike_ratio",
+    "v_sag_pct",
+    "cycle_nmse",
+    "pulse_count_per_cycle",
+    "zero_dwell_ratio",
+    "low_current_ratio",
+    "max_low_current_run_ms"
+  ],
+  "source_csv_count": 101,
+  "source_csv_files": [
+    "C:\\Disk\\Ancy\\Platform IO\\TinyML_Smart-Plug\\tinyml\\data\\gen0\\raw\\Brush Universal Motor\\brush_universal_motor__handheld_vacuum__trial_1__arc.csv",
+    "C:\\Disk\\Ancy\\Platform IO\\TinyML_Smart-Plug\\tinyml\\data\\gen0\\raw\\Brush Universal Motor\\brush_universal_motor__handheld_vacuum__trial_1__start.csv",
+    "C:\\Disk\\Ancy\\Platform IO\\TinyML_Smart-Plug\\tinyml\\data\\gen0\\raw\\Brush Universal Motor\\brush_universal_motor__handheld_vacuum__trial_1__steady.csv",
+    "C:\\Disk\\Ancy\\Platform IO\\TinyML_Smart-Plug\\tinyml\\data\\gen0\\raw\\Brush Universal Motor\\brush_universal_motor__handheld_vacuum__trial_2__arc.csv",
+    "C:\\Disk\\Ancy\\Platform IO\\TinyML_Smart-Plug\\tinyml\\data\\gen0\\raw\\Brush Universal Motor\\brush_universal_motor__handheld_vacuum__trial_2__start.csv",
+    "C:\\Disk\\Ancy\\Platform IO\\TinyML_Smart-Plug\\tinyml\\data\\gen0\\raw\\Brush Universal Motor\\brush_universal_motor__handheld_vacuum__trial_2__steady.csv",
+    "C:\\Disk\\Ancy\\Platform IO\\TinyML_Smart-Plug\\tinyml\\data\\gen0\\raw\\Brush Universal Motor\\brush_universal_motor__handheld_vacuum__trial_3__arc.csv",
+    "C:\\Disk\\Ancy\\Platform IO\\TinyML_Smart-Plug\\tinyml\\data\\gen0\\raw\\Brush Universal Motor\\brush_universal_motor__handheld_vacuum__trial_3__start.csv",
+    "C:\\Disk\\Ancy\\Platform IO\\TinyML_Smart-Plug\\tinyml\\data\\gen0\\raw\\Brush Universal Motor\\brush_universal_motor__handheld_vacuum__trial_3__steady.csv",
+    "C:\\Disk\\Ancy\\Platform IO\\TinyML_Smart-Plug\\tinyml\\data\\gen0\\raw\\Brush Universal Motor\\brush_universal_motor__handheld_vacuum__trial_4__arc.csv",
+    "C:\\Disk\\Ancy\\Platform IO\\TinyML_Smart-Plug\\tinyml\\data\\gen0\\raw\\Brush Universal Motor\\brush_universal_motor__handheld_vacuum__trial_4__start.csv",
+    "C:\\Disk\\Ancy\\Platform IO\\TinyML_Smart-Plug\\tinyml\\data\\gen0\\raw\\Brush Universal Motor\\brush_universal_motor__handheld_vacuum__trial_4__steady.csv",
+    "C:\\Disk\\Ancy\\Platform IO\\TinyML_Smart-Plug\\tinyml\\data\\gen0\\raw\\Brush Universal Motor\\brush_universal_motor__handheld_vacuum__trial_5__arc.csv",
+    "C:\\Disk\\Ancy\\Platform IO\\TinyML_Smart-Plug\\tinyml\\data\\gen0\\raw\\Brush Universal Motor\\brush_universal_motor__handheld_vacuum__trial_5__start.csv",
+    "C:\\Disk\\Ancy\\Platform IO\\TinyML_Smart-Plug\\tinyml\\data\\gen0\\raw\\Brush Universal Motor\\brush_universal_motor__handheld_vacuum__trial_5__steady.csv",
+    "C:\\Disk\\Ancy\\Platform IO\\TinyML_Smart-Plug\\tinyml\\data\\gen0\\raw\\Inductive Motor\\inductive_motor__40w_electric_fan__trial_1__arc.csv",
+    "C:\\Disk\\Ancy\\Platform IO\\TinyML_Smart-Plug\\tinyml\\data\\gen0\\raw\\Inductive Motor\\inductive_motor__40w_electric_fan__trial_1__start.csv",
+    "C:\\Disk\\Ancy\\Platform IO\\TinyML_Smart-Plug\\tinyml\\data\\gen0\\raw\\Inductive Motor\\inductive_motor__40w_electric_fan__trial_1__steady.csv",
+    "C:\\Disk\\Ancy\\Platform IO\\TinyML_Smart-Plug\\tinyml\\data\\gen0\\raw\\Inductive Motor\\inductive_motor__40w_electric_fan__trial_2__arc.csv",
+    "C:\\Disk\\Ancy\\Platform IO\\TinyML_Smart-Plug\\tinyml\\data\\gen0\\raw\\Inductive Motor\\inductive_motor__40w_electric_fan__trial_2__start.csv",
+    "C:\\Disk\\Ancy\\Platform IO\\TinyML_Smart-Plug\\tinyml\\data\\gen0\\raw\\Inductive Motor\\inductive_motor__40w_electric_fan__trial_2__steady.csv",
+    "C:\\Disk\\Ancy\\Platform IO\\TinyML_Smart-Plug\\tinyml\\data\\gen0\\raw\\Inductive Motor\\inductive_motor__40w_electric_fan__trial_3__arc.csv",
+    "C:\\Disk\\Ancy\\Platform IO\\TinyML_Smart-Plug\\tinyml\\data\\gen0\\raw\\Inductive Motor\\inductive_motor__40w_electric_fan__trial_3__start.csv",
+    "C:\\Disk\\Ancy\\Platform IO\\TinyML_Smart-Plug\\tinyml\\data\\gen0\\raw\\Inductive Motor\\inductive_motor__40w_electric_fan__trial_3__steady.csv",
+    "C:\\Disk\\Ancy\\Platform IO\\TinyML_Smart-Plug\\tinyml\\data\\gen0\\raw\\Inductive Motor\\inductive_motor__40w_electric_fan__trial_4__arc.csv",
+    "C:\\Disk\\Ancy\\Platform IO\\TinyML_Smart-Plug\\tinyml\\data\\gen0\\raw\\Inductive Motor\\inductive_motor__40w_electric_fan__trial_4__start.csv",
+    "C:\\Disk\\Ancy\\Platform IO\\TinyML_Smart-Plug\\tinyml\\data\\gen0\\raw\\Inductive Motor\\inductive_motor__40w_electric_fan__trial_4__steady.csv",
+    "C:\\Disk\\Ancy\\Platform IO\\TinyML_Smart-Plug\\tinyml\\data\\gen0\\raw\\Inductive Motor\\inductive_motor__40w_electric_fan__trial_5__arc.csv",
+    "C:\\Disk\\Ancy\\Platform IO\\TinyML_Smart-Plug\\tinyml\\data\\gen0\\raw\\Inductive Motor\\inductive_motor__40w_electric_fan__trial_5__start.csv",
+    "C:\\Disk\\Ancy\\Platform IO\\TinyML_Smart-Plug\\tinyml\\data\\gen0\\raw\\Inductive Motor\\inductive_motor__40w_electric_fan__trial_5__steady.csv",
+    "C:\\Disk\\Ancy\\Platform IO\\TinyML_Smart-Plug\\tinyml\\data\\gen0\\raw\\Inductive Motor\\inductive_motor__55w_stand_fan__trial_1__start.csv",
+    "C:\\Disk\\Ancy\\Platform IO\\TinyML_Smart-Plug\\tinyml\\data\\gen0\\raw\\Inductive Motor\\inductive_motor__55w_stand_fan__trial_2__start.csv",
+    "C:\\Disk\\Ancy\\Platform IO\\TinyML_Smart-Plug\\tinyml\\data\\gen0\\raw\\Inductive Motor\\inductive_motor__55w_stand_fan__trial_3__start.csv",
+    "C:\\Disk\\Ancy\\Platform IO\\TinyML_Smart-Plug\\tinyml\\data\\gen0\\raw\\Inductive Motor\\inductive_motor__55w_stand_fan__trial_4__start.csv",
+    "C:\\Disk\\Ancy\\Platform IO\\TinyML_Smart-Plug\\tinyml\\data\\gen0\\raw\\Inductive Motor\\inductive_motor__55w_stand_fan__trial_5__start.csv",
+    "C:\\Disk\\Ancy\\Platform IO\\TinyML_Smart-Plug\\tinyml\\data\\gen0\\raw\\Other\\other_mixed__household_refrigerator__trial_1__start.csv",
+    "C:\\Disk\\Ancy\\Platform IO\\TinyML_Smart-Plug\\tinyml\\data\\gen0\\raw\\Other\\other_mixed__household_refrigerator__trial_2__start.csv",
+    "C:\\Disk\\Ancy\\Platform IO\\TinyML_Smart-Plug\\tinyml\\data\\gen0\\raw\\Other\\other_mixed__household_refrigerator__trial_3__start.csv",
+    "C:\\Disk\\Ancy\\Platform IO\\TinyML_Smart-Plug\\tinyml\\data\\gen0\\raw\\Other\\other_mixed__household_refrigerator__trial_4__start.csv",
+    "C:\\Disk\\Ancy\\Platform IO\\TinyML_Smart-Plug\\tinyml\\data\\gen0\\raw\\Other\\other_mixed__household_refrigerator__trial_5__start.csv",
+    "C:\\Disk\\Ancy\\Platform IO\\TinyML_Smart-Plug\\tinyml\\data\\gen0\\raw\\Phase Control\\phase_angle_controlled__100w_incandescent_dimmer__trial_1__start.csv",
+    "C:\\Disk\\Ancy\\Platform IO\\TinyML_Smart-Plug\\tinyml\\data\\gen0\\raw\\Phase Control\\phase_angle_controlled__100w_incandescent_dimmer__trial_2__start.csv",
+    "C:\\Disk\\Ancy\\Platform IO\\TinyML_Smart-Plug\\tinyml\\data\\gen0\\raw\\Phase Control\\phase_angle_controlled__100w_incandescent_dimmer__trial_3__start.csv",
+    "C:\\Disk\\Ancy\\Platform IO\\TinyML_Smart-Plug\\tinyml\\data\\gen0\\raw\\Phase Control\\phase_angle_controlled__100w_incandescent_dimmer__trial_4__start.csv",
+    "C:\\Disk\\Ancy\\Platform IO\\TinyML_Smart-Plug\\tinyml\\data\\gen0\\raw\\Phase Control\\phase_angle_controlled__100w_incandescent_dimmer__trial_5__start.csv",
+    "C:\\Disk\\Ancy\\Platform IO\\TinyML_Smart-Plug\\tinyml\\data\\gen0\\raw\\Resistive\\resistive_linear__electric_kettle__trial_1__arc.csv",
+    "C:\\Disk\\Ancy\\Platform IO\\TinyML_Smart-Plug\\tinyml\\data\\gen0\\raw\\Resistive\\resistive_linear__electric_kettle__trial_1__start.csv",
+    "C:\\Disk\\Ancy\\Platform IO\\TinyML_Smart-Plug\\tinyml\\data\\gen0\\raw\\Resistive\\resistive_linear__electric_kettle__trial_1__steady.csv",
+    "C:\\Disk\\Ancy\\Platform IO\\TinyML_Smart-Plug\\tinyml\\data\\gen0\\raw\\Resistive\\resistive_linear__electric_kettle__trial_2__arc (1).csv",
+    "C:\\Disk\\Ancy\\Platform IO\\TinyML_Smart-Plug\\tinyml\\data\\gen0\\raw\\Resistive\\resistive_linear__electric_kettle__trial_2__arc.csv",
+    "C:\\Disk\\Ancy\\Platform IO\\TinyML_Smart-Plug\\tinyml\\data\\gen0\\raw\\Resistive\\resistive_linear__electric_kettle__trial_2__start.csv",
+    "C:\\Disk\\Ancy\\Platform IO\\TinyML_Smart-Plug\\tinyml\\data\\gen0\\raw\\Resistive\\resistive_linear__electric_kettle__trial_2__steady.csv",
+    "C:\\Disk\\Ancy\\Platform IO\\TinyML_Smart-Plug\\tinyml\\data\\gen0\\raw\\Resistive\\resistive_linear__electric_kettle__trial_3__arc.csv",
+    "C:\\Disk\\Ancy\\Platform IO\\TinyML_Smart-Plug\\tinyml\\data\\gen0\\raw\\Resistive\\resistive_linear__electric_kettle__trial_3__start.csv",
+    "C:\\Disk\\Ancy\\Platform IO\\TinyML_Smart-Plug\\tinyml\\data\\gen0\\raw\\Resistive\\resistive_linear__electric_kettle__trial_3__steady.csv",
+    "C:\\Disk\\Ancy\\Platform IO\\TinyML_Smart-Plug\\tinyml\\data\\gen0\\raw\\Resistive\\resistive_linear__electric_kettle__trial_4__arc.csv",
+    "C:\\Disk\\Ancy\\Platform IO\\TinyML_Smart-Plug\\tinyml\\data\\gen0\\raw\\Resistive\\resistive_linear__electric_kettle__trial_4__start.csv",
+    "C:\\Disk\\Ancy\\Platform IO\\TinyML_Smart-Plug\\tinyml\\data\\gen0\\raw\\Resistive\\resistive_linear__electric_kettle__trial_4__steady.csv",
+    "C:\\Disk\\Ancy\\Platform IO\\TinyML_Smart-Plug\\tinyml\\data\\gen0\\raw\\Resistive\\resistive_linear__electric_kettle__trial_5__arc.csv",
+    "C:\\Disk\\Ancy\\Platform IO\\TinyML_Smart-Plug\\tinyml\\data\\gen0\\raw\\Resistive\\resistive_linear__electric_kettle__trial_5__start.csv",
+    "C:\\Disk\\Ancy\\Platform IO\\TinyML_Smart-Plug\\tinyml\\data\\gen0\\raw\\Resistive\\resistive_linear__electric_kettle__trial_5__steady.csv",
+    "C:\\Disk\\Ancy\\Platform IO\\TinyML_Smart-Plug\\tinyml\\data\\gen0\\raw\\Resistive\\resistive_linear__halogen_lamp__trial_1__arc.csv",
+    "C:\\Disk\\Ancy\\Platform IO\\TinyML_Smart-Plug\\tinyml\\data\\gen0\\raw\\Resistive\\resistive_linear__halogen_lamp__trial_1__start.csv",
+    "C:\\Disk\\Ancy\\Platform IO\\TinyML_Smart-Plug\\tinyml\\data\\gen0\\raw\\Resistive\\resistive_linear__halogen_lamp__trial_1__steady.csv",
+    "C:\\Disk\\Ancy\\Platform IO\\TinyML_Smart-Plug\\tinyml\\data\\gen0\\raw\\Resistive\\resistive_linear__halogen_lamp__trial_2__arc.csv",
+    "C:\\Disk\\Ancy\\Platform IO\\TinyML_Smart-Plug\\tinyml\\data\\gen0\\raw\\Resistive\\resistive_linear__halogen_lamp__trial_2__start.csv",
+    "C:\\Disk\\Ancy\\Platform IO\\TinyML_Smart-Plug\\tinyml\\data\\gen0\\raw\\Resistive\\resistive_linear__halogen_lamp__trial_2__steady.csv",
+    "C:\\Disk\\Ancy\\Platform IO\\TinyML_Smart-Plug\\tinyml\\data\\gen0\\raw\\Resistive\\resistive_linear__halogen_lamp__trial_3__arc.csv",
+    "C:\\Disk\\Ancy\\Platform IO\\TinyML_Smart-Plug\\tinyml\\data\\gen0\\raw\\Resistive\\resistive_linear__halogen_lamp__trial_3__start.csv",
+    "C:\\Disk\\Ancy\\Platform IO\\TinyML_Smart-Plug\\tinyml\\data\\gen0\\raw\\Resistive\\resistive_linear__halogen_lamp__trial_3__steady.csv",
+    "C:\\Disk\\Ancy\\Platform IO\\TinyML_Smart-Plug\\tinyml\\data\\gen0\\raw\\Resistive\\resistive_linear__halogen_lamp__trial_4__arc.csv",
+    "C:\\Disk\\Ancy\\Platform IO\\TinyML_Smart-Plug\\tinyml\\data\\gen0\\raw\\Resistive\\resistive_linear__halogen_lamp__trial_4__start.csv",
+    "C:\\Disk\\Ancy\\Platform IO\\TinyML_Smart-Plug\\tinyml\\data\\gen0\\raw\\Resistive\\resistive_linear__halogen_lamp__trial_4__steady.csv",
+    "C:\\Disk\\Ancy\\Platform IO\\TinyML_Smart-Plug\\tinyml\\data\\gen0\\raw\\Resistive\\resistive_linear__halogen_lamp__trial_5__arc.csv",
+    "C:\\Disk\\Ancy\\Platform IO\\TinyML_Smart-Plug\\tinyml\\data\\gen0\\raw\\Resistive\\resistive_linear__halogen_lamp__trial_5__start.csv",
+    "C:\\Disk\\Ancy\\Platform IO\\TinyML_Smart-Plug\\tinyml\\data\\gen0\\raw\\Resistive\\resistive_linear__halogen_lamp__trial_5__steady.csv",
+    "C:\\Disk\\Ancy\\Platform IO\\TinyML_Smart-Plug\\tinyml\\data\\gen0\\raw\\Resistive\\resistive_linear__manual_air_fryer__trial_1__start.csv",
+    "C:\\Disk\\Ancy\\Platform IO\\TinyML_Smart-Plug\\tinyml\\data\\gen0\\raw\\Resistive\\resistive_linear__manual_air_fryer__trial_2__start.csv",
+    "C:\\Disk\\Ancy\\Platform IO\\TinyML_Smart-Plug\\tinyml\\data\\gen0\\raw\\Resistive\\resistive_linear__manual_air_fryer__trial_3__start.csv",
+    "C:\\Disk\\Ancy\\Platform IO\\TinyML_Smart-Plug\\tinyml\\data\\gen0\\raw\\Resistive\\resistive_linear__manual_air_fryer__trial_4__start.csv",
+    "C:\\Disk\\Ancy\\Platform IO\\TinyML_Smart-Plug\\tinyml\\data\\gen0\\raw\\Resistive\\resistive_linear__manual_air_fryer__trial_5__start.csv",
+    "C:\\Disk\\Ancy\\Platform IO\\TinyML_Smart-Plug\\tinyml\\data\\gen0\\raw\\Resistive\\resistive_linear__water_heater__trial_1__arc.csv",
+    "C:\\Disk\\Ancy\\Platform IO\\TinyML_Smart-Plug\\tinyml\\data\\gen0\\raw\\Resistive\\resistive_linear__water_heater__trial_1__start.csv",
+    "C:\\Disk\\Ancy\\Platform IO\\TinyML_Smart-Plug\\tinyml\\data\\gen0\\raw\\Resistive\\resistive_linear__water_heater__trial_1__steady.csv",
+    "C:\\Disk\\Ancy\\Platform IO\\TinyML_Smart-Plug\\tinyml\\data\\gen0\\raw\\Resistive\\resistive_linear__water_heater__trial_2__arc.csv",
+    "C:\\Disk\\Ancy\\Platform IO\\TinyML_Smart-Plug\\tinyml\\data\\gen0\\raw\\Resistive\\resistive_linear__water_heater__trial_2__start.csv",
+    "C:\\Disk\\Ancy\\Platform IO\\TinyML_Smart-Plug\\tinyml\\data\\gen0\\raw\\Resistive\\resistive_linear__water_heater__trial_2__steady.csv",
+    "C:\\Disk\\Ancy\\Platform IO\\TinyML_Smart-Plug\\tinyml\\data\\gen0\\raw\\Resistive\\resistive_linear__water_heater__trial_3__arc.csv",
+    "C:\\Disk\\Ancy\\Platform IO\\TinyML_Smart-Plug\\tinyml\\data\\gen0\\raw\\Resistive\\resistive_linear__water_heater__trial_3__start.csv",
+    "C:\\Disk\\Ancy\\Platform IO\\TinyML_Smart-Plug\\tinyml\\data\\gen0\\raw\\Resistive\\resistive_linear__water_heater__trial_3__steady.csv",
+    "C:\\Disk\\Ancy\\Platform IO\\TinyML_Smart-Plug\\tinyml\\data\\gen0\\raw\\Resistive\\resistive_linear__water_heater__trial_4__arc.csv",
+    "C:\\Disk\\Ancy\\Platform IO\\TinyML_Smart-Plug\\tinyml\\data\\gen0\\raw\\Resistive\\resistive_linear__water_heater__trial_4__start.csv",
+    "C:\\Disk\\Ancy\\Platform IO\\TinyML_Smart-Plug\\tinyml\\data\\gen0\\raw\\Resistive\\resistive_linear__water_heater__trial_4__steady.csv",
+    "C:\\Disk\\Ancy\\Platform IO\\TinyML_Smart-Plug\\tinyml\\data\\gen0\\raw\\Resistive\\resistive_linear__water_heater__trial_5__arc.csv",
+    "C:\\Disk\\Ancy\\Platform IO\\TinyML_Smart-Plug\\tinyml\\data\\gen0\\raw\\Resistive\\resistive_linear__water_heater__trial_5__start.csv",
+    "C:\\Disk\\Ancy\\Platform IO\\TinyML_Smart-Plug\\tinyml\\data\\gen0\\raw\\Resistive\\resistive_linear__water_heater__trial_5__steady.csv",
+    "C:\\Disk\\Ancy\\Platform IO\\TinyML_Smart-Plug\\tinyml\\data\\gen0\\raw\\SMPS\\smps__65w_usb_c_laptop_charger__trial_1__start.csv",
+    "C:\\Disk\\Ancy\\Platform IO\\TinyML_Smart-Plug\\tinyml\\data\\gen0\\raw\\SMPS\\smps__65w_usb_c_laptop_charger__trial_2__start.csv",
+    "C:\\Disk\\Ancy\\Platform IO\\TinyML_Smart-Plug\\tinyml\\data\\gen0\\raw\\SMPS\\smps__65w_usb_c_laptop_charger__trial_3__start.csv",
+    "C:\\Disk\\Ancy\\Platform IO\\TinyML_Smart-Plug\\tinyml\\data\\gen0\\raw\\SMPS\\smps__65w_usb_c_laptop_charger__trial_4__start.csv",
+    "C:\\Disk\\Ancy\\Platform IO\\TinyML_Smart-Plug\\tinyml\\data\\gen0\\raw\\SMPS\\smps__65w_usb_c_laptop_charger__trial_5__start.csv"
+  ],
+  "input_files": {
+    "count": 101,
+    "files": [
+      "C:\\Disk\\Ancy\\Platform IO\\TinyML_Smart-Plug\\tinyml\\data\\gen0\\raw\\Brush Universal Motor\\brush_universal_motor__handheld_vacuum__trial_1__arc.csv",
+      "C:\\Disk\\Ancy\\Platform IO\\TinyML_Smart-Plug\\tinyml\\data\\gen0\\raw\\Brush Universal Motor\\brush_universal_motor__handheld_vacuum__trial_1__start.csv",
+      "C:\\Disk\\Ancy\\Platform IO\\TinyML_Smart-Plug\\tinyml\\data\\gen0\\raw\\Brush Universal Motor\\brush_universal_motor__handheld_vacuum__trial_1__steady.csv",
+      "C:\\Disk\\Ancy\\Platform IO\\TinyML_Smart-Plug\\tinyml\\data\\gen0\\raw\\Brush Universal Motor\\brush_universal_motor__handheld_vacuum__trial_2__arc.csv",
+      "C:\\Disk\\Ancy\\Platform IO\\TinyML_Smart-Plug\\tinyml\\data\\gen0\\raw\\Brush Universal Motor\\brush_universal_motor__handheld_vacuum__trial_2__start.csv",
+      "C:\\Disk\\Ancy\\Platform IO\\TinyML_Smart-Plug\\tinyml\\data\\gen0\\raw\\Brush Universal Motor\\brush_universal_motor__handheld_vacuum__trial_2__steady.csv",
+      "C:\\Disk\\Ancy\\Platform IO\\TinyML_Smart-Plug\\tinyml\\data\\gen0\\raw\\Brush Universal Motor\\brush_universal_motor__handheld_vacuum__trial_3__arc.csv",
+      "C:\\Disk\\Ancy\\Platform IO\\TinyML_Smart-Plug\\tinyml\\data\\gen0\\raw\\Brush Universal Motor\\brush_universal_motor__handheld_vacuum__trial_3__start.csv",
+      "C:\\Disk\\Ancy\\Platform IO\\TinyML_Smart-Plug\\tinyml\\data\\gen0\\raw\\Brush Universal Motor\\brush_universal_motor__handheld_vacuum__trial_3__steady.csv",
+      "C:\\Disk\\Ancy\\Platform IO\\TinyML_Smart-Plug\\tinyml\\data\\gen0\\raw\\Brush Universal Motor\\brush_universal_motor__handheld_vacuum__trial_4__arc.csv",
+      "C:\\Disk\\Ancy\\Platform IO\\TinyML_Smart-Plug\\tinyml\\data\\gen0\\raw\\Brush Universal Motor\\brush_universal_motor__handheld_vacuum__trial_4__start.csv",
+      "C:\\Disk\\Ancy\\Platform IO\\TinyML_Smart-Plug\\tinyml\\data\\gen0\\raw\\Brush Universal Motor\\brush_universal_motor__handheld_vacuum__trial_4__steady.csv",
+      "C:\\Disk\\Ancy\\Platform IO\\TinyML_Smart-Plug\\tinyml\\data\\gen0\\raw\\Brush Universal Motor\\brush_universal_motor__handheld_vacuum__trial_5__arc.csv",
+      "C:\\Disk\\Ancy\\Platform IO\\TinyML_Smart-Plug\\tinyml\\data\\gen0\\raw\\Brush Universal Motor\\brush_universal_motor__handheld_vacuum__trial_5__start.csv",
+      "C:\\Disk\\Ancy\\Platform IO\\TinyML_Smart-Plug\\tinyml\\data\\gen0\\raw\\Brush Universal Motor\\brush_universal_motor__handheld_vacuum__trial_5__steady.csv",
+      "C:\\Disk\\Ancy\\Platform IO\\TinyML_Smart-Plug\\tinyml\\data\\gen0\\raw\\Inductive Motor\\inductive_motor__40w_electric_fan__trial_1__arc.csv",
+      "C:\\Disk\\Ancy\\Platform IO\\TinyML_Smart-Plug\\tinyml\\data\\gen0\\raw\\Inductive Motor\\inductive_motor__40w_electric_fan__trial_1__start.csv",
+      "C:\\Disk\\Ancy\\Platform IO\\TinyML_Smart-Plug\\tinyml\\data\\gen0\\raw\\Inductive Motor\\inductive_motor__40w_electric_fan__trial_1__steady.csv",
+      "C:\\Disk\\Ancy\\Platform IO\\TinyML_Smart-Plug\\tinyml\\data\\gen0\\raw\\Inductive Motor\\inductive_motor__40w_electric_fan__trial_2__arc.csv",
+      "C:\\Disk\\Ancy\\Platform IO\\TinyML_Smart-Plug\\tinyml\\data\\gen0\\raw\\Inductive Motor\\inductive_motor__40w_electric_fan__trial_2__start.csv",
+      "C:\\Disk\\Ancy\\Platform IO\\TinyML_Smart-Plug\\tinyml\\data\\gen0\\raw\\Inductive Motor\\inductive_motor__40w_electric_fan__trial_2__steady.csv",
+      "C:\\Disk\\Ancy\\Platform IO\\TinyML_Smart-Plug\\tinyml\\data\\gen0\\raw\\Inductive Motor\\inductive_motor__40w_electric_fan__trial_3__arc.csv",
+      "C:\\Disk\\Ancy\\Platform IO\\TinyML_Smart-Plug\\tinyml\\data\\gen0\\raw\\Inductive Motor\\inductive_motor__40w_electric_fan__trial_3__start.csv",
+      "C:\\Disk\\Ancy\\Platform IO\\TinyML_Smart-Plug\\tinyml\\data\\gen0\\raw\\Inductive Motor\\inductive_motor__40w_electric_fan__trial_3__steady.csv",
+      "C:\\Disk\\Ancy\\Platform IO\\TinyML_Smart-Plug\\tinyml\\data\\gen0\\raw\\Inductive Motor\\inductive_motor__40w_electric_fan__trial_4__arc.csv",
+      "C:\\Disk\\Ancy\\Platform IO\\TinyML_Smart-Plug\\tinyml\\data\\gen0\\raw\\Inductive Motor\\inductive_motor__40w_electric_fan__trial_4__start.csv",
+      "C:\\Disk\\Ancy\\Platform IO\\TinyML_Smart-Plug\\tinyml\\data\\gen0\\raw\\Inductive Motor\\inductive_motor__40w_electric_fan__trial_4__steady.csv",
+      "C:\\Disk\\Ancy\\Platform IO\\TinyML_Smart-Plug\\tinyml\\data\\gen0\\raw\\Inductive Motor\\inductive_motor__40w_electric_fan__trial_5__arc.csv",
+      "C:\\Disk\\Ancy\\Platform IO\\TinyML_Smart-Plug\\tinyml\\data\\gen0\\raw\\Inductive Motor\\inductive_motor__40w_electric_fan__trial_5__start.csv",
+      "C:\\Disk\\Ancy\\Platform IO\\TinyML_Smart-Plug\\tinyml\\data\\gen0\\raw\\Inductive Motor\\inductive_motor__40w_electric_fan__trial_5__steady.csv",
+      "C:\\Disk\\Ancy\\Platform IO\\TinyML_Smart-Plug\\tinyml\\data\\gen0\\raw\\Inductive Motor\\inductive_motor__55w_stand_fan__trial_1__start.csv",
+      "C:\\Disk\\Ancy\\Platform IO\\TinyML_Smart-Plug\\tinyml\\data\\gen0\\raw\\Inductive Motor\\inductive_motor__55w_stand_fan__trial_2__start.csv",
+      "C:\\Disk\\Ancy\\Platform IO\\TinyML_Smart-Plug\\tinyml\\data\\gen0\\raw\\Inductive Motor\\inductive_motor__55w_stand_fan__trial_3__start.csv",
+      "C:\\Disk\\Ancy\\Platform IO\\TinyML_Smart-Plug\\tinyml\\data\\gen0\\raw\\Inductive Motor\\inductive_motor__55w_stand_fan__trial_4__start.csv",
+      "C:\\Disk\\Ancy\\Platform IO\\TinyML_Smart-Plug\\tinyml\\data\\gen0\\raw\\Inductive Motor\\inductive_motor__55w_stand_fan__trial_5__start.csv",
+      "C:\\Disk\\Ancy\\Platform IO\\TinyML_Smart-Plug\\tinyml\\data\\gen0\\raw\\Other\\other_mixed__household_refrigerator__trial_1__start.csv",
+      "C:\\Disk\\Ancy\\Platform IO\\TinyML_Smart-Plug\\tinyml\\data\\gen0\\raw\\Other\\other_mixed__household_refrigerator__trial_2__start.csv",
+      "C:\\Disk\\Ancy\\Platform IO\\TinyML_Smart-Plug\\tinyml\\data\\gen0\\raw\\Other\\other_mixed__household_refrigerator__trial_3__start.csv",
+      "C:\\Disk\\Ancy\\Platform IO\\TinyML_Smart-Plug\\tinyml\\data\\gen0\\raw\\Other\\other_mixed__household_refrigerator__trial_4__start.csv",
+      "C:\\Disk\\Ancy\\Platform IO\\TinyML_Smart-Plug\\tinyml\\data\\gen0\\raw\\Other\\other_mixed__household_refrigerator__trial_5__start.csv",
+      "C:\\Disk\\Ancy\\Platform IO\\TinyML_Smart-Plug\\tinyml\\data\\gen0\\raw\\Phase Control\\phase_angle_controlled__100w_incandescent_dimmer__trial_1__start.csv",
+      "C:\\Disk\\Ancy\\Platform IO\\TinyML_Smart-Plug\\tinyml\\data\\gen0\\raw\\Phase Control\\phase_angle_controlled__100w_incandescent_dimmer__trial_2__start.csv",
+      "C:\\Disk\\Ancy\\Platform IO\\TinyML_Smart-Plug\\tinyml\\data\\gen0\\raw\\Phase Control\\phase_angle_controlled__100w_incandescent_dimmer__trial_3__start.csv",
+      "C:\\Disk\\Ancy\\Platform IO\\TinyML_Smart-Plug\\tinyml\\data\\gen0\\raw\\Phase Control\\phase_angle_controlled__100w_incandescent_dimmer__trial_4__start.csv",
+      "C:\\Disk\\Ancy\\Platform IO\\TinyML_Smart-Plug\\tinyml\\data\\gen0\\raw\\Phase Control\\phase_angle_controlled__100w_incandescent_dimmer__trial_5__start.csv",
+      "C:\\Disk\\Ancy\\Platform IO\\TinyML_Smart-Plug\\tinyml\\data\\gen0\\raw\\Resistive\\resistive_linear__electric_kettle__trial_1__arc.csv",
+      "C:\\Disk\\Ancy\\Platform IO\\TinyML_Smart-Plug\\tinyml\\data\\gen0\\raw\\Resistive\\resistive_linear__electric_kettle__trial_1__start.csv",
+      "C:\\Disk\\Ancy\\Platform IO\\TinyML_Smart-Plug\\tinyml\\data\\gen0\\raw\\Resistive\\resistive_linear__electric_kettle__trial_1__steady.csv",
+      "C:\\Disk\\Ancy\\Platform IO\\TinyML_Smart-Plug\\tinyml\\data\\gen0\\raw\\Resistive\\resistive_linear__electric_kettle__trial_2__arc (1).csv",
+      "C:\\Disk\\Ancy\\Platform IO\\TinyML_Smart-Plug\\tinyml\\data\\gen0\\raw\\Resistive\\resistive_linear__electric_kettle__trial_2__arc.csv",
+      "C:\\Disk\\Ancy\\Platform IO\\TinyML_Smart-Plug\\tinyml\\data\\gen0\\raw\\Resistive\\resistive_linear__electric_kettle__trial_2__start.csv",
+      "C:\\Disk\\Ancy\\Platform IO\\TinyML_Smart-Plug\\tinyml\\data\\gen0\\raw\\Resistive\\resistive_linear__electric_kettle__trial_2__steady.csv",
+      "C:\\Disk\\Ancy\\Platform IO\\TinyML_Smart-Plug\\tinyml\\data\\gen0\\raw\\Resistive\\resistive_linear__electric_kettle__trial_3__arc.csv",
+      "C:\\Disk\\Ancy\\Platform IO\\TinyML_Smart-Plug\\tinyml\\data\\gen0\\raw\\Resistive\\resistive_linear__electric_kettle__trial_3__start.csv",
+      "C:\\Disk\\Ancy\\Platform IO\\TinyML_Smart-Plug\\tinyml\\data\\gen0\\raw\\Resistive\\resistive_linear__electric_kettle__trial_3__steady.csv",
+      "C:\\Disk\\Ancy\\Platform IO\\TinyML_Smart-Plug\\tinyml\\data\\gen0\\raw\\Resistive\\resistive_linear__electric_kettle__trial_4__arc.csv",
+      "C:\\Disk\\Ancy\\Platform IO\\TinyML_Smart-Plug\\tinyml\\data\\gen0\\raw\\Resistive\\resistive_linear__electric_kettle__trial_4__start.csv",
+      "C:\\Disk\\Ancy\\Platform IO\\TinyML_Smart-Plug\\tinyml\\data\\gen0\\raw\\Resistive\\resistive_linear__electric_kettle__trial_4__steady.csv",
+      "C:\\Disk\\Ancy\\Platform IO\\TinyML_Smart-Plug\\tinyml\\data\\gen0\\raw\\Resistive\\resistive_linear__electric_kettle__trial_5__arc.csv",
+      "C:\\Disk\\Ancy\\Platform IO\\TinyML_Smart-Plug\\tinyml\\data\\gen0\\raw\\Resistive\\resistive_linear__electric_kettle__trial_5__start.csv",
+      "C:\\Disk\\Ancy\\Platform IO\\TinyML_Smart-Plug\\tinyml\\data\\gen0\\raw\\Resistive\\resistive_linear__electric_kettle__trial_5__steady.csv",
+      "C:\\Disk\\Ancy\\Platform IO\\TinyML_Smart-Plug\\tinyml\\data\\gen0\\raw\\Resistive\\resistive_linear__halogen_lamp__trial_1__arc.csv",
+      "C:\\Disk\\Ancy\\Platform IO\\TinyML_Smart-Plug\\tinyml\\data\\gen0\\raw\\Resistive\\resistive_linear__halogen_lamp__trial_1__start.csv",
+      "C:\\Disk\\Ancy\\Platform IO\\TinyML_Smart-Plug\\tinyml\\data\\gen0\\raw\\Resistive\\resistive_linear__halogen_lamp__trial_1__steady.csv",
+      "C:\\Disk\\Ancy\\Platform IO\\TinyML_Smart-Plug\\tinyml\\data\\gen0\\raw\\Resistive\\resistive_linear__halogen_lamp__trial_2__arc.csv",
+      "C:\\Disk\\Ancy\\Platform IO\\TinyML_Smart-Plug\\tinyml\\data\\gen0\\raw\\Resistive\\resistive_linear__halogen_lamp__trial_2__start.csv",
+      "C:\\Disk\\Ancy\\Platform IO\\TinyML_Smart-Plug\\tinyml\\data\\gen0\\raw\\Resistive\\resistive_linear__halogen_lamp__trial_2__steady.csv",
+      "C:\\Disk\\Ancy\\Platform IO\\TinyML_Smart-Plug\\tinyml\\data\\gen0\\raw\\Resistive\\resistive_linear__halogen_lamp__trial_3__arc.csv",
+      "C:\\Disk\\Ancy\\Platform IO\\TinyML_Smart-Plug\\tinyml\\data\\gen0\\raw\\Resistive\\resistive_linear__halogen_lamp__trial_3__start.csv",
+      "C:\\Disk\\Ancy\\Platform IO\\TinyML_Smart-Plug\\tinyml\\data\\gen0\\raw\\Resistive\\resistive_linear__halogen_lamp__trial_3__steady.csv",
+      "C:\\Disk\\Ancy\\Platform IO\\TinyML_Smart-Plug\\tinyml\\data\\gen0\\raw\\Resistive\\resistive_linear__halogen_lamp__trial_4__arc.csv",
+      "C:\\Disk\\Ancy\\Platform IO\\TinyML_Smart-Plug\\tinyml\\data\\gen0\\raw\\Resistive\\resistive_linear__halogen_lamp__trial_4__start.csv",
+      "C:\\Disk\\Ancy\\Platform IO\\TinyML_Smart-Plug\\tinyml\\data\\gen0\\raw\\Resistive\\resistive_linear__halogen_lamp__trial_4__steady.csv",
+      "C:\\Disk\\Ancy\\Platform IO\\TinyML_Smart-Plug\\tinyml\\data\\gen0\\raw\\Resistive\\resistive_linear__halogen_lamp__trial_5__arc.csv",
+      "C:\\Disk\\Ancy\\Platform IO\\TinyML_Smart-Plug\\tinyml\\data\\gen0\\raw\\Resistive\\resistive_linear__halogen_lamp__trial_5__start.csv",
+      "C:\\Disk\\Ancy\\Platform IO\\TinyML_Smart-Plug\\tinyml\\data\\gen0\\raw\\Resistive\\resistive_linear__halogen_lamp__trial_5__steady.csv",
+      "C:\\Disk\\Ancy\\Platform IO\\TinyML_Smart-Plug\\tinyml\\data\\gen0\\raw\\Resistive\\resistive_linear__manual_air_fryer__trial_1__start.csv",
+      "C:\\Disk\\Ancy\\Platform IO\\TinyML_Smart-Plug\\tinyml\\data\\gen0\\raw\\Resistive\\resistive_linear__manual_air_fryer__trial_2__start.csv",
+      "C:\\Disk\\Ancy\\Platform IO\\TinyML_Smart-Plug\\tinyml\\data\\gen0\\raw\\Resistive\\resistive_linear__manual_air_fryer__trial_3__start.csv",
+      "C:\\Disk\\Ancy\\Platform IO\\TinyML_Smart-Plug\\tinyml\\data\\gen0\\raw\\Resistive\\resistive_linear__manual_air_fryer__trial_4__start.csv",
+      "C:\\Disk\\Ancy\\Platform IO\\TinyML_Smart-Plug\\tinyml\\data\\gen0\\raw\\Resistive\\resistive_linear__manual_air_fryer__trial_5__start.csv",
+      "C:\\Disk\\Ancy\\Platform IO\\TinyML_Smart-Plug\\tinyml\\data\\gen0\\raw\\Resistive\\resistive_linear__water_heater__trial_1__arc.csv",
+      "C:\\Disk\\Ancy\\Platform IO\\TinyML_Smart-Plug\\tinyml\\data\\gen0\\raw\\Resistive\\resistive_linear__water_heater__trial_1__start.csv",
+      "C:\\Disk\\Ancy\\Platform IO\\TinyML_Smart-Plug\\tinyml\\data\\gen0\\raw\\Resistive\\resistive_linear__water_heater__trial_1__steady.csv",
+      "C:\\Disk\\Ancy\\Platform IO\\TinyML_Smart-Plug\\tinyml\\data\\gen0\\raw\\Resistive\\resistive_linear__water_heater__trial_2__arc.csv",
+      "C:\\Disk\\Ancy\\Platform IO\\TinyML_Smart-Plug\\tinyml\\data\\gen0\\raw\\Resistive\\resistive_linear__water_heater__trial_2__start.csv",
+      "C:\\Disk\\Ancy\\Platform IO\\TinyML_Smart-Plug\\tinyml\\data\\gen0\\raw\\Resistive\\resistive_linear__water_heater__trial_2__steady.csv",
+      "C:\\Disk\\Ancy\\Platform IO\\TinyML_Smart-Plug\\tinyml\\data\\gen0\\raw\\Resistive\\resistive_linear__water_heater__trial_3__arc.csv",
+      "C:\\Disk\\Ancy\\Platform IO\\TinyML_Smart-Plug\\tinyml\\data\\gen0\\raw\\Resistive\\resistive_linear__water_heater__trial_3__start.csv",
+      "C:\\Disk\\Ancy\\Platform IO\\TinyML_Smart-Plug\\tinyml\\data\\gen0\\raw\\Resistive\\resistive_linear__water_heater__trial_3__steady.csv",
+      "C:\\Disk\\Ancy\\Platform IO\\TinyML_Smart-Plug\\tinyml\\data\\gen0\\raw\\Resistive\\resistive_linear__water_heater__trial_4__arc.csv",
+      "C:\\Disk\\Ancy\\Platform IO\\TinyML_Smart-Plug\\tinyml\\data\\gen0\\raw\\Resistive\\resistive_linear__water_heater__trial_4__start.csv",
+      "C:\\Disk\\Ancy\\Platform IO\\TinyML_Smart-Plug\\tinyml\\data\\gen0\\raw\\Resistive\\resistive_linear__water_heater__trial_4__steady.csv",
+      "C:\\Disk\\Ancy\\Platform IO\\TinyML_Smart-Plug\\tinyml\\data\\gen0\\raw\\Resistive\\resistive_linear__water_heater__trial_5__arc.csv",
+      "C:\\Disk\\Ancy\\Platform IO\\TinyML_Smart-Plug\\tinyml\\data\\gen0\\raw\\Resistive\\resistive_linear__water_heater__trial_5__start.csv",
+      "C:\\Disk\\Ancy\\Platform IO\\TinyML_Smart-Plug\\tinyml\\data\\gen0\\raw\\Resistive\\resistive_linear__water_heater__trial_5__steady.csv",
+      "C:\\Disk\\Ancy\\Platform IO\\TinyML_Smart-Plug\\tinyml\\data\\gen0\\raw\\SMPS\\smps__65w_usb_c_laptop_charger__trial_1__start.csv",
+      "C:\\Disk\\Ancy\\Platform IO\\TinyML_Smart-Plug\\tinyml\\data\\gen0\\raw\\SMPS\\smps__65w_usb_c_laptop_charger__trial_2__start.csv",
+      "C:\\Disk\\Ancy\\Platform IO\\TinyML_Smart-Plug\\tinyml\\data\\gen0\\raw\\SMPS\\smps__65w_usb_c_laptop_charger__trial_3__start.csv",
+      "C:\\Disk\\Ancy\\Platform IO\\TinyML_Smart-Plug\\tinyml\\data\\gen0\\raw\\SMPS\\smps__65w_usb_c_laptop_charger__trial_4__start.csv",
+      "C:\\Disk\\Ancy\\Platform IO\\TinyML_Smart-Plug\\tinyml\\data\\gen0\\raw\\SMPS\\smps__65w_usb_c_laptop_charger__trial_5__start.csv"
+    ]
+  },
+  "elapsed_seconds": 184.09608793258667,
+  "elapsed_hms": "00:03:04",
+  "timing": {
+    "duration_seconds": 184.09608793258667,
+    "duration_hms": "00:03:04"
+  },
+  "summary": {
+    "rows_before_cleaning": 57028,
+    "rows_after_cleaning": 51255,
+    "rows_removed": 5773,
+    "context_only_placeholder_rows_preserved": 16353,
+    "arc_training_placeholder_rows_preserved": 0,
+    "arc_truth_available_rows": 34902,
+    "augmentation_rows_added": 0,
+    "rows_after_cleaning_with_augmentation": 51255,
+    "trainable_rows": 45785,
+    "trusted_normal_rows": 18996,
+    "conflict_marked_rows": 0,
+    "label_counts": {
+      "0": 50538,
+      "1": 717
+    },
+    "source_counts": {
+      "real": 51255
+    },
+    "conflict_policy_counts": {
+      "none": 51255
+    },
+    "quality_summary": {
+      "invalid_off_rows": 383,
+      "invalid_loaded_rows": 474,
+      "very_weak_positive_rows": 0,
+      "soft_positive_rows": 0,
+      "flat_extinguish_positive_rows": 0,
+      "strong_arc_like_negative_rows": 13661,
+      "soft_arc_like_negative_rows": 12905,
+      "scaffold_rows": 0,
+      "scaffold_trainable_rows": 0,
+      "scaffold_scaled_rows": 0,
+      "scaffold_effective_weight": 0,
+      "real_effective_weight": 211003.41499999998
+    },
+    "division_counts": {
+      "steady": 18996,
+      "start": 18475,
+      "arc": 13784
+    },
+    "trial_counts": {
+      "Inductive Motor__inductive_motor__40w_electric_fan__trial004__steady_ref": 780,
+      "Resistive__resistive_linear__water_heater__trial004__steady_ref": 777,
+      "Resistive__resistive_linear__halogen_lamp__trial001__steady_ref": 776,
+      "Inductive Motor__inductive_motor__40w_electric_fan__trial003__steady_ref": 773,
+      "Resistive__resistive_linear__halogen_lamp__trial005__steady_ref": 773,
+      "Brush Universal Motor__brush_universal_motor__handheld_vacuum__trial002__steady_ref": 770,
+      "Resistive__resistive_linear__electric_kettle__trial003__steady_ref": 770,
+      "Brush Universal Motor__brush_universal_motor__handheld_vacuum__trial003__steady_ref": 769,
+      "Resistive__resistive_linear__water_heater__trial005__steady_ref": 769,
+      "Inductive Motor__inductive_motor__40w_electric_fan__trial002__steady_ref": 756,
+      "Inductive Motor__inductive_motor__40w_electric_fan__trial001__steady_ref": 755,
+      "Resistive__resistive_linear__electric_kettle__trial002__steady_ref": 755,
+      "Resistive__resistive_linear__halogen_lamp__trial002__steady_ref": 755,
+      "Resistive__resistive_linear__halogen_lamp__trial003__steady_ref": 755,
+      "Resistive__resistive_linear__halogen_lamp__trial004__steady_ref": 755,
+      "Brush Universal Motor__brush_universal_motor__handheld_vacuum__trial001__steady_ref": 754,
+      "Resistive__resistive_linear__electric_kettle__trial001__steady_ref": 754,
+      "Resistive__resistive_linear__water_heater__trial002__steady_ref": 754,
+      "Brush Universal Motor__brush_universal_motor__handheld_vacuum__trial004__steady_ref": 751,
+      "Resistive__resistive_linear__water_heater__trial001__steady_ref": 751,
+      "Inductive Motor__inductive_motor__40w_electric_fan__trial005__steady_ref": 750,
+      "Resistive__resistive_linear__electric_kettle__trial005__steady_ref": 750,
+      "Resistive__resistive_linear__water_heater__trial003__steady_ref": 750,
+      "Brush Universal Motor__brush_universal_motor__handheld_vacuum__trial005__steady_ref": 748,
+      "Resistive__resistive_linear__electric_kettle__trial004__steady_ref": 746,
+      "Resistive__resistive_linear__electric_kettle__trial001__arc_capture": 671,
+      "Resistive__resistive_linear__water_heater__trial004__arc_capture": 666,
+      "Inductive Motor__inductive_motor__40w_electric_fan__trial001__arc_capture": 662,
+      "Resistive__resistive_linear__water_heater__trial002__arc_capture": 639,
+      "Brush Universal Motor__brush_universal_motor__handheld_vacuum__trial003__arc_capture": 627,
+      "Inductive Motor__inductive_motor__40w_electric_fan__trial002__arc_capture": 618,
+      "Brush Universal Motor__brush_universal_motor__handheld_vacuum__trial004__arc_capture": 613,
+      "Inductive Motor__inductive_motor__40w_electric_fan__trial004__arc_capture": 611,
+      "Brush Universal Motor__brush_universal_motor__handheld_vacuum__trial001__arc_capture": 607,
+      "Resistive__resistive_linear__water_heater__trial001__arc_capture": 596,
+      "Brush Universal Motor__brush_universal_motor__handheld_vacuum__trial005__arc_capture": 594,
+      "Resistive__resistive_linear__electric_kettle__trial003__arc_capture": 594,
+      "Resistive__resistive_linear__halogen_lamp__trial005__arc_capture": 573,
+      "Resistive__resistive_linear__halogen_lamp__trial004__arc_capture": 570,
+      "Inductive Motor__inductive_motor__40w_electric_fan__trial003__arc_capture": 569,
+      "Resistive__resistive_linear__halogen_lamp__trial003__arc_capture": 562,
+      "Resistive__resistive_linear__water_heater__trial005__arc_capture": 556,
+      "Brush Universal Motor__brush_universal_motor__handheld_vacuum__trial002__arc_capture": 538,
+      "Inductive Motor__inductive_motor__40w_electric_fan__trial005__arc_capture": 532,
+      "Resistive__resistive_linear__manual_air_fryer__trial001__start_ctx": 451,
+      "Resistive__resistive_linear__electric_kettle__trial002__arc_capture": 445,
+      "Resistive__resistive_linear__electric_kettle__trial005__arc_capture": 441,
+      "Phase Control__phase_angle_controlled__100w_incandescent_dimmer__trial003__start_ctx": 441,
+      "Resistive__resistive_linear__electric_kettle__trial004__arc_capture": 438,
+      "Phase Control__phase_angle_controlled__100w_incandescent_dimmer__trial002__start_ctx": 426,
+      "Brush Universal Motor__brush_universal_motor__handheld_vacuum__trial004__start_ctx": 423,
+      "Phase Control__phase_angle_controlled__100w_incandescent_dimmer__trial005__start_ctx": 422,
+      "Resistive__resistive_linear__halogen_lamp__trial002__start_ctx": 420,
+      "Phase Control__phase_angle_controlled__100w_incandescent_dimmer__trial004__start_ctx": 418,
+      "Brush Universal Motor__brush_universal_motor__handheld_vacuum__trial002__start_ctx": 416,
+      "Brush Universal Motor__brush_universal_motor__handheld_vacuum__trial005__start_ctx": 415,
+      "Phase Control__phase_angle_controlled__100w_incandescent_dimmer__trial001__start_ctx": 415,
+      "Resistive__resistive_linear__water_heater__trial004__start_ctx": 414,
+      "Inductive Motor__inductive_motor__40w_electric_fan__trial001__start_ctx": 404,
+      "Inductive Motor__inductive_motor__40w_electric_fan__trial003__start_ctx": 400,
+      "Resistive__resistive_linear__halogen_lamp__trial001__arc_capture": 396,
+      "Other__other_mixed__household_refrigerator__trial001__start_ctx": 395,
+      "Brush Universal Motor__brush_universal_motor__handheld_vacuum__trial003__start_ctx": 393,
+      "Resistive__resistive_linear__water_heater__trial002__start_ctx": 393,
+      "Inductive Motor__inductive_motor__40w_electric_fan__trial005__start_ctx": 391,
+      "SMPS__rectifier_smps__65w_usb_c_laptop_charger__trial001__start_ctx": 382,
+      "Other__other_mixed__household_refrigerator__trial005__start_ctx": 377,
+      "Resistive__resistive_linear__halogen_lamp__trial003__start_ctx": 368,
+      "Resistive__resistive_linear__water_heater__trial005__start_ctx": 367,
+      "SMPS__rectifier_smps__65w_usb_c_laptop_charger__trial002__start_ctx": 366,
+      "Other__other_mixed__household_refrigerator__trial004__start_ctx": 364,
+      "Inductive Motor__inductive_motor__55w_stand_fan__trial001__start_ctx": 363,
+      "SMPS__rectifier_smps__65w_usb_c_laptop_charger__trial003__start_ctx": 363,
+      "SMPS__rectifier_smps__65w_usb_c_laptop_charger__trial004__start_ctx": 363,
+      "Resistive__resistive_linear__halogen_lamp__trial001__start_ctx": 362,
+      "Inductive Motor__inductive_motor__40w_electric_fan__trial002__start_ctx": 361,
+      "Resistive__resistive_linear__halogen_lamp__trial004__start_ctx": 359,
+      "Other__other_mixed__household_refrigerator__trial002__start_ctx": 351,
+      "Other__other_mixed__household_refrigerator__trial003__start_ctx": 351,
+      "Resistive__resistive_linear__halogen_lamp__trial005__start_ctx": 350,
+      "Resistive__resistive_linear__water_heater__trial001__start_ctx": 350,
+      "Resistive__resistive_linear__electric_kettle__trial003__start_ctx": 346,
+      "Inductive Motor__inductive_motor__55w_stand_fan__trial002__start_ctx": 344,
+      "Inductive Motor__inductive_motor__55w_stand_fan__trial004__start_ctx": 343,
+      "Resistive__resistive_linear__electric_kettle__trial004__start_ctx": 341,
+      "SMPS__rectifier_smps__65w_usb_c_laptop_charger__trial005__start_ctx": 341,
+      "Resistive__resistive_linear__halogen_lamp__trial002__arc_capture": 340,
+      "Resistive__resistive_linear__manual_air_fryer__trial005__start_ctx": 339,
+      "Inductive Motor__inductive_motor__55w_stand_fan__trial005__start_ctx": 338,
+      "Inductive Motor__inductive_motor__55w_stand_fan__trial003__start_ctx": 337,
+      "Resistive__resistive_linear__manual_air_fryer__trial003__start_ctx": 336,
+      "Resistive__resistive_linear__water_heater__trial003__start_ctx": 336,
+      "Resistive__resistive_linear__manual_air_fryer__trial004__start_ctx": 334,
+      "Inductive Motor__inductive_motor__40w_electric_fan__trial004__start_ctx": 333,
+      "Resistive__resistive_linear__electric_kettle__trial002__start_ctx": 329,
+      "Resistive__resistive_linear__water_heater__trial003__arc_capture": 326,
+      "Brush Universal Motor__brush_universal_motor__handheld_vacuum__trial001__start_ctx": 325,
+      "Resistive__resistive_linear__manual_air_fryer__trial002__start_ctx": 318,
+      "Resistive__resistive_linear__electric_kettle__trial005__start_ctx": 316,
+      "Resistive__resistive_linear__electric_kettle__trial001__start_ctx": 285
+    },
+    "device_family_counts": {
+      "resistive_linear": 26317,
+      "inductive_motor": 10420,
+      "brush_universal_motor": 8743,
+      "phase_angle_controlled": 2122,
+      "other_mixed": 1838,
+      "rectifier_smps": 1815
+    },
+    "device_family_code_counts": {
+      "0": 26317,
+      "1": 10420,
+      "4": 8743,
+      "3": 2122,
+      "5": 1838,
+      "2": 1815
+    },
+    "context_runtime_code_counts": {
+      "0": 35823,
+      "1": 5671,
+      "-1": 5645,
+      "3": 2136,
+      "5": 1003,
+      "2": 977
+    },
+    "unknown_division_rows": 0,
+    "section_prior_counts": {
+      "steady_hint": 18996,
+      "transient_hint": 18475,
+      "arc_eligible": 13784
+    },
+    "conflict_resolution": {
+      "groups_seen": 51255,
+      "mixed_groups": 0,
+      "prefer_trusted_normal": 0,
+      "prefer_more_trusted_normal": 0,
+      "keep_more_trusted_arc": 0,
+      "drop_ambiguous": 0
+    },
+    "arc_training_rows": 32780,
+    "load_context_rows": 18475,
+    "arc_feature_count_available": 15,
+    "context_feature_count_available": 10,
+    "arc_training_path": "C:\\Disk\\Ancy\\Platform IO\\TinyML_Smart-Plug\\tinyml\\data\\gen0\\arc_training.csv",
+    "load_context_path": "C:\\Disk\\Ancy\\Platform IO\\TinyML_Smart-Plug\\tinyml\\data\\gen0\\load_context.csv",
+    "selected_generation": "gen0",
+    "resolved_raw_input_glob": "C:\\Disk\\Ancy\\Platform IO\\TinyML_Smart-Plug\\tinyml\\data\\gen0\\raw\\**\\*.csv",
+    "elapsed_seconds": 184.09608793258667,
+    "elapsed_hms": "00:03:04",
+    "mismatch_rows": 14087,
+    "fp_override_rows": 13591,
+    "fn_override_rows": 496
+  },
+  "resolved_paths": {
+    "selected_generation": "gen0",
+    "resolved_raw_input_glob": "C:\\Disk\\Ancy\\Platform IO\\TinyML_Smart-Plug\\tinyml\\data\\gen0\\raw\\**\\*.csv",
+    "resolved_arc_dataset_path": "C:\\Disk\\Ancy\\Platform IO\\TinyML_Smart-Plug\\tinyml\\data\\gen0\\arc_training.csv",
+    "resolved_context_dataset_path": "C:\\Disk\\Ancy\\Platform IO\\TinyML_Smart-Plug\\tinyml\\data\\gen0\\load_context.csv",
+    "benchmark_folder": "C:\\Disk\\Ancy\\Platform IO\\TinyML_Smart-Plug\\tinyml\\benchmark\\gen0",
+    "manifest_path": "C:\\Disk\\Ancy\\Platform IO\\TinyML_Smart-Plug\\tinyml\\benchmark\\gen0\\generation_manifest.json",
+    "archive_output_paths": {
+      "headers": {
+        "rf": "C:\\Disk\\Ancy\\Platform IO\\TinyML_Smart-Plug\\tinyml\\model\\archive\\gen0\\TinyMLTreeEnsemble_RF.h",
+        "et": "C:\\Disk\\Ancy\\Platform IO\\TinyML_Smart-Plug\\tinyml\\model\\archive\\gen0\\TinyMLTreeEnsemble_ET.h",
+        "duel": "C:\\Disk\\Ancy\\Platform IO\\TinyML_Smart-Plug\\tinyml\\model\\archive\\gen0\\TinyMLTreeEnsemble.h",
+        "context": "C:\\Disk\\Ancy\\Platform IO\\TinyML_Smart-Plug\\tinyml\\model\\archive\\gen0\\TinyMLContextModel.h"
+      },
+      "joblibs": {
+        "rf": "C:\\Disk\\Ancy\\Platform IO\\TinyML_Smart-Plug\\tinyml\\trainer\\lib\\archive\\gen0\\TinyMLTreeEnsemble_RF.joblib",
+        "et": "C:\\Disk\\Ancy\\Platform IO\\TinyML_Smart-Plug\\tinyml\\trainer\\lib\\archive\\gen0\\TinyMLTreeEnsemble_ET.joblib",
+        "duel": "C:\\Disk\\Ancy\\Platform IO\\TinyML_Smart-Plug\\tinyml\\trainer\\lib\\archive\\gen0\\TinyMLTreeEnsemble.joblib",
+        "context": "C:\\Disk\\Ancy\\Platform IO\\TinyML_Smart-Plug\\tinyml\\trainer\\lib\\archive\\gen0\\TinyMLContextModel.joblib"
+      }
+    },
+    "canonical_export_paths": {
+      "headers": {
+        "rf": "C:\\Disk\\Ancy\\Platform IO\\TinyML_Smart-Plug\\tinyml\\model\\TinyMLTreeEnsemble_RF.h",
+        "et": "C:\\Disk\\Ancy\\Platform IO\\TinyML_Smart-Plug\\tinyml\\model\\TinyMLTreeEnsemble_ET.h",
+        "duel": "C:\\Disk\\Ancy\\Platform IO\\TinyML_Smart-Plug\\tinyml\\model\\TinyMLTreeEnsemble.h",
+        "context": "C:\\Disk\\Ancy\\Platform IO\\TinyML_Smart-Plug\\tinyml\\model\\TinyMLContextModel.h"
+      },
+      "joblibs": {
+        "rf": "C:\\Disk\\Ancy\\Platform IO\\TinyML_Smart-Plug\\tinyml\\trainer\\lib\\TinyMLTreeEnsemble_RF.joblib",
+        "et": "C:\\Disk\\Ancy\\Platform IO\\TinyML_Smart-Plug\\tinyml\\trainer\\lib\\TinyMLTreeEnsemble_ET.joblib",
+        "duel": "C:\\Disk\\Ancy\\Platform IO\\TinyML_Smart-Plug\\tinyml\\trainer\\lib\\TinyMLTreeEnsemble.joblib",
+        "context": "C:\\Disk\\Ancy\\Platform IO\\TinyML_Smart-Plug\\tinyml\\trainer\\lib\\TinyMLContextModel.joblib"
+      }
+    }
+  },
+  "outputs": {
+    "arc_training_path": "C:\\Disk\\Ancy\\Platform IO\\TinyML_Smart-Plug\\tinyml\\data\\gen0\\arc_training.csv",
+    "load_context_path": "C:\\Disk\\Ancy\\Platform IO\\TinyML_Smart-Plug\\tinyml\\data\\gen0\\load_context.csv",
+    "arc_training_rows": 32780,
+    "load_context_rows": 18475
+  },
+  "warnings": [
+    "context_only_rows_used_placeholder_arc_target"
+  ],
+  "division_counts": {
+    "cleaned_all": {
+      "steady": 18996,
+      "start": 18475,
+      "arc": 13784
+    },
+    "arc_training": {
+      "steady": 18996,
+      "arc": 13784
+    },
+    "load_context": {
+      "start": 18475
+    }
+  },
+  "split_checks": {
+    "arc_training_division_counts": {
+      "steady": 18996,
+      "arc": 13784
+    },
+    "load_context_division_counts": {
+      "start": 18475
+    },
+    "arc_training_label_counts": {
+      "0": 32063,
+      "1": 717
+    },
+    "load_context_family_counts": {
+      "resistive_linear": 7114,
+      "inductive_motor": 3614,
+      "phase_angle_controlled": 2122,
+      "brush_universal_motor": 1972,
+      "other_mixed": 1838,
+      "rectifier_smps": 1815
+    },
+    "warnings": [
+      "context_only_rows_used_placeholder_arc_target"
+    ]
+  },
+  "full_dataset": {
+    "rows": 51255,
+    "division_counts": {
+      "steady": 18996,
+      "start": 18475,
+      "arc": 13784
+    },
+    "label_counts": {
+      "0": 50538,
+      "1": 717
+    },
+    "device_family_counts": {
+      "resistive_linear": 26317,
+      "inductive_motor": 10420,
+      "brush_universal_motor": 8743,
+      "phase_angle_controlled": 2122,
+      "other_mixed": 1838,
+      "rectifier_smps": 1815
+    }
+  },
+  "mismatch_summary": {
+    "rows": 51255,
+    "rows_with_model_output": 51255,
+    "mismatch_rows": 14087,
+    "mismatch_rate": 0.27484147888010924,
+    "fp_override_rows": 13591,
+    "fn_override_rows": 496,
+    "verified_rows": 0,
+    "verified_mismatch_rows": 0,
+    "source_model_generation_counts": {
+      "unknown": 51255
+    },
+    "per_generation_mismatch_counts": {
+      "unknown": 14087
+    },
+    "per_family_mismatch_counts": {
+      "resistive_linear": 8787,
+      "brush_universal_motor": 3729,
+      "inductive_motor": 1571
+    },
+    "per_device_mismatch_counts": {
+      "handheld_vacuum": 3729,
+      "water_heater": 2794,
+      "halogen_lamp": 2759,
+      "electric_kettle": 2692,
+      "40w_electric_fan": 1571,
+      "manual_air_fryer": 542
+    },
+    "current_training_generation_counts": {
+      "gen0": 51255
+    }
+  },
+  "arc_training_mismatch_summary": {
+    "rows": 32780,
+    "rows_with_model_output": 32780,
+    "mismatch_rows": 10999,
+    "mismatch_rate": 0.3355399633923124,
+    "fp_override_rows": 10503,
+    "fn_override_rows": 496,
+    "verified_rows": 0,
+    "verified_mismatch_rows": 0,
+    "source_model_generation_counts": {
+      "unknown": 32780
+    },
+    "per_generation_mismatch_counts": {
+      "unknown": 10999
+    },
+    "per_family_mismatch_counts": {
+      "resistive_linear": 6792,
+      "brush_universal_motor": 3025,
+      "inductive_motor": 1182
+    },
+    "per_device_mismatch_counts": {
+      "handheld_vacuum": 3025,
+      "water_heater": 2300,
+      "electric_kettle": 2254,
+      "halogen_lamp": 2238,
+      "40w_electric_fan": 1182
+    },
+    "current_training_generation_counts": {
+      "gen0": 32780
+    }
+  },
+  "load_context_mismatch_summary": {
+    "rows": 18475,
+    "rows_with_model_output": 18475,
+    "mismatch_rows": 3088,
+    "mismatch_rate": 0.1671447902571042,
+    "fp_override_rows": 3088,
+    "fn_override_rows": 0,
+    "verified_rows": 0,
+    "verified_mismatch_rows": 0,
+    "source_model_generation_counts": {
+      "unknown": 18475
+    },
+    "per_generation_mismatch_counts": {
+      "unknown": 3088
+    },
+    "per_family_mismatch_counts": {
+      "resistive_linear": 1995,
+      "brush_universal_motor": 704,
+      "inductive_motor": 389
+    },
+    "per_device_mismatch_counts": {
+      "handheld_vacuum": 704,
+      "manual_air_fryer": 542,
+      "halogen_lamp": 521,
+      "water_heater": 494,
+      "electric_kettle": 438,
+      "40w_electric_fan": 389
+    },
+    "current_training_generation_counts": {
+      "gen0": 18475
+    }
+  },
+  "source_model_generation_summary": {
+    "unknown": 51255
+  },
+  "feature_stats": {
+    "arc_training": [
+      {
+        "feature": "abs_irms_zscore_vs_baseline",
+        "rows": 32780,
+        "mean": 0.8590941474679683,
+        "std": 1.8160862298878793,
+        "min": 5.5e-05,
+        "max": 25.0
+      },
+      {
+        "feature": "delta_irms_abs",
+        "rows": 32780,
+        "mean": 0.19018927754728493,
+        "std": 0.3373523504710157,
+        "min": 0.0,
+        "max": 7.787863
+      },
+      {
+        "feature": "halfcycle_asymmetry",
+        "rows": 32780,
+        "mean": 15.533835672086639,
+        "std": 9.112340369990218,
+        "min": 0.000891,
+        "max": 188.507004
+      },
+      {
+        "feature": "suspicious_run_energy",
+        "rows": 32780,
+        "mean": 1.7508893425259304,
+        "std": 1.532675560369315,
+        "min": 0.0,
+        "max": 7.487679
+      },
+      {
+        "feature": "delta_hf_energy",
+        "rows": 32780,
+        "mean": 1.3557718454545455,
+        "std": 1.1905510896067761,
+        "min": 0.0,
+        "max": 12.385294
+      },
+      {
+        "feature": "delta_flux",
+        "rows": 32780,
+        "mean": 2.9863726742220864,
+        "std": 2.568099040198102,
+        "min": 0.0,
+        "max": 49.653496
+      },
+      {
+        "feature": "midband_residual_ratio",
+        "rows": 32780,
+        "mean": -49.458124289627825,
+        "std": 7.663987232227989,
+        "min": -80.0,
+        "max": 5.947815
+      },
+      {
+        "feature": "zcv",
+        "rows": 32780,
+        "mean": 0.059565864917632695,
+        "std": 0.3037582232833775,
+        "min": 0.0,
+        "max": 10.0
+      },
+      {
+        "feature": "spectral_flux_midhf",
+        "rows": 32780,
+        "mean": 25.68650433596705,
+        "std": 4.944601689363698,
+        "min": 4.208262,
+        "max": 64.335381
+      },
+      {
+        "feature": "peak_fluct_cv",
+        "rows": 32780,
+        "mean": 0.6106829336485662,
+        "std": 2.362264992682459,
+        "min": 0.0,
+        "max": 99.164841
+      },
+      {
+        "feature": "residual_crest_factor",
+        "rows": 32780,
+        "mean": 7.233831021262965,
+        "std": 2.533619348468529,
+        "min": 2.416159,
+        "max": 20.955751
+      },
+      {
+        "feature": "thd_i",
+        "rows": 32780,
+        "mean": 23.457649646125688,
+        "std": 23.269973292876344,
+        "min": 2.1713,
+        "max": 200.0
+      },
+      {
+        "feature": "hf_energy_delta",
+        "rows": 32780,
+        "mean": 11.274534080780965,
+        "std": 2.6412969193234015,
+        "min": -0.067197,
+        "max": 18.0
+      },
+      {
+        "feature": "edge_spike_ratio",
+        "rows": 32780,
+        "mean": -8.144938014368517,
+        "std": 6.273520725910082,
+        "min": -61.519772,
+        "max": 20.0
+      },
+      {
+        "feature": "v_sag_pct",
+        "rows": 32780,
+        "mean": 0.08956529014643075,
+        "std": 0.18900228631732283,
+        "min": 0.0,
+        "max": 3.165406
+      },
+      {
+        "feature": "cycle_nmse",
+        "rows": 32780,
+        "mean": 4.608599687797438,
+        "std": 19.07847179302379,
+        "min": 0.0,
+        "max": 100.0
+      },
+      {
+        "feature": "pulse_count_per_cycle",
+        "rows": 32780,
+        "mean": 0.3211201354789505,
+        "std": 0.4461071541728547,
+        "min": 0.0,
+        "max": 2.888194
+      },
+      {
+        "feature": "zero_dwell_ratio",
+        "rows": 32780,
+        "mean": 30.17076914932886,
+        "std": 11.742901879533829,
+        "min": 0.195312,
+        "max": 100.0
+      },
+      {
+        "feature": "low_current_ratio",
+        "rows": 32780,
+        "mean": 6.927623593258083,
+        "std": 11.96335043503803,
+        "min": 0.195312,
+        "max": 100.0
+      },
+      {
+        "feature": "max_low_current_run_ms",
+        "rows": 32780,
+        "mean": 0.7423949452410007,
+        "std": 2.287362789930701,
+        "min": 0.034859,
+        "max": 20.308844
+      }
+    ],
+    "load_context": [
+      {
+        "feature": "abs_irms_zscore_vs_baseline",
+        "rows": 18475,
+        "mean": 0.5637104019553086,
+        "std": 1.4354595682399478,
+        "min": 0.0,
+        "max": 25.0
+      },
+      {
+        "feature": "delta_irms_abs",
+        "rows": 18475,
+        "mean": 0.0981701256943561,
+        "std": 0.2504179921882571,
+        "min": 0.0,
+        "max": 8.342978
+      },
+      {
+        "feature": "halfcycle_asymmetry",
+        "rows": 18475,
+        "mean": 15.29441737693053,
+        "std": 8.320671202960703,
+        "min": 0.0,
+        "max": 170.143143
+      },
+      {
+        "feature": "suspicious_run_energy",
+        "rows": 18475,
+        "mean": 0.9096967532882272,
+        "std": 1.433724913269922,
+        "min": 0.0,
+        "max": 7.499999
+      },
+      {
+        "feature": "delta_hf_energy",
+        "rows": 18475,
+        "mean": 3.521835070996952,
+        "std": 6.971713648023551,
+        "min": 0.0,
+        "max": 24.0
+      },
+      {
+        "feature": "delta_flux",
+        "rows": 18475,
+        "mean": 2.313530456900203,
+        "std": 2.677396700510393,
+        "min": 0.0,
+        "max": 63.590683
+      },
+      {
+        "feature": "midband_residual_ratio",
+        "rows": 18475,
+        "mean": -35.920740710377984,
+        "std": 19.61045554901617,
+        "min": -67.382652,
+        "max": 0.775194
+      },
+      {
+        "feature": "zcv",
+        "rows": 18475,
+        "mean": 0.6575772674247674,
+        "std": 1.7816241360353928,
+        "min": 0.0,
+        "max": 8.866480795085277
+      },
+      {
+        "feature": "spectral_flux_midhf",
+        "rows": 18475,
+        "mean": 29.593612533486247,
+        "std": 17.454542639130157,
+        "min": 0.0,
+        "max": 87.08462320017259
+      },
+      {
+        "feature": "peak_fluct_cv",
+        "rows": 18475,
+        "mean": 1.1734855875672183,
+        "std": 2.741070630437566,
+        "min": 0.0,
+        "max": 33.743664
+      },
+      {
+        "feature": "residual_crest_factor",
+        "rows": 18475,
+        "mean": 6.901684241811428,
+        "std": 3.105896217187585,
+        "min": 0.0,
+        "max": 15.28289
+      },
+      {
+        "feature": "thd_i",
+        "rows": 18475,
+        "mean": 31.85056874213003,
+        "std": 28.974879285854485,
+        "min": 0.0,
+        "max": 200.0
+      },
+      {
+        "feature": "hf_energy_delta",
+        "rows": 18475,
+        "mean": 12.020104303599458,
+        "std": 5.112605689625017,
+        "min": 0.0,
+        "max": 18.0
+      },
+      {
+        "feature": "edge_spike_ratio",
+        "rows": 18475,
+        "mean": -3.2842340585931615,
+        "std": 6.80953679324177,
+        "min": -26.400036,
+        "max": 20.0
+      },
+      {
+        "feature": "v_sag_pct",
+        "rows": 18475,
+        "mean": 0.11787015810554803,
+        "std": 0.14910185215481706,
+        "min": 0.0,
+        "max": 1.467735
+      },
+      {
+        "feature": "cycle_nmse",
+        "rows": 18475,
+        "mean": 3.987847216427669,
+        "std": 11.02002391138465,
+        "min": 0.0,
+        "max": 100.0
+      },
+      {
+        "feature": "pulse_count_per_cycle",
+        "rows": 18475,
+        "mean": 0.3078540852989492,
+        "std": 0.5142157985885706,
+        "min": 0.0,
+        "max": 2.667255
+      },
+      {
+        "feature": "zero_dwell_ratio",
+        "rows": 18475,
+        "mean": 30.149052192044014,
+        "std": 14.280248744361836,
+        "min": 0.0,
+        "max": 67.313178
+      },
+      {
+        "feature": "low_current_ratio",
+        "rows": 18475,
+        "mean": 8.898459883704886,
+        "std": 8.438914696705687,
+        "min": 0.0,
+        "max": 36.413453
+      },
+      {
+        "feature": "max_low_current_run_ms",
+        "rows": 18475,
+        "mean": 2.957091587870402,
+        "std": 7.197958650560695,
+        "min": 0.0,
+        "max": 25.0
+      }
+    ]
+  },
+  "arc_training_feature_stats": {
+    "abs_irms_zscore_vs_baseline": {
+      "rows": 32780,
+      "mean": 0.8590941474679683,
+      "std": 1.8160862298878793,
+      "min": 5.5e-05,
+      "max": 25.0
+    },
+    "delta_irms_abs": {
+      "rows": 32780,
+      "mean": 0.19018927754728493,
+      "std": 0.3373523504710157,
+      "min": 0.0,
+      "max": 7.787863
+    },
+    "halfcycle_asymmetry": {
+      "rows": 32780,
+      "mean": 15.533835672086639,
+      "std": 9.112340369990218,
+      "min": 0.000891,
+      "max": 188.507004
+    },
+    "suspicious_run_energy": {
+      "rows": 32780,
+      "mean": 1.7508893425259304,
+      "std": 1.532675560369315,
+      "min": 0.0,
+      "max": 7.487679
+    },
+    "delta_hf_energy": {
+      "rows": 32780,
+      "mean": 1.3557718454545455,
+      "std": 1.1905510896067761,
+      "min": 0.0,
+      "max": 12.385294
+    },
+    "delta_flux": {
+      "rows": 32780,
+      "mean": 2.9863726742220864,
+      "std": 2.568099040198102,
+      "min": 0.0,
+      "max": 49.653496
+    },
+    "midband_residual_ratio": {
+      "rows": 32780,
+      "mean": -49.458124289627825,
+      "std": 7.663987232227989,
+      "min": -80.0,
+      "max": 5.947815
+    },
+    "zcv": {
+      "rows": 32780,
+      "mean": 0.059565864917632695,
+      "std": 0.3037582232833775,
+      "min": 0.0,
+      "max": 10.0
+    },
+    "spectral_flux_midhf": {
+      "rows": 32780,
+      "mean": 25.68650433596705,
+      "std": 4.944601689363698,
+      "min": 4.208262,
+      "max": 64.335381
+    },
+    "peak_fluct_cv": {
+      "rows": 32780,
+      "mean": 0.6106829336485662,
+      "std": 2.362264992682459,
+      "min": 0.0,
+      "max": 99.164841
+    },
+    "residual_crest_factor": {
+      "rows": 32780,
+      "mean": 7.233831021262965,
+      "std": 2.533619348468529,
+      "min": 2.416159,
+      "max": 20.955751
+    },
+    "thd_i": {
+      "rows": 32780,
+      "mean": 23.457649646125688,
+      "std": 23.269973292876344,
+      "min": 2.1713,
+      "max": 200.0
+    },
+    "hf_energy_delta": {
+      "rows": 32780,
+      "mean": 11.274534080780965,
+      "std": 2.6412969193234015,
+      "min": -0.067197,
+      "max": 18.0
+    },
+    "edge_spike_ratio": {
+      "rows": 32780,
+      "mean": -8.144938014368517,
+      "std": 6.273520725910082,
+      "min": -61.519772,
+      "max": 20.0
+    },
+    "v_sag_pct": {
+      "rows": 32780,
+      "mean": 0.08956529014643075,
+      "std": 0.18900228631732283,
+      "min": 0.0,
+      "max": 3.165406
+    },
+    "cycle_nmse": {
+      "rows": 32780,
+      "mean": 4.608599687797438,
+      "std": 19.07847179302379,
+      "min": 0.0,
+      "max": 100.0
+    },
+    "pulse_count_per_cycle": {
+      "rows": 32780,
+      "mean": 0.3211201354789505,
+      "std": 0.4461071541728547,
+      "min": 0.0,
+      "max": 2.888194
+    },
+    "zero_dwell_ratio": {
+      "rows": 32780,
+      "mean": 30.17076914932886,
+      "std": 11.742901879533829,
+      "min": 0.195312,
+      "max": 100.0
+    },
+    "low_current_ratio": {
+      "rows": 32780,
+      "mean": 6.927623593258083,
+      "std": 11.96335043503803,
+      "min": 0.195312,
+      "max": 100.0
+    },
+    "max_low_current_run_ms": {
+      "rows": 32780,
+      "mean": 0.7423949452410007,
+      "std": 2.287362789930701,
+      "min": 0.034859,
+      "max": 20.308844
+    }
+  },
+  "load_context_feature_stats": {
+    "abs_irms_zscore_vs_baseline": {
+      "rows": 18475,
+      "mean": 0.5637104019553086,
+      "std": 1.4354595682399478,
+      "min": 0.0,
+      "max": 25.0
+    },
+    "delta_irms_abs": {
+      "rows": 18475,
+      "mean": 0.0981701256943561,
+      "std": 0.2504179921882571,
+      "min": 0.0,
+      "max": 8.342978
+    },
+    "halfcycle_asymmetry": {
+      "rows": 18475,
+      "mean": 15.29441737693053,
+      "std": 8.320671202960703,
+      "min": 0.0,
+      "max": 170.143143
+    },
+    "suspicious_run_energy": {
+      "rows": 18475,
+      "mean": 0.9096967532882272,
+      "std": 1.433724913269922,
+      "min": 0.0,
+      "max": 7.499999
+    },
+    "delta_hf_energy": {
+      "rows": 18475,
+      "mean": 3.521835070996952,
+      "std": 6.971713648023551,
+      "min": 0.0,
+      "max": 24.0
+    },
+    "delta_flux": {
+      "rows": 18475,
+      "mean": 2.313530456900203,
+      "std": 2.677396700510393,
+      "min": 0.0,
+      "max": 63.590683
+    },
+    "midband_residual_ratio": {
+      "rows": 18475,
+      "mean": -35.920740710377984,
+      "std": 19.61045554901617,
+      "min": -67.382652,
+      "max": 0.775194
+    },
+    "zcv": {
+      "rows": 18475,
+      "mean": 0.6575772674247674,
+      "std": 1.7816241360353928,
+      "min": 0.0,
+      "max": 8.866480795085277
+    },
+    "spectral_flux_midhf": {
+      "rows": 18475,
+      "mean": 29.593612533486247,
+      "std": 17.454542639130157,
+      "min": 0.0,
+      "max": 87.08462320017259
+    },
+    "peak_fluct_cv": {
+      "rows": 18475,
+      "mean": 1.1734855875672183,
+      "std": 2.741070630437566,
+      "min": 0.0,
+      "max": 33.743664
+    },
+    "residual_crest_factor": {
+      "rows": 18475,
+      "mean": 6.901684241811428,
+      "std": 3.105896217187585,
+      "min": 0.0,
+      "max": 15.28289
+    },
+    "thd_i": {
+      "rows": 18475,
+      "mean": 31.85056874213003,
+      "std": 28.974879285854485,
+      "min": 0.0,
+      "max": 200.0
+    },
+    "hf_energy_delta": {
+      "rows": 18475,
+      "mean": 12.020104303599458,
+      "std": 5.112605689625017,
+      "min": 0.0,
+      "max": 18.0
+    },
+    "edge_spike_ratio": {
+      "rows": 18475,
+      "mean": -3.2842340585931615,
+      "std": 6.80953679324177,
+      "min": -26.400036,
+      "max": 20.0
+    },
+    "v_sag_pct": {
+      "rows": 18475,
+      "mean": 0.11787015810554803,
+      "std": 0.14910185215481706,
+      "min": 0.0,
+      "max": 1.467735
+    },
+    "cycle_nmse": {
+      "rows": 18475,
+      "mean": 3.987847216427669,
+      "std": 11.02002391138465,
+      "min": 0.0,
+      "max": 100.0
+    },
+    "pulse_count_per_cycle": {
+      "rows": 18475,
+      "mean": 0.3078540852989492,
+      "std": 0.5142157985885706,
+      "min": 0.0,
+      "max": 2.667255
+    },
+    "zero_dwell_ratio": {
+      "rows": 18475,
+      "mean": 30.149052192044014,
+      "std": 14.280248744361836,
+      "min": 0.0,
+      "max": 67.313178
+    },
+    "low_current_ratio": {
+      "rows": 18475,
+      "mean": 8.898459883704886,
+      "std": 8.438914696705687,
+      "min": 0.0,
+      "max": 36.413453
+    },
+    "max_low_current_run_ms": {
+      "rows": 18475,
+      "mean": 2.957091587870402,
+      "std": 7.197958650560695,
+      "min": 0.0,
+      "max": 25.0
+    }
+  }
+}
