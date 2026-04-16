@@ -79,6 +79,7 @@ void ProtectionManager::resetLatch() {
   _voltageLockout = false; _voltageLockoutKind = STATE_NORMAL; _voltageRecoverySince = 0;
   _tripOffEdge = false; _autoOnEdge = false; _webLockout = false; _resetRequired = false; _latchedFaultState = STATE_NORMAL;
   _loadOn = false; _loadOnSince = 0; _loadOffSince = 0; _prevSustainedTrip = false;
+  _arcTripPending = false; _arcPendingSawCurrentReturn = false; _arcTripPendingSince = 0;
   _prevArcActive = false; _prevHeatTrip = false; _prevOverloadTrip = false;
   setRelayOffHold(false);
 }
@@ -120,8 +121,41 @@ FaultState ProtectionManager::update(float vProtect, float vRaw, float tempC, fl
   return STATE_NORMAL;
 #endif
   const bool arcTrip = (_arcCnt >= ARC_CNT_TRIP);
-  if (arcTrip) _arcHoldUntil = now + ARC_HOLD_MS;
-  const bool arcActive = arcTrip || (now < _arcHoldUntil);
+  const bool currentGoneForArcDecision = (irmsA <= LOAD_OFF_DETECT_A);
+
+  if (arcTrip) {
+    if (!_arcTripPending && currentGoneForArcDecision) {
+      _arcTripPending = true;
+      _arcPendingSawCurrentReturn = false;
+      _arcTripPendingSince = now;
+    } else if (!_arcTripPending) {
+      _arcHoldUntil = now + ARC_HOLD_MS;
+    }
+  }
+
+  if (_arcTripPending) {
+    if (!currentGoneForArcDecision) _arcPendingSawCurrentReturn = true;
+
+    if ((now - _arcTripPendingSince) >= ARC_CURRENT_RETURN_VERIFY_MS) {
+      if (_arcPendingSawCurrentReturn) {
+        _arcHoldUntil = now + ARC_HOLD_MS;
+      } else {
+        // Manual OFF / sustained current loss: clear the arc integrator so the next
+        // prediction sequence starts fresh instead of inheriting the shutdown event.
+        _arcCnt = 0;
+        _arcHoldUntil = 0;
+      }
+      _arcTripPending = false;
+      _arcPendingSawCurrentReturn = false;
+      _arcTripPendingSince = 0;
+    }
+  } else if (!arcTrip) {
+    _arcPendingSawCurrentReturn = false;
+    _arcTripPendingSince = 0;
+  }
+
+  const bool arcTripNow = (_arcCnt >= ARC_CNT_TRIP);
+  const bool arcActive = (!_arcTripPending) && (arcTripNow || (now < _arcHoldUntil));
   if (arcActive && !_prevArcActive) {
     _tripOffEdge = true;
     _resetRequired = true;

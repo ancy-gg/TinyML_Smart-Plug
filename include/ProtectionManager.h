@@ -59,6 +59,9 @@ private:
   uint32_t _loadOnSince = 0;
   uint32_t _loadOffSince = 0;
   bool _prevSustainedTrip = false;
+  bool _arcTripPending = false;
+  bool _arcPendingSawCurrentReturn = false;
+  uint32_t _arcTripPendingSince = 0;
   bool _prevArcActive = false;
   bool _prevHeatTrip = false;
   bool _prevOverloadTrip = false;

@@ -62,22 +62,26 @@ float TempSensor::readTempC() {
   return _filtTempC;
 }
 
-float TempSensor::estimateSocketTempC(float ntcTempC, float irmsA) const {
+float TempSensor::estimateSocketTempC(float ntcTempC) const {
   if (!isfinite(ntcTempC)) return 0.0f;
+
+  // Calibration-ready behavior:
+  // - no current-based blending or IRMS curvature
+  // - default to raw NTC temperature until a trusted socket calibration is ready
+  // - optional polynomial curve can be enabled later in MainConfiguration.h
+  if (!TEMP_SOCKET_USE_CALIBRATION_CURVE) {
+    return clampf_ts(ntcTempC, TEMP_SOCKET_EST_MIN_C, TEMP_SOCKET_EST_MAX_C);
+  }
+
+  // When a future calibration is enabled, avoid low-side extrapolation outside
+  // the calibrated NTC region.
+  if (ntcTempC < TEMP_SOCKET_CURVE_MIN_NTC_C) {
+    return clampf_ts(ntcTempC, TEMP_SOCKET_EST_MIN_C, TEMP_SOCKET_EST_MAX_C);
+  }
 
   const float centered = ntcTempC - TEMP_SOCKET_CURVE_REF_C;
   const float fitted = TEMP_SOCKET_CURVE_C0
                      + (TEMP_SOCKET_CURVE_C1 * centered)
                      + (TEMP_SOCKET_CURVE_C2 * centered * centered);
-
-  float blend = 0.0f;
-  if (TEMP_SOCKET_BLEND_FULL_A > TEMP_SOCKET_BLEND_START_A) {
-    blend = (irmsA - TEMP_SOCKET_BLEND_START_A) /
-            (TEMP_SOCKET_BLEND_FULL_A - TEMP_SOCKET_BLEND_START_A);
-  }
-  blend = clampf_ts(blend, 0.0f, 1.0f);
-
-  const float idleEstimate = ntcTempC + TEMP_SOCKET_IDLE_BIAS_C;
-  const float est = idleEstimate + blend * (fitted - idleEstimate);
-  return clampf_ts(est, TEMP_SOCKET_EST_MIN_C, TEMP_SOCKET_EST_MAX_C);
+  return clampf_ts(fitted, TEMP_SOCKET_EST_MIN_C, TEMP_SOCKET_EST_MAX_C);
 }

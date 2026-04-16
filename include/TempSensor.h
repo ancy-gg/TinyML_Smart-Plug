@@ -9,7 +9,10 @@ public:
   TempSensor(int pin);
   void begin();
   float readTempC();
-  float estimateSocketTempC(float ntcTempC, float irmsA) const;
+  // Calibration-ready socket estimate.
+  // For now this is intentionally independent of current; once you collect
+  // new NTC-vs-socket data we can enable/refit the curve in MainConfiguration.h.
+  float estimateSocketTempC(float ntcTempC) const;
 
   void setLongAverage(float tauS, float jumpC) {
     if (tauS < 0.6f) tauS = 0.6f;

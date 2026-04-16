@@ -14,7 +14,7 @@ static constexpr bool ENABLE_AUTO_ARC_CAPTURE = false;
 // Cloud / OTA configuration
 static constexpr const char* FIREBASE_API_KEY = "AIzaSyAmJlZZszyWPJFgIkTAAl_TbIySys1nvEw";
 static constexpr const char* FIREBASE_DB_URL  = "tinyml-smart-plug-default-rtdb.asia-southeast1.firebasedatabase.app";
-static constexpr const char* FW_VERSION       = "v7.7.4b-p-gen0";
+static constexpr const char* FW_VERSION       = "v7.7.6-p-gen0";
 static constexpr const char* OTA_DESIRED_VERSION_PATH = "/ota/desired_version";
 static constexpr const char* OTA_FIRMWARE_URL_PATH    = "/ota/firmware_url";
 
@@ -289,15 +289,17 @@ static constexpr float TEMP_DATA_HARD_C     = 55.0f;
 // Socket temperature estimation
 // =========================
 // The NTC still measures the thermistor / device-body temperature.
-// temp_c below is now treated as the estimated socket hotspot temperature
-// used by protection, OLED, live data, and CSV logging.
+// temp_c below is treated as the estimated socket hotspot temperature used by
+// protection, OLED, live data, and CSV logging.
 //
-// Default fit source: user-supplied heating calibration points from a 12 A run.
-// Edit these constants later if you collect a better calibration dataset.
+// Calibration-ready default:
+// - NO current / IRMS-based temperature shaping
+// - estimated socket temperature follows the measured NTC directly
+// - once you collect a trusted NTC-vs-socket dataset, set
+//   TEMP_SOCKET_USE_CALIBRATION_CURVE to true and update the curve constants
 static constexpr float TEMP_NTC_BETA                = 4050.0f;
-static constexpr float TEMP_SOCKET_IDLE_BIAS_C      = 0.0f;
-static constexpr float TEMP_SOCKET_BLEND_START_A    = 0.50f;
-static constexpr float TEMP_SOCKET_BLEND_FULL_A     = 12.0f;
+static constexpr bool  TEMP_SOCKET_USE_CALIBRATION_CURVE = false;
+static constexpr float TEMP_SOCKET_CURVE_MIN_NTC_C  = 30.3f;
 static constexpr float TEMP_SOCKET_CURVE_REF_C      = 30.0f;
 static constexpr float TEMP_SOCKET_CURVE_C0         = 29.93173035f;
 static constexpr float TEMP_SOCKET_CURVE_C1         = -2.11183783f;
@@ -317,10 +319,11 @@ static constexpr float VOLTAGE_SNAP_RESTORE_V = 200.0f;
 // Leaky integrator / fault display hold
 // =========================
 static constexpr int ARC_CNT_INC  = 2;
-static constexpr int ARC_CNT_DEC  = 10;
-static constexpr int ARC_CNT_TRIP = 10;
-static constexpr int ARC_CNT_MAX  = 20;
+static constexpr int ARC_CNT_DEC  = 6;
+static constexpr int ARC_CNT_TRIP = 8;
+static constexpr int ARC_CNT_MAX  = 16;
 static constexpr uint32_t ARC_HOLD_MS  = 800;
+static constexpr uint32_t ARC_CURRENT_RETURN_VERIFY_MS = 150UL;
 static constexpr uint32_t HEAT_HOLD_MS = 1200;
 static constexpr uint32_t FAULT_ALERT_MIN_MS = 3000UL;
 static constexpr uint32_t FAULT_BUZZ_MS      = 3000UL;

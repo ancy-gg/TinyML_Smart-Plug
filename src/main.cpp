@@ -1590,7 +1590,7 @@ void loop() {
   f.vrms = vRms;
   const float irmsRawMeasured = f.irms;
   float irmsRawForLogic = cleanLogicCurrent(irmsRawMeasured, f.current_valid != 0, vRaw, vFast);
-  tSocketC = tempSensor.estimateSocketTempC(tNtcC, irmsRawForLogic);
+  tSocketC = tempSensor.estimateSocketTempC(tNtcC);
   f.temp_c = tSocketC;
   f.temp_ntc_c = tNtcC;
 
