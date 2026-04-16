@@ -23,6 +23,7 @@ public:
 
   void setFirmwareVersion(const char* fw);
   void setNormalIntervalMs(uint32_t ms);
+  void setWarningIntervalMs(uint32_t ms);
   void setFaultIntervalMs(uint32_t ms);
 
   bool isReady() const;
@@ -197,8 +198,9 @@ private:
   FirebaseConfig config;
 
   unsigned long _lastLiveSend = 0;
-  uint32_t _normalIntervalMs = CLOUD_LIVE_NORMAL_INTERVAL_MS;
-  uint32_t _faultIntervalMs  = CLOUD_LIVE_FAULT_INTERVAL_MS;
+  uint32_t _normalIntervalMs  = CLOUD_LIVE_NORMAL_INTERVAL_MS;
+  uint32_t _warningIntervalMs = CLOUD_LIVE_WARNING_INTERVAL_MS;
+  uint32_t _faultIntervalMs   = CLOUD_LIVE_FAULT_INTERVAL_MS;
   uint32_t _lastTxMs = 0;
   uint32_t _txBackoffUntilMs = 0;
   uint32_t _lastMlUploadAttemptMs = 0;

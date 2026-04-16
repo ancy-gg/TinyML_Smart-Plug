@@ -14,7 +14,7 @@ static constexpr bool ENABLE_AUTO_ARC_CAPTURE = false;
 // Cloud / OTA configuration
 static constexpr const char* FIREBASE_API_KEY = "AIzaSyAmJlZZszyWPJFgIkTAAl_TbIySys1nvEw";
 static constexpr const char* FIREBASE_DB_URL  = "tinyml-smart-plug-default-rtdb.asia-southeast1.firebasedatabase.app";
-static constexpr const char* FW_VERSION       = "v7.6.7-p-gen0";
+static constexpr const char* FW_VERSION       = "v7.7.4b-p-gen0";
 static constexpr const char* OTA_DESIRED_VERSION_PATH = "/ota/desired_version";
 static constexpr const char* OTA_FIRMWARE_URL_PATH    = "/ota/firmware_url";
 
@@ -317,9 +317,9 @@ static constexpr float VOLTAGE_SNAP_RESTORE_V = 200.0f;
 // Leaky integrator / fault display hold
 // =========================
 static constexpr int ARC_CNT_INC  = 2;
-static constexpr int ARC_CNT_DEC  = 3;
-static constexpr int ARC_CNT_TRIP = 6;
-static constexpr int ARC_CNT_MAX  = 12;
+static constexpr int ARC_CNT_DEC  = 10;
+static constexpr int ARC_CNT_TRIP = 10;
+static constexpr int ARC_CNT_MAX  = 20;
 static constexpr uint32_t ARC_HOLD_MS  = 800;
 static constexpr uint32_t HEAT_HOLD_MS = 1200;
 static constexpr uint32_t FAULT_ALERT_MIN_MS = 3000UL;
@@ -457,6 +457,7 @@ static constexpr uint32_t ARC_TURNON_BLANK_MS            = 1600UL;
 static constexpr uint32_t ARC_TRANSIENT_BLANK_MS         = 900UL;
 static constexpr float    ARC_TRANSIENT_STEP_A           = 0.60f;
 static constexpr float    ARC_TRANSIENT_STEP_FRAC        = 0.22f;
+static constexpr uint32_t ARC_CLOSE_TRANSIENT_BENIGN_MS  = 200UL;
 
 static constexpr uint32_t FEAT_STALE_MS                 = (uint32_t)(FEATURE_FRAME_PERIOD_MS * 4.0f + 0.5f);
 static constexpr uint32_t FEATURE_VALID_BRIDGE_MS       = 1500UL;
@@ -481,8 +482,9 @@ static constexpr float    ML_LOG_SETTLE_COMPUTE_MAX_MS  = FRAME_COMPUTE_BAD_MS;
 static constexpr uint16_t ML_LOG_AUTO_MIN_DURATION_S    = 5;
 static constexpr uint16_t ML_LOG_AUTO_MAX_DURATION_S    = 60;
 
-static constexpr uint32_t CLOUD_LIVE_NORMAL_INTERVAL_MS = 7000UL;
-static constexpr uint32_t CLOUD_LIVE_FAULT_INTERVAL_MS  = 1800UL;
+static constexpr uint32_t CLOUD_LIVE_NORMAL_INTERVAL_MS  = 7000UL;
+static constexpr uint32_t CLOUD_LIVE_WARNING_INTERVAL_MS = 10000UL;
+static constexpr uint32_t CLOUD_LIVE_FAULT_INTERVAL_MS   = 5000UL;
 static constexpr uint32_t CLOUD_REFRESH_KEEPALIVE_MS    = 1800UL;
 static constexpr uint32_t CLOUD_WIFI_WARMUP_MS          = 2500UL;
 

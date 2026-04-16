@@ -319,8 +319,13 @@ void FirebaseNetwork::setNormalIntervalMs(uint32_t ms) {
   _normalIntervalMs = ms;
 }
 
+void FirebaseNetwork::setWarningIntervalMs(uint32_t ms) {
+  if (ms < 1000) ms = 1000;
+  _warningIntervalMs = ms;
+}
+
 void FirebaseNetwork::setFaultIntervalMs(uint32_t ms) {
-  if (ms < 300) ms = 300;
+  if (ms < 1000) ms = 1000;
   _faultIntervalMs = ms;
 }
 
@@ -623,9 +628,14 @@ void FirebaseNetwork::requestLiveUpdate(float v, float c, float apparentPower, f
                                         const String& state,
                                         bool faultLatched, bool webControlsLocked, bool relayLatchedOn, bool relayPulseActive) {
   const bool isNormal = (state == "NORMAL") || (state == "UNPLUGGED");
+  const bool isTripFault = faultLatched ||
+                           (state == "ARCING") ||
+                           (state == "SUSTAINED OVERLOAD") ||
+                           (state == "UNDERVOLTAGE") ||
+                           (state == "OVERVOLTAGE");
   const bool stateChanged = (state != _lastSentLiveState);
   const unsigned long now = millis();
-  const uint32_t interval = isNormal ? _normalIntervalMs : _faultIntervalMs;
+  const uint32_t interval = isNormal ? _normalIntervalMs : (isTripFault ? _faultIntervalMs : _warningIntervalMs);
   const bool shouldSend = stateChanged || (now - _lastLiveSend >= interval) || (now - _lastLiveSend >= CLOUD_REFRESH_KEEPALIVE_MS && !isNormal);
   if (!shouldSend && !_pendingLive) return;
 
@@ -1244,7 +1254,7 @@ void FirebaseNetwork::ingestLog(const FeatureFrame& f, FaultState st, int arcCou
   r.context_family_confidence_provisional = f.context_family_confidence_provisional;
   r.context_acquiring = f.context_acquiring;
   r.context_latched = f.context_latched;
-  r.arc_counter = _manualEnabled ? 0 : (int16_t)arcCounter;
+  r.arc_counter = (int16_t)arcCounter;
   r.adc_fs_hz = f.adc_fs_hz;
   r.auto_capture = activeIsAuto() ? 1 : 0;
   r.feature_space_version = ARC_RUNTIME_FEATURE_SPACE_VERSION;

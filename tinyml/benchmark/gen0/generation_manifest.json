@@ -43,7 +43,7 @@
       "context": "C:\\Disk\\Ancy\\Platform IO\\TinyML_Smart-Plug\\tinyml\\trainer\\lib\\TinyMLContextModel.joblib"
     }
   },
-  "timestamp": "2026-04-15T18:17:02+08:00",
+  "timestamp": "2026-04-16T09:37:11+08:00",
   "selected_generation": "gen0",
   "source_model_generations_seen": [
     "unknown"
@@ -60,6 +60,39 @@
       "mismatch_fn_boost": 1.0,
       "mismatch_focus_ratio": 0.0,
       "mismatch_verified_only": false
+    },
+    "rf": {
+      "csv": "C:\\Disk\\Ancy\\Platform IO\\TinyML_Smart-Plug\\tinyml\\data\\gen0\\arc_training.csv",
+      "fn_weight": 80.0,
+      "fp_weight": 4.0,
+      "min_recall": 0.98,
+      "min_precision": 0.9,
+      "max_fpr": 0.03,
+      "min_threshold": 0.08,
+      "n_iter": 128,
+      "n_jobs": -1,
+      "model": "rf",
+      "feature_report": "C:\\Disk\\Ancy\\Platform IO\\TinyML_Smart-Plug\\tinyml\\benchmark\\gen0\\TinyMLFeatureSubsetSweep_report.json",
+      "features": [
+        "max_low_current_run_ms",
+        "zero_dwell_ratio",
+        "abs_irms_zscore_vs_baseline",
+        "edge_spike_ratio"
+      ],
+      "arc_tolerance_mode": "soft_positive",
+      "pre_arc_window": 1,
+      "post_arc_window": 1,
+      "soft_neighbor_weight": 0.3,
+      "expanded_neighbor_weight": 0.7,
+      "hard_negative_ring": 2,
+      "final_negative_ratio": 0.0,
+      "positive_oversample": 1.0,
+      "mismatch_fp_boost": 1.0,
+      "mismatch_fn_boost": 1.0,
+      "mismatch_focus_ratio": 0.0,
+      "mismatch_verified_only": false,
+      "generation": "gen0",
+      "search_profile": "final_rf"
     }
   },
   "subset_sweep": {
@@ -70,11 +103,46 @@
     "arc_recommended_features": [
       "max_low_current_run_ms",
       "zero_dwell_ratio",
-      "low_current_ratio",
       "abs_irms_zscore_vs_baseline",
-      "hf_energy_delta"
+      "edge_spike_ratio"
     ],
     "context_recommended_features": []
   },
-  "recommended_next_action": "Review subset sweep outputs in tinyml/benchmark/gen0 and then train RF/ET/King on gen0."
+  "recommended_next_action": "Trained on gen0. Canonical RF export remains the active deployment target. Place next collection raw CSVs in tinyml/data/gen1/raw.",
+  "rf_training": {
+    "report_path": "C:\\Disk\\Ancy\\Platform IO\\TinyML_Smart-Plug\\tinyml\\benchmark\\gen0\\TinyMLTreeEnsemble_RF_report.json",
+    "feature_report_path": "C:\\Disk\\Ancy\\Platform IO\\TinyML_Smart-Plug\\tinyml\\benchmark\\gen0\\TinyMLFeatureSubsetSweep_report.json",
+    "feature_names": [
+      "max_low_current_run_ms",
+      "zero_dwell_ratio",
+      "abs_irms_zscore_vs_baseline",
+      "edge_spike_ratio"
+    ],
+    "archive_outputs": {
+      "headers": {
+        "rf": "C:\\Disk\\Ancy\\Platform IO\\TinyML_Smart-Plug\\tinyml\\model\\archive\\gen0\\TinyMLTreeEnsemble_RF.h"
+      },
+      "joblibs": {
+        "rf": "C:\\Disk\\Ancy\\Platform IO\\TinyML_Smart-Plug\\tinyml\\trainer\\lib\\archive\\gen0\\TinyMLTreeEnsemble_RF.joblib"
+      }
+    },
+    "generation_advancement_assessment": {
+      "justified": false,
+      "basis": "Held-out validation metrics only; training-set agreement is not used as the advancement criterion.",
+      "criteria": {
+        "min_recall": 0.98,
+        "min_precision": 0.9,
+        "max_fpr": 0.03,
+        "max_validation_event_misses": 1
+      },
+      "held_out_snapshot": {
+        "validation_recall": 0.9145299145299145,
+        "validation_precision": 0.9727272727272728,
+        "validation_fpr": 0.0006185567010309278,
+        "validation_missed_event_count": 0,
+        "validation_false_alarms_per_session": 0.125
+      },
+      "reason": "holdout recall 0.9145 < 0.9800"
+    }
+  }
 }

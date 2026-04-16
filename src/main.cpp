@@ -1429,6 +1429,7 @@ void setup() {
   network.begin(FIREBASE_API_KEY, FIREBASE_DB_URL);
   network.setFirmwareVersion(FW_VERSION);
   network.setNormalIntervalMs(CLOUD_LIVE_NORMAL_INTERVAL_MS);
+  network.setWarningIntervalMs(CLOUD_LIVE_WARNING_INTERVAL_MS);
   network.setFaultIntervalMs(CLOUD_LIVE_FAULT_INTERVAL_MS);
 
   updater.begin(FW_VERSION, &network, 45000, 3);
@@ -1749,7 +1750,8 @@ void loop() {
     if (steadyLoadGapSinceMs == 0U) steadyLoadGapSinceMs = millis();
   } else if (steadyLoadGapSinceMs != 0U) {
     const uint32_t gapDurMs = millis() - steadyLoadGapSinceMs;
-    if (gapDurMs > ARC_RESTRIKE_VALID_WINDOW_MS) {
+    if ((gapDurMs <= ARC_CLOSE_TRANSIENT_BENIGN_MS) ||
+        (gapDurMs > ARC_RESTRIKE_VALID_WINDOW_MS)) {
       deliberateReloadSuppressUntilMs = millis() + ARC_RESTRIKE_VALID_WINDOW_MS;
     }
     steadyLoadGapSinceMs = 0U;
@@ -1791,6 +1793,12 @@ void loop() {
       ((prevVFast - vFast) >= 20.0f);
 
   static uint32_t loadedArcGapRecoveryUntilMs = 0;
+  const bool fastBenignCloseGapActive =
+      energizedArcWindow &&
+      effectiveRelayLatchedOn &&
+      hadSteadyLoad &&
+      (steadyLoadGapSinceMs != 0U) &&
+      ((millis() - steadyLoadGapSinceMs) <= ARC_CLOSE_TRANSIENT_BENIGN_MS);
   const bool loadedArcGapFeatureBurst =
       effectiveRelayLatchedOn &&
       (gContext.ready) &&
@@ -1803,6 +1811,7 @@ void loop() {
        (f.pulse_count_per_cycle >= ARC_SIG_PULSE_COUNT_PER_CYCLE &&
         f.delta_irms_abs >= 0.10f));
   const bool loadedArcGapCandidate =
+      !fastBenignCloseGapActive &&
       effectiveRelayLatchedOn &&
       (gContext.ready) &&
       energizedArcWindow &&
@@ -2034,7 +2043,6 @@ void loop() {
                                            inferF.context_family_code_runtime,
                                            inferF.context_family_confidence);
     if (rawPred == 1 && !modelArcSignature && !modelInferenceBridgeActive) rawPred = 0;
-    if (rawPred == 1 && deliberateReloadSuppressActive && modelArcSignature) rawPred = 0;
   }
 
   const bool temporalKick =
@@ -2048,13 +2056,16 @@ void loop() {
        (inferF.zero_dwell_ratio >= ARC_SIG_ZERO_DWELL_RATIO && inferF.abs_irms_zscore_vs_baseline >= 1.20f) ||
        (inferF.halfcycle_asymmetry >= 10.0f && inferF.zcv >= 0.12f));
 
-  bool suspiciousFrame =
-      ((rawPred == 1) || fallbackArcEvent || softFallbackArcEvent || temporalKick);
+  // Model-only prediction path:
+  // - suspicious run bookkeeping remains available for CSV/debug
+  // - but only the model output may arm the leaky integrator
+  // - fallback / temporal heuristics no longer force model_pred high
+  bool suspiciousFrame = (rawPred == 1);
   if (arcBlankActive || relayArtifactBlankActive || invalidOff) suspiciousFrame = false;
 
   if (suspiciousFrame) {
     if (suspiciousRunLen < 65535U) suspiciousRunLen++;
-    suspiciousRunEnergy = fminf(12.0f, suspiciousRunEnergy * 0.82f + 1.10f + (temporalKick ? 0.25f : 0.0f));
+    suspiciousRunEnergy = fminf(12.0f, suspiciousRunEnergy * 0.82f + 1.10f);
     arcLeakyScore = (arcLeakyScore + ARC_LEAKY_SCORE_STEP > ARC_LEAKY_SCORE_MAX) ? ARC_LEAKY_SCORE_MAX : (arcLeakyScore + ARC_LEAKY_SCORE_STEP);
   } else {
     if (suspiciousRunLen > 0) suspiciousRunLen--;
@@ -2076,18 +2087,7 @@ void loop() {
   int pred = 0;
   if (!faultClearSuppressActive && arcContextLatched && !arcBlankActive) {
     const bool leakyArmed = (arcLeakyScore >= ARC_LEAKY_SCORE_FIRE);
-    // Keep logging suspicious_run_energy for future dataset analysis, but do not
-    // let its direct magnitude force a live arc decision path.
-    const bool sustainedSuspicion = (suspiciousRunLen >= 2U) || leakyArmed;
-    const bool hardContextBurst = fallbackArcEvent || (softFallbackArcEvent && leakyArmed);
-    const bool temporalBurst =
-        temporalKick &&
-        ((arcLeakyScore >= ARC_LEAKY_SCORE_STRONG) || (invalidLoadedRunLen >= 3U) || (restrikeCountShort >= 2U));
-    const bool bridgedModelHold =
-        modelInferenceBridgeActive &&
-        arcModelWindowLatched &&
-        (suspiciousRunLen >= 1U || leakyArmed || rawPred == 1);
-    if (hardContextBurst || temporalBurst || (rawPred == 1 && sustainedSuspicion) || bridgedModelHold) pred = 1;
+    if ((rawPred == 1) || (leakyArmed && arcModelWindowLatched)) pred = 1;
   }
 
   f.suspicious_run_len = suspiciousRunLen;
@@ -2098,15 +2098,14 @@ void loop() {
   FaultState st = STATE_NORMAL;
   if (!bootSettling && !faultClearSuppressActive) {
     const bool arcProtectionEligible =
-        !collectionModeActive &&
         arcContextLatched &&
         !arcBlankActive &&
-        (modelInferenceEligible || arcModelWindowLatched || fallbackArcEvent || softFallbackArcEvent || temporalKick || (f.model_pred != 0));
+        (modelInferenceEligible || arcModelWindowLatched || (f.model_pred != 0));
     st = protection.update(vFast,
                            vRaw,
                            tSocketC,
                            irmsRawForLogic,
-                           collectionModeActive ? 0 : f.model_pred,
+                           f.model_pred,
                            arcProtectionEligible);
   }
   if (gSafeMode) st = STATE_NORMAL;
@@ -2216,14 +2215,14 @@ void loop() {
     fTrip.timing_skew_ms = (fTrip.log_enqueue_uptime_ms >= fTrip.frame_start_uptime_ms)
         ? float(fTrip.log_enqueue_uptime_ms - fTrip.frame_start_uptime_ms)
         : 0.0f;
-    network.ingestLog(fTrip, st, collectionModeActive ? 0 : protection.arcCounter());
+    network.ingestLog(fTrip, st, protection.arcCounter());
   }
 
-  protection.apply(st, vRms, vFast, irmsRawForLogic, tC);
+  protection.apply(st, vRms, vFast, irmsRawForLogic, tSocketC);
   const FaultState liveFaultState =
       (st != STATE_NORMAL) ? st :
       (protection.faultLatched() ? protection.latchedFaultState() : STATE_NORMAL);
-  notification.updateBuzzer(liveFaultState, vFast, irmsRawForLogic, tC);
+  notification.updateBuzzer(liveFaultState, vFast, irmsRawForLogic, tSocketC);
   const bool mainsPresentStable = debouncedMainsPresentForState(vFast);
 #if PROTECTION
   handleCueEvents(vRaw, vFast, irmsRawForLogic, mainsPresentStable, paused || gSafeMode || protectionInhibit, st);
@@ -2288,7 +2287,7 @@ void loop() {
         fLog.timing_skew_ms = (fLog.log_enqueue_uptime_ms >= fLog.frame_start_uptime_ms)
             ? float(fLog.log_enqueue_uptime_ms - fLog.frame_start_uptime_ms)
             : 0.0f;
-        network.ingestLog(fLog, st, collectionModeActive ? 0 : protection.arcCounter());
+        network.ingestLog(fLog, st, protection.arcCounter());
       }
     }
   }
