@@ -66,43 +66,55 @@ float TempSensor::estimateSocketTempC(float ntcTempC, float irmsA, bool mainsPre
   if (!isfinite(ntcTempC)) return 0.0f;
 
   const uint32_t now = millis();
-  if (!_socketModelInit) {
-    _socketModelInit = true;
-    _socketDeltaC = 0.0f;
-    _lastSocketModelMs = now;
-    return clampf_ts(ntcTempC, TEMP_SOCKET_EST_MIN_C, TEMP_SOCKET_EST_MAX_C);
+  float dtS = 0.5f;
+  if (_socketModelInit && now > _lastSocketModelMs) {
+    dtS = (now - _lastSocketModelMs) / 1000.0f;
   }
-
-  float dtS = (now > _lastSocketModelMs) ? ((now - _lastSocketModelMs) / 1000.0f) : 0.25f;
   _lastSocketModelMs = now;
   if (dtS < 0.05f) dtS = 0.05f;
-  if (dtS > 5.0f)  dtS = 5.0f;
+  if (dtS > 2.0f)  dtS = 2.0f;
 
-  const float absI = isfinite(irmsA) ? fabsf(irmsA) : 0.0f;
-  float deltaTarget = 0.0f;
-
-  if (mainsPresent && absI >= TEMP_SOCKET_LOAD_ON_A) {
-    const float curFrac = clampf_ts(
-        (absI - TEMP_SOCKET_LOAD_ON_A) / (TEMP_SOCKET_CURRENT_DEAD_A - TEMP_SOCKET_LOAD_ON_A),
-        0.0f, 1.0f);
-    float iEx = absI - TEMP_SOCKET_CURRENT_DEAD_A;
-    if (iEx < 0.0f) iEx = 0.0f;
-
-    deltaTarget = (TEMP_SOCKET_BASE_DELTA_C * curFrac)
-                + (TEMP_SOCKET_IEXCESS2_GAIN_C_PER_A2 * iEx * iEx);
-    deltaTarget = clampf_ts(deltaTarget, 0.0f, TEMP_SOCKET_MAX_DELTA_C);
+  if (!_ambientInit) {
+    _ambientInit = true;
+    _ambientEstC = ntcTempC;
   }
 
-  const bool coolingMode = (!mainsPresent) || (absI <= TEMP_SOCKET_LOAD_OFF_A);
-  const float tauS = (deltaTarget > _socketDeltaC) ? TEMP_SOCKET_HEAT_TAU_S
-                                                   : TEMP_SOCKET_COOL_TAU_S;
-  const float alpha = 1.0f - expf(-dtS / fmaxf(0.10f, tauS));
-  _socketDeltaC += alpha * (deltaTarget - _socketDeltaC);
-
-  if (coolingMode && fabsf(_socketDeltaC) < 0.02f) {
-    _socketDeltaC = 0.0f;
+  const float currentA = (isfinite(irmsA) && irmsA > 0.0f) ? irmsA : 0.0f;
+  const bool loadOn = mainsPresent && (currentA >= TEMP_SOCKET_MODEL_LOAD_ON_A);
+  if (!loadOn || currentA <= TEMP_SOCKET_AMBIENT_TRACK_MAX_A) {
+    const float alphaAmbient = fminf(1.0f, dtS / TEMP_SOCKET_AMBIENT_TRACK_TAU_S);
+    _ambientEstC += alphaAmbient * (ntcTempC - _ambientEstC);
   }
 
-  const float estimated = ntcTempC + _socketDeltaC;
-  return clampf_ts(estimated, TEMP_SOCKET_EST_MIN_C, TEMP_SOCKET_EST_MAX_C);
+  float currentRatio = 0.0f;
+  if (loadOn && TEMP_SOCKET_NORMAL_IREF_A > 0.1f) {
+    currentRatio = currentA / TEMP_SOCKET_NORMAL_IREF_A;
+    currentRatio = clampf_ts(currentRatio, 0.0f, TEMP_SOCKET_NORMAL_MAX_RATIO);
+  }
+  const float currentShape = currentRatio * currentRatio;
+
+  const float normalTargetRiseC = loadOn
+      ? (TEMP_SOCKET_NORMAL_BASE_RISE_C + TEMP_SOCKET_NORMAL_GAIN_C * currentShape)
+      : 0.0f;
+  const float socketMeasuredDeltaC = loadOn
+      ? (TEMP_SOCKET_MEASURED_BASE_DELTA_C + TEMP_SOCKET_MEASURED_GAIN_C * currentShape)
+      : 0.0f;
+
+  const float tauS = (normalTargetRiseC >= _normalRiseC)
+      ? TEMP_SOCKET_HEAT_TAU_S
+      : TEMP_SOCKET_COOL_TAU_S;
+  const float alpha = fminf(1.0f, dtS / fmaxf(0.25f, tauS));
+
+  if (!_socketModelInit) {
+    _socketModelInit = true;
+    _normalRiseC = normalTargetRiseC;
+  } else {
+    _normalRiseC += alpha * (normalTargetRiseC - _normalRiseC);
+  }
+
+  _expectedNormalC = clampf_ts(_ambientEstC + _normalRiseC, TEMP_SOCKET_EST_MIN_C, TEMP_SOCKET_EST_MAX_C);
+  const float measuredEstimateC = clampf_ts(ntcTempC + socketMeasuredDeltaC, TEMP_SOCKET_EST_MIN_C, TEMP_SOCKET_EST_MAX_C);
+  _socketEstimateC = clampf_ts(fmaxf(measuredEstimateC, _expectedNormalC), TEMP_SOCKET_EST_MIN_C, TEMP_SOCKET_EST_MAX_C);
+  _socketExcessC = clampf_ts(_socketEstimateC - _expectedNormalC, 0.0f, 80.0f);
+  return _socketEstimateC;
 }

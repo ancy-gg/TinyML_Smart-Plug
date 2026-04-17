@@ -9,10 +9,14 @@ public:
   TempSensor(int pin);
   void begin();
   float readTempC();
-  // Dynamic socket-hotspot estimate.
-  // Uses measured NTC temperature plus a conservative current/time-based rise term.
-  // This keeps low-current behavior near the NTC while separating more at heavy load.
+  // Socket hotspot estimate with an expected-normal comparison curve.
+  // - estimateSocketTempC(): live hotspot estimate used by protection/UI
+  // - expectedNormalSocketTempC(): healthy-socket reference curve for same load
+  // - socketTempExcessC(): how much hotter the estimate is than expected
   float estimateSocketTempC(float ntcTempC, float irmsA, bool mainsPresent);
+  float expectedNormalSocketTempC() const { return _expectedNormalC; }
+  float socketTempExcessC() const { return _socketExcessC; }
+  bool  temperatureHigherThanExpected() const { return _socketExcessC >= TEMP_SOCKET_EXCESS_WARN_C; }
 
   void setLongAverage(float tauS, float jumpC) {
     if (tauS < 0.6f) tauS = 0.6f;
@@ -38,8 +42,13 @@ private:
   float _avgTauS  = 3.0f;
   float _avgJumpC = 0.75f;
 
+  bool _ambientInit = false;
+  float _ambientEstC = 25.0f;
   bool _socketModelInit = false;
-  float _socketDeltaC = 0.0f;
+  float _normalRiseC = 0.0f;
+  float _expectedNormalC = 25.0f;
+  float _socketEstimateC = 25.0f;
+  float _socketExcessC = 0.0f;
   uint32_t _lastSocketModelMs = 0;
 };
 

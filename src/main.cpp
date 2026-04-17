@@ -1566,7 +1566,7 @@ void loop() {
     f.hop_samples = ARC_RUNTIME_HOP_SAMPLES;
   }
 
-  static float vRms = 0.0f, vFast = 0.0f, vRaw = 0.0f, tNtcC = 0.0f, tSocketC = 0.0f;
+  static float vRms = 0.0f, vFast = 0.0f, vRaw = 0.0f, tNtcC = 0.0f, tSocketC = 0.0f, tExpectedNormalC = 0.0f, tSocketExcessC = 0.0f;
   static uint32_t tTemp = 0;
   float newV = voltSensor.update();
   if (newV >= 0.0f) { vRms = newV; vFast = voltSensor.protectVrms(); vRaw = voltSensor.rawVrms(); }
@@ -1591,6 +1591,8 @@ void loop() {
   const float irmsRawMeasured = f.irms;
   float irmsRawForLogic = cleanLogicCurrent(irmsRawMeasured, f.current_valid != 0, vRaw, vFast);
   tSocketC = tempSensor.estimateSocketTempC(tNtcC, irmsRawForLogic, mainsPresentForFeat);
+  tExpectedNormalC = tempSensor.expectedNormalSocketTempC();
+  tSocketExcessC = tempSensor.socketTempExcessC();
   f.temp_c = tSocketC;
   f.temp_ntc_c = tNtcC;
 
@@ -2135,8 +2137,6 @@ void loop() {
   }
 
   const bool controlsLocked = gSafeMode || paused || bootSettling || protectionInhibit || unpluggedLiveCtl || protection.webControlLocked() || protection.voltageLockoutActive();
-  const bool relayOnBlocked = controlsLocked;
-  const bool relayOffBlocked = gSafeMode || paused || bootSettling || protectionInhibit || unpluggedLiveCtl;
   const bool portalRequested = (!gSafeMode) ? network.consumePortalRequest() : false;
   String relayOnToken = "";
   String relayOffToken = "";
@@ -2144,24 +2144,26 @@ void loop() {
   const bool relayOffRequested = (!gSafeMode) ? network.consumeRelayOffRequest(&relayOffToken) : false;
   if (!gSafeMode) {
     if (portalRequested && !controlsLocked) wifiMgr.requestPortal(true);
-    if (relayOffRequested && !relayOffBlocked) {
-      clearManualRelayAssume_();
-      const bool wasLatched = protection.relayLatchedOn();
-      protection.pulseRelayOff();
-      const bool pulseSent = protection.relayPulseActive() || (protection.relayLatchedOn() != wasLatched);
-      if (pulseSent) (void)network.publishRelayPulseEvent("relay_off", relayOffToken, "web");
-      else (void)network.publishControlAck("relay_off", relayOffToken);
-      armRelayArtifactBlank_();
-      notification.notify(SND_RESET_ACK);
-    } else if (relayOnRequested && !relayOnBlocked) {
-      clearManualRelayAssume_();
-      const bool wasLatched = protection.relayLatchedOn();
-      protection.pulseRelayOn();
-      const bool pulseSent = protection.relayPulseActive() || (protection.relayLatchedOn() != wasLatched);
-      if (pulseSent) (void)network.publishRelayPulseEvent("relay_on", relayOnToken, "web");
-      else (void)network.publishControlAck("relay_on", relayOnToken);
-      armRelayArtifactBlank_(1200UL);
-      notification.notify(SND_RESET_ACK);
+    if (!controlsLocked) {
+      if (relayOffRequested) {
+        clearManualRelayAssume_();
+        const bool wasLatched = protection.relayLatchedOn();
+        protection.pulseRelayOff();
+        const bool pulseSent = protection.relayPulseActive() || (protection.relayLatchedOn() != wasLatched);
+        if (pulseSent) (void)network.publishRelayPulseEvent("relay_off", relayOffToken, "web");
+        else (void)network.publishControlAck("relay_off", relayOffToken);
+        armRelayArtifactBlank_();
+        notification.notify(SND_RESET_ACK);
+      } else if (relayOnRequested) {
+        clearManualRelayAssume_();
+        const bool wasLatched = protection.relayLatchedOn();
+        protection.pulseRelayOn();
+        const bool pulseSent = protection.relayPulseActive() || (protection.relayLatchedOn() != wasLatched);
+        if (pulseSent) (void)network.publishRelayPulseEvent("relay_on", relayOnToken, "web");
+        else (void)network.publishControlAck("relay_on", relayOnToken);
+        armRelayArtifactBlank_(1200UL);
+        notification.notify(SND_RESET_ACK);
+      }
     }
   }
 
@@ -2356,6 +2358,7 @@ void loop() {
     else if (unpluggedLive && liveFaultState != STATE_ARCING && liveFaultState != STATE_HEATING) stateStr = "UNPLUGGED";
     else stateStr = String(stateToCstr(liveFaultState));
     network.requestLiveUpdate(vRms, f.irms, apparentPowerVa, tSocketC, tNtcC,
+                              tExpectedNormalC, tSocketExcessC,
                               f.abs_irms_zscore_vs_baseline, f.delta_irms_abs,
                               f.halfcycle_asymmetry, f.suspicious_run_energy,
                               f.pulse_count_per_cycle, f.zero_dwell_ratio,

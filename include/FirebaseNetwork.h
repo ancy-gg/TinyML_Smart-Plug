@@ -43,6 +43,7 @@ public:
   bool fetchMlControl(bool& enabled, int& dur, int& labelOv, String& sid, String& load, String& deviceFamily, String& deviceName, int& trialNumber, String& divisionTag, String& notes, bool& trustedNormal, String& requestToken) const;
 
   void requestLiveUpdate(float v, float c, float apparentPower, float t, float tNtc,
+                         float expectedNormalT, float socketTempExcessC,
                          float abs_irms_zscore_vs_baseline, float delta_irms_abs,
                          float halfcycle_asymmetry, float suspicious_run_energy,
                          float pulse_count_per_cycle, float zero_dwell_ratio,
@@ -83,6 +84,7 @@ public:
 private:
   struct LiveSnapshot {
     float v = 0.0f, c = 0.0f, apparentPower = 0.0f, t = 0.0f, tNtc = 0.0f;
+    float tExpectedNormal = 0.0f, tExcess = 0.0f;
     float abs_irms_zscore_vs_baseline = 0.0f, delta_irms_abs = 0.0f;
     float halfcycle_asymmetry = 0.0f, cycle_nmse = 0.0f;
     float pulse_count_per_cycle = 0.0f, zero_dwell_ratio = 0.0f;

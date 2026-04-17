@@ -609,6 +609,7 @@ void FirebaseNetwork::pollControls(bool allowNet, bool portalActive) {
 }
 
 void FirebaseNetwork::requestLiveUpdate(float v, float c, float apparentPower, float t, float tNtc,
+                                        float expectedNormalT, float socketTempExcessC,
                                         float abs_irms_zscore_vs_baseline, float delta_irms_abs,
                                         float halfcycle_asymmetry, float suspicious_run_energy,
                                         float pulse_count_per_cycle, float zero_dwell_ratio,
@@ -644,6 +645,8 @@ void FirebaseNetwork::requestLiveUpdate(float v, float c, float apparentPower, f
   _live.apparentPower = (isfinite(apparentPower) && apparentPower > 0.0f) ? apparentPower : 0.0f;
   _live.t = isfinite(t) ? t : 0.0f;
   _live.tNtc = isfinite(tNtc) ? tNtc : 0.0f;
+  _live.tExpectedNormal = isfinite(expectedNormalT) ? expectedNormalT : 0.0f;
+  _live.tExcess = isfinite(socketTempExcessC) ? fmaxf(0.0f, socketTempExcessC) : 0.0f;
   _live.abs_irms_zscore_vs_baseline =
       tinymlClampFeatureValue(TINYML_FEATURE_ABS_IRMS_ZSCORE_VS_BASELINE, abs_irms_zscore_vs_baseline);
   _live.delta_irms_abs =
@@ -902,6 +905,9 @@ bool FirebaseNetwork::serviceLive_() {
   json.set("temp", _live.t);
   json.set("estimated_socket_temp", _live.t);
   json.set("temp_ntc", _live.tNtc);
+  json.set("expected_normal_socket_temp", _live.tExpectedNormal);
+  json.set("socket_temp_excess", _live.tExcess);
+  json.set("temperature_higher_than_expected", _live.tExcess >= TEMP_SOCKET_EXCESS_WARN_C);
   json.set("abs_irms_zscore_vs_baseline", _live.abs_irms_zscore_vs_baseline);
   json.set("delta_irms_abs", _live.delta_irms_abs);
   json.set("halfcycle_asymmetry", _live.halfcycle_asymmetry);

@@ -225,7 +225,7 @@
             </div>
 
             <div class="card live-card" data-hold-hint="Temperature measured directly at the thermistor inside the device. This is the raw sensor temperature before socket-hotspot compensation.">
-              <div class="card-label">Temperature (Sensor)</div>
+              <div class="card-label">Sensor Temperature</div>
               <div class="card-value"><span id="tNtcVal">—</span><span class="unit">°C</span></div>
               <div id="tNtcHint" class="metric-note">—</div>
             </div>
@@ -234,6 +234,14 @@
               <div class="card-label">Estimated Socket Temperature</div>
               <div class="card-value"><span id="tVal">—</span><span class="unit">°C</span></div>
               <div id="tHint" class="metric-note">—</div>
+              <div class="metric-substack">
+                <div class="metric-subrow">
+                  <span class="metric-sub-label">Expected Normal</span>
+                  <span class="metric-sub-value"><span id="tExpectedVal">—</span><span class="unit">°C</span></span>
+                </div>
+                <div id="tExpectedHint" class="metric-note metric-note-sub">—</div>
+                <div id="tExpectedWarn" class="metric-marquee" aria-live="polite" hidden><span>Temperature higher than expected</span></div>
+              </div>
             </div>
 
             <div class="card live-card" data-hold-hint="Apparent power computed from voltage and current. Hold to read its purpose.">

@@ -14,7 +14,7 @@ static constexpr bool ENABLE_AUTO_ARC_CAPTURE = false;
 // Cloud / OTA configuration
 static constexpr const char* FIREBASE_API_KEY = "AIzaSyAmJlZZszyWPJFgIkTAAl_TbIySys1nvEw";
 static constexpr const char* FIREBASE_DB_URL  = "tinyml-smart-plug-default-rtdb.asia-southeast1.firebasedatabase.app";
-static constexpr const char* FW_VERSION       = "v7.7.7-p-gen0";
+static constexpr const char* FW_VERSION       = "v7.7.8-p-gen0";
 static constexpr const char* OTA_DESIRED_VERSION_PATH = "/ota/desired_version";
 static constexpr const char* OTA_FIRMWARE_URL_PATH    = "/ota/firmware_url";
 
@@ -292,27 +292,30 @@ static constexpr float TEMP_DATA_HARD_C     = 40.0f;
 // =========================
 // Socket temperature estimation
 // =========================
-// The 10k NTC still measures the device-side thermistor.
-// temp_c below is a conservative socket-hotspot estimate used by protection,
-// OLED, live data, and CSV logging.
+// The NTC still measures the device-body / thermistor temperature.
+// We keep two thermal views:
+//   1) temp_c  -> estimated socket hotspot temperature used by protection/UI
+//   2) expected-normal curve -> what a healthy socket would be expected to do
 //
-// Deployment note:
-// The plug will not know beforehand whether the wall socket is healthy or
-// degraded. Instead of hard-coding a "normal socket" or "corroded socket"
-// mode, the estimator adds a dynamic load-dependent temperature rise term to
-// the measured NTC temperature. This keeps low-current behavior near the NTC,
-// while separating more at heavier load and longer heating duration.
-static constexpr float TEMP_NTC_BETA                       = 4050.0f;
-static constexpr float TEMP_SOCKET_LOAD_ON_A              = 0.35f;
-static constexpr float TEMP_SOCKET_LOAD_OFF_A             = 0.15f;
-static constexpr float TEMP_SOCKET_CURRENT_DEAD_A         = 6.2f;
-static constexpr float TEMP_SOCKET_BASE_DELTA_C           = 0.35f;
-static constexpr float TEMP_SOCKET_IEXCESS2_GAIN_C_PER_A2 = 0.155f;
-static constexpr float TEMP_SOCKET_MAX_DELTA_C            = 8.5f;
-static constexpr float TEMP_SOCKET_HEAT_TAU_S             = 900.0f;
-static constexpr float TEMP_SOCKET_COOL_TAU_S             = 1800.0f;
-static constexpr float TEMP_SOCKET_EST_MIN_C              = -20.0f;
-static constexpr float TEMP_SOCKET_EST_MAX_C              = 125.0f;
+// The difference between them is useful for field detection of sockets that
+// heat faster than expected for the same current and elapsed heating time.
+// This does NOT hard-classify "normal" vs "corroded"; it only exposes when
+// the measured thermal behavior runs hotter than the healthy reference curve.
+static constexpr float TEMP_NTC_BETA                     = 4050.0f;
+static constexpr float TEMP_SOCKET_EST_MIN_C             = -20.0f;
+static constexpr float TEMP_SOCKET_EST_MAX_C             = 125.0f;
+static constexpr float TEMP_SOCKET_MODEL_LOAD_ON_A       = 0.35f;
+static constexpr float TEMP_SOCKET_AMBIENT_TRACK_MAX_A   = 0.18f;
+static constexpr float TEMP_SOCKET_AMBIENT_TRACK_TAU_S   = 240.0f;
+static constexpr float TEMP_SOCKET_NORMAL_IREF_A         = 12.0f;
+static constexpr float TEMP_SOCKET_NORMAL_BASE_RISE_C    = 0.20f;
+static constexpr float TEMP_SOCKET_NORMAL_GAIN_C         = 12.0f;
+static constexpr float TEMP_SOCKET_NORMAL_MAX_RATIO      = 1.25f;
+static constexpr float TEMP_SOCKET_HEAT_TAU_S            = 900.0f;
+static constexpr float TEMP_SOCKET_COOL_TAU_S            = 1800.0f;
+static constexpr float TEMP_SOCKET_MEASURED_BASE_DELTA_C = 0.30f;
+static constexpr float TEMP_SOCKET_MEASURED_GAIN_C       = 1.20f;
+static constexpr float TEMP_SOCKET_EXCESS_WARN_C         = 1.50f;
 
 static constexpr float MAINS_PRESENT_OFF_V  = 12.0f;
 static constexpr float MAINS_PRESENT_ON_V   = 28.0f;

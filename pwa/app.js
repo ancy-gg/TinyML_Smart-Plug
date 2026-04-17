@@ -64,6 +64,9 @@ const iVal   = el("iVal");
 const pVal   = el("pVal");
 const tNtcVal = el("tNtcVal");
 const tVal   = el("tVal");
+const tExpectedVal = el("tExpectedVal");
+const tExpectedHint = el("tExpectedHint");
+const tExpectedWarn = el("tExpectedWarn");
 const vHint  = el("vHint");
 const iHint  = el("iHint");
 const pHint  = el("pHint");
@@ -144,6 +147,8 @@ const UI_MAINS_ABSENT_V = 50;
 const UI_TEMP_COLD_ABNORMAL_C = 10;
 const UI_TEMP_WARM_C = 60;
 const UI_TEMP_HOT_C = 70;
+const UI_TEMP_EXCESS_WARN_C = 1.5;
+const UI_TEMP_EXCESS_HIGH_C = 3.0;
 const UI_ACTIVE_CURRENT_A = 0.08;
 const UI_ACTIVE_POWER_VA = 15;
 
@@ -1032,7 +1037,7 @@ function animateNumber(node) {
 
 function setLiveZeroes() {
   const zeroMap = [
-    [vVal, "0.0"], [iVal, "0.000"], [tNtcVal, "0.0"], [tVal, "0.0"], [pVal, "0.0"],
+    [vVal, "0.0"], [iVal, "0.000"], [tNtcVal, "0.0"], [tVal, "0.0"], [tExpectedVal, "0.0"], [pVal, "0.0"],
     [irmsZscoreVal, "0.000"], [deltaIrmsVal, "0.000"], [halfcycleAsymVal, "0.000"],
     [cycleNmseVal, "0.000"], [deltaHfEnergyVal, "0.000"], [vSagPctVal, "0.00"],
     [midbandRatioVal, "0.000"], [zcvVal, "0.000"], [spectralFluxVal, "0.000"],
@@ -1097,7 +1102,7 @@ function deriveLiveStatus(data) {
 
 function setLiveUnavailable() {
   const unavailableMap = [
-    vVal, iVal, tNtcVal, tVal, pVal,
+    vVal, iVal, tNtcVal, tVal, tExpectedVal, pVal,
     irmsZscoreVal, deltaIrmsVal, halfcycleAsymVal,
     cycleNmseVal, deltaHfEnergyVal, vSagPctVal,
     midbandRatioVal, zcvVal, spectralFluxVal,
@@ -1179,12 +1184,17 @@ function applyMetricHints(data) {
     if (pHint) pHint.textContent = "—";
     if (tNtcHint) tNtcHint.textContent = "—";
     if (tHint) tHint.textContent = "—";
+    if (tExpectedHint) tExpectedHint.textContent = "—";
+    if (tExpectedWarn) { tExpectedWarn.hidden = true; tExpectedWarn.classList.remove("is-active"); }
     return;
   }
 
   const i = Number(data?.current ?? 0);
   const p = Number(data?.apparent_power ?? 0);
   const t = Number(data?.estimated_socket_temp ?? data?.temp ?? 0);
+  const tExpected = Number(data?.expected_normal_socket_temp ?? data?.expected_socket_temp ?? NaN);
+  const tExcess = Number(data?.socket_temp_excess ?? data?.temp_excess_c ?? NaN);
+  const higherThanExpected = !!data?.temperature_higher_than_expected || (Number.isFinite(tExcess) && tExcess >= UI_TEMP_EXCESS_WARN_C);
   const powerKind = effectivePowerCondition();
 
   if (vHint) {
@@ -1222,6 +1232,19 @@ function applyMetricHints(data) {
     else if (t >= UI_TEMP_HOT_C) tHint.textContent = `≥ ${UI_TEMP_HOT_C} °C trip`;
     else if (t >= UI_TEMP_WARM_C) tHint.textContent = `≥ ${UI_TEMP_WARM_C} °C warm`;
     else tHint.textContent = "Normal";
+  }
+
+  if (tExpectedHint) {
+    if (!Number.isFinite(tExpected) || tExpected <= 0) tExpectedHint.textContent = "Expected curve unavailable";
+    else if (Number.isFinite(tExcess) && tExcess >= UI_TEMP_EXCESS_HIGH_C) tExpectedHint.textContent = `+${tExcess.toFixed(1)} °C above expected`;
+    else if (Number.isFinite(tExcess) && tExcess >= UI_TEMP_EXCESS_WARN_C) tExpectedHint.textContent = `+${tExcess.toFixed(1)} °C elevated`;
+    else tExpectedHint.textContent = "Healthy reference";
+  }
+
+  if (tExpectedWarn) {
+    const active = higherThanExpected;
+    tExpectedWarn.hidden = !active;
+    tExpectedWarn.classList.toggle("is-active", active);
   }
 }
 
@@ -1622,6 +1645,7 @@ function updateLiveDom(data) {
   const p   = toFixedOrDash(data.apparent_power, 1);
   const tNtc = toFixedOrDash(data.temp_ntc ?? data.temp_ntc_c, 1);
   const t   = toFixedOrDash(data.estimated_socket_temp ?? data.temp, 1);
+  const tExpected = toFixedOrDash(data.expected_normal_socket_temp ?? data.expected_socket_temp, 1);
 
   const iz  = formatFeatureValue("abs_irms_zscore_vs_baseline", data.abs_irms_zscore_vs_baseline);
   const di  = formatFeatureValue("delta_irms_abs", data.delta_irms_abs);
@@ -1643,6 +1667,7 @@ function updateLiveDom(data) {
   if (iVal && iVal.textContent !== i) { iVal.textContent = i; animateNumber(iVal); }
   if (tNtcVal && tNtcVal.textContent !== tNtc) { tNtcVal.textContent = tNtc; animateNumber(tNtcVal); }
   if (tVal && tVal.textContent !== t) { tVal.textContent = t; animateNumber(tVal); }
+  if (tExpectedVal && tExpectedVal.textContent !== tExpected) { tExpectedVal.textContent = tExpected; animateNumber(tExpectedVal); }
   if (pVal && pVal.textContent !== p) { pVal.textContent = p; animateNumber(pVal); }
 
   if (irmsZscoreVal && irmsZscoreVal.textContent !== iz) { irmsZscoreVal.textContent = iz; animateNumber(irmsZscoreVal); }
