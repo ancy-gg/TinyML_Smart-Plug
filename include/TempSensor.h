@@ -9,10 +9,10 @@ public:
   TempSensor(int pin);
   void begin();
   float readTempC();
-  // Calibration-ready socket estimate.
-  // For now this is intentionally independent of current; once you collect
-  // new NTC-vs-socket data we can enable/refit the curve in MainConfiguration.h.
-  float estimateSocketTempC(float ntcTempC) const;
+  // Dynamic socket-hotspot estimate.
+  // Uses measured NTC temperature plus a conservative current/time-based rise term.
+  // This keeps low-current behavior near the NTC while separating more at heavy load.
+  float estimateSocketTempC(float ntcTempC, float irmsA, bool mainsPresent);
 
   void setLongAverage(float tauS, float jumpC) {
     if (tauS < 0.6f) tauS = 0.6f;
@@ -37,6 +37,10 @@ private:
 
   float _avgTauS  = 3.0f;
   float _avgJumpC = 0.75f;
+
+  bool _socketModelInit = false;
+  float _socketDeltaC = 0.0f;
+  uint32_t _lastSocketModelMs = 0;
 };
 
 #endif

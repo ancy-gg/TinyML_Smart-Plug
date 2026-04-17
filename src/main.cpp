@@ -1590,7 +1590,7 @@ void loop() {
   f.vrms = vRms;
   const float irmsRawMeasured = f.irms;
   float irmsRawForLogic = cleanLogicCurrent(irmsRawMeasured, f.current_valid != 0, vRaw, vFast);
-  tSocketC = tempSensor.estimateSocketTempC(tNtcC);
+  tSocketC = tempSensor.estimateSocketTempC(tNtcC, irmsRawForLogic, mainsPresentForFeat);
   f.temp_c = tSocketC;
   f.temp_ntc_c = tNtcC;
 
@@ -2135,6 +2135,8 @@ void loop() {
   }
 
   const bool controlsLocked = gSafeMode || paused || bootSettling || protectionInhibit || unpluggedLiveCtl || protection.webControlLocked() || protection.voltageLockoutActive();
+  const bool relayOnBlocked = controlsLocked;
+  const bool relayOffBlocked = gSafeMode || paused || bootSettling || protectionInhibit || unpluggedLiveCtl;
   const bool portalRequested = (!gSafeMode) ? network.consumePortalRequest() : false;
   String relayOnToken = "";
   String relayOffToken = "";
@@ -2142,26 +2144,24 @@ void loop() {
   const bool relayOffRequested = (!gSafeMode) ? network.consumeRelayOffRequest(&relayOffToken) : false;
   if (!gSafeMode) {
     if (portalRequested && !controlsLocked) wifiMgr.requestPortal(true);
-    if (!controlsLocked) {
-      if (relayOffRequested) {
-        clearManualRelayAssume_();
-        const bool wasLatched = protection.relayLatchedOn();
-        protection.pulseRelayOff();
-        const bool pulseSent = protection.relayPulseActive() || (protection.relayLatchedOn() != wasLatched);
-        if (pulseSent) (void)network.publishRelayPulseEvent("relay_off", relayOffToken, "web");
-        else (void)network.publishControlAck("relay_off", relayOffToken);
-        armRelayArtifactBlank_();
-        notification.notify(SND_RESET_ACK);
-      } else if (relayOnRequested) {
-        clearManualRelayAssume_();
-        const bool wasLatched = protection.relayLatchedOn();
-        protection.pulseRelayOn();
-        const bool pulseSent = protection.relayPulseActive() || (protection.relayLatchedOn() != wasLatched);
-        if (pulseSent) (void)network.publishRelayPulseEvent("relay_on", relayOnToken, "web");
-        else (void)network.publishControlAck("relay_on", relayOnToken);
-        armRelayArtifactBlank_(1200UL);
-        notification.notify(SND_RESET_ACK);
-      }
+    if (relayOffRequested && !relayOffBlocked) {
+      clearManualRelayAssume_();
+      const bool wasLatched = protection.relayLatchedOn();
+      protection.pulseRelayOff();
+      const bool pulseSent = protection.relayPulseActive() || (protection.relayLatchedOn() != wasLatched);
+      if (pulseSent) (void)network.publishRelayPulseEvent("relay_off", relayOffToken, "web");
+      else (void)network.publishControlAck("relay_off", relayOffToken);
+      armRelayArtifactBlank_();
+      notification.notify(SND_RESET_ACK);
+    } else if (relayOnRequested && !relayOnBlocked) {
+      clearManualRelayAssume_();
+      const bool wasLatched = protection.relayLatchedOn();
+      protection.pulseRelayOn();
+      const bool pulseSent = protection.relayPulseActive() || (protection.relayLatchedOn() != wasLatched);
+      if (pulseSent) (void)network.publishRelayPulseEvent("relay_on", relayOnToken, "web");
+      else (void)network.publishControlAck("relay_on", relayOnToken);
+      armRelayArtifactBlank_(1200UL);
+      notification.notify(SND_RESET_ACK);
     }
   }
 

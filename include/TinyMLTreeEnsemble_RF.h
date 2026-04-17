@@ -29,7 +29,7 @@
 #include <string.h>
 static const int arc_model_input_feature_ids[ARC_MODEL_INPUT_DIM] = {26, 24, 25, 0, 13, 10, 12, 16, 17, 18, 19, 20, 21, 22};
 static const int arc_model_base_feature_ids[ARC_MODEL_BASE_FEATURE_COUNT] = {26, 24, 25, 0, 13, 10, 12};
-static const float arc_family_thresholds[6] = {0.15f, 0.15f, 0.72f, 0.72f, 0.95f, 0.72f};
+static const float arc_family_thresholds[6] = {0.30f, 0.30f, 0.72f, 0.72f, 0.95f, 0.72f};
 static inline float arc_context_threshold_for_family(int family, float confidence) {
     if (family >= 0 && family < (int)(sizeof(arc_family_thresholds)/sizeof(arc_family_thresholds[0])) && confidence >= ARC_CONTEXT_CONFIDENCE_MIN) return arc_family_thresholds[family];
     return ARC_THRESHOLD_UNKNOWN;

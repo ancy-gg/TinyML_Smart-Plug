@@ -654,7 +654,7 @@ function setRelayBusy(isBusy) {
 }
 
 async function sendRelayPulse(nextOn) {
-  if (relayControlsLocked()) {
+  if (relayControlsLocked(!!nextOn)) {
     syncRelayRockerVisualState(lastLiveData);
     updateRelayControls();
     return;
@@ -709,7 +709,7 @@ async function sendRelayPulse(nextOn) {
     toast(nextOn ? "Failed to send Relay ON." : "Failed to send Relay OFF.", "err");
   } finally {
     setTimeout(() => {
-      if (relayToggle) relayToggle.disabled = relayControlsLocked();
+      if (relayToggle) relayToggle.disabled = relayControlsLocked(!relayToggle.checked);
     }, CONTROL_PULSE_DEBOUNCE_MS);
   }
 }
@@ -1422,19 +1422,30 @@ function historyDurationMsDesc(sorted, idx) {
   return (endEpoch > startEpoch) ? (endEpoch - startEpoch) : 0;
 }
 
-function relayControlsLocked() {
+function relayOnControlsLocked() {
   const k = classifyStatus(effectiveStatusKind());
   const liveLock = !!lastLiveData?.fault_latched || !!lastLiveData?.web_controls_locked;
   return !liveIsFresh() || liveLock || latchedFaultUi || ["ARCING", "HEATING", "OVERLOAD", "SUSTAINED_OVERLOAD", "UNDERVOLTAGE", "OVERVOLTAGE", "UNPLUGGED", "DEVICE_DISCONNECTED", "SAFE_MODE", "STARTUP_STABILIZING", "OTA_UPDATING", "CONFIG_PORTAL", "WIFI_CONNECTING"].includes(k);
 }
 
+function relayOffControlsLocked() {
+  const k = classifyStatus(effectiveStatusKind());
+  return !liveIsFresh() || ["DEVICE_DISCONNECTED", "SAFE_MODE", "STARTUP_STABILIZING", "OTA_UPDATING", "CONFIG_PORTAL", "WIFI_CONNECTING"].includes(k);
+}
+
+function relayControlsLocked(nextOn = true) {
+  return nextOn ? relayOnControlsLocked() : relayOffControlsLocked();
+}
+
 function updateRelayControls() {
-  const locked = relayControlsLocked();
   const busy = relayRocker?.classList.contains("is-busy");
-  relayRocker?.classList.toggle("is-disabled", locked || !!busy);
-  if (btnRelayOn) btnRelayOn.disabled = locked || !!busy;
-  if (btnRelayOff) btnRelayOff.disabled = locked || !!busy;
-  if (relayToggle) relayToggle.disabled = locked || !!busy;
+  const onLocked = relayControlsLocked(true);
+  const offLocked = relayControlsLocked(false);
+  const toggleLocked = relayToggle ? relayControlsLocked(!relayToggle.checked) : onLocked;
+  relayRocker?.classList.toggle("is-disabled", toggleLocked || !!busy);
+  if (btnRelayOn) btnRelayOn.disabled = onLocked || !!busy;
+  if (btnRelayOff) btnRelayOff.disabled = offLocked || !!busy;
+  if (relayToggle) relayToggle.disabled = toggleLocked || !!busy;
   if (btnFaultCleared) btnFaultCleared.disabled = !liveIsFresh();
 }
 

@@ -46,7 +46,12 @@ private:
   uint32_t _underVoltSince = 0;
   uint32_t _overVoltSince  = 0;
   uint32_t _overloadSince  = 0;
-  uint32_t _sustainedOverloadSince = 0;
+  uint32_t _sustainedOverloadStateSince = 0;
+  uint32_t _sustainedOverloadLastAvgMs = 0;
+  float _sustainedOverloadAvgA = 0.0f;
+  int8_t _sustainedOverloadScore = 0;
+  bool _sustainedOverloadHigh = false;
+  bool _sustainedOverloadAvgInit = false;
   bool _voltageLockout = false;
   FaultState _voltageLockoutKind = STATE_NORMAL;
   uint32_t _voltageRecoverySince = 0;

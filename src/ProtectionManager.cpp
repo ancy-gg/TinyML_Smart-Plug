@@ -75,7 +75,9 @@ void ProtectionManager::setRelayOffHold(bool asserted) {
 
 void ProtectionManager::resetLatch() {
   _arcCnt = 0; _heatFrames = 0; _arcHoldUntil = 0; _heatHoldUntil = 0;
-  _underVoltSince = 0; _overVoltSince = 0; _overloadSince = 0; _sustainedOverloadSince = 0;
+  _underVoltSince = 0; _overVoltSince = 0; _overloadSince = 0; _sustainedOverloadStateSince = 0;
+  _sustainedOverloadLastAvgMs = 0; _sustainedOverloadAvgA = 0.0f; _sustainedOverloadScore = 0;
+  _sustainedOverloadHigh = false; _sustainedOverloadAvgInit = false;
   _voltageLockout = false; _voltageLockoutKind = STATE_NORMAL; _voltageRecoverySince = 0;
   _tripOffEdge = false; _autoOnEdge = false; _webLockout = false; _resetRequired = false; _latchedFaultState = STATE_NORMAL;
   _loadOn = false; _loadOnSince = 0; _loadOffSince = 0; _prevSustainedTrip = false;
@@ -215,14 +217,45 @@ FaultState ProtectionManager::update(float vProtect, float vRaw, float tempC, fl
     _overloadSince = 0;
   }
 
-  const bool sustainedOverloadRaw = (irmsA >= SUSTAINED_OVERLOAD_TRIP_A);
-  if (sustainedOverloadRaw) {
-    if (_sustainedOverloadSince == 0) _sustainedOverloadSince = now;
+  if (!_sustainedOverloadAvgInit) {
+    _sustainedOverloadAvgA = irmsA;
+    _sustainedOverloadLastAvgMs = now;
+    _sustainedOverloadAvgInit = true;
   } else {
-    _sustainedOverloadSince = 0;
+    uint32_t dtMs = now - _sustainedOverloadLastAvgMs;
+    if (dtMs > 250UL) dtMs = 250UL;
+    if (dtMs > 0UL) {
+      const float alpha = (float)dtMs / (float)SUSTAINED_OVERLOAD_AVG_WINDOW_MS;
+      const float a = (alpha > 1.0f) ? 1.0f : ((alpha < 0.0f) ? 0.0f : alpha);
+      _sustainedOverloadAvgA += (irmsA - _sustainedOverloadAvgA) * a;
+      _sustainedOverloadLastAvgMs = now;
+    }
   }
 
-  const bool sustainedOverloadActive = sustainedOverloadRaw && ((now - _sustainedOverloadSince) >= SUSTAINED_OVERLOAD_TRIP_MS);
+  bool sustainedOverloadHighNow = _sustainedOverloadHigh;
+  if (!_sustainedOverloadHigh) {
+    if (_sustainedOverloadAvgA >= SUSTAINED_OVERLOAD_TRIP_A) sustainedOverloadHighNow = true;
+  } else {
+    if (_sustainedOverloadAvgA <= SUSTAINED_OVERLOAD_CLEAR_A) sustainedOverloadHighNow = false;
+  }
+
+  if ((_sustainedOverloadStateSince == 0) || (sustainedOverloadHighNow != _sustainedOverloadHigh)) {
+    _sustainedOverloadStateSince = now;
+    _sustainedOverloadHigh = sustainedOverloadHighNow;
+  } else {
+    const uint32_t elapsed = now - _sustainedOverloadStateSince;
+    if (elapsed >= SUSTAINED_OVERLOAD_SCORE_STEP_MS) {
+      const uint32_t steps = elapsed / SUSTAINED_OVERLOAD_SCORE_STEP_MS;
+      if (_sustainedOverloadHigh) {
+        _sustainedOverloadScore = clampi(_sustainedOverloadScore + (int)steps, 0, SUSTAINED_OVERLOAD_SCORE_MAX);
+      } else {
+        _sustainedOverloadScore = clampi(_sustainedOverloadScore - (int)steps, 0, SUSTAINED_OVERLOAD_SCORE_MAX);
+      }
+      _sustainedOverloadStateSince += steps * SUSTAINED_OVERLOAD_SCORE_STEP_MS;
+    }
+  }
+
+  const bool sustainedOverloadActive = (_sustainedOverloadScore >= SUSTAINED_OVERLOAD_SCORE_TRIP);
   if (sustainedOverloadActive && !_prevOverloadTrip) {
     _tripOffEdge = true;
     _resetRequired = true;
