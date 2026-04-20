@@ -47,6 +47,8 @@ const ovPowerCondition = el("ovPowerCondition");
 const ovPowerSub = el("ovPowerSub");
 const ovProtection = el("ovProtection");
 const ovProtectionSub = el("ovProtectionSub");
+const ovProtectionTiming = el("ovProtectionTiming");
+const ovProtectionTimingSub = el("ovProtectionTimingSub");
 const ovFirmware = el("ovFirmware");
 const ovFirmwareSub = el("ovFirmwareSub");
 const ovLastEvent = el("ovLastEvent");
@@ -608,6 +610,9 @@ densityButtons.forEach((btn) => btn.addEventListener("click", () => setHeaderMen
 modeButtons.forEach((btn) => btn.addEventListener("click", () => setHeaderMenuOpen(false)));
 
 const CONTROL_PULSE_DEBOUNCE_MS = 1500;
+const PROTECTION_ACTUATION_NONE = 0;
+const PROTECTION_ACTUATION_ALARM = 1;
+const PROTECTION_ACTUATION_RELAY_TRIP = 2;
 
 
 function deriveRelayLatchedOn(data = lastLiveData) {
@@ -1090,6 +1095,101 @@ function isLiveLoadDetected(data) {
   return isLiveLoadActive(data);
 }
 
+function deriveProtectionAlarmActive(data = lastLiveData) {
+  if (!data || typeof data !== "object") return false;
+  if (typeof data.protection_alarm_active === "boolean") return data.protection_alarm_active;
+  const numeric = Number(data.protection_alarm_active);
+  if (Number.isFinite(numeric)) return numeric > 0.5;
+  const status = classifyStatus(data?.status || "NORMAL");
+  return ["OVERLOAD", "SUSTAINED_OVERLOAD", "HEATING", "ARCING", "OVERVOLTAGE", "UNDERVOLTAGE"].includes(status) ||
+         !!data?.fault_latched ||
+         !!data?.web_controls_locked;
+}
+
+function deriveProtectionTimingState(data = lastLiveData) {
+  return classifyStatus(data?.protection_timing_state || data?.status || "NORMAL");
+}
+
+function deriveProtectionActuationKind(data = lastLiveData) {
+  const numeric = Number(data?.protection_actuation_kind);
+  if (Number.isFinite(numeric)) {
+    const rounded = Math.round(numeric);
+    return Math.max(PROTECTION_ACTUATION_NONE, Math.min(PROTECTION_ACTUATION_RELAY_TRIP, rounded));
+  }
+  const alarmActive = deriveProtectionAlarmActive(data);
+  if (!alarmActive) return PROTECTION_ACTUATION_NONE;
+  return deriveRelayLatchedOn(data) ? PROTECTION_ACTUATION_ALARM : PROTECTION_ACTUATION_RELAY_TRIP;
+}
+
+function formatProtectionLatency(ms) {
+  if (!Number.isFinite(ms) || ms < 0) return "--";
+  if (ms < 1000) return `${Math.round(ms)} ms`;
+  if (ms < 10000) return `${(ms / 1000).toFixed(2)} s`;
+  if (ms < 60000) return `${(ms / 1000).toFixed(1)} s`;
+  return formatElapsedClock(ms, false);
+}
+
+function protectionTimingCopy(data, fresh, fallbackStatus = "NORMAL") {
+  if (!fresh || !data) return { value: "Offline", sub: "No live link." };
+
+  const timingState = deriveProtectionTimingState(data);
+  const effectiveState = (timingState !== "NORMAL")
+    ? timingState
+    : classifyStatus(fallbackStatus || data?.status || "NORMAL");
+  const alarmActive = deriveProtectionAlarmActive(data);
+  const actuationKind = deriveProtectionActuationKind(data);
+  const onsetMs = Number(data?.protection_fault_onset_uptime_ms || 0);
+  const detectionLatencyMs = Number(data?.protection_detection_latency_ms);
+  const actuationLatencyMs = Number(data?.protection_actuation_latency_ms);
+  const hasSession =
+    onsetMs > 0 ||
+    alarmActive ||
+    actuationKind !== PROTECTION_ACTUATION_NONE ||
+    !["NORMAL", "UNPLUGGED", "DEVICE_DISCONNECTED"].includes(effectiveState);
+
+  if (!hasSession || effectiveState === "UNPLUGGED") {
+    return { value: "Monitoring", sub: "Waiting for fault timing data." };
+  }
+
+  const stateLabel = prettyStatus(effectiveState);
+  const hasDetection = Number.isFinite(detectionLatencyMs) && detectionLatencyMs >= 0;
+  const hasActuation = Number.isFinite(actuationLatencyMs) && actuationLatencyMs >= 0;
+
+  if (actuationKind === PROTECTION_ACTUATION_RELAY_TRIP && hasActuation) {
+    return {
+      value: `Relay tripped ${formatProtectionLatency(actuationLatencyMs)} after fault onset`,
+      sub: hasDetection
+        ? `${stateLabel} detected ${formatProtectionLatency(detectionLatencyMs)} after fault onset.`
+        : `${stateLabel} relay trip recorded.`
+    };
+  }
+
+  if (actuationKind === PROTECTION_ACTUATION_ALARM && hasActuation) {
+    return {
+      value: `Warned ${formatProtectionLatency(actuationLatencyMs)} after fault onset`,
+      sub: hasDetection
+        ? `${stateLabel} detected ${formatProtectionLatency(detectionLatencyMs)} after fault onset.`
+        : `${stateLabel} warning recorded.`
+    };
+  }
+
+  if (actuationKind === PROTECTION_ACTUATION_RELAY_TRIP && hasDetection) {
+    return {
+      value: "Relay trip pending",
+      sub: `${stateLabel} detected ${formatProtectionLatency(detectionLatencyMs)} after fault onset. Waiting for current to fall to zero.`
+    };
+  }
+
+  if (hasDetection) {
+    return {
+      value: `Detected in ${formatProtectionLatency(detectionLatencyMs)}`,
+      sub: `${stateLabel} active. Actuation pending.`
+    };
+  }
+
+  return { value: stateLabel, sub: `${stateLabel} active.` };
+}
+
 function deriveLiveStatus(data) {
   const raw = classifyStatus(data?.status || "NORMAL");
   if (["DEVICE_DISCONNECTED", "OVERLOAD", "SUSTAINED_OVERLOAD", "HEATING", "ARCING", "OVERVOLTAGE", "UNDERVOLTAGE", "UNPLUGGED", "SAFE_MODE", "CONFIG_PORTAL", "WIFI_CONNECTING", "STARTUP_STABILIZING", "OTA_UPDATING", "FIRMWARE_UPDATED"].includes(raw)) return raw;
@@ -1269,6 +1369,10 @@ function renderOverview() {
   const lastEventTime = latestHistoryRecord ? formatDisplayTimestamp(getRecordEpochMs(latestHistoryRecord)) : "—";
   const loadActive = fresh && isLiveLoadActive(live);
   const loadDetected = fresh && isLiveLoadDetected(live);
+  const relayLatchedOn = fresh && deriveRelayLatchedOn(live);
+  const protectionAlarmActive = fresh && deriveProtectionAlarmActive(live);
+  const protectionTimingState = deriveProtectionTimingState(live);
+  const protectionTiming = protectionTimingCopy(live, fresh, status);
   const faultLatched = !!live.fault_latched || !!live.web_controls_locked;
   if (fresh && (["ARCING", "HEATING", "SUSTAINED_OVERLOAD", "UNDERVOLTAGE", "OVERVOLTAGE"].includes(status) || faultLatched)) latchedFaultUi = true;
 
@@ -1354,15 +1458,22 @@ function renderOverview() {
 
   if (ovProtection) {
     if (!fresh || status === "DEVICE_DISCONNECTED") ovProtection.textContent = "Offline";
-    else ovProtection.textContent = (status === "NORMAL") ? ((live.load_state || (loadActive ? "LOAD ON" : "LOAD OFF"))) : prettyStatus(status);
+    else ovProtection.textContent = `Relay ${relayLatchedOn ? "On" : "Off"}, Alarm ${protectionAlarmActive ? "On" : "Off"}`;
   }
   if (ovProtectionSub) {
-    if (status === "OVERLOAD") ovProtectionSub.textContent = "Alarm only.";
-    else if (status === "SUSTAINED_OVERLOAD") ovProtectionSub.textContent = "Relay tripped.";
-    else if (["HEATING", "ARCING", "UNDERVOLTAGE", "OVERVOLTAGE"].includes(status)) ovProtectionSub.textContent = "Relay tripped.";
-    else if (status === "UNPLUGGED") ovProtectionSub.textContent = "No trip.";
-    else ovProtectionSub.textContent = "No active trip.";
+    if (!fresh || status === "DEVICE_DISCONNECTED") ovProtectionSub.textContent = "No live link.";
+    else if (status === "UNPLUGGED" && !protectionAlarmActive) ovProtectionSub.textContent = "Socket unplugged. Protection idle.";
+    else if (protectionAlarmActive) {
+      const activeLabel = prettyStatus(protectionTimingState !== "NORMAL" ? protectionTimingState : status);
+      ovProtectionSub.textContent = `${activeLabel} active.`;
+    } else if (relayLatchedOn) {
+      ovProtectionSub.textContent = "Monitoring with relay closed.";
+    } else {
+      ovProtectionSub.textContent = "Relay open with no active alarm.";
+    }
   }
+  if (ovProtectionTiming) ovProtectionTiming.textContent = protectionTiming.value;
+  if (ovProtectionTimingSub) ovProtectionTimingSub.textContent = protectionTiming.sub;
 
   if (ovFirmware) ovFirmware.textContent = fw;
   if (ovFirmwareSub) ovFirmwareSub.textContent = `OTA ${otaReady ? "ready" : "off"} • ${fresh ? "online" : "offline"}`;

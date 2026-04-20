@@ -60,6 +60,14 @@ public:
                          float provisionalContextFamilyConfidence,
                          bool contextAcquiring,
                          bool contextLatched,
+                         FaultState protectionTimingState,
+                         bool protectionAlarmActive,
+                         uint8_t protectionActuationKind,
+                         uint32_t protectionFaultOnsetUptimeMs,
+                         uint32_t protectionFaultDetectedUptimeMs,
+                         uint32_t protectionFaultActuatedUptimeMs,
+                         uint32_t protectionDetectionLatencyMs,
+                         uint32_t protectionActuationLatencyMs,
                          const String& state,
                          bool faultLatched, bool webControlsLocked, bool relayLatchedOn, bool relayPulseActive);
 
@@ -102,6 +110,14 @@ private:
     float provisionalContextFamilyConfidence = 0.0f;
     bool contextAcquiring = false;
     bool contextLatched = false;
+    FaultState protectionTimingState = STATE_NORMAL;
+    bool protectionAlarmActive = false;
+    uint8_t protectionActuationKind = PROTECTION_ACTUATION_NONE;
+    uint32_t protectionFaultOnsetUptimeMs = 0;
+    uint32_t protectionFaultDetectedUptimeMs = 0;
+    uint32_t protectionFaultActuatedUptimeMs = 0;
+    uint32_t protectionDetectionLatencyMs = 0;
+    uint32_t protectionActuationLatencyMs = 0;
     String state;
     bool faultLatched = false;
     bool webControlsLocked = false;
@@ -144,6 +160,11 @@ private:
     uint32_t frame_end_uptime_ms;
     uint32_t feature_compute_end_uptime_ms;
     uint32_t log_enqueue_uptime_ms;
+    uint32_t protection_fault_onset_uptime_ms;
+    uint32_t protection_fault_detected_uptime_ms;
+    uint32_t protection_fault_actuated_uptime_ms;
+    uint32_t protection_detection_latency_ms;
+    uint32_t protection_actuation_latency_ms;
     float frame_dt_ms;
     float compute_time_ms;
     float timing_skew_ms;
@@ -162,6 +183,7 @@ private:
     uint8_t model_pred, feat_valid, current_valid, fault_state;
     uint8_t sampling_quality_bad, invalid_loaded_flag, invalid_off_flag;
     uint8_t relay_blank_active, turnon_blank_active, transient_blank_active;
+    uint8_t protection_alarm_active, protection_actuation_kind;
     int8_t  device_family_code;
     int8_t  context_family_code_runtime;
     int8_t  context_family_code_provisional;
@@ -180,10 +202,10 @@ private:
   static constexpr uint32_t CLOUD_TX_MIN_GAP_MS = 300UL;
   static constexpr uint32_t CLOUD_TX_RETRY_MS = 1800UL;
   static constexpr uint32_t CLOUD_CTRL_FAIL_RETRY_MS = 900UL;
-  static constexpr uint32_t CLOUD_CTRL_READ_GAP_MS = 900UL;
-  static constexpr uint32_t CLOUD_CTRL_READ_GAP_LOGGING_MS = 6000UL;
-  static constexpr uint32_t CLOUD_ML_READ_GAP_MS = 1500UL;
-  static constexpr uint32_t CLOUD_ML_READ_GAP_LOGGING_MS = 15000UL;
+  static constexpr uint32_t CLOUD_CTRL_READ_GAP_MS = CLOUD_CONTROL_POLL_MS;
+  static constexpr uint32_t CLOUD_CTRL_READ_GAP_LOGGING_MS = 10000UL;
+  static constexpr uint32_t CLOUD_ML_READ_GAP_MS = ML_CONTROL_POLL_MS;
+  static constexpr uint32_t CLOUD_ML_READ_GAP_LOGGING_MS = 10000UL;
   static constexpr uint16_t CLOUD_TLS_RX_BUFFER_BYTES = 2048;
   static constexpr uint16_t CLOUD_TLS_TX_BUFFER_BYTES = 1024;
   static constexpr uint16_t CLOUD_RESPONSE_BUFFER_BYTES = 1024;
@@ -208,6 +230,10 @@ private:
   uint32_t _lastMlUploadAttemptMs = 0;
 
   String _lastSentLiveState = "";
+  FaultState _lastSentProtectionTimingState = STATE_NORMAL;
+  uint8_t _lastSentProtectionActuationKind = PROTECTION_ACTUATION_NONE;
+  bool _lastSentProtectionAlarmActive = false;
+  bool _lastSentRelayLatchedOn = false;
   String _lastLoggedFaultState = "";
   String _lastHourlyNormalKey = "";
   String _fwVersion = "—";

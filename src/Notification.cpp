@@ -515,15 +515,14 @@ void Notification::clearFaultAlert() {
 void Notification::updateBuzzer(FaultState st, float vProtect, float i, float t) {
   const uint32_t now = millis();
 #if PROTECTION
-  const float heatWarnC = TEMP_WARN_C;
-  const bool heatActive = (st == STATE_HEATING) || (t >= heatWarnC);
+  (void)i;
+  (void)t;
+  const bool heatActive = (st == STATE_HEATING);
   const bool arcActive  = (st == STATE_ARCING);
   const bool underVoltActive = (st == STATE_UNDERVOLTAGE);
   const bool overVoltActive  = (st == STATE_OVERVOLTAGE);
-  const bool overloadActive  = (st == STATE_OVERLOAD) || (st == STATE_SUSTAINED_OVERLOAD) || (i >= OVERLOAD_WARN_A);
+  const bool overloadActive  = (st == STATE_OVERLOAD) || (st == STATE_SUSTAINED_OVERLOAD);
 #else
-  const float heatWarnC = TEMP_DATA_WARN_C;
-  (void)heatWarnC;
   (void)vProtect;
   (void)i;
   (void)t;

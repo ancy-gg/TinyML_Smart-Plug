@@ -1589,6 +1589,7 @@ void loop() {
 
   f.vrms = vRms;
   const float irmsRawMeasured = f.irms;
+  const bool currentValidMeasured = (f.current_valid != 0);
   float irmsRawForLogic = cleanLogicCurrent(irmsRawMeasured, f.current_valid != 0, vRaw, vFast);
   tSocketC = tempSensor.estimateSocketTempC(tNtcC, irmsRawForLogic, mainsPresentForFeat);
   tExpectedNormalC = tempSensor.expectedNormalSocketTempC();
@@ -2192,16 +2193,40 @@ void loop() {
 
   if (pendingProtectionTripOff && (int32_t)(millis() - relayActionAtMs) >= 0) {
     clearManualRelayAssume_();
+    const bool wasLatched = protection.relayLatchedOn();
     protection.pulseRelayOff();
-    armRelayArtifactBlank_();
-    pendingProtectionTripOff = false;
+    const bool pulseSent = protection.relayPulseActive() || (protection.relayLatchedOn() != wasLatched);
+    if (pulseSent) {
+      protection.noteActuation(PROTECTION_ACTUATION_RELAY_TRIP, millis());
+      armRelayArtifactBlank_();
+      pendingProtectionTripOff = false;
+    }
   }
   if (pendingProtectionAutoOn && (int32_t)(millis() - relayActionAtMs) >= 0) {
     clearManualRelayAssume_();
+    const bool wasLatched = protection.relayLatchedOn();
     protection.pulseRelayOn();
-    armRelayArtifactBlank_(1200UL);
-    pendingProtectionAutoOn = false;
+    const bool pulseSent = protection.relayPulseActive() || (protection.relayLatchedOn() != wasLatched);
+    if (pulseSent) {
+      armRelayArtifactBlank_(1200UL);
+      pendingProtectionAutoOn = false;
+    }
   }
+
+  const auto stampProtectionTelemetry = [&](FeatureFrame& frame) {
+    const uint32_t onsetMs = protection.faultOnsetUptimeMs();
+    const uint32_t detectedMs = protection.faultDetectedUptimeMs();
+    const uint32_t actuatedMs = protection.faultActuatedUptimeMs();
+    frame.protection_fault_onset_uptime_ms = onsetMs;
+    frame.protection_fault_detected_uptime_ms = detectedMs;
+    frame.protection_fault_actuated_uptime_ms = actuatedMs;
+    frame.protection_detection_latency_ms =
+        (onsetMs != 0U && detectedMs >= onsetMs) ? (detectedMs - onsetMs) : 0U;
+    frame.protection_actuation_latency_ms =
+        (onsetMs != 0U && actuatedMs >= onsetMs) ? (actuatedMs - onsetMs) : 0U;
+    frame.protection_alarm_active = protection.alarmActive() ? 1U : 0U;
+    frame.protection_actuation_kind = (uint8_t)protection.faultActuationKind();
+  };
 
   relayNetQuietActive = ((int32_t)(relayNetQuietUntilMs - millis()) > 0);
 
@@ -2212,6 +2237,7 @@ void loop() {
 
   if (tripOffEdge && !paused && !gSafeMode) {
     FeatureFrame fTrip = f;
+    stampProtectionTelemetry(fTrip);
     fTrip.irms = collectionModeActive ? irmsRawForLogic : irmsLoggedForCsv;
     fTrip.log_enqueue_uptime_ms = millis();
     fTrip.timing_skew_ms = (fTrip.log_enqueue_uptime_ms >= fTrip.frame_start_uptime_ms)
@@ -2221,9 +2247,11 @@ void loop() {
   }
 
   protection.apply(st, vRms, vFast, irmsRawForLogic, tSocketC);
+  protection.updateActuationFeedback(irmsRawMeasured, currentValidMeasured, millis());
   const FaultState liveFaultState =
       (st != STATE_NORMAL) ? st :
       (protection.faultLatched() ? protection.latchedFaultState() : STATE_NORMAL);
+  stampProtectionTelemetry(f);
   notification.updateBuzzer(liveFaultState, vFast, irmsRawForLogic, tSocketC);
   const bool mainsPresentStable = debouncedMainsPresentForState(vFast);
 #if PROTECTION
@@ -2341,7 +2369,12 @@ void loop() {
   static FaultState lastImmediateFaultState = STATE_NORMAL;
   if (!gSafeMode && !paused && !bootSettling) {
     if (st != STATE_NORMAL && (st != lastImmediateFaultState || tripOffEdge)) {
-      FeatureFrame fHist = f; fHist.irms = irmsRawForLogic; (void)network.logFeatureEvent(String(stateToCstr(st)), fHist, apparentPowerVa, (tripOffEdge && protectionEnabled));
+      FeatureFrame fHist = f;
+      fHist.irms = irmsRawForLogic;
+      const bool relayTripLogged =
+          (fHist.protection_actuation_kind == PROTECTION_ACTUATION_RELAY_TRIP) ||
+          (tripOffEdge && protectionEnabled);
+      (void)network.logFeatureEvent(String(stateToCstr(st)), fHist, apparentPowerVa, relayTripLogged);
     }
     lastImmediateFaultState = st;
   }
@@ -2375,6 +2408,14 @@ void loop() {
                               f.context_family_confidence_provisional,
                               f.context_acquiring != 0,
                               f.context_latched != 0,
+                              protection.timingState(),
+                              f.protection_alarm_active != 0,
+                              f.protection_actuation_kind,
+                              f.protection_fault_onset_uptime_ms,
+                              f.protection_fault_detected_uptime_ms,
+                              f.protection_fault_actuated_uptime_ms,
+                              f.protection_detection_latency_ms,
+                              f.protection_actuation_latency_ms,
                               stateStr,
                               protection.faultLatched(), controlsLocked, effectiveRelayLatchedOn, protection.relayPulseActive());
   }

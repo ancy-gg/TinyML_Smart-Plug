@@ -15,24 +15,24 @@
 
 // Input Feature Order:
 // [0] delta_irms_abs
-// [1] halfcycle_asymmetry
-// [2] midband_residual_ratio
-// [3] thd_i
-// [4] spectral_flux_midhf
-// [5] hf_energy_delta
+// [1] midband_residual_ratio
+// [2] abs_irms_zscore_vs_baseline
+// [3] residual_crest_factor
+// [4] thd_i
+// [5] spectral_flux_midhf
 
 #include <math.h>
 
-static const int context_model_input_feature_ids[CONTEXT_MODEL_INPUT_DIM] = {1, 2, 6, 11, 8, 12};
-static const float context_means[6] = {0.183199571f, 17.5830124f, -40.755909f, 36.1116107f, 33.4589692f, 13.6150405f};
-static const float context_stds[6] = {0.142295798f, 4.13009679f, 15.4806048f, 27.8521169f, 15.256421f, 3.27704812f};
+static const int context_model_input_feature_ids[CONTEXT_MODEL_INPUT_DIM] = {1, 6, 0, 10, 11, 8};
+static const float context_means[6] = {0.183199571f, -40.755909f, 1.813028f, 7.72716619f, 36.1116107f, 33.4589692f};
+static const float context_stds[6] = {0.142295798f, 15.4806048f, 1.54649379f, 0.959818877f, 27.8521169f, 15.256421f};
 static const int context_class_active[CONTEXT_MODEL_FAMILY_COUNT] = {1, 1, 1, 1, 1, 1};
-static const float context_centroid_resistive_linear[6] = {0.87274821f, -0.0669756245f, -0.853454504f, -0.567257213f, -0.660235043f, -1.06708438f};
-static const float context_centroid_inductive_motor[6] = {-1.08688998f, 0.204001024f, -0.145479451f, -0.529253289f, -0.237521862f, 0.584208867f};
-static const float context_centroid_rectifier_smps[6] = {-1.01900294f, 1.0900411f, 0.689129037f, 0.788000673f, 0.180119795f, 0.983591466f};
-static const float context_centroid_phase_angle_controlled[6] = {-1.02891878f, -1.31309561f, 2.30648772f, 2.54608708f, 2.66161867f, 1.33808213f};
-static const float context_centroid_brush_universal_motor[6] = {0.657250148f, -1.35802928f, -0.356350326f, -0.392530476f, -0.200409687f, -0.527821096f};
-static const float context_centroid_other_mixed[6] = {0.302859866f, 1.36165534f, 0.449075638f, -0.201095531f, -0.0410362782f, 0.802388771f};
+static const float context_centroid_resistive_linear[6] = {0.87274821f, -0.853454504f, -0.413807496f, -0.349604304f, -0.567257213f, -0.660235043f};
+static const float context_centroid_inductive_motor[6] = {-1.08688998f, -0.145479451f, -0.0262636887f, -0.538875758f, -0.529253289f, -0.237521862f};
+static const float context_centroid_rectifier_smps[6] = {-1.01900294f, 0.689129037f, -0.0939697619f, 0.821675383f, 0.788000673f, 0.180119795f};
+static const float context_centroid_phase_angle_controlled[6] = {-1.02891878f, 2.30648772f, -0.456552253f, 1.93272376f, 2.54608708f, 2.66161867f};
+static const float context_centroid_brush_universal_motor[6] = {0.657250148f, -0.356350326f, -0.402900189f, -0.795545502f, -0.392530476f, -0.200409687f};
+static const float context_centroid_other_mixed[6] = {0.302859866f, 0.449075638f, 2.39190061f, 0.0311527124f, -0.201095531f, -0.0410362782f};
 
 static inline void context_family_predict(double *input, double *output) {
     const float *centroids[] = {context_centroid_resistive_linear, context_centroid_inductive_motor, context_centroid_rectifier_smps, context_centroid_phase_angle_controlled, context_centroid_brush_universal_motor, context_centroid_other_mixed};

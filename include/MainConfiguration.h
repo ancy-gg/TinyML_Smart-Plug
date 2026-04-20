@@ -14,7 +14,7 @@ static constexpr bool ENABLE_AUTO_ARC_CAPTURE = false;
 // Cloud / OTA configuration
 static constexpr const char* FIREBASE_API_KEY = "AIzaSyAmJlZZszyWPJFgIkTAAl_TbIySys1nvEw";
 static constexpr const char* FIREBASE_DB_URL  = "tinyml-smart-plug-default-rtdb.asia-southeast1.firebasedatabase.app";
-static constexpr const char* FW_VERSION       = "v7.7.8-p-gen0";
+static constexpr const char* FW_VERSION       = "v7.8.1-p-gen0";
 static constexpr const char* OTA_DESIRED_VERSION_PATH = "/ota/desired_version";
 static constexpr const char* OTA_FIRMWARE_URL_PATH    = "/ota/firmware_url";
 
@@ -29,6 +29,12 @@ enum FaultState : uint8_t {
   STATE_OVERVOLTAGE,
   STATE_HEATING,
   STATE_ARCING
+};
+
+enum ProtectionActuationKind : uint8_t {
+  PROTECTION_ACTUATION_NONE = 0,
+  PROTECTION_ACTUATION_ALARM = 1,
+  PROTECTION_ACTUATION_RELAY_TRIP = 2,
 };
 
 static inline const char* stateToCstr(FaultState s) {
@@ -118,6 +124,11 @@ struct FeatureFrame {
   uint32_t frame_end_uptime_ms = 0;
   uint32_t feature_compute_end_uptime_ms = 0;
   uint32_t log_enqueue_uptime_ms = 0;
+  uint32_t protection_fault_onset_uptime_ms = 0;
+  uint32_t protection_fault_detected_uptime_ms = 0;
+  uint32_t protection_fault_actuated_uptime_ms = 0;
+  uint32_t protection_detection_latency_ms = 0;
+  uint32_t protection_actuation_latency_ms = 0;
 
   float frame_dt_ms = 0.0f;
   float compute_time_ms = 0.0f;
@@ -170,6 +181,8 @@ struct FeatureFrame {
   uint8_t relay_blank_active = 0;
   uint8_t turnon_blank_active = 0;
   uint8_t transient_blank_active = 0;
+  uint8_t protection_alarm_active = 0;
+  uint8_t protection_actuation_kind = PROTECTION_ACTUATION_NONE;
 
   int8_t  device_family_code = CONTEXT_FAMILY_UNKNOWN;
   int8_t  context_family_code_runtime = CONTEXT_FAMILY_UNKNOWN;
@@ -254,7 +267,7 @@ static constexpr uint32_t WIFI_BOOT_NO_CRED_AP_WINDOW_MS = 15000UL;
 static constexpr uint32_t WIFI_MANUAL_AP_WINDOW_MS  = 45000UL;
 static constexpr uint32_t WIFI_MANUAL_PORTAL_TIMEOUT_MS = 240000UL;
 static constexpr uint32_t WIFI_PORTAL_AP_GRACE_MS   = 1500UL;
-static constexpr const char* WIFI_PORTAL_SSID       = "TinyML-SmartPlug";
+static constexpr const char* WIFI_PORTAL_SSID       = "TinyML-Smart-Plug";
 
 // =========================
 // Protection thresholds
@@ -277,6 +290,10 @@ static constexpr float VOLT_RECOVER_MAX_V = 250.0f;
 static constexpr uint32_t VOLTAGE_RECLOSE_STABLE_MS = 5UL * 60UL * 1000UL;
 
 static constexpr float OVERLOAD_WARN_A      = 10.0f;
+static constexpr float OVERLOAD_WARN_CLEAR_A = 9.6f;
+static constexpr uint32_t OVERLOAD_WARN_DELAY_MS = 250UL;
+static constexpr uint32_t OVERLOAD_WARN_TRANSIENT_SUPPRESS_MS = 220UL;
+static constexpr float OVERLOAD_WARN_TRANSIENT_STEP_A = 5.0f;
 static constexpr float SUSTAINED_OVERLOAD_TRIP_A = 14.5f;
 static constexpr float SUSTAINED_OVERLOAD_CLEAR_A = 14.1f;
 static constexpr uint32_t SUSTAINED_OVERLOAD_AVG_WINDOW_MS = 1000UL;
@@ -285,6 +302,7 @@ static constexpr int SUSTAINED_OVERLOAD_SCORE_TRIP = 6;
 static constexpr int SUSTAINED_OVERLOAD_SCORE_MAX  = 6;
 
 static constexpr float TEMP_WARN_C          = 39.0f;
+static constexpr float TEMP_WARN_CLEAR_C    = 38.6f;
 static constexpr float TEMP_TRIP_C          = 40.0f;
 static constexpr float TEMP_DATA_WARN_C     = 39.0f;
 static constexpr float TEMP_DATA_HARD_C     = 40.0f;
@@ -329,11 +347,12 @@ static constexpr float VOLTAGE_SNAP_RESTORE_V = 200.0f;
 // Leaky integrator / fault display hold
 // =========================
 static constexpr int ARC_CNT_INC  = 2;
-static constexpr int ARC_CNT_DEC  = 6;
-static constexpr int ARC_CNT_TRIP = 8;
+static constexpr int ARC_CNT_DEC  = 4;
+static constexpr int ARC_CNT_TRIP = 4;
 static constexpr int ARC_CNT_MAX  = 16;
 static constexpr uint32_t ARC_HOLD_MS  = 800;
 static constexpr uint32_t ARC_CURRENT_RETURN_VERIFY_MS = 150UL;
+static constexpr uint32_t HEAT_WARN_HOLD_MS = 1500UL;
 static constexpr uint32_t HEAT_HOLD_MS = 1200;
 static constexpr uint32_t FAULT_ALERT_MIN_MS = 3000UL;
 static constexpr uint32_t FAULT_BUZZ_MS      = 3000UL;
@@ -476,9 +495,9 @@ static constexpr uint32_t FEAT_STALE_MS                 = (uint32_t)(FEATURE_FRA
 static constexpr uint32_t FEATURE_VALID_BRIDGE_MS       = 1500UL;
 static constexpr uint32_t SENSOR_BOOT_SETTLE_MS         = 450UL;
 static constexpr uint32_t PROTECTION_INHIBIT_MS         = 5000UL;
-static constexpr uint32_t ML_CONTROL_POLL_MS            = 3000UL;
-static constexpr uint32_t CLOUD_CONTROL_POLL_MS         = 1500UL;
-static constexpr uint32_t LIVE_REQUEST_UPDATE_MS        = 2000UL;
+static constexpr uint32_t ML_CONTROL_POLL_MS            = 5000UL;
+static constexpr uint32_t CLOUD_CONTROL_POLL_MS         = 5000UL;
+static constexpr uint32_t LIVE_REQUEST_UPDATE_MS        = 5000UL;
 static constexpr uint16_t AUTO_ARC_CAPTURE_DURATION_S   = 12;
 static constexpr uint32_t AUTO_ARC_CAPTURE_COOLDOWN_MS  = 60000UL;
 static constexpr int8_t ML_UNKNOWN_LABEL                = -1;
@@ -495,7 +514,7 @@ static constexpr float    ML_LOG_SETTLE_COMPUTE_MAX_MS  = FRAME_COMPUTE_BAD_MS;
 static constexpr uint16_t ML_LOG_AUTO_MIN_DURATION_S    = 5;
 static constexpr uint16_t ML_LOG_AUTO_MAX_DURATION_S    = 60;
 
-static constexpr uint32_t CLOUD_LIVE_NORMAL_INTERVAL_MS  = 7000UL;
+static constexpr uint32_t CLOUD_LIVE_NORMAL_INTERVAL_MS  = 10000UL;
 static constexpr uint32_t CLOUD_LIVE_WARNING_INTERVAL_MS = 10000UL;
 static constexpr uint32_t CLOUD_LIVE_FAULT_INTERVAL_MS   = 5000UL;
 static constexpr uint32_t CLOUD_REFRESH_KEEPALIVE_MS    = 1800UL;

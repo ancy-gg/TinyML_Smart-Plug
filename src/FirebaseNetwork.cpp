@@ -626,18 +626,34 @@ void FirebaseNetwork::requestLiveUpdate(float v, float c, float apparentPower, f
                                         float provisionalContextFamilyConfidence,
                                         bool contextAcquiring,
                                         bool contextLatched,
+                                        FaultState protectionTimingState,
+                                        bool protectionAlarmActive,
+                                        uint8_t protectionActuationKind,
+                                        uint32_t protectionFaultOnsetUptimeMs,
+                                        uint32_t protectionFaultDetectedUptimeMs,
+                                        uint32_t protectionFaultActuatedUptimeMs,
+                                        uint32_t protectionDetectionLatencyMs,
+                                        uint32_t protectionActuationLatencyMs,
                                         const String& state,
                                         bool faultLatched, bool webControlsLocked, bool relayLatchedOn, bool relayPulseActive) {
   const bool isNormal = (state == "NORMAL") || (state == "UNPLUGGED");
   const bool isTripFault = faultLatched ||
+                           (protectionActuationKind == PROTECTION_ACTUATION_RELAY_TRIP) ||
                            (state == "ARCING") ||
-                           (state == "SUSTAINED OVERLOAD") ||
-                           (state == "UNDERVOLTAGE") ||
-                           (state == "OVERVOLTAGE");
+                           (state == "SUSTAINED OVERLOAD");
   const bool stateChanged = (state != _lastSentLiveState);
+  const bool actuationChanged =
+      (protectionTimingState != _lastSentProtectionTimingState) ||
+      (protectionActuationKind != _lastSentProtectionActuationKind) ||
+      (protectionAlarmActive != _lastSentProtectionAlarmActive) ||
+      (relayLatchedOn != _lastSentRelayLatchedOn);
   const unsigned long now = millis();
   const uint32_t interval = isNormal ? _normalIntervalMs : (isTripFault ? _faultIntervalMs : _warningIntervalMs);
-  const bool shouldSend = stateChanged || (now - _lastLiveSend >= interval) || (now - _lastLiveSend >= CLOUD_REFRESH_KEEPALIVE_MS && !isNormal);
+  const bool shouldSend =
+      stateChanged ||
+      actuationChanged ||
+      (now - _lastLiveSend >= interval) ||
+      (now - _lastLiveSend >= CLOUD_REFRESH_KEEPALIVE_MS && !isNormal);
   if (!shouldSend && !_pendingLive) return;
 
   _live.v = (isfinite(v) && v > 0.0f) ? v : 0.0f;
@@ -694,6 +710,14 @@ void FirebaseNetwork::requestLiveUpdate(float v, float c, float apparentPower, f
       tinymlClampFeatureValue(TINYML_FEATURE_CONTEXT_FAMILY_CONFIDENCE, provisionalContextFamilyConfidence);
   _live.contextAcquiring = contextAcquiring;
   _live.contextLatched = contextLatched;
+  _live.protectionTimingState = protectionTimingState;
+  _live.protectionAlarmActive = protectionAlarmActive;
+  _live.protectionActuationKind = protectionActuationKind;
+  _live.protectionFaultOnsetUptimeMs = protectionFaultOnsetUptimeMs;
+  _live.protectionFaultDetectedUptimeMs = protectionFaultDetectedUptimeMs;
+  _live.protectionFaultActuatedUptimeMs = protectionFaultActuatedUptimeMs;
+  _live.protectionDetectionLatencyMs = protectionDetectionLatencyMs;
+  _live.protectionActuationLatencyMs = protectionActuationLatencyMs;
   _live.state = state;
   _live.faultLatched = faultLatched;
   _live.webControlsLocked = webControlsLocked;
@@ -721,6 +745,14 @@ bool FirebaseNetwork::pushHistoryRecord_(const HistoryJob& job) {
   json.set("ts_iso", iso);
   json.set("uptime_ms", (int)millis());
   json.set("feature_space_version", ARC_RUNTIME_FEATURE_SPACE_VERSION);
+  json.set("protection_timing_state", job.useFeaturePayload ? job.status : "NORMAL");
+  json.set("protection_alarm_active", job.f.protection_alarm_active != 0);
+  json.set("protection_actuation_kind", (int)job.f.protection_actuation_kind);
+  json.set("protection_fault_onset_uptime_ms", (int)job.f.protection_fault_onset_uptime_ms);
+  json.set("protection_fault_detected_uptime_ms", (int)job.f.protection_fault_detected_uptime_ms);
+  json.set("protection_fault_actuated_uptime_ms", (int)job.f.protection_fault_actuated_uptime_ms);
+  json.set("protection_detection_latency_ms", (int)job.f.protection_detection_latency_ms);
+  json.set("protection_actuation_latency_ms", (int)job.f.protection_actuation_latency_ms);
 
   if (job.useFeaturePayload) {
     json.set("voltage", job.f.vrms);
@@ -833,11 +865,13 @@ bool FirebaseNetwork::serviceControlEvent_() {
     if (ev.kind == "relay_on") {
       json.set("relay_latched_on", true);
       json.set("relay_pulse_active", true);
+      json.set("relay_state", "RELAY ON");
       json.set("load_state", "LOAD ON");
       json.set("device_phase", "LOAD ON");
     } else if (ev.kind == "relay_off") {
       json.set("relay_latched_on", false);
       json.set("relay_pulse_active", true);
+      json.set("relay_state", "RELAY OFF");
       json.set("load_state", "LOAD OFF");
       json.set("device_phase", "LOAD OFF");
     }
@@ -865,6 +899,7 @@ bool FirebaseNetwork::serviceLive_() {
   const bool mainsPresent = (_live.v >= MAINS_PRESENT_ON_V);
   const bool loadDetected = (_live.c >= LOAD_ON_DETECT_A);
   const bool relayClosed = _live.relayLatchedOn;
+  const String relayState = relayClosed ? String("RELAY ON") : String("RELAY OFF");
   const bool compactLive = _manualEnabled || _mlUploadActive || _uploadFinalFlush;
   const String powerCondition = powerConditionForState(_live.state, _live.v);
   const String loadState = relayClosed ? String("LOAD ON") : String("LOAD OFF");
@@ -942,6 +977,7 @@ bool FirebaseNetwork::serviceLive_() {
   json.set("mains_present", mainsPresent);
   json.set("power_condition", powerCondition);
   json.set("device_phase", devicePhase);
+  json.set("relay_state", relayState);
   json.set("load_state", loadState);
   json.set("load_detected", loadDetected);
   json.set("load_on_since_epoch_ms", (double)loadOnSinceEpochMs);
@@ -952,6 +988,14 @@ bool FirebaseNetwork::serviceLive_() {
   json.set("web_controls_locked", _live.webControlsLocked);
   json.set("relay_latched_on", _live.relayLatchedOn);
   json.set("relay_pulse_active", _live.relayPulseActive);
+  json.set("protection_timing_state", stateToCstr(_live.protectionTimingState));
+  json.set("protection_alarm_active", _live.protectionAlarmActive);
+  json.set("protection_actuation_kind", (int)_live.protectionActuationKind);
+  json.set("protection_fault_onset_uptime_ms", (int)_live.protectionFaultOnsetUptimeMs);
+  json.set("protection_fault_detected_uptime_ms", (int)_live.protectionFaultDetectedUptimeMs);
+  json.set("protection_fault_actuated_uptime_ms", (int)_live.protectionFaultActuatedUptimeMs);
+  json.set("protection_detection_latency_ms", (int)_live.protectionDetectionLatencyMs);
+  json.set("protection_actuation_latency_ms", (int)_live.protectionActuationLatencyMs);
   json.set("ml_log_enabled", _manualEnabled);
   json.set("ml_log_session_id", _manual.sessionId);
   json.set("last_transition", _lastTransitionEvent);
@@ -970,6 +1014,10 @@ bool FirebaseNetwork::serviceLive_() {
 
   _lastLiveSend = millis();
   _lastSentLiveState = _live.state;
+  _lastSentProtectionTimingState = _live.protectionTimingState;
+  _lastSentProtectionActuationKind = _live.protectionActuationKind;
+  _lastSentProtectionAlarmActive = _live.protectionAlarmActive;
+  _lastSentRelayLatchedOn = _live.relayLatchedOn;
   _pendingLive = false;
   _lastTxMs = _lastLiveSend;
 
@@ -1205,6 +1253,11 @@ void FirebaseNetwork::ingestLog(const FeatureFrame& f, FaultState st, int arcCou
   r.frame_end_uptime_ms = f.frame_end_uptime_ms;
   r.feature_compute_end_uptime_ms = f.feature_compute_end_uptime_ms;
   r.log_enqueue_uptime_ms = f.log_enqueue_uptime_ms;
+  r.protection_fault_onset_uptime_ms = f.protection_fault_onset_uptime_ms;
+  r.protection_fault_detected_uptime_ms = f.protection_fault_detected_uptime_ms;
+  r.protection_fault_actuated_uptime_ms = f.protection_fault_actuated_uptime_ms;
+  r.protection_detection_latency_ms = f.protection_detection_latency_ms;
+  r.protection_actuation_latency_ms = f.protection_actuation_latency_ms;
   r.frame_dt_ms = f.frame_dt_ms;
   r.compute_time_ms = f.compute_time_ms;
   r.timing_skew_ms = f.timing_skew_ms;
@@ -1250,6 +1303,8 @@ void FirebaseNetwork::ingestLog(const FeatureFrame& f, FaultState st, int arcCou
   r.relay_blank_active = f.relay_blank_active;
   r.turnon_blank_active = f.turnon_blank_active;
   r.transient_blank_active = f.transient_blank_active;
+  r.protection_alarm_active = f.protection_alarm_active;
+  r.protection_actuation_kind = f.protection_actuation_kind;
   const int8_t deviceFamilyCode = (f.device_family_code != CONTEXT_FAMILY_UNKNOWN)
       ? f.device_family_code
       : deviceFamilyCodeFromToken_(spec.deviceFamily);
@@ -1449,7 +1504,7 @@ bool FirebaseNetwork::serviceMlUpload_() {
   const uint16_t i1 = ((uint16_t)(i0 + ROWS_PER_CHUNK) < _uploadTotalCount) ? (uint16_t)(i0 + ROWS_PER_CHUNK) : _uploadTotalCount;
   const Rec& firstRec = _buf[i0];
   const Rec& lastRec  = _buf[i1 - 1];
-  const char* header = "abs_irms_zscore_vs_baseline,delta_irms_abs,halfcycle_asymmetry,suspicious_run_energy,pulse_count_per_cycle,zero_dwell_ratio,low_current_ratio,max_low_current_run_ms,delta_hf_energy,delta_flux,midband_residual_ratio,zcv,spectral_flux_midhf,peak_fluct_cv,residual_crest_factor,thd_i,hf_energy_delta,edge_spike_ratio,v_sag_pct,cycle_nmse,fs_err_hz,v_rms,i_rms,temp_c,temp_ntc_c,label_arc,device_family,device_name,trial_number,division_tag,notes,trusted_normal_session,load_type,session_id,epoch_ms,uptime_ms,frame_start_uptime_ms,frame_end_uptime_ms,feature_compute_end_uptime_ms,log_enqueue_uptime_ms,frame_dt_ms,compute_time_ms,timing_skew_ms,fft_size,hop_samples,queue_drop_count,suspicious_run_len,invalid_loaded_run_len,restrike_count_short,model_pred,feat_valid,current_valid,sampling_quality_bad,invalid_loaded_flag,invalid_off_flag,relay_blank_active,turnon_blank_active,transient_blank_active,device_family_code,context_family_code_runtime,context_family_code_provisional,context_family_confidence,context_family_confidence_provisional,context_acquiring,context_latched,fault_state,arc_counter,adc_fs_hz,auto_capture,feature_space_version\n";
+  const char* header = "abs_irms_zscore_vs_baseline,delta_irms_abs,halfcycle_asymmetry,suspicious_run_energy,pulse_count_per_cycle,zero_dwell_ratio,low_current_ratio,max_low_current_run_ms,delta_hf_energy,delta_flux,midband_residual_ratio,zcv,spectral_flux_midhf,peak_fluct_cv,residual_crest_factor,thd_i,hf_energy_delta,edge_spike_ratio,v_sag_pct,cycle_nmse,fs_err_hz,v_rms,i_rms,temp_c,temp_ntc_c,label_arc,device_family,device_name,trial_number,division_tag,notes,trusted_normal_session,load_type,session_id,epoch_ms,uptime_ms,frame_start_uptime_ms,frame_end_uptime_ms,feature_compute_end_uptime_ms,log_enqueue_uptime_ms,protection_fault_onset_uptime_ms,protection_fault_detected_uptime_ms,protection_fault_actuated_uptime_ms,protection_detection_latency_ms,protection_actuation_latency_ms,frame_dt_ms,compute_time_ms,timing_skew_ms,fft_size,hop_samples,queue_drop_count,suspicious_run_len,invalid_loaded_run_len,restrike_count_short,model_pred,feat_valid,current_valid,sampling_quality_bad,invalid_loaded_flag,invalid_off_flag,relay_blank_active,turnon_blank_active,transient_blank_active,protection_alarm_active,protection_actuation_kind,device_family_code,context_family_code_runtime,context_family_code_provisional,context_family_confidence,context_family_confidence_provisional,context_acquiring,context_latched,fault_state,arc_counter,adc_fs_hz,auto_capture,feature_space_version\n";
 
   String csv;
   csv.reserve((i1 - i0) * 520 + 512);
@@ -1496,6 +1551,11 @@ bool FirebaseNetwork::serviceMlUpload_() {
     csv += String((unsigned long)r.frame_end_uptime_ms); csv += ",";
     csv += String((unsigned long)r.feature_compute_end_uptime_ms); csv += ",";
     csv += String((unsigned long)r.log_enqueue_uptime_ms); csv += ",";
+    csv += String((unsigned long)r.protection_fault_onset_uptime_ms); csv += ",";
+    csv += String((unsigned long)r.protection_fault_detected_uptime_ms); csv += ",";
+    csv += String((unsigned long)r.protection_fault_actuated_uptime_ms); csv += ",";
+    csv += String((unsigned long)r.protection_detection_latency_ms); csv += ",";
+    csv += String((unsigned long)r.protection_actuation_latency_ms); csv += ",";
     csv += String(r.frame_dt_ms, 3);           csv += ",";
     csv += String(r.compute_time_ms, 3);       csv += ",";
     csv += String(r.timing_skew_ms, 3);        csv += ",";
@@ -1514,6 +1574,8 @@ bool FirebaseNetwork::serviceMlUpload_() {
     csv += String((int)r.relay_blank_active);  csv += ",";
     csv += String((int)r.turnon_blank_active); csv += ",";
     csv += String((int)r.transient_blank_active); csv += ",";
+    csv += String((int)r.protection_alarm_active); csv += ",";
+    csv += String((int)r.protection_actuation_kind); csv += ",";
     csv += String((int)r.device_family_code);  csv += ",";
     csv += String((int)r.context_family_code_runtime); csv += ",";
     csv += String((int)r.context_family_code_provisional); csv += ",";

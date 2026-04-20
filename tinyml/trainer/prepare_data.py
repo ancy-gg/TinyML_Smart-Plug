@@ -501,16 +501,32 @@ def _db_negative_score(series: pd.Series, neutral_db: float = 0.0, floor_db: flo
 
 
 def resolve_csv_files(csv_glob: str, output_path: str):
-    files = []
+    candidates = []
     out_abs = os.path.abspath(output_path)
     for path in sorted(glob.glob(csv_glob, recursive=True)):
         abs_path = os.path.abspath(path)
         if abs_path == out_abs:
             continue
         if os.path.isfile(abs_path) and abs_path.lower().endswith(".csv"):
-            files.append(abs_path)
+            candidates.append(abs_path)
+    candidate_lookup = {os.path.normcase(path): path for path in candidates}
+    files = []
+    skipped_duplicate_exports = []
+    for abs_path in candidates:
+        path_obj = Path(abs_path)
+        canonical_stem = re.sub(r"\s+\(\d+\)$", "", path_obj.stem, flags=re.I)
+        if canonical_stem != path_obj.stem:
+            canonical_path = str(path_obj.with_name(canonical_stem + path_obj.suffix))
+            if os.path.normcase(canonical_path) in candidate_lookup:
+                skipped_duplicate_exports.append(abs_path)
+                continue
+        files.append(abs_path)
     if not files:
         raise ValueError(f"No CSV files found for pattern: {csv_glob}")
+    if skipped_duplicate_exports:
+        print("Skipping duplicate-suffix CSV exports:")
+        for path in skipped_duplicate_exports:
+            print(f"  {path}")
     return files
 
 

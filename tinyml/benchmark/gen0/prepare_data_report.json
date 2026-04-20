@@ -24,7 +24,7 @@
     "low_current_ratio",
     "max_low_current_run_ms"
   ],
-  "source_csv_count": 101,
+  "source_csv_count": 100,
   "source_csv_files": [
     "C:\\Disk\\Ancy\\Platform IO\\TinyML_Smart-Plug\\tinyml\\data\\gen0\\raw\\Brush Universal Motor\\brush_universal_motor__handheld_vacuum__trial_1__arc.csv",
     "C:\\Disk\\Ancy\\Platform IO\\TinyML_Smart-Plug\\tinyml\\data\\gen0\\raw\\Brush Universal Motor\\brush_universal_motor__handheld_vacuum__trial_1__start.csv",
@@ -74,7 +74,6 @@
     "C:\\Disk\\Ancy\\Platform IO\\TinyML_Smart-Plug\\tinyml\\data\\gen0\\raw\\Resistive\\resistive_linear__electric_kettle__trial_1__arc.csv",
     "C:\\Disk\\Ancy\\Platform IO\\TinyML_Smart-Plug\\tinyml\\data\\gen0\\raw\\Resistive\\resistive_linear__electric_kettle__trial_1__start.csv",
     "C:\\Disk\\Ancy\\Platform IO\\TinyML_Smart-Plug\\tinyml\\data\\gen0\\raw\\Resistive\\resistive_linear__electric_kettle__trial_1__steady.csv",
-    "C:\\Disk\\Ancy\\Platform IO\\TinyML_Smart-Plug\\tinyml\\data\\gen0\\raw\\Resistive\\resistive_linear__electric_kettle__trial_2__arc (1).csv",
     "C:\\Disk\\Ancy\\Platform IO\\TinyML_Smart-Plug\\tinyml\\data\\gen0\\raw\\Resistive\\resistive_linear__electric_kettle__trial_2__arc.csv",
     "C:\\Disk\\Ancy\\Platform IO\\TinyML_Smart-Plug\\tinyml\\data\\gen0\\raw\\Resistive\\resistive_linear__electric_kettle__trial_2__start.csv",
     "C:\\Disk\\Ancy\\Platform IO\\TinyML_Smart-Plug\\tinyml\\data\\gen0\\raw\\Resistive\\resistive_linear__electric_kettle__trial_2__steady.csv",
@@ -129,7 +128,7 @@
     "C:\\Disk\\Ancy\\Platform IO\\TinyML_Smart-Plug\\tinyml\\data\\gen0\\raw\\SMPS\\smps__65w_usb_c_laptop_charger__trial_5__start.csv"
   ],
   "input_files": {
-    "count": 101,
+    "count": 100,
     "files": [
       "C:\\Disk\\Ancy\\Platform IO\\TinyML_Smart-Plug\\tinyml\\data\\gen0\\raw\\Brush Universal Motor\\brush_universal_motor__handheld_vacuum__trial_1__arc.csv",
       "C:\\Disk\\Ancy\\Platform IO\\TinyML_Smart-Plug\\tinyml\\data\\gen0\\raw\\Brush Universal Motor\\brush_universal_motor__handheld_vacuum__trial_1__start.csv",
@@ -179,7 +178,6 @@
       "C:\\Disk\\Ancy\\Platform IO\\TinyML_Smart-Plug\\tinyml\\data\\gen0\\raw\\Resistive\\resistive_linear__electric_kettle__trial_1__arc.csv",
       "C:\\Disk\\Ancy\\Platform IO\\TinyML_Smart-Plug\\tinyml\\data\\gen0\\raw\\Resistive\\resistive_linear__electric_kettle__trial_1__start.csv",
       "C:\\Disk\\Ancy\\Platform IO\\TinyML_Smart-Plug\\tinyml\\data\\gen0\\raw\\Resistive\\resistive_linear__electric_kettle__trial_1__steady.csv",
-      "C:\\Disk\\Ancy\\Platform IO\\TinyML_Smart-Plug\\tinyml\\data\\gen0\\raw\\Resistive\\resistive_linear__electric_kettle__trial_2__arc (1).csv",
       "C:\\Disk\\Ancy\\Platform IO\\TinyML_Smart-Plug\\tinyml\\data\\gen0\\raw\\Resistive\\resistive_linear__electric_kettle__trial_2__arc.csv",
       "C:\\Disk\\Ancy\\Platform IO\\TinyML_Smart-Plug\\tinyml\\data\\gen0\\raw\\Resistive\\resistive_linear__electric_kettle__trial_2__start.csv",
       "C:\\Disk\\Ancy\\Platform IO\\TinyML_Smart-Plug\\tinyml\\data\\gen0\\raw\\Resistive\\resistive_linear__electric_kettle__trial_2__steady.csv",
@@ -234,34 +232,34 @@
       "C:\\Disk\\Ancy\\Platform IO\\TinyML_Smart-Plug\\tinyml\\data\\gen0\\raw\\SMPS\\smps__65w_usb_c_laptop_charger__trial_5__start.csv"
     ]
   },
-  "elapsed_seconds": 172.47006559371948,
-  "elapsed_hms": "00:02:52",
+  "elapsed_seconds": 179.6539237499237,
+  "elapsed_hms": "00:02:59",
   "timing": {
-    "duration_seconds": 172.47006559371948,
-    "duration_hms": "00:02:52"
+    "duration_seconds": 179.6539237499237,
+    "duration_hms": "00:02:59"
   },
   "summary": {
-    "rows_before_cleaning": 55778,
-    "rows_after_cleaning": 50021,
-    "rows_removed": 5757,
+    "rows_before_cleaning": 55085,
+    "rows_after_cleaning": 49296,
+    "rows_removed": 5789,
     "context_only_placeholder_rows_preserved": 16353,
     "arc_training_placeholder_rows_preserved": 0,
-    "arc_truth_available_rows": 33668,
+    "arc_truth_available_rows": 32943,
     "augmentation_rows_added": 0,
-    "rows_after_cleaning_with_augmentation": 50021,
-    "trainable_rows": 45682,
-    "trusted_normal_rows": 16522,
-    "trusted_normal_warmup_suppressed_rows": 1240,
-    "conflict_marked_rows": 0,
+    "rows_after_cleaning_with_augmentation": 49296,
+    "trainable_rows": 45010,
+    "trusted_normal_rows": 17762,
+    "conflict_marked_rows": 1,
     "label_counts": {
-      "0": 49304,
-      "1": 717
+      "0": 49013,
+      "1": 283
     },
     "source_counts": {
-      "real": 50021
+      "real": 49296
     },
     "conflict_policy_counts": {
-      "none": 50021
+      "none": 49295,
+      "prefer_more_trusted_normal": 1
     },
     "quality_summary": {
       "invalid_off_rows": 383,
@@ -269,18 +267,18 @@
       "very_weak_positive_rows": 0,
       "soft_positive_rows": 0,
       "flat_extinguish_positive_rows": 0,
-      "strong_arc_like_negative_rows": 13838,
-      "soft_arc_like_negative_rows": 13204,
+      "strong_arc_like_negative_rows": 13760,
+      "soft_arc_like_negative_rows": 12625,
       "scaffold_rows": 0,
       "scaffold_trainable_rows": 0,
       "scaffold_scaled_rows": 0,
       "scaffold_effective_weight": 0,
-      "real_effective_weight": 202564.535
+      "real_effective_weight": 203732.065
     },
     "division_counts": {
       "start": 18475,
       "steady": 17762,
-      "arc": 13784
+      "arc": 13059
     },
     "trial_counts": {
       "Inductive Motor__inductive_motor__40w_electric_fan__trial004__steady_ref": 730,
@@ -308,30 +306,30 @@
       "Resistive__resistive_linear__water_heater__trial003__steady_ref": 700,
       "Brush Universal Motor__brush_universal_motor__handheld_vacuum__trial005__steady_ref": 698,
       "Resistive__resistive_linear__electric_kettle__trial004__steady_ref": 696,
-      "Resistive__resistive_linear__electric_kettle__trial001__arc_capture": 671,
-      "Resistive__resistive_linear__water_heater__trial004__arc_capture": 666,
-      "Inductive Motor__inductive_motor__40w_electric_fan__trial001__arc_capture": 662,
-      "Resistive__resistive_linear__water_heater__trial002__arc_capture": 639,
-      "Brush Universal Motor__brush_universal_motor__handheld_vacuum__trial003__arc_capture": 627,
-      "Inductive Motor__inductive_motor__40w_electric_fan__trial002__arc_capture": 618,
-      "Brush Universal Motor__brush_universal_motor__handheld_vacuum__trial004__arc_capture": 613,
-      "Inductive Motor__inductive_motor__40w_electric_fan__trial004__arc_capture": 611,
-      "Brush Universal Motor__brush_universal_motor__handheld_vacuum__trial001__arc_capture": 607,
-      "Resistive__resistive_linear__water_heater__trial001__arc_capture": 596,
-      "Brush Universal Motor__brush_universal_motor__handheld_vacuum__trial005__arc_capture": 594,
-      "Resistive__resistive_linear__electric_kettle__trial003__arc_capture": 594,
-      "Resistive__resistive_linear__halogen_lamp__trial005__arc_capture": 573,
-      "Resistive__resistive_linear__halogen_lamp__trial004__arc_capture": 570,
-      "Inductive Motor__inductive_motor__40w_electric_fan__trial003__arc_capture": 569,
-      "Resistive__resistive_linear__halogen_lamp__trial003__arc_capture": 562,
-      "Resistive__resistive_linear__water_heater__trial005__arc_capture": 556,
-      "Brush Universal Motor__brush_universal_motor__handheld_vacuum__trial002__arc_capture": 538,
-      "Inductive Motor__inductive_motor__40w_electric_fan__trial005__arc_capture": 532,
+      "Resistive__resistive_linear__electric_kettle__trial001__arc_capture": 655,
+      "Resistive__resistive_linear__electric_kettle__trial005__arc_capture": 649,
+      "Resistive__resistive_linear__water_heater__trial002__arc_capture": 648,
+      "Resistive__resistive_linear__water_heater__trial004__arc_capture": 646,
+      "Inductive Motor__inductive_motor__40w_electric_fan__trial002__arc_capture": 627,
+      "Inductive Motor__inductive_motor__40w_electric_fan__trial004__arc_capture": 617,
+      "Resistive__resistive_linear__water_heater__trial001__arc_capture": 612,
+      "Inductive Motor__inductive_motor__40w_electric_fan__trial001__arc_capture": 577,
+      "Inductive Motor__inductive_motor__40w_electric_fan__trial003__arc_capture": 572,
+      "Brush Universal Motor__brush_universal_motor__handheld_vacuum__trial004__arc_capture": 569,
+      "Brush Universal Motor__brush_universal_motor__handheld_vacuum__trial003__arc_capture": 559,
+      "Resistive__resistive_linear__water_heater__trial005__arc_capture": 559,
+      "Resistive__resistive_linear__electric_kettle__trial003__arc_capture": 547,
+      "Brush Universal Motor__brush_universal_motor__handheld_vacuum__trial002__arc_capture": 534,
+      "Resistive__resistive_linear__halogen_lamp__trial004__arc_capture": 532,
+      "Brush Universal Motor__brush_universal_motor__handheld_vacuum__trial001__arc_capture": 513,
+      "Resistive__resistive_linear__halogen_lamp__trial003__arc_capture": 507,
+      "Resistive__resistive_linear__halogen_lamp__trial005__arc_capture": 494,
+      "Resistive__resistive_linear__electric_kettle__trial002__arc_capture": 469,
+      "Brush Universal Motor__brush_universal_motor__handheld_vacuum__trial005__arc_capture": 460,
       "Resistive__resistive_linear__manual_air_fryer__trial001__start_ctx": 451,
-      "Resistive__resistive_linear__electric_kettle__trial002__arc_capture": 445,
-      "Resistive__resistive_linear__electric_kettle__trial005__arc_capture": 441,
+      "Resistive__resistive_linear__water_heater__trial003__arc_capture": 443,
       "Phase Control__phase_angle_controlled__100w_incandescent_dimmer__trial003__start_ctx": 441,
-      "Resistive__resistive_linear__electric_kettle__trial004__arc_capture": 438,
+      "Inductive Motor__inductive_motor__40w_electric_fan__trial005__arc_capture": 428,
       "Phase Control__phase_angle_controlled__100w_incandescent_dimmer__trial002__start_ctx": 426,
       "Brush Universal Motor__brush_universal_motor__handheld_vacuum__trial004__start_ctx": 423,
       "Phase Control__phase_angle_controlled__100w_incandescent_dimmer__trial005__start_ctx": 422,
@@ -341,9 +339,9 @@
       "Brush Universal Motor__brush_universal_motor__handheld_vacuum__trial005__start_ctx": 415,
       "Phase Control__phase_angle_controlled__100w_incandescent_dimmer__trial001__start_ctx": 415,
       "Resistive__resistive_linear__water_heater__trial004__start_ctx": 414,
+      "Resistive__resistive_linear__electric_kettle__trial004__arc_capture": 405,
       "Inductive Motor__inductive_motor__40w_electric_fan__trial001__start_ctx": 404,
       "Inductive Motor__inductive_motor__40w_electric_fan__trial003__start_ctx": 400,
-      "Resistive__resistive_linear__halogen_lamp__trial001__arc_capture": 396,
       "Other__other_mixed__household_refrigerator__trial001__start_ctx": 395,
       "Brush Universal Motor__brush_universal_motor__handheld_vacuum__trial003__start_ctx": 393,
       "Resistive__resistive_linear__water_heater__trial002__start_ctx": 393,
@@ -369,7 +367,6 @@
       "Inductive Motor__inductive_motor__55w_stand_fan__trial004__start_ctx": 343,
       "Resistive__resistive_linear__electric_kettle__trial004__start_ctx": 341,
       "SMPS__rectifier_smps__65w_usb_c_laptop_charger__trial005__start_ctx": 341,
-      "Resistive__resistive_linear__halogen_lamp__trial002__arc_capture": 340,
       "Resistive__resistive_linear__manual_air_fryer__trial005__start_ctx": 339,
       "Inductive Motor__inductive_motor__55w_stand_fan__trial005__start_ctx": 338,
       "Inductive Motor__inductive_motor__55w_stand_fan__trial003__start_ctx": 337,
@@ -378,30 +375,31 @@
       "Resistive__resistive_linear__manual_air_fryer__trial004__start_ctx": 334,
       "Inductive Motor__inductive_motor__40w_electric_fan__trial004__start_ctx": 333,
       "Resistive__resistive_linear__electric_kettle__trial002__start_ctx": 329,
-      "Resistive__resistive_linear__water_heater__trial003__arc_capture": 326,
       "Brush Universal Motor__brush_universal_motor__handheld_vacuum__trial001__start_ctx": 325,
       "Resistive__resistive_linear__manual_air_fryer__trial002__start_ctx": 318,
       "Resistive__resistive_linear__electric_kettle__trial005__start_ctx": 316,
-      "Resistive__resistive_linear__electric_kettle__trial001__start_ctx": 285
+      "Resistive__resistive_linear__electric_kettle__trial001__start_ctx": 285,
+      "Resistive__resistive_linear__halogen_lamp__trial001__arc_capture": 277,
+      "Resistive__resistive_linear__halogen_lamp__trial002__arc_capture": 160
     },
     "device_family_counts": {
-      "resistive_linear": 25567,
-      "inductive_motor": 10170,
-      "brush_universal_motor": 8509,
+      "resistive_linear": 25357,
+      "inductive_motor": 9999,
+      "brush_universal_motor": 8165,
       "phase_angle_controlled": 2122,
       "other_mixed": 1838,
       "rectifier_smps": 1815
     },
     "device_family_code_counts": {
-      "0": 25567,
-      "1": 10170,
-      "4": 8509,
+      "0": 25357,
+      "1": 9999,
+      "4": 8165,
       "3": 2122,
       "5": 1838,
       "2": 1815
     },
     "context_runtime_code_counts": {
-      "0": 34839,
+      "0": 34114,
       "-1": 5645,
       "1": 5421,
       "3": 2136,
@@ -412,17 +410,17 @@
     "section_prior_counts": {
       "transient_hint": 18475,
       "steady_hint": 17762,
-      "arc_eligible": 13784
+      "arc_eligible": 13059
     },
     "conflict_resolution": {
-      "groups_seen": 50021,
-      "mixed_groups": 0,
+      "groups_seen": 49296,
+      "mixed_groups": 1,
       "prefer_trusted_normal": 0,
-      "prefer_more_trusted_normal": 0,
+      "prefer_more_trusted_normal": 1,
       "keep_more_trusted_arc": 0,
       "drop_ambiguous": 0
     },
-    "arc_training_rows": 31546,
+    "arc_training_rows": 30821,
     "load_context_rows": 18475,
     "arc_feature_count_available": 15,
     "context_feature_count_available": 10,
@@ -430,12 +428,11 @@
     "load_context_path": "C:\\Disk\\Ancy\\Platform IO\\TinyML_Smart-Plug\\tinyml\\data\\gen0\\load_context.csv",
     "selected_generation": "gen0",
     "resolved_raw_input_glob": "C:\\Disk\\Ancy\\Platform IO\\TinyML_Smart-Plug\\tinyml\\data\\gen0\\raw\\**\\*.csv",
-    "trusted_normal_warmup_rows_configured": 50,
-    "elapsed_seconds": 172.47006559371948,
-    "elapsed_hms": "00:02:52",
-    "mismatch_rows": 13687,
-    "fp_override_rows": 13191,
-    "fn_override_rows": 496
+    "elapsed_seconds": 179.6539237499237,
+    "elapsed_hms": "00:02:59",
+    "mismatch_rows": 13117,
+    "fp_override_rows": 12923,
+    "fn_override_rows": 194
   },
   "resolved_paths": {
     "selected_generation": "gen0",
@@ -476,7 +473,7 @@
   "outputs": {
     "arc_training_path": "C:\\Disk\\Ancy\\Platform IO\\TinyML_Smart-Plug\\tinyml\\data\\gen0\\arc_training.csv",
     "load_context_path": "C:\\Disk\\Ancy\\Platform IO\\TinyML_Smart-Plug\\tinyml\\data\\gen0\\load_context.csv",
-    "arc_training_rows": 31546,
+    "arc_training_rows": 30821,
     "load_context_rows": 18475
   },
   "warnings": [
@@ -486,11 +483,11 @@
     "cleaned_all": {
       "start": 18475,
       "steady": 17762,
-      "arc": 13784
+      "arc": 13059
     },
     "arc_training": {
       "steady": 17762,
-      "arc": 13784
+      "arc": 13059
     },
     "load_context": {
       "start": 18475
@@ -499,14 +496,14 @@
   "split_checks": {
     "arc_training_division_counts": {
       "steady": 17762,
-      "arc": 13784
+      "arc": 13059
     },
     "load_context_division_counts": {
       "start": 18475
     },
     "arc_training_label_counts": {
-      "0": 30829,
-      "1": 717
+      "0": 30538,
+      "1": 283
     },
     "load_context_family_counts": {
       "resistive_linear": 7114,
@@ -521,86 +518,86 @@
     ]
   },
   "full_dataset": {
-    "rows": 50021,
+    "rows": 49296,
     "division_counts": {
       "start": 18475,
       "steady": 17762,
-      "arc": 13784
+      "arc": 13059
     },
     "label_counts": {
-      "0": 49304,
-      "1": 717
+      "0": 49013,
+      "1": 283
     },
     "device_family_counts": {
-      "resistive_linear": 25567,
-      "inductive_motor": 10170,
-      "brush_universal_motor": 8509,
+      "resistive_linear": 25357,
+      "inductive_motor": 9999,
+      "brush_universal_motor": 8165,
       "phase_angle_controlled": 2122,
       "other_mixed": 1838,
       "rectifier_smps": 1815
     }
   },
   "mismatch_summary": {
-    "rows": 50021,
-    "rows_with_model_output": 50021,
-    "mismatch_rows": 13687,
-    "mismatch_rate": 0.2736250774674637,
-    "fp_override_rows": 13191,
-    "fn_override_rows": 496,
+    "rows": 49296,
+    "rows_with_model_output": 49296,
+    "mismatch_rows": 13117,
+    "mismatch_rate": 0.26608649789029537,
+    "fp_override_rows": 12923,
+    "fn_override_rows": 194,
     "verified_rows": 0,
     "verified_mismatch_rows": 0,
     "source_model_generation_counts": {
-      "unknown": 50021
+      "unknown": 49296
     },
     "per_generation_mismatch_counts": {
-      "unknown": 13687
+      "unknown": 13117
     },
     "per_family_mismatch_counts": {
-      "resistive_linear": 8497,
-      "brush_universal_motor": 3622,
-      "inductive_motor": 1568
+      "resistive_linear": 8143,
+      "brush_universal_motor": 3348,
+      "inductive_motor": 1626
     },
     "per_device_mismatch_counts": {
-      "handheld_vacuum": 3622,
-      "water_heater": 2693,
-      "halogen_lamp": 2672,
-      "electric_kettle": 2590,
-      "40w_electric_fan": 1568,
+      "handheld_vacuum": 3348,
+      "water_heater": 2630,
+      "electric_kettle": 2501,
+      "halogen_lamp": 2470,
+      "40w_electric_fan": 1626,
       "manual_air_fryer": 542
     },
     "current_training_generation_counts": {
-      "gen0": 50021
+      "gen0": 49296
     }
   },
   "arc_training_mismatch_summary": {
-    "rows": 31546,
-    "rows_with_model_output": 31546,
-    "mismatch_rows": 10599,
-    "mismatch_rate": 0.33598554491853166,
-    "fp_override_rows": 10103,
-    "fn_override_rows": 496,
+    "rows": 30821,
+    "rows_with_model_output": 30821,
+    "mismatch_rows": 10029,
+    "mismatch_rate": 0.32539502287401445,
+    "fp_override_rows": 9835,
+    "fn_override_rows": 194,
     "verified_rows": 0,
     "verified_mismatch_rows": 0,
     "source_model_generation_counts": {
-      "unknown": 31546
+      "unknown": 30821
     },
     "per_generation_mismatch_counts": {
-      "unknown": 10599
+      "unknown": 10029
     },
     "per_family_mismatch_counts": {
-      "resistive_linear": 6502,
-      "brush_universal_motor": 2918,
-      "inductive_motor": 1179
+      "resistive_linear": 6148,
+      "brush_universal_motor": 2644,
+      "inductive_motor": 1237
     },
     "per_device_mismatch_counts": {
-      "handheld_vacuum": 2918,
-      "water_heater": 2199,
-      "electric_kettle": 2152,
-      "halogen_lamp": 2151,
-      "40w_electric_fan": 1179
+      "handheld_vacuum": 2644,
+      "water_heater": 2136,
+      "electric_kettle": 2063,
+      "halogen_lamp": 1949,
+      "40w_electric_fan": 1237
     },
     "current_training_generation_counts": {
-      "gen0": 31546
+      "gen0": 30821
     }
   },
   "load_context_mismatch_summary": {
@@ -636,167 +633,167 @@
     }
   },
   "source_model_generation_summary": {
-    "unknown": 50021
+    "unknown": 49296
   },
   "feature_stats": {
     "arc_training": [
       {
         "feature": "abs_irms_zscore_vs_baseline",
-        "rows": 31546,
-        "mean": 0.8717593195016801,
-        "std": 1.8482794962631421,
+        "rows": 30821,
+        "mean": 0.875450892930145,
+        "std": 1.872623959108151,
         "min": 5.5e-05,
         "max": 25.0
       },
       {
         "feature": "delta_irms_abs",
-        "rows": 31546,
-        "mean": 0.1916725374056933,
-        "std": 0.34193678157027985,
+        "rows": 30821,
+        "mean": 0.19619711952889266,
+        "std": 0.3484048686537609,
         "min": 0.0,
         "max": 7.787863
       },
       {
         "feature": "halfcycle_asymmetry",
-        "rows": 31546,
-        "mean": 15.599566607018323,
-        "std": 9.154369165462105,
+        "rows": 30821,
+        "mean": 15.627550015736025,
+        "std": 9.18224782153727,
         "min": 0.000891,
         "max": 188.507004
       },
       {
         "feature": "suspicious_run_energy",
-        "rows": 31546,
-        "mean": 1.754131467317568,
-        "std": 1.5413893234210638,
+        "rows": 30821,
+        "mean": 1.7272863733493395,
+        "std": 1.535570761010033,
         "min": 0.0,
         "max": 7.487679
       },
       {
         "feature": "delta_hf_energy",
-        "rows": 31546,
-        "mean": 1.3550173146833193,
-        "std": 1.191552143946006,
+        "rows": 30821,
+        "mean": 1.351634597644463,
+        "std": 1.189417924492725,
         "min": 0.0,
         "max": 12.385294
       },
       {
         "feature": "delta_flux",
-        "rows": 31546,
-        "mean": 2.9447406704812016,
-        "std": 2.5061072307093584,
+        "rows": 30821,
+        "mean": 2.9561182602121927,
+        "std": 2.5209883338446306,
         "min": 0.0,
         "max": 49.653496
       },
       {
         "feature": "midband_residual_ratio",
-        "rows": 31546,
-        "mean": -49.52968211763773,
-        "std": 7.594860239734796,
+        "rows": 30821,
+        "mean": -49.61777028337822,
+        "std": 7.629245167001349,
         "min": -80.0,
         "max": 5.947815
       },
       {
         "feature": "zcv",
-        "rows": 31546,
-        "mean": 0.05404238014328283,
-        "std": 0.23702591994476763,
+        "rows": 30821,
+        "mean": 0.053696729470166446,
+        "std": 0.23458317114950414,
         "min": 0.0,
         "max": 10.0
       },
       {
         "feature": "spectral_flux_midhf",
-        "rows": 31546,
-        "mean": 25.679146519083243,
-        "std": 4.928899721094813,
+        "rows": 30821,
+        "mean": 25.58081724366503,
+        "std": 4.95219740574775,
         "min": 4.208262,
         "max": 64.335381
       },
       {
         "feature": "peak_fluct_cv",
-        "rows": 31546,
-        "mean": 0.5970482834907754,
-        "std": 2.172917823818394,
+        "rows": 30821,
+        "mean": 0.5951076690892574,
+        "std": 2.156200734850436,
         "min": 0.0,
         "max": 99.164841
       },
       {
         "feature": "residual_crest_factor",
-        "rows": 31546,
-        "mean": 7.2210607311545045,
-        "std": 2.5339118655878146,
+        "rows": 30821,
+        "mean": 7.227405081729989,
+        "std": 2.529893909134844,
         "min": 2.416159,
         "max": 20.955751
       },
       {
         "feature": "thd_i",
-        "rows": 31546,
-        "mean": 23.60751269891587,
-        "std": 23.66886931013438,
+        "rows": 30821,
+        "mean": 23.590691538236914,
+        "std": 23.746751752673134,
         "min": 2.1713,
         "max": 200.0
       },
       {
         "feature": "hf_energy_delta",
-        "rows": 31546,
-        "mean": 11.269033608159514,
-        "std": 2.65141563284482,
+        "rows": 30821,
+        "mean": 11.219876112034004,
+        "std": 2.6620589357182114,
         "min": -0.067197,
         "max": 18.0
       },
       {
         "feature": "edge_spike_ratio",
-        "rows": 31546,
-        "mean": -8.180641966873772,
-        "std": 6.339238606307108,
+        "rows": 30821,
+        "mean": -8.193745129197625,
+        "std": 6.411590028600557,
         "min": -61.519772,
         "max": 20.0
       },
       {
         "feature": "v_sag_pct",
-        "rows": 31546,
-        "mean": 0.08954188264756228,
-        "std": 0.19077672934676018,
+        "rows": 30821,
+        "mean": 0.08845069121702735,
+        "std": 0.19086527215234433,
         "min": 0.0,
         "max": 3.165406
       },
       {
         "feature": "cycle_nmse",
-        "rows": 31546,
-        "mean": 4.521928961167818,
-        "std": 18.925404085375238,
+        "rows": 30821,
+        "mean": 4.519211183478796,
+        "std": 18.893954766724136,
         "min": 0.0,
         "max": 100.0
       },
       {
         "feature": "pulse_count_per_cycle",
-        "rows": 31546,
-        "mean": 0.31886650985861914,
-        "std": 0.44436601558857736,
+        "rows": 30821,
+        "mean": 0.3192498124655268,
+        "std": 0.44434930639573894,
         "min": 0.0,
         "max": 2.790538
       },
       {
         "feature": "zero_dwell_ratio",
-        "rows": 31546,
-        "mean": 30.19349361142459,
-        "std": 11.814475980848487,
+        "rows": 30821,
+        "mean": 30.128771949093146,
+        "std": 11.831020295213158,
         "min": 0.195312,
         "max": 100.0
       },
       {
         "feature": "low_current_ratio",
-        "rows": 31546,
-        "mean": 6.984833449851011,
-        "std": 12.17804838763895,
+        "rows": 30821,
+        "mean": 6.979635225820057,
+        "std": 12.205124494122863,
         "min": 0.195312,
         "max": 100.0
       },
       {
         "feature": "max_low_current_run_ms",
-        "rows": 31546,
-        "mean": 0.7535587121980599,
-        "std": 2.330458280703207,
+        "rows": 30821,
+        "mean": 0.7538219414360339,
+        "std": 2.336860189213402,
         "min": 0.034859,
         "max": 20.308844
       }
@@ -966,142 +963,142 @@
   },
   "arc_training_feature_stats": {
     "abs_irms_zscore_vs_baseline": {
-      "rows": 31546,
-      "mean": 0.8717593195016801,
-      "std": 1.8482794962631421,
+      "rows": 30821,
+      "mean": 0.875450892930145,
+      "std": 1.872623959108151,
       "min": 5.5e-05,
       "max": 25.0
     },
     "delta_irms_abs": {
-      "rows": 31546,
-      "mean": 0.1916725374056933,
-      "std": 0.34193678157027985,
+      "rows": 30821,
+      "mean": 0.19619711952889266,
+      "std": 0.3484048686537609,
       "min": 0.0,
       "max": 7.787863
     },
     "halfcycle_asymmetry": {
-      "rows": 31546,
-      "mean": 15.599566607018323,
-      "std": 9.154369165462105,
+      "rows": 30821,
+      "mean": 15.627550015736025,
+      "std": 9.18224782153727,
       "min": 0.000891,
       "max": 188.507004
     },
     "suspicious_run_energy": {
-      "rows": 31546,
-      "mean": 1.754131467317568,
-      "std": 1.5413893234210638,
+      "rows": 30821,
+      "mean": 1.7272863733493395,
+      "std": 1.535570761010033,
       "min": 0.0,
       "max": 7.487679
     },
     "delta_hf_energy": {
-      "rows": 31546,
-      "mean": 1.3550173146833193,
-      "std": 1.191552143946006,
+      "rows": 30821,
+      "mean": 1.351634597644463,
+      "std": 1.189417924492725,
       "min": 0.0,
       "max": 12.385294
     },
     "delta_flux": {
-      "rows": 31546,
-      "mean": 2.9447406704812016,
-      "std": 2.5061072307093584,
+      "rows": 30821,
+      "mean": 2.9561182602121927,
+      "std": 2.5209883338446306,
       "min": 0.0,
       "max": 49.653496
     },
     "midband_residual_ratio": {
-      "rows": 31546,
-      "mean": -49.52968211763773,
-      "std": 7.594860239734796,
+      "rows": 30821,
+      "mean": -49.61777028337822,
+      "std": 7.629245167001349,
       "min": -80.0,
       "max": 5.947815
     },
     "zcv": {
-      "rows": 31546,
-      "mean": 0.05404238014328283,
-      "std": 0.23702591994476763,
+      "rows": 30821,
+      "mean": 0.053696729470166446,
+      "std": 0.23458317114950414,
       "min": 0.0,
       "max": 10.0
     },
     "spectral_flux_midhf": {
-      "rows": 31546,
-      "mean": 25.679146519083243,
-      "std": 4.928899721094813,
+      "rows": 30821,
+      "mean": 25.58081724366503,
+      "std": 4.95219740574775,
       "min": 4.208262,
       "max": 64.335381
     },
     "peak_fluct_cv": {
-      "rows": 31546,
-      "mean": 0.5970482834907754,
-      "std": 2.172917823818394,
+      "rows": 30821,
+      "mean": 0.5951076690892574,
+      "std": 2.156200734850436,
       "min": 0.0,
       "max": 99.164841
     },
     "residual_crest_factor": {
-      "rows": 31546,
-      "mean": 7.2210607311545045,
-      "std": 2.5339118655878146,
+      "rows": 30821,
+      "mean": 7.227405081729989,
+      "std": 2.529893909134844,
       "min": 2.416159,
       "max": 20.955751
     },
     "thd_i": {
-      "rows": 31546,
-      "mean": 23.60751269891587,
-      "std": 23.66886931013438,
+      "rows": 30821,
+      "mean": 23.590691538236914,
+      "std": 23.746751752673134,
       "min": 2.1713,
       "max": 200.0
     },
     "hf_energy_delta": {
-      "rows": 31546,
-      "mean": 11.269033608159514,
-      "std": 2.65141563284482,
+      "rows": 30821,
+      "mean": 11.219876112034004,
+      "std": 2.6620589357182114,
       "min": -0.067197,
       "max": 18.0
     },
     "edge_spike_ratio": {
-      "rows": 31546,
-      "mean": -8.180641966873772,
-      "std": 6.339238606307108,
+      "rows": 30821,
+      "mean": -8.193745129197625,
+      "std": 6.411590028600557,
       "min": -61.519772,
       "max": 20.0
     },
     "v_sag_pct": {
-      "rows": 31546,
-      "mean": 0.08954188264756228,
-      "std": 0.19077672934676018,
+      "rows": 30821,
+      "mean": 0.08845069121702735,
+      "std": 0.19086527215234433,
       "min": 0.0,
       "max": 3.165406
     },
     "cycle_nmse": {
-      "rows": 31546,
-      "mean": 4.521928961167818,
-      "std": 18.925404085375238,
+      "rows": 30821,
+      "mean": 4.519211183478796,
+      "std": 18.893954766724136,
       "min": 0.0,
       "max": 100.0
     },
     "pulse_count_per_cycle": {
-      "rows": 31546,
-      "mean": 0.31886650985861914,
-      "std": 0.44436601558857736,
+      "rows": 30821,
+      "mean": 0.3192498124655268,
+      "std": 0.44434930639573894,
       "min": 0.0,
       "max": 2.790538
     },
     "zero_dwell_ratio": {
-      "rows": 31546,
-      "mean": 30.19349361142459,
-      "std": 11.814475980848487,
+      "rows": 30821,
+      "mean": 30.128771949093146,
+      "std": 11.831020295213158,
       "min": 0.195312,
       "max": 100.0
     },
     "low_current_ratio": {
-      "rows": 31546,
-      "mean": 6.984833449851011,
-      "std": 12.17804838763895,
+      "rows": 30821,
+      "mean": 6.979635225820057,
+      "std": 12.205124494122863,
       "min": 0.195312,
       "max": 100.0
     },
     "max_low_current_run_ms": {
-      "rows": 31546,
-      "mean": 0.7535587121980599,
-      "std": 2.330458280703207,
+      "rows": 30821,
+      "mean": 0.7538219414360339,
+      "std": 2.336860189213402,
       "min": 0.034859,
       "max": 20.308844
     }
