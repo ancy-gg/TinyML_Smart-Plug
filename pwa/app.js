@@ -81,6 +81,7 @@ const halfcycleAsymVal = el("halfcycleAsymVal");
 const cycleNmseVal = el("cycleNmseVal");
 const deltaHfEnergyVal = el("deltaHfEnergyVal");
 const vSagPctVal = el("vSagPctVal");
+const zeroDwellVal = el("zeroDwellVal");
 const midbandRatioVal = el("midbandRatioVal");
 
 const zcvVal = el("zcvVal");
@@ -1044,7 +1045,7 @@ function setLiveZeroes() {
   const zeroMap = [
     [vVal, "0.0"], [iVal, "0.000"], [tNtcVal, "0.0"], [tVal, "0.0"], [tExpectedVal, "0.0"], [pVal, "0.0"],
     [irmsZscoreVal, "0.000"], [deltaIrmsVal, "0.000"], [halfcycleAsymVal, "0.000"],
-    [cycleNmseVal, "0.000"], [deltaHfEnergyVal, "0.000"], [vSagPctVal, "0.00"],
+    [cycleNmseVal, "0.000"], [deltaHfEnergyVal, "0.000"], [vSagPctVal, "0.00"], [zeroDwellVal, "0.00"],
     [midbandRatioVal, "0.000"], [zcvVal, "0.000"], [spectralFluxVal, "0.000"],
     [peakFluctVal, "0.000"], [residualCrestVal, "0.000"], [thdIVal, "0.000"],
     [hfEnergyDeltaVal, "0.000"], [edgeSpikeVal, "0.000"]
@@ -1204,7 +1205,7 @@ function setLiveUnavailable() {
   const unavailableMap = [
     vVal, iVal, tNtcVal, tVal, tExpectedVal, pVal,
     irmsZscoreVal, deltaIrmsVal, halfcycleAsymVal,
-    cycleNmseVal, deltaHfEnergyVal, vSagPctVal,
+    cycleNmseVal, deltaHfEnergyVal, vSagPctVal, zeroDwellVal,
     midbandRatioVal, zcvVal, spectralFluxVal,
     peakFluctVal, residualCrestVal, thdIVal, hfEnergyDeltaVal, edgeSpikeVal
   ];
@@ -1761,6 +1762,7 @@ function updateLiveDom(data) {
   const iz  = formatFeatureValue("abs_irms_zscore_vs_baseline", data.abs_irms_zscore_vs_baseline);
   const di  = formatFeatureValue("delta_irms_abs", data.delta_irms_abs);
   const ha  = formatFeatureValue("halfcycle_asymmetry", data.halfcycle_asymmetry);
+  const zdr = formatFeatureValue("zero_dwell_ratio", data.zero_dwell_ratio);
   const dfl = formatFeatureValue("low_current_ratio", data.low_current_ratio);
   const plc = formatFeatureValue("pulse_count_per_cycle", data.pulse_count_per_cycle);
   const mlr = formatFeatureValue("max_low_current_run_ms", data.max_low_current_run_ms);
@@ -1787,6 +1789,7 @@ function updateLiveDom(data) {
   if (cycleNmseVal && cycleNmseVal.textContent !== plc) { cycleNmseVal.textContent = plc; animateNumber(cycleNmseVal); }
   if (deltaHfEnergyVal && deltaHfEnergyVal.textContent !== mlr) { deltaHfEnergyVal.textContent = mlr; animateNumber(deltaHfEnergyVal); }
   if (vSagPctVal && vSagPctVal.textContent !== dfl) { vSagPctVal.textContent = dfl; animateNumber(vSagPctVal); }
+  if (zeroDwellVal && zeroDwellVal.textContent !== zdr) { zeroDwellVal.textContent = zdr; animateNumber(zeroDwellVal); }
   if (midbandRatioVal && midbandRatioVal.textContent !== mrr) { midbandRatioVal.textContent = mrr; animateNumber(midbandRatioVal); }
 
   if (zcvVal && zcvVal.textContent !== z) { zcvVal.textContent = z; animateNumber(zcvVal); }

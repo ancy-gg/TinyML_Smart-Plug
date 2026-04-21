@@ -772,6 +772,53 @@ static bool arcEventSignature(const FeatureFrame& f, float irmsLogic) {
   return restrikeLike && (hits >= 6);
 }
 
+static bool arcWaveformNeighborSignature(const FeatureFrame& f, float irmsLogic) {
+  if ((f.feat_valid == 0) || (f.current_valid == 0)) return false;
+  if (irmsLogic <= ARC_NEIGHBOR_GAP_CURRENT_MAX_A) return false;
+
+  int hits = 0;
+  if (f.edge_spike_ratio >= ARC_SIG_EDGE_SPIKE_RATIO) hits += 2;
+  if (f.midband_residual_ratio >= ARC_SIG_MIDBAND_RATIO) hits += 2;
+  if (f.spectral_flux_midhf >= ARC_SIG_SPECTRAL_FLUX) hits += 2;
+  if (f.hf_energy_delta >= ARC_SIG_HF_ENERGY_DELTA) hits += 2;
+  if (f.residual_crest_factor >= ARC_SIG_RESIDUAL_CF) hits += 1;
+  if (f.abs_irms_zscore_vs_baseline >= ARC_SIG_IRMS_ZSCORE) hits += 1;
+  if (f.thd_i >= ARC_SIG_THD_I) hits += 1;
+  if (f.delta_irms_abs >= 0.10f) hits += 1;
+  if (f.zcv >= ARC_SIG_ZCV) hits += 1;
+
+  const bool primaryWaveform =
+      (f.edge_spike_ratio >= ARC_SIG_EDGE_SPIKE_RATIO) ||
+      (f.midband_residual_ratio >= ARC_SIG_MIDBAND_RATIO) ||
+      (f.spectral_flux_midhf >= ARC_SIG_SPECTRAL_FLUX) ||
+      (f.hf_energy_delta >= ARC_SIG_HF_ENERGY_DELTA);
+
+  return primaryWaveform && (hits >= 4);
+}
+
+static bool arcGapNeighborSignature(const FeatureFrame& f,
+                                    float irmsLogic,
+                                    bool gapLatched) {
+  const bool nearZeroCurrent = (fabsf(irmsLogic) <= ARC_NEIGHBOR_GAP_CURRENT_MAX_A);
+  if (!nearZeroCurrent) return false;
+  if ((f.feat_valid == 0) && !gapLatched) return false;
+
+  int hits = 0;
+  if (f.low_current_ratio >= ARC_SIG_LOW_CURRENT_RATIO) hits += 2;
+  if (f.zero_dwell_ratio >= ARC_SIG_ZERO_DWELL_RATIO) hits += 2;
+  if (f.max_low_current_run_ms >= ARC_SIG_MAX_LOW_CURRENT_RUN_MS) hits += 2;
+  if (f.pulse_count_per_cycle >= ARC_SIG_PULSE_COUNT_PER_CYCLE) hits += 1;
+  if (f.abs_irms_zscore_vs_baseline >= 1.20f) hits += 1;
+
+  const bool primaryGap =
+      gapLatched ||
+      (f.low_current_ratio >= ARC_SIG_LOW_CURRENT_RATIO) ||
+      (f.zero_dwell_ratio >= ARC_SIG_ZERO_DWELL_RATIO) ||
+      (f.max_low_current_run_ms >= ARC_SIG_MAX_LOW_CURRENT_RUN_MS);
+
+  return primaryGap && ((hits >= 2) || gapLatched);
+}
+
 static bool softArcBurstEvent(const FeatureFrame& f,
                               float irmsLogic,
                               bool hadSteadyLoad,
@@ -1714,6 +1761,13 @@ void loop() {
   static uint32_t noConfirmedLoadSinceMs = 0;
   static uint32_t steadyLoadGapSinceMs = 0;
   static uint32_t deliberateReloadSuppressUntilMs = 0;
+  static uint32_t detachWaveformSeedMs = 0;
+  static uint32_t recontactGapSeedMs = 0;
+
+  const auto resetArcNeighborConfirmation = [&]() {
+    detachWaveformSeedMs = 0;
+    recontactGapSeedMs = 0;
+  };
 
   if (effectiveRelayLatchedOn && vFast >= MAINS_PRESENT_ON_V) {
     const float targetLoadA = (irmsRawForLogic >= 0.50f) ? irmsRawForLogic : 0.0f;
@@ -1725,6 +1779,7 @@ void loop() {
     noConfirmedLoadSinceMs = 0;
     steadyLoadGapSinceMs = 0;
     deliberateReloadSuppressUntilMs = 0;
+    resetArcNeighborConfirmation();
   }
 
   const bool hadSteadyLoad = (loadRefA >= 0.80f);
@@ -1777,6 +1832,7 @@ void loop() {
     deliberateReloadSuppressUntilMs = 0;
     haveLastModelInferenceFeat = false;
     lastModelInferenceFeatMs = 0;
+    resetArcNeighborConfirmation();
   }
 
   const bool invalidWhileLoaded =
@@ -1955,6 +2011,7 @@ void loop() {
     (void)stabilizeFeatureValidity(f, vFast, irmsRawForLogic, true);
     notification.notify(SND_RESET_ACK);
     notification.clearFaultAlert();
+    resetArcNeighborConfirmation();
   }
   if (revertFirmwareRequested) {
     network.logStatusEvent("FIRMWARE REVERT REQUESTED", 0.0f, 0.0f, 0.0f, 0.0f);
@@ -1970,6 +2027,9 @@ void loop() {
   sanitizeFeatureFrame_(f);
 
   const bool arcContextLatched = (gContext.ready || (f.context_latched != 0));
+  if (faultClearSuppressActive || deliberateReloadSuppressActive || arcBlankActive || relayArtifactBlankActive || !arcContextLatched) {
+    resetArcNeighborConfirmation();
+  }
 
   const bool arcModelWindowLatched = updateArcModelWindowLatch_(
       faultClearSuppressActive || bootSettling || gSafeMode,
