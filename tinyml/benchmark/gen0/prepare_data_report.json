@@ -232,11 +232,11 @@
       "C:\\Disk\\Ancy\\Platform IO\\TinyML_Smart-Plug\\tinyml\\data\\gen0\\raw\\SMPS\\smps__65w_usb_c_laptop_charger__trial_5__start.csv"
     ]
   },
-  "elapsed_seconds": 179.6539237499237,
-  "elapsed_hms": "00:02:59",
+  "elapsed_seconds": 172.8555760383606,
+  "elapsed_hms": "00:02:52",
   "timing": {
-    "duration_seconds": 179.6539237499237,
-    "duration_hms": "00:02:59"
+    "duration_seconds": 172.8555760383606,
+    "duration_hms": "00:02:52"
   },
   "summary": {
     "rows_before_cleaning": 55085,
@@ -428,8 +428,8 @@
     "load_context_path": "C:\\Disk\\Ancy\\Platform IO\\TinyML_Smart-Plug\\tinyml\\data\\gen0\\load_context.csv",
     "selected_generation": "gen0",
     "resolved_raw_input_glob": "C:\\Disk\\Ancy\\Platform IO\\TinyML_Smart-Plug\\tinyml\\data\\gen0\\raw\\**\\*.csv",
-    "elapsed_seconds": 179.6539237499237,
-    "elapsed_hms": "00:02:59",
+    "elapsed_seconds": 172.8555760383606,
+    "elapsed_hms": "00:02:52",
     "mismatch_rows": 13117,
     "fp_override_rows": 12923,
     "fn_override_rows": 194

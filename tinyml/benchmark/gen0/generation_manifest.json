@@ -43,7 +43,7 @@
       "context": "C:\\Disk\\Ancy\\Platform IO\\TinyML_Smart-Plug\\tinyml\\trainer\\lib\\TinyMLContextModel.joblib"
     }
   },
-  "timestamp": "2026-04-20T01:27:13+08:00",
+  "timestamp": "2026-04-22T22:10:12+08:00",
   "selected_generation": "gen0",
   "source_model_generations_seen": [
     "unknown"
@@ -130,7 +130,7 @@
     ],
     "context_recommended_features": []
   },
-  "recommended_next_action": "Trained on gen0. Canonical RF export remains the active deployment target. Place next collection raw CSVs in tinyml/data/gen1/raw.",
+  "recommended_next_action": "Run subset sweep or training for gen0 after reviewing tinyml/benchmark/gen0.",
   "rf_training": {
     "report_path": "C:\\Disk\\Ancy\\Platform IO\\TinyML_Smart-Plug\\tinyml\\benchmark\\gen0\\TinyMLTreeEnsemble_RF_report.json",
     "feature_report_path": "C:\\Disk\\Ancy\\Platform IO\\TinyML_Smart-Plug\\tinyml\\benchmark\\gen0\\TinyMLFeatureSubsetSweep_report.json",
@@ -364,8 +364,8 @@
       "load_context_path": "C:\\Disk\\Ancy\\Platform IO\\TinyML_Smart-Plug\\tinyml\\data\\gen0\\load_context.csv",
       "selected_generation": "gen0",
       "resolved_raw_input_glob": "C:\\Disk\\Ancy\\Platform IO\\TinyML_Smart-Plug\\tinyml\\data\\gen0\\raw\\**\\*.csv",
-      "elapsed_seconds": 179.6539237499237,
-      "elapsed_hms": "00:02:59",
+      "elapsed_seconds": 172.8555760383606,
+      "elapsed_hms": "00:02:52",
       "mismatch_rows": 13117,
       "fp_override_rows": 12923,
       "fn_override_rows": 194

@@ -14,7 +14,7 @@ static constexpr bool ENABLE_AUTO_ARC_CAPTURE = false;
 // Cloud / OTA configuration
 static constexpr const char* FIREBASE_API_KEY = "AIzaSyAmJlZZszyWPJFgIkTAAl_TbIySys1nvEw";
 static constexpr const char* FIREBASE_DB_URL  = "tinyml-smart-plug-default-rtdb.asia-southeast1.firebasedatabase.app";
-static constexpr const char* FW_VERSION       = "v7.8.2-p-gen0";
+static constexpr const char* FW_VERSION       = "v7.8.2-p-gen0-final";
 static constexpr const char* OTA_DESIRED_VERSION_PATH = "/ota/desired_version";
 static constexpr const char* OTA_FIRMWARE_URL_PATH    = "/ota/firmware_url";
 
@@ -598,10 +598,10 @@ static constexpr float BASELINE_STEP_FREEZE_FRAC       = 0.22f;
 static constexpr uint32_t BASELINE_FREEZE_MS           = 900UL;
 static constexpr uint32_t BASELINE_RESET_IDLE_MS       = 1800UL;
 
-static constexpr float CURRENT_CAL_C3 = 0.00061628f;
-static constexpr float CURRENT_CAL_C2 = -0.000465664f;
-static constexpr float CURRENT_CAL_C1 = 1.22698f;
-static constexpr float CURRENT_CAL_C0 = -0.0360701f;
+static constexpr float CURRENT_CAL_C3 =  0.000556854f;
+static constexpr float CURRENT_CAL_C2 = -0.00298472f;
+static constexpr float CURRENT_CAL_C1 =  1.25081f;
+static constexpr float CURRENT_CAL_C0 = -0.0275572f;
 
 struct CurrentCalib {
   float adcFullScaleV = 3.300f;
@@ -615,9 +615,6 @@ struct CurrentCalib {
   float cubic0 = CURRENT_CAL_C0;
 };
 
-// =========================
-// Voltage calibration and display cleanup
-// =========================
 static inline float eval_cubic_horner(float x, float c3, float c2, float c1, float c0) {
   return (((c3 * x) + c2) * x + c1) * x + c0;
 }
@@ -645,6 +642,10 @@ static inline float thd_percent_to_db(float thd_percent) {
 static inline float db_to_thd_percent(float thd_db) {
   return 100.0f * db20_to_ratio(thd_db);
 }
+
+// =========================
+// Voltage calibration and display cleanup
+// =========================
 
 static constexpr float VOLTAGE_CAL_C3 = 0.00000122081f;
 static constexpr float VOLTAGE_CAL_C2 = -0.000503178f;
