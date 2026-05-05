@@ -1,0 +1,115 @@
+\section{Socket-Heating Protection Validation}
+\label{sec:ch4-socket-heating-protection}
+
+Socket-heating protection validation evaluated the relay-facing estimated
+socket temperature. The important distinction is between four temperatures:
+the direct NTC temperature, the expected normal socket temperature, the
+estimated socket temperature used by protection, and the reference terminal
+temperature. The trip threshold applies to the estimated socket temperature,
+while the reference terminal temperature shows how hot the socket contact area
+became during the same trial.
+
+The water-heater-only protection trend is shown in
+Figure~\ref{fig:ch4-protect-water-heater}.
+\begin{figure}[H]
+  \centering
+  \includegraphics[width=0.90\textwidth]{ch4/figure_4.6.png}
+  \caption{Water heater temperature trend during socket-heating protection validation.}
+  \label{fig:ch4-protect-water-heater}
+\end{figure}
+
+Figure~\ref{fig:ch4-protect-water-heater} shows that the low-current case did
+not trip for either socket condition within the observation window. The
+corroded terminal still ended hotter than the normal terminal, but the
+estimated socket temperature stayed below the 40°C trip threshold.
+
+The water heater plus one halogen lamp protection trend is shown in
+Figure~\ref{fig:ch4-protect-one-lamp}.
+\begin{figure}[H]
+  \centering
+  \includegraphics[width=0.90\textwidth]{ch4/figure_4.7.png}
+  \caption{Water heater plus one halogen lamp trend during protection validation.}
+  \label{fig:ch4-protect-one-lamp}
+\end{figure}
+
+Figure~\ref{fig:ch4-protect-one-lamp} shows that the normal socket did not
+trip, while the corroded socket reached a protection-relevant state after a
+longer heating period. This supports the estimator's role in distinguishing
+slow thermal buildup from immediate current overload.
+
+The water heater plus two halogen lamps protection trend is shown in
+Figure~\ref{fig:ch4-protect-two-lamps}.
+\begin{figure}[H]
+  \centering
+  \includegraphics[width=0.90\textwidth]{ch4/figure_4.8.png}
+  \caption{Water heater plus two halogen lamps trend during protection validation.}
+  \label{fig:ch4-protect-two-lamps}
+\end{figure}
+
+Figure~\ref{fig:ch4-protect-two-lamps} shows that the corroded socket tripped
+much earlier than the normal socket at approximately the same current. The
+reference terminal temperature was already above the estimated value at trip,
+which confirms that the estimator acts as an early proxy for a hotter internal
+condition.
+
+The water heater plus three halogen lamps protection trend is shown in
+Figure~\ref{fig:ch4-protect-three-lamps}.
+\begin{figure}[H]
+  \centering
+  \includegraphics[width=0.90\textwidth]{ch4/figure_4.9.png}
+  \caption{Water heater plus three halogen lamps trend during protection validation.}
+  \label{fig:ch4-protect-three-lamps}
+\end{figure}
+
+Figure~\ref{fig:ch4-protect-three-lamps} shows fast thermal development in
+the corroded case. The relay acted within the short test window, while the
+reference terminal temperature reached 55.0°C.
+
+The water heater plus four halogen lamps protection trend is shown in
+Figure~\ref{fig:ch4-protect-four-lamps}.
+\begin{figure}[H]
+  \centering
+  \includegraphics[width=0.90\textwidth]{ch4/figure_4.10.png}
+  \caption{Water heater plus four halogen lamps trend during protection validation.}
+  \label{fig:ch4-protect-four-lamps}
+\end{figure}
+
+Figure~\ref{fig:ch4-protect-four-lamps} shows the most severe heating case.
+The corroded socket tripped after 5min when the estimated socket temperature
+reached 40.0°C, while the reference terminal temperature had already
+reached 56.0°C.
+
+Table~\ref{tab:ch4-heating-protection} summarizes the protection validation
+results.
+\begin{table}[H]
+  \centering
+  \caption{Socket-heating protection validation results}
+  \label{tab:ch4-heating-protection}
+  \small
+  \begin{tabular}{p{0.20\textwidth}p{0.10\textwidth}p{0.08\textwidth}p{0.09\textwidth}p{0.08\textwidth}p{0.10\textwidth}p{0.10\textwidth}p{0.07\textwidth}}
+    \toprule
+    Load case & Socket & Mean A & NTC 38.2 & Est. 40 & Est. temp & Terminal & Relay \\
+    \midrule
+    Water heater & Normal & 5.17 & -- & -- & 32.7 & 33.8 & No \\
+    Water heater & Corroded & 4.85 & -- & -- & 36.7 & 38.5 & No \\
+    Water heater + 1 lamp & Normal & 7.11 & -- & -- & 38.1 & 40.3 & No \\
+    Water heater + 1 lamp & Corroded & 7.10 & 100 & -- & 39.8 & 42.4 & Yes \\
+    Water heater + 2 lamps & Normal & 9.06 & 100 & 120 & 40.0 & 43.2 & Yes \\
+    Water heater + 2 lamps & Corroded & 9.04 & 48 & 52 & 40.0 & 44.1 & Yes \\
+    Water heater + 3 lamps & Normal & 11.07 & 54 & -- & 39.9 & 43.9 & Yes \\
+    Water heater + 3 lamps & Corroded & 11.14 & 7 & -- & 39.7 & 55.0 & Yes \\
+    Water heater + 4 lamps & Normal & 13.02 & 44 & -- & 39.9 & 45.0 & Yes \\
+    Water heater + 4 lamps & Corroded & 13.08 & 5 & 5 & 40.0 & 56.0 & Yes \\
+    \bottomrule
+  \end{tabular}
+\end{table}
+
+Table~\ref{tab:ch4-heating-protection} shows that degraded and higher-current
+conditions tripped earlier than low-current or healthy-socket conditions. The
+result supports the protection objective because the relay response followed
+the compensated estimated socket temperature, not merely current magnitude. A
+limitation remains: the external NTC and compensation model still
+underestimated the hottest terminal temperature in severe degraded-contact
+cases. The prototype therefore demonstrates useful complementary protection,
+but a final certified design would need a validated thermal model across more
+socket types, contact materials, enclosure conditions, and ambient conditions.

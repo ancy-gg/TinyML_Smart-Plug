@@ -1,0 +1,91 @@
+\section{TinyML Model Performance}
+\label{sec:ch4-tinyml-model-performance}
+
+The TinyML results were interpreted at two levels. First, the embedded
+prototype was evaluated by trial-level relay behavior in the laboratory. Second,
+the exported Random Forest report was evaluated by held-out frame-level and
+event-level metrics. Both views are useful: trial-level behavior reflects the
+complete protection sequence, while frame-level metrics show how the model
+performed before relay-counter persistence.
+
+Table~\ref{tab:ch4-trial-metrics} gives the trial-level metrics for
+recognized loads, unrecognized loads, and all loads combined.
+\begin{table}[H]
+  \centering
+  \caption{Trial-level arc-fault performance metrics}
+  \label{tab:ch4-trial-metrics}
+  \begin{tabular}{lcccc}
+    \toprule
+    Load group & Accuracy & Precision & Recall & F1-score \\
+    \midrule
+    Recognized loads & 99.00\% & 100.00\% & 98.00\% & 98.99\% \\
+    Unrecognized loads & 96.00\% & 97.92\% & 94.00\% & 95.92\% \\
+    All tested loads & 97.50\% & 98.97\% & 96.00\% & 97.46\% \\
+    \bottomrule
+  \end{tabular}
+\end{table}
+
+Table~\ref{tab:ch4-trial-metrics} shows high overall performance across 200
+trial outcomes. Precision is related to nuisance trips: the 98.97\% overall
+precision means that only one normal event was incorrectly tripped in the
+trial set. Recall is related to safety sensitivity: the 96.00\% overall recall
+means that four arc trials were missed. The F1-score of 97.46\% summarizes the
+balance between nuisance-trip avoidance and arc-fault sensitivity.
+
+The per-load trial metrics are shown in Table~\ref{tab:ch4-per-load-metrics}.
+\begin{table}[H]
+  \centering
+  \caption{Per-load trial-level performance metrics}
+  \label{tab:ch4-per-load-metrics}
+  \begin{tabular}{p{0.32\textwidth}cccc}
+    \toprule
+    Device & Accuracy & Precision & Recall & F1-score \\
+    \midrule
+    Water heater & 100\% & 100\% & 100\% & 100\% \\
+    Halogen lamp & 100\% & 100\% & 100\% & 100\% \\
+    Electric kettle & 100\% & 100\% & 100\% & 100\% \\
+    40W stand fan & 100\% & 100\% & 100\% & 100\% \\
+    Handheld vacuum & 95\% & 100\% & 90\% & 94.74\% \\
+    Vacuum cleaner (Electrolux) & 95\% & 100\% & 90\% & 94.74\% \\
+    Angle grinder & 95\% & 100\% & 90\% & 94.74\% \\
+    Bench cutter & 95\% & 100\% & 90\% & 94.74\% \\
+    Impact drill & 95\% & 90.91\% & 100\% & 95.24\% \\
+    Heat gun & 100\% & 100\% & 100\% & 100\% \\
+    \bottomrule
+  \end{tabular}
+\end{table}
+
+Table~\ref{tab:ch4-per-load-metrics} shows that fitted loads generally
+performed better than general loads. The impact drill is the only load listed
+with a precision below 100\%, meaning it contributed a normal-event false trip.
+The handheld vacuum, vacuum cleaner, angle grinder, and bench cutter had
+lower recall, meaning those load cases contributed missed arc trials.
+
+The exported Random Forest report provides a second view of performance.
+The held-out test split contained 10,268 feature rows, including 90 positive
+rows. The frame-level confusion matrix contained 10,173 true negatives, 5
+false positives, 25 false negatives, and 65 true positives. The corresponding
+frame-level accuracy was 99.7078\%, precision was 92.8571\%, recall was
+72.2222\%, and F1-score was 81.25\%. At event level, the same report showed
+25 true arc events, 21 detected events, 4 missed events, 31 predicted events,
+1 false-alarm event, 84.0\% event recall, 96.7742\% event precision, and
+89.9358\% event F1-score. The data-preparation, training-report, and
+exported-model details supporting these metrics are summarized in
+Appendix~\ref{app:f-tinyml-training-summary}.
+
+These model-report values are lower than the final trial-level relay metrics
+because they evaluate individual frames and event groupings before the full
+trial-level interpretation. This does not invalidate the trial results; it
+shows that the firmware's persistence logic is part of the protection behavior.
+The deployed model should therefore be judged as a model-plus-firmware system,
+not as a standalone frame classifier.
+
+\section{Model Limitations}
+\label{sec:ch4-model-limitations}
+
+The main limitation is dataset coverage. The tests included fitted and
+unfitted loads, but they did not cover all appliance families, wiring
+conditions, electrode materials, contact gaps, ambient conditions, or utility
+waveform variations. The results therefore support prototype feasibility and
+future development, but they do not establish compliance with AFCI standards
+or replacement equivalence with certified protective devices.

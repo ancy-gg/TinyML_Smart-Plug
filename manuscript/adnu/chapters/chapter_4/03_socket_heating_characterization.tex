@@ -1,0 +1,108 @@
+\section{Socket-Heating Characterization}
+\label{sec:ch4-socket-heating-characterization}
+
+The socket-heating characterization compared a normal socket with a degraded
+socket under similar current levels. The purpose was to verify the Chapter 3
+assumption that socket temperature is not determined by current alone; contact
+condition changes the rate and final magnitude of heating.
+
+The water-heater-only characterization trend is shown in
+Figure~\ref{fig:ch4-char-water-heater}.
+\begin{figure}[H]
+  \centering
+  \includegraphics[width=0.90\textwidth]{ch4/figure_4.1.png}
+  \caption{Water heater temperature trend during socket-heating characterization.}
+  \label{fig:ch4-char-water-heater}
+\end{figure}
+
+Figure~\ref{fig:ch4-char-water-heater} shows that at about 5.2A, both socket
+conditions stayed below the 38.2°C comparison point within the 240min
+window. The corroded socket still ended hotter than the normal socket, showing
+the beginning of contact-condition influence even at the lowest tested load.
+
+The water heater plus one halogen lamp trend is shown in
+Figure~\ref{fig:ch4-char-one-lamp}.
+\begin{figure}[H]
+  \centering
+  \includegraphics[width=0.90\textwidth]{ch4/figure_4.2.png}
+  \caption{Water heater plus one halogen lamp temperature trend during characterization.}
+  \label{fig:ch4-char-one-lamp}
+\end{figure}
+
+Figure~\ref{fig:ch4-char-one-lamp} shows clearer separation between normal and
+corroded behavior. The corroded socket reached the 38.2°C comparison
+point, while the normal socket did not reach that point within the same window.
+
+The water heater plus two halogen lamps trend is shown in
+Figure~\ref{fig:ch4-char-two-lamps}.
+\begin{figure}[H]
+  \centering
+  \includegraphics[width=0.90\textwidth]{ch4/figure_4.3.png}
+  \caption{Water heater plus two halogen lamps temperature trend during characterization.}
+  \label{fig:ch4-char-two-lamps}
+\end{figure}
+
+Figure~\ref{fig:ch4-char-two-lamps} shows that the degraded socket reached the
+comparison temperature much earlier than the normal socket. The terminal
+temperature also rose above the NTC temperature, supporting the need to treat
+the external NTC as an under-reading proxy rather than the actual hotspot.
+
+The water heater plus three halogen lamps trend is shown in
+Figure~\ref{fig:ch4-char-three-lamps}.
+\begin{figure}[H]
+  \centering
+  \includegraphics[width=0.90\textwidth]{ch4/figure_4.4.png}
+  \caption{Water heater plus three halogen lamps temperature trend during characterization.}
+  \label{fig:ch4-char-three-lamps}
+\end{figure}
+
+Figure~\ref{fig:ch4-char-three-lamps} shows the strongest time-to-threshold
+contrast in the characterization set: the corroded socket reached the
+comparison point after only 7min, while the normal socket reached it after
+52min.
+
+The water heater plus four halogen lamps trend is shown in
+Figure~\ref{fig:ch4-char-four-lamps}.
+\begin{figure}[H]
+  \centering
+  \includegraphics[width=0.90\textwidth]{ch4/figure_4.5.png}
+  \caption{Water heater plus four halogen lamps temperature trend during characterization.}
+  \label{fig:ch4-char-four-lamps}
+\end{figure}
+
+Figure~\ref{fig:ch4-char-four-lamps} shows that the high-current degraded
+trial developed rapidly and was stopped after a short observation window. The
+terminal temperature reached 45.8°C within 4min even though the final
+NTC reading was only 36.9°C.
+
+Table~\ref{tab:ch4-heating-characterization} summarizes the characterization
+data used to interpret these trends.
+\begin{table}[H]
+  \centering
+  \caption{Summary of socket-heating characterization data}
+  \label{tab:ch4-heating-characterization}
+  \small
+  \begin{tabular}{p{0.22\textwidth}p{0.10\textwidth}p{0.12\textwidth}p{0.08\textwidth}p{0.10\textwidth}p{0.12\textwidth}p{0.08\textwidth}}
+    \toprule
+    Load case & Socket & Time to 38.2°C & Mean A & Final NTC & Final terminal & Window \\
+    \midrule
+    Water heater & Normal & -- & 5.18 & 33.9 & 31.5 & 240 \\
+    Water heater & Corroded & -- & 5.16 & 35.6 & 37.4 & 240 \\
+    Water heater + 1 lamp & Normal & -- & 7.12 & 37.7 & 37.6 & 240 \\
+    Water heater + 1 lamp & Corroded & 95 & 7.10 & 40.4 & 43.2 & 240 \\
+    Water heater + 2 lamps & Normal & 105 & 9.07 & 40.2 & 40.8 & 240 \\
+    Water heater + 2 lamps & Corroded & 48 & 9.05 & 41.0 & 44.5 & 120 \\
+    Water heater + 3 lamps & Normal & 52 & 11.06 & 43.2 & 45.8 & 240 \\
+    Water heater + 3 lamps & Corroded & 7 & 11.15 & 38.8 & 53.0 & 8 \\
+    Water heater + 4 lamps & Normal & 44 & 13.00 & 43.4 & 46.4 & 195 \\
+    Water heater + 4 lamps & Corroded & -- & 13.10 & 36.9 & 45.8 & 4 \\
+    \bottomrule
+  \end{tabular}
+\end{table}
+
+Table~\ref{tab:ch4-heating-characterization} confirms that degraded contact
+changed both heating speed and hotspot severity. At about 9A, the corroded
+socket reached 38.2°C in 48min compared with 105min for the normal
+socket. At about 11A, the corroded socket reached the same point in 7min
+compared with 52min for the normal socket. These results support the need for
+the compensated thermal model described in Section~\ref{sec:ch3-socket-heating-models}.

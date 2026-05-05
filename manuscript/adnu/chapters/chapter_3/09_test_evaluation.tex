@@ -1,0 +1,211 @@
+\section{Test and Evaluation Procedures}
+\label{sec:ch3-test-evaluation}
+
+The evaluation followed the same order as the implementation: sensor
+validation, overload testing, socket-heating characterization,
+socket-heating protection validation, series arc-fault testing, and TinyML
+model evaluation. Full calibration records are placed in
+Appendix~\ref{app:a}; socket-heating characterization and protection data are
+placed in Appendices~\ref{app:c} and~\ref{app:d}; arc-fault testing and data
+collection logs are placed in Appendices~\ref{app:e} and~\ref{app:f}.
+
+\section{Sensor-Validation Metrics}
+\label{sec:ch3-sensor-metrics}
+
+Sensor validation compared prototype readings against reference instruments.
+The mean absolute error was computed as
+\begin{equation}
+  \mathrm{MAE} =
+  \frac{1}{n}\sum_{i=1}^{n}|y_i-\hat{y}_i|.
+  \label{eq:metric-mae}
+\end{equation}
+The mean squared error was computed as
+\begin{equation}
+  \mathrm{MSE} =
+  \frac{1}{n}\sum_{i=1}^{n}(y_i-\hat{y}_i)^2.
+  \label{eq:metric-mse}
+\end{equation}
+The root mean squared error was computed as
+\begin{equation}
+  \mathrm{RMSE} =
+  \sqrt{\frac{1}{n}\sum_{i=1}^{n}(y_i-\hat{y}_i)^2}.
+  \label{eq:metric-rmse}
+\end{equation}
+The mean absolute percentage error was computed as
+\begin{equation}
+  \mathrm{MAPE} =
+  \frac{100}{n}\sum_{i=1}^{n}
+  \left|\frac{y_i-\hat{y}_i}{y_i}\right|.
+  \label{eq:metric-mape}
+\end{equation}
+In (\ref{eq:metric-mae})--(\ref{eq:metric-mape}), $y_i$ is the reference
+measurement, $\hat{y}_i$ is the prototype measurement, and $n$ is the number of
+test points. MAE gives the average magnitude of error, MSE and RMSE penalize
+larger errors more strongly, and MAPE expresses the error relative to the
+reference value [72].
+
+\section{Overload Test Procedure}
+\label{sec:ch3-overload-test-procedure}
+
+Overload testing used high-power load combinations to determine whether the
+prototype warned above the warning threshold and tripped only when the
+sustained-overload condition persisted. The block diagram of the overload test
+is shown in Figure~\ref{fig:ch3-overload-block}.
+\begin{figure}[H]
+  \centering
+  \includegraphics[width=0.82\textwidth]{ch3/figure_3.30.png}
+  \caption{Testing setup block diagram for overload evaluation.}
+  \label{fig:ch3-overload-block}
+\end{figure}
+
+Figure~\ref{fig:ch3-overload-block} shows the prototype placed between the
+supply and load bank so that it could measure current and disconnect the load
+through its relay. This matches the current path used in normal operation.
+
+The actual overload test setup is shown in Figure~\ref{fig:ch3-overload-actual}.
+\begin{figure}[H]
+  \centering
+  \includegraphics[width=0.88\textwidth]{ch3/figure_3.31.png}
+  \caption{Actual test setup for overload evaluation.}
+  \label{fig:ch3-overload-actual}
+\end{figure}
+
+Figure~\ref{fig:ch3-overload-actual} documents the physical load arrangement
+used to create warning and sustained-overload conditions. During each trial,
+mean voltage, mean current, peak current, warning state, relay state, and trip
+latency were recorded.
+
+\section{Socket-Heating Test Procedure}
+\label{sec:ch3-heating-test-procedure}
+
+Socket-heating tests compared normal and intentionally degraded socket
+contacts under similar load levels. The objective was to determine whether
+degraded contacts produced faster and higher temperature rise, and whether the
+external NTC and compensated estimator could provide useful warning before
+dangerous contact heating progressed.
+
+Figure~\ref{fig:ch3-heating-block} shows the socket-heating test block
+diagram.
+\begin{figure}[H]
+  \centering
+  \includegraphics[width=0.82\textwidth]{ch3/figure_3.32.png}
+  \caption{Testing setup block diagram for socket-heating evaluation.}
+  \label{fig:ch3-heating-block}
+\end{figure}
+
+Figure~\ref{fig:ch3-heating-block} shows that both the prototype NTC and a
+reference socket or terminal temperature measurement were observed during
+testing. This made it possible to distinguish direct NTC temperature,
+estimated socket temperature, and reference terminal temperature in the
+results.
+
+The degraded socket contacts are shown in Figure~\ref{fig:ch3-corroded-contacts}.
+\begin{figure}[H]
+  \centering
+  \includegraphics[width=0.80\textwidth]{ch3/figure_3.33.png}
+  \caption{Corroded socket contacts used for degraded-contact testing.}
+  \label{fig:ch3-corroded-contacts}
+\end{figure}
+
+Figure~\ref{fig:ch3-corroded-contacts} documents the degraded-contact
+condition used to accelerate contact heating. The degraded socket was compared
+against a normal socket under matched load combinations.
+
+The actual socket-heating test setup is shown in
+Figure~\ref{fig:ch3-heating-actual}.
+\begin{figure}[H]
+  \centering
+  \includegraphics[width=0.88\textwidth]{ch3/figure_3.34.png}
+  \caption{Actual test setup for socket-heating evaluation.}
+  \label{fig:ch3-heating-actual}
+\end{figure}
+
+Figure~\ref{fig:ch3-heating-actual} shows the bench configuration used to
+record time, current, direct NTC temperature, estimated socket temperature,
+reference terminal temperature, and relay behavior. The characterization data
+in Appendix~\ref{app:c} were used to support the thermal model, while the
+protection validation data in Appendix~\ref{app:d} were used to evaluate
+relay response.
+
+\section{Series Arc-Fault Test Procedure}
+\label{sec:ch3-arc-test-procedure}
+
+Series arc-fault testing used a controlled arc platform and appliance loads.
+The goal was to create repeatable waveform disturbances while recording
+current features, model outputs, relay behavior, and event labels. The arc
+platform is shown in Figure~\ref{fig:ch3-arc-platform}.
+\begin{figure}[H]
+  \centering
+  \includegraphics[width=0.92\textwidth]{ch3/figure_3.35.png}
+  \caption{Series arc-fault test platform.}
+  \label{fig:ch3-arc-platform}
+\end{figure}
+
+Figure~\ref{fig:ch3-arc-platform} shows the principle of the series arc test:
+the current path is interrupted by an adjustable contact gap, allowing a
+controlled arc disturbance to appear in series with the load. The platform
+provided a repeatable way to create low-current gaps and restrike spikes
+without depending on accidental wiring faults.
+
+The block diagram of the series arc-fault test is shown in
+Figure~\ref{fig:ch3-arc-block}.
+\begin{figure}[H]
+  \centering
+  \includegraphics[width=0.82\textwidth]{ch3/figure_3.36.png}
+  \caption{Testing setup block diagram for series arc-fault evaluation.}
+  \label{fig:ch3-arc-block}
+\end{figure}
+
+Figure~\ref{fig:ch3-arc-block} shows the smart plug measuring the load current
+while the arc generator is placed in series with the appliance. This setup is
+consistent with the feature definitions in Section~\ref{sec:ch3-waveform-features},
+which depend on current waveform disturbance.
+
+The actual series arc-fault test setup is shown in
+Figure~\ref{fig:ch3-arc-actual}.
+\begin{figure}[H]
+  \centering
+  \includegraphics[width=0.90\textwidth]{ch3/figure_3.37.png}
+  \caption{Actual test setup for series arc-fault evaluation.}
+  \label{fig:ch3-arc-actual}
+\end{figure}
+
+Figure~\ref{fig:ch3-arc-actual} documents the laboratory arrangement used to
+collect arc and normal trials. Complete arc-fault test records are referenced
+in Appendices~\ref{app:e} and~\ref{app:f}.
+
+\section{Classification Metrics}
+\label{sec:ch3-classification-metrics}
+
+For arc-fault evaluation, the positive class was the arc-fault condition and
+the negative class was normal operation. Accuracy, precision, recall, and
+F1-score were computed from true positives (TP), false positives (FP), true
+negatives (TN), and false negatives (FN):
+\begin{equation}
+  \mathrm{Accuracy} =
+  \frac{\mathrm{TP}+\mathrm{TN}}
+       {\mathrm{TP}+\mathrm{TN}+\mathrm{FP}+\mathrm{FN}},
+  \label{eq:metric-accuracy}
+\end{equation}
+\begin{equation}
+  \mathrm{Precision} =
+  \frac{\mathrm{TP}}{\mathrm{TP}+\mathrm{FP}},
+  \label{eq:metric-precision}
+\end{equation}
+\begin{equation}
+  \mathrm{Recall} =
+  \frac{\mathrm{TP}}{\mathrm{TP}+\mathrm{FN}},
+  \label{eq:metric-recall}
+\end{equation}
+and
+\begin{equation}
+  F_1 =
+  2\frac{\mathrm{Precision}\times\mathrm{Recall}}
+        {\mathrm{Precision}+\mathrm{Recall}}.
+  \label{eq:metric-f1}
+\end{equation}
+In (\ref{eq:metric-accuracy})--(\ref{eq:metric-f1}), precision measures how
+many trip decisions were actually arc faults, recall measures how many arc
+faults were detected, and F1-score summarizes the balance between false trips
+and missed faults. These metrics are commonly used for supervised
+classification and confusion-matrix evaluation [74].

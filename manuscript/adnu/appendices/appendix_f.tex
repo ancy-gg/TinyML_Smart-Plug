@@ -1,0 +1,211 @@
+\chapter{Arc Fault Data Collection Logs}
+\label{app:f}
+
+This appendix summarizes the arc-fault data-preparation logs, training report,
+and exported embedded-model settings used by the TinyML Smart Plug. The raw
+CSV and JSON artifacts remain in the TinyML project directory; this appendix
+summarizes the values needed to connect the source artifacts to the manuscript
+without reproducing long console dumps or oversized tables.
+
+\section{Dataset Preparation Summary}
+\label{app:f-dataset-preparation}
+
+Table~\ref{tab:app-f-dataset-cleaning} summarizes the cleaned dataset reported
+by the data-preparation workflow. The values were taken from the generated
+preparation report for the selected training generation.
+\begin{table}[H]
+  \centering
+  \caption{Arc-fault dataset preparation summary}
+  \label{tab:app-f-dataset-cleaning}
+  \begin{tabular}{lr}
+    \toprule
+    Item & Count \\
+    \midrule
+    Raw rows before cleaning & 55,085 \\
+    Rows after cleaning & 49,296 \\
+    Rows removed & 5,789 \\
+    Trainable rows & 45,010 \\
+    Trusted normal rows & 17,762 \\
+    Conflict-marked rows & 1 \\
+    Context-only placeholder rows preserved & 16,353 \\
+    Arc-truth available rows & 32,943 \\
+    \bottomrule
+  \end{tabular}
+\end{table}
+
+The cleaning stage removed invalid or unusable rows while preserving rows that
+were still needed for context modeling. The resulting set was strongly
+imbalanced, which is why the manuscript reports precision, recall, F1-score,
+and event-level metrics instead of relying only on accuracy.
+
+The retained rows were grouped by division and label as shown in
+Table~\ref{tab:app-f-label-division}. These counts connect the laboratory
+collection procedure in Appendix~\ref{app:e} to the training and evaluation
+workflow described in Chapter~\ref{chap:methodology}.
+\begin{table}[H]
+  \centering
+  \caption{Prepared data division and label counts}
+  \label{tab:app-f-label-division}
+  \begin{tabular}{lr}
+    \toprule
+    Category & Count \\
+    \midrule
+    Start-division rows & 18,475 \\
+    Steady-division rows & 17,762 \\
+    Arc-division rows & 13,059 \\
+    Normal-label rows & 49,013 \\
+    Arc-label rows & 283 \\
+    Arc-training rows & 30,821 \\
+    Load-context rows & 18,475 \\
+    Conflict policy: none & 49,295 \\
+    Conflict policy: prefer more trusted normal & 1 \\
+    \bottomrule
+  \end{tabular}
+\end{table}
+
+The division counts show that the context model was trained from start
+segments, while the arc model used the steady and arc divisions. The small
+number of arc-labeled rows confirms that series-arc detection was a sparse
+event-classification task.
+
+\section{TinyML Training Report and Export Summary}
+\label{app:f-tinyml-training-summary}
+
+Table~\ref{tab:app-f-rf-search} summarizes the selected Random Forest settings
+from the training report. These settings describe the offline model selected
+before export to the embedded firmware.
+\begin{table}[H]
+  \centering
+  \caption{Selected Random Forest training settings}
+  \label{tab:app-f-rf-search}
+  \begin{tabular}{ll}
+    \toprule
+    Parameter & Selected value \\
+    \midrule
+    Model family & Random Forest \\
+    Number of trees & 160 \\
+    Maximum tree depth & 16 \\
+    Minimum samples per leaf & 4 \\
+    Minimum samples per split & 12 \\
+    Maximum feature fraction & 0.35 \\
+    Bootstrap sampling & Enabled \\
+    Split criterion & Entropy \\
+    Cost-complexity pruning alpha & 0.0001 \\
+    Minimum impurity decrease & 0.000001 \\
+    Cross-validation splits & 5 \\
+    \bottomrule
+  \end{tabular}
+\end{table}
+
+The final training view contained 35,512 training rows, including 344 positive
+rows and 35,168 negative rows. The held-out validation split contained
+9,434 rows with 90 positive rows, and the held-out test split contained
+10,268 rows with 90 positive rows.
+
+Table~\ref{tab:app-f-rf-test-metrics} gives the held-out test metrics reported
+for the offline Random Forest model. These frame-level metrics are the source
+of the TinyML model-performance discussion in Chapter~\ref{chap:results}.
+\begin{table}[H]
+  \centering
+  \caption{Held-out frame-level Random Forest test metrics}
+  \label{tab:app-f-rf-test-metrics}
+  \begin{tabular}{lr}
+    \toprule
+    Metric & Value \\
+    \midrule
+    Offline report threshold & 0.25 \\
+    Accuracy & 0.997078 \\
+    Precision & 0.928571 \\
+    Recall & 0.722222 \\
+    F1-score & 0.812500 \\
+    True negatives & 10,173 \\
+    False positives & 5 \\
+    False negatives & 25 \\
+    True positives & 65 \\
+    \bottomrule
+  \end{tabular}
+\end{table}
+
+Table~\ref{tab:app-f-rf-test-metrics} shows that the frame-level classifier had
+high precision but lower recall. This means that false positive frames were
+rare, while some positive arc frames were not detected at the frame level.
+For this reason, Chapter~\ref{chap:results} also interprets event-level and
+trial-level behavior.
+
+The event-level report grouped adjacent positive frames into arc episodes.
+Table~\ref{tab:app-f-event-metrics} summarizes this view.
+\begin{table}[H]
+  \centering
+  \caption{Held-out event-level Random Forest test metrics}
+  \label{tab:app-f-event-metrics}
+  \begin{tabular}{lr}
+    \toprule
+    Metric & Value \\
+    \midrule
+    True arc events & 25 \\
+    Detected arc events & 21 \\
+    Missed arc events & 4 \\
+    Predicted events & 31 \\
+    Overlapping predicted events & 30 \\
+    False-alarm events & 1 \\
+    False-alarm sessions & 1 \\
+    False alarms per session & 0.1 \\
+    Event recall & 0.840000 \\
+    Event precision & 0.967742 \\
+    Event F1-score & 0.899358 \\
+    \bottomrule
+  \end{tabular}
+\end{table}
+
+The event-level metrics better match the protection problem because a series
+arc appears as a short disturbance episode rather than a single independent
+frame. The one false-alarm event and four missed events explain why the
+prototype should be interpreted as complementary protection and not as a
+certified replacement for standard protective devices.
+
+\section{Embedded Model Export Summary}
+\label{app:f-embedded-export-summary}
+
+The exported embedded arc model used a context-aware input vector. The source
+header defines feature-version 6, an input dimension of 13, six base waveform
+features, and seven context fields. The embedded input order is shown in
+Table~\ref{tab:app-f-embedded-input-order}.
+\begin{table}[H]
+  \centering
+  \caption{Embedded Random Forest arc-model input order}
+  \label{tab:app-f-embedded-input-order}
+  \begin{tabular}{rl}
+    \toprule
+    Index & Feature \\
+    \midrule
+    0 & Maximum low-current run duration \\
+    1 & Zero-dwell ratio \\
+    2 & Low-current ratio \\
+    3 & Absolute RMS-current z-score versus baseline \\
+    4 & Midband residual ratio \\
+    5 & Mid/high-frequency spectral flux \\
+    6 & Context family: resistive linear \\
+    7 & Context family: inductive motor \\
+    8 & Context family: rectifier SMPS \\
+    9 & Context family: phase-angle controlled \\
+    10 & Context family: brush universal motor \\
+    11 & Context family: other mixed \\
+    12 & Context-family confidence \\
+    \bottomrule
+  \end{tabular}
+\end{table}
+
+The deployed header used an embedded arc threshold of 0.4800 for supported
+known-context decisions, a context-confidence minimum of 0.4500, an
+unknown-context threshold of 0.7800, and a minimum of three corroborating
+arc-like feature votes under unknown context. These embedded settings are
+more conservative than the offline report threshold because the deployed
+device must limit nuisance relay trips during uncertain load-family context.
+
+The exported context model is a prototype classifier with six inputs:
+$\Delta I_{\mathrm{rms}}$, half-cycle asymmetry, midband residual ratio,
+current THD, mid/high-frequency spectral flux, and high-frequency energy
+delta. It standardizes each input, computes distance to six family centroids,
+and accepts a family only when the best context confidence is at least 0.4500.
+Otherwise, the arc model is evaluated under the stricter unknown-context
+threshold.

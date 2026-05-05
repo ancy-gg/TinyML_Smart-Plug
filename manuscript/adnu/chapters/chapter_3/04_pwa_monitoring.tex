@@ -1,0 +1,81 @@
+\section{PWA and Monitoring System}
+\label{sec:ch3-pwa-monitoring}
+
+The monitoring system was implemented as a PWA connected to Firebase. The PWA
+was not placed in the protection path; the ESP32-S3 still made relay decisions
+locally. The PWA instead provided live measurements, protection status, event
+history, CSV download, labeling support, and review of waveform-derived
+features. This separation allowed the prototype to remain protective during
+network loss while still supporting data collection and analysis.
+
+Figure~\ref{fig:ch3-pwa-block} shows the PWA data path.
+\begin{figure}[H]
+  \centering
+  \includegraphics[width=0.82\textwidth]{ch3/figure_3.12.png}
+  \caption{PWA block diagram and Firebase data path.}
+  \label{fig:ch3-pwa-block}
+\end{figure}
+
+Figure~\ref{fig:ch3-pwa-block} shows that the firmware publishes selected
+telemetry to Firebase, while the browser-based PWA subscribes to the same data
+for display and logging. This arrangement matches the PWA role described in
+Firebase documentation: the web client improves access and installation
+behavior, but the embedded device remains responsible for field decisions
+[55], [56].
+
+The live dashboard used during testing is shown in
+Figure~\ref{fig:ch3-pwa-dashboard}.
+\begin{figure}[H]
+  \centering
+  \includegraphics[width=0.92\textwidth]{ch3/figure_3.13.png}
+  \caption{Actual PWA live dashboard.}
+  \label{fig:ch3-pwa-dashboard}
+\end{figure}
+
+Figure~\ref{fig:ch3-pwa-dashboard} displays voltage, current, direct NTC
+temperature, estimated socket temperature, THD, spectral features, protection
+state, and relay state. The dashboard intentionally distinguishes direct NTC
+temperature from estimated socket temperature because the relay-facing thermal
+decision uses the compensated estimate, not the raw thermistor reading alone.
+
+The event-history page is shown in Figure~\ref{fig:ch3-pwa-history}.
+\begin{figure}[H]
+  \centering
+  \includegraphics[width=0.92\textwidth]{ch3/figure_3.14.png}
+  \caption{Actual PWA history-log view.}
+  \label{fig:ch3-pwa-history}
+\end{figure}
+
+Figure~\ref{fig:ch3-pwa-history} documents the stored-event interface used to
+review warnings, trips, and data records after tests. The history function was
+also useful for checking whether the firmware sequence matched the expected
+warning, persistence, and latching behavior during overload, heating, and
+arc-fault trials.
+
+\section{Telemetry Fields}
+\label{sec:ch3-telemetry-fields}
+
+The PWA displayed only a selected subset of firmware variables. The most
+important telemetry fields are listed in Table~\ref{tab:ch3-telemetry}.
+\begin{table}[H]
+  \centering
+  \caption{Selected telemetry fields shown in the PWA}
+  \label{tab:ch3-telemetry}
+  \begin{tabular}{p{0.30\textwidth}p{0.25\textwidth}p{0.35\textwidth}}
+    \toprule
+    Field & Firmware source & Interpretation \\
+    \midrule
+    Voltage and current & Calibrated sensor routines & Electrical state of the connected load \\
+    NTC temperature & Thermistor routine & External temperature at the sensor position \\
+    Estimated socket temperature & Thermal estimator & Protection-facing estimate of socket temperature \\
+    Arc probability and class & Random Forest inference & TinyML arc-fault decision support \\
+    Context family and confidence & Context prototype model & Load-family estimate used by arc-threshold selection \\
+    Relay and fault state & Protection manager & Whether the load is energized or latched off \\
+    \bottomrule
+  \end{tabular}
+\end{table}
+
+Table~\ref{tab:ch3-telemetry} shows that the PWA was both an operator display
+and a research instrument. During data collection, these fields allowed the
+researchers to compare raw measurements, computed estimates, and protection
+outputs in the same session record.

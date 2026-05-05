@@ -1,0 +1,8 @@
+% !TEX program = xelatex
+% Fast build: table of contents using the latest full-build .toc file.
+\input{style/thesis_preamble.tex}
+\begin{document}
+\pagenumbering{roman}
+\chapter*{TABLE OF CONTENTS}
+\IfFileExists{logs/main.toc}{\input{logs/main.toc}}{Run the full main.tex build once to generate logs/main.toc.}
+\end{document}

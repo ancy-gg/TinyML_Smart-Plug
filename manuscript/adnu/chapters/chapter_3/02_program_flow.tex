@@ -1,0 +1,60 @@
+\section{Program and Firmware Flow}
+\label{sec:ch3-program-flow}
+
+The firmware follows a repeated acquisition, computation, inference, and
+protection cycle. On startup, the ESP32-S3 initializes the sensors, relay
+driver, OLED display, buzzer, Wi-Fi, Firebase interface, and local protection
+state. In the main loop, it samples the voltage, thermistor, and current
+waveform, applies calibration and filtering, computes thermal and waveform
+features, updates the context classifier, evaluates the arc classifier, and
+passes the resulting variables to the protection manager.
+
+Figure~\ref{fig:ch3-program-flow} shows the operating sequence implemented by
+the firmware.
+\begin{figure}[H]
+  \centering
+  \includegraphics[width=\textwidth]{ch3/figure_3.3.png}
+  \caption{Program flowchart of the TinyML Smart Plug firmware.}
+  \label{fig:ch3-program-flow}
+\end{figure}
+
+Figure~\ref{fig:ch3-program-flow} shows that a relay trip can be caused by a
+sustained overload, an estimated socket over-temperature, or an arc-fault
+classification. The overload path issues a warning above 10.0A, but relay
+disconnection is based on persistence above 14.5A. This persistence is
+implemented as a score that increases every 10s while the
+condition remains active and trips when the score reaches 6, equivalent to
+approximately 60s of sustained overload. This makes the overload behavior
+closer to inverse-time protection logic than to an instantaneous cutoff [22].
+
+The firmware also latches fault states. After relay disconnection, the event is
+recorded locally and uploaded when the network is available. The plug remains
+in the fault state until the user clears the fault through the device or
+application workflow. This prevents a hazardous load from being automatically
+re-energized after a transient communication or reset event.
+
+The sampling and timing constants used by the firmware are listed in
+Table~\ref{tab:ch3-firmware-constants}. These values were taken from the
+firmware configuration and the current-sensing implementation.
+\begin{table}[H]
+  \centering
+  \caption{Selected firmware timing and sampling constants}
+  \label{tab:ch3-firmware-constants}
+  \begin{tabular}{p{0.38\textwidth}p{0.22\textwidth}p{0.30\textwidth}}
+    \toprule
+    Constant & Value & Role \\
+    \midrule
+    Target current sampling rate & 27,000Hz & Current waveform acquisition for feature extraction \\
+    Arc runtime frame length & 512 samples & FFT and time-domain feature window \\
+    Arc runtime hop length & 256 samples & Overlap between consecutive feature frames \\
+    Feature emission cadence & Every 3 hops & Approximate 35.16Hz feature output rate \\
+    MCP3204 SPI clock & 1.2MHz & 12-bit current ADC transfer clock \\
+    Voltage sampling interval & 250 $\mu$s & Firmware voltage-window acquisition interval \\
+    \bottomrule
+  \end{tabular}
+\end{table}
+
+Table~\ref{tab:ch3-firmware-constants} explains why the current path is
+handled separately from slow telemetry. Arc-fault detection requires waveform
+frames with millisecond-scale timing, while Firebase updates and PWA displays
+operate at a slower human-monitoring cadence.

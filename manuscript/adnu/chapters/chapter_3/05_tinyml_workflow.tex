@@ -1,0 +1,172 @@
+\section{TinyML Development and Deployment}
+\label{sec:ch3-tinyml-workflow}
+
+The TinyML workflow used logged current-waveform features to train two embedded
+models: a load-context model and a series arc-fault model. The context model
+estimated the appliance family during the early stable portion of a load run.
+The arc model then combined selected arc-sensitive features with the context
+output to classify whether a frame was consistent with a series arc fault.
+Random Forest classification was selected because it can model nonlinear
+feature interactions while remaining exportable as a compact tree ensemble for
+microcontroller execution [68], [69].
+
+Figure~\ref{fig:ch3-data-labeling-deploy} shows the data-logging, labeling,
+training, and deployment path used by the project.
+\begin{figure}[H]
+  \centering
+  \includegraphics[width=0.88\textwidth]{ch3/figure_3.15.png}
+  \caption{Data logging, labeling, and TinyML deployment workflow.}
+  \label{fig:ch3-data-labeling-deploy}
+\end{figure}
+
+Figure~\ref{fig:ch3-data-labeling-deploy} shows that the training workflow was
+not performed directly on the microcontroller. The firmware generated CSV
+records, the data were cleaned and labeled in Python, the models were trained
+and evaluated locally, and the final headers were exported back into the
+firmware project for embedded inference. This follows the usual TinyML pattern
+of offline training followed by resource-constrained on-device execution [43],
+[73].
+
+The deployed model sequence is summarized in
+Figure~\ref{fig:ch3-tinyml-sequence}.
+\begin{figure}[H]
+  \centering
+  \includegraphics[width=0.88\textwidth]{ch3/figure_3.16.png}
+  \caption{TinyML processing sequence from feature logging to embedded inference.}
+  \label{fig:ch3-tinyml-sequence}
+\end{figure}
+
+Figure~\ref{fig:ch3-tinyml-sequence} shows that the firmware computes features
+first, then updates context, then evaluates the arc classifier. This order is
+important because the deployed arc header includes both waveform features and
+context fields.
+
+Arc labels were assigned from logged waveform sessions. The labeling interface
+is shown in Figure~\ref{fig:ch3-arc-labeling}.
+\begin{figure}[H]
+  \centering
+  \includegraphics[width=0.88\textwidth]{ch3/figure_3.28.png}
+  \caption{Arc labeling using logged waveform data.}
+  \label{fig:ch3-arc-labeling}
+\end{figure}
+
+Figure~\ref{fig:ch3-arc-labeling} shows how the arc windows were marked from
+the collected logs. This manual labeling step was necessary because series
+arcs are sparse and brief relative to normal operating frames. The cleaning
+script prepared separate trainable datasets for arc detection and load-context
+classification from these records.
+
+The local Python trainer used for model development is shown in
+Figure~\ref{fig:ch3-python-trainer}.
+\begin{figure}[H]
+  \centering
+  \includegraphics[width=0.88\textwidth]{ch3/figure_3.29.png}
+  \caption{Local Python TinyML trainer.}
+  \label{fig:ch3-python-trainer}
+\end{figure}
+
+Figure~\ref{fig:ch3-python-trainer} documents the offline training environment
+used to prepare the exported embedded model files. The workflow used separate
+data preparation, context-model training, Random Forest training, shared
+TinyML utility, and generation-path routines as the source of truth for
+feature selection, data splits, hyperparameter search, metric computation,
+and embedded export. The dataset-preparation, training-report, and exported
+embedded-model summaries are provided in
+Appendix~\ref{app:f-tinyml-training-summary}.
+
+\section{Context Model}
+\label{sec:ch3-context-model}
+
+The deployed context model is a centroid or prototype classifier, not a
+Random Forest. The context model defines six input
+features: $\Delta I_{\mathrm{rms}}$, half-cycle asymmetry, midband residual
+ratio, current THD, mid/high-frequency spectral flux, and high-frequency
+energy delta. During runtime, the firmware averages usable feature frames over
+the acquisition interval, standardizes each averaged feature, computes the
+squared Euclidean distance to each family centroid, and applies a softmax to
+the negative distances:
+\begin{equation}
+  p_c =
+  \frac{\exp(-d_c^2)}
+       {\sum_{j=1}^{C}\exp(-d_j^2)},
+  \qquad
+  d_c^2 = \sum_{i=1}^{m}
+  \left(\frac{x_i-\mu_i}{\sigma_i}-q_{c,i}\right)^2 .
+  \label{eq:context-prototype}
+\end{equation}
+In (\ref{eq:context-prototype}), $p_c$ is the context confidence for family
+$c$, $x_i$ is the averaged runtime feature, $\mu_i$ and $\sigma_i$ are the
+training-set mean and standard deviation exported in the header, $q_{c,i}$ is
+the standardized centroid coordinate for family $c$, $m=6$ is the context
+input dimension, and $C=6$ is the number of load families. A family is accepted
+only when the best confidence is at least 0.45; otherwise, the context remains
+unknown.
+
+The context acquisition constants in the firmware require a load to remain
+active before the context is latched. A provisional context may be used after
+the minimum acquisition period, and the final context is latched after the
+configured 5s acquisition window when confidence is sufficient. This prevents
+brief startup artifacts from immediately forcing a load family into the arc
+classifier.
+
+\section{Arc Model}
+\label{sec:ch3-arc-model}
+
+The deployed series-arc classifier is the Random Forest used by the embedded
+arc model. The deployed Random Forest arc model defines 13 inputs: six
+base waveform features, six one-hot context-family fields, and one context
+confidence field. The base features are maximum low-current run, zero-dwell
+ratio, low-current ratio, absolute RMS-current z-score relative to baseline,
+midband residual ratio, and mid/high-frequency spectral flux. These were
+selected because series arcs can produce current interruption, restrike spikes,
+cycle-to-cycle waveform disturbance, and broadband spectral changes [34],
+[35], [50], [53].
+
+The deployed arc decision is summarized in
+Table~\ref{tab:ch3-arc-model-export}.
+\begin{table}[H]
+  \centering
+  \caption{Deployed Random Forest arc-model settings}
+  \label{tab:ch3-arc-model-export}
+  \begin{tabular}{p{0.36\textwidth}p{0.22\textwidth}p{0.32\textwidth}}
+    \toprule
+    Item & Deployed value & Source or role \\
+    \midrule
+    Model type & Random Forest & Exported tree ensemble from the local training workflow \\
+    Input dimension & 13 & Six waveform features plus seven context fields \\
+    Base feature count & 6 & Arc-sensitive features used before context fields \\
+    Default arc threshold & 0.4800 & Probability threshold for supported context families \\
+    Context confidence minimum & 0.4500 & Minimum accepted context confidence \\
+    Unknown-context threshold & 0.7800 & More conservative threshold when context is unknown \\
+    Unknown minimum feature votes & 3 & Additional runtime safeguard for unknown-context decisions \\
+    \bottomrule
+  \end{tabular}
+\end{table}
+
+Table~\ref{tab:ch3-arc-model-export} shows that the deployed inference was
+context-aware. The model used lower thresholds for selected known families and
+a higher threshold for unknown context, reducing nuisance trips when the load
+family could not be established confidently. The firmware then passed the arc
+classification to the protection manager, where a leaky counter required
+persistence before relay disconnection.
+
+\section{Training Split and Model Evaluation}
+\label{sec:ch3-training-split}
+
+The Random Forest report shows that the final arc dataset was split into
+35,512 training rows, 9,434 validation rows, and 10,268 test rows. The final
+training report used 5 cross-validation splits during search and reported the
+held-out test metrics after model selection. The best exported hyperparameters
+were 160 trees, maximum tree depth of 16, minimum leaf size of 4, minimum split
+size of 12, maximum feature fraction of 0.35, bootstrap sampling enabled, and
+entropy criterion. Train/test splitting, cross-validation, and confusion-matrix
+metrics are standard model-evaluation practices for supervised classification
+[69], [74].
+
+The held-out test-set confusion matrix in the exported report contained 10,173
+true negatives, 5 false positives, 25 false negatives, and 65 true positives.
+The corresponding frame-level accuracy, precision, recall, and F1-score were
+99.7078\%, 92.8571\%, 72.2222\%, and 81.25\%, respectively. Event-level
+evaluation was also reported because arc faults occur in grouped episodes
+rather than as isolated independent frames; the event-level recall was 84.0\%,
+with one false-alarm event in the test sessions.

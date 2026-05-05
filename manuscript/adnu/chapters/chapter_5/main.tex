@@ -1,0 +1,76 @@
+\chapter{CONCLUSION AND RECOMMENDATION}\label{chap:conclusion-recommendation}
+
+\section{Conclusions}\label{sec:conclusions}
+
+The study demonstrated that the TinyML Smart Plug is feasible as a
+complementary residential protection prototype under controlled laboratory
+conditions. The calibrated voltage, current, and temperature channels produced
+errors low enough to support protection decisions, with Chapter 4 reporting
+mean absolute errors of 3.910V, 0.178A, and 1.02°C, respectively. These
+results support the first objective because the prototype was able to acquire
+the required electrical and thermal quantities and use them in embedded
+decision logic.
+
+The overload tests showed that the prototype could distinguish warning-level
+current from sustained overload. All overload trials generated warnings, while
+only the trial with a 17.30A mean current produced a relay trip after 61.3s.
+This agrees with the implemented persistence method and supports the objective
+of adding time-aware overload response rather than using an instantaneous
+cutoff for every current excursion.
+
+The socket-heating tests confirmed that degraded contact can create faster and
+more severe heating than a normal socket at comparable current levels. The
+estimated socket temperature reached the 40°C trip threshold earlier in
+corroded-socket trials, and the reference terminal temperature was already
+higher than the external NTC reading at trip. This supports the need for a
+thermal protection layer that is separate from current-only protection, while
+also showing that sensor placement and thermal lag remain important
+limitations.
+
+The series arc-fault tests showed that embedded TinyML inference was practical
+on the implemented platform. Across the tested devices, the prototype achieved
+97.50\% accuracy, 98.97\% precision, 96.00\% recall, and a 97.46\% F1-score.
+These results support the objective of detecting arc-related waveform
+disturbance using a feature-based embedded model. However, the result should
+be interpreted within the tested load set and laboratory arc platform only.
+The prototype is therefore complementary protection and is not a replacement
+for circuit breakers, AFCIs, GFCIs, wiring inspection, certified receptacles,
+or other code-required protection devices.
+
+\section{Recommendations}\label{sec:recommendations}
+
+Longer validation should be performed in real-house or semi-field conditions.
+Future tests should include ordinary daily load transitions, shared branch
+circuits, extension cords, aged receptacles, and different wiring lengths so
+that nuisance trips and missed-fault behavior can be evaluated outside the
+controlled bench setup.
+
+The arc-fault dataset should be expanded to include more load families,
+additional appliance models, more arc severities, and non-fault disturbances
+such as motor startup, switching noise, loose plugs without arcing, and
+intermittent contact. This would give the Random Forest model stronger
+coverage of nuisance events and would help improve recall for less obvious
+arc-fault cases.
+
+The socket-temperature subsystem should be improved through better thermal
+sensor placement and additional model validation. Future prototypes should
+evaluate thermistors placed closer to the plug-contact interface, multiple
+temperature sensors, and longer degraded-contact trials so that the
+relationship among NTC temperature, estimated socket temperature, and actual
+terminal temperature can be fitted with stronger evidence.
+
+The enclosure, creepage and clearance distances, insulation barriers, relay
+rating, wire gauge, strain relief, and thermal isolation should be redesigned
+for certification-oriented testing. Future work should include tests aligned
+with applicable electrical safety and appliance standards before any field or
+consumer deployment is considered.
+
+The monitoring system should add stronger event logging and data export.
+Exportable CSV logs, timestamps synchronized across waveform and telemetry
+events, firmware-version fields, and clearer fault-state records would make
+future validation easier and would support model retraining from field data.
+
+Finally, future implementations may use a microcontroller platform with more
+memory and data-handling margin. Additional resources would allow longer
+waveform buffers, larger validation logs, broader feature comparison, and
+more robust embedded inference while keeping the protection logic responsive.

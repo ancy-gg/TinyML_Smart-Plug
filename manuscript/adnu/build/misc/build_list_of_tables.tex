@@ -1,0 +1,8 @@
+% !TEX program = xelatex
+% Fast build: list of tables using the latest full-build .lot file.
+\input{style/thesis_preamble.tex}
+\begin{document}
+\pagenumbering{roman}
+\chapter*{LIST OF TABLES}
+\IfFileExists{logs/main.lot}{\input{logs/main.lot}}{Run the full main.tex build once to generate logs/main.lot.}
+\end{document}

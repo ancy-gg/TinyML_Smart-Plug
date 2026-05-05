@@ -1,0 +1,41 @@
+\section{Overload Protection}
+\label{sec:ch4-overload-protection}
+
+Five overload-related trials were conducted using high-power load combinations.
+All trials entered the overload-warning region, but only the most severe case
+remained above the sustained-overload criterion long enough to trip the relay.
+This matches the firmware method in Section~\ref{sec:ch3-overload-protection},
+where warning and sustained trip are intentionally separated.
+
+Table~\ref{tab:ch4-overload-evaluation} summarizes the overload results.
+\begin{table}[H]
+  \centering
+  \caption{Overload evaluation results}
+  \label{tab:ch4-overload-evaluation}
+  \small
+  \begin{tabular}{p{0.06\textwidth}p{0.30\textwidth}p{0.09\textwidth}p{0.09\textwidth}p{0.08\textwidth}p{0.10\textwidth}p{0.12\textwidth}}
+    \toprule
+    Trial & Load setup & Mean V & Mean A & Peak A & Warning & Trip latency \\
+    \midrule
+    1 & 1300W electric kettle + water heater & 231.8 & 12.87 & 14.85 & Yes & -- \\
+    2 & 1300W electric kettle + 1500W electric kettle & 229.5 & 12.33 & 13.63 & Yes & -- \\
+    3 & 1500W electric kettle + water heater & 229.6 & 13.36 & 14.86 & Yes & -- \\
+    4 & 1300W electric kettle + water heater + 2 $\times$ 500W halogen lamp & 224.0 & 17.30 & 19.73 & Yes & 61.3s \\
+    5 & 1300W electric kettle + water heater + 500W halogen lamp & 229.1 & 14.42 & 16.23 & Yes & -- \\
+    \bottomrule
+  \end{tabular}
+\end{table}
+
+Table~\ref{tab:ch4-overload-evaluation} shows that warning occurred in all
+heavy-load cases, while relay disconnection occurred only in Trial 4. The mean
+current of Trial 4 was 17.30A, clearly above the 14.5A sustained-overload
+threshold, and the 61.3s trip latency agrees with the intended 60s
+persistence behavior. Trials 1, 3, and 5 reached peak values near or above the
+sustained threshold, but they did not remain in the sustained-overload state
+long enough for the score to reach the trip value.
+
+This result supports the overload objective because the prototype behaved as a
+warning-and-persistence device rather than an instantaneous current cutoff. The
+main limitation is that the tests were conducted with selected laboratory load
+combinations; broader appliance combinations and longer-duration thermal tests
+would be needed before choosing final consumer-product trip curves.

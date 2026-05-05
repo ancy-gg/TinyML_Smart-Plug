@@ -1,0 +1,294 @@
+\section{Sensor Calibration and Computations}
+\label{sec:ch3-sensor-calibration}
+
+Sensor calibration converted raw sensor-derived values into engineering units
+used by the protection routines. Polynomial calibration was used for the
+voltage and current channels because the measured sensor outputs were not
+perfectly proportional to the reference instruments over the tested range.
+Ordinary least-squares regression estimates coefficients by minimizing the sum
+of squared residuals between the measured and fitted values [71]. The
+calibration coefficients below were verified from the firmware configuration.
+
+The voltage calibration setup is shown in
+Figure~\ref{fig:ch3-voltage-cal-setup}.
+\begin{figure}[H]
+  \centering
+  \includegraphics[width=0.90\textwidth]{ch3/figure_3.17.png}
+  \caption{Data-collection setup for voltage calibration.}
+  \label{fig:ch3-voltage-cal-setup}
+\end{figure}
+
+Figure~\ref{fig:ch3-voltage-cal-setup} shows the prototype voltage channel
+being compared with reference multimeters while the applied voltage was varied.
+The calibration target was the reference RMS voltage, not the uncorrected
+sensor output.
+
+The fitted voltage regression is shown in
+Figure~\ref{fig:ch3-voltage-regression}.
+\begin{figure}[H]
+  \centering
+  \includegraphics[width=0.80\textwidth]{ch3/figure_3.18.png}
+  \caption{Cubic regression for voltage calibration.}
+  \label{fig:ch3-voltage-regression}
+\end{figure}
+
+Figure~\ref{fig:ch3-voltage-regression} supports the cubic correction used by
+the firmware. The implemented voltage calibration is
+\begin{equation}
+  V_{\mathrm{cal}} =
+  1.22081\times10^{-6}V_m^3
+  - 5.03178\times10^{-4}V_m^2
+  + 1.05726V_m
+  - 0.495263 .
+  \label{eq:voltage-calibration}
+\end{equation}
+In (\ref{eq:voltage-calibration}), $V_m$ is the measured RMS voltage before
+the cubic correction and $V_{\mathrm{cal}}$ is the calibrated RMS voltage used
+for display and voltage protection. The polynomial correction is needed
+because threshold decisions such as undervoltage, overvoltage, and
+mains-present detection depend on the calibrated value.
+
+The current calibration setup and load combinations are shown in
+Figures~\ref{fig:ch3-current-cal-setup} and~\ref{fig:ch3-current-cal-loads}.
+\begin{figure}[H]
+  \centering
+  \includegraphics[width=0.90\textwidth]{ch3/figure_3.19.png}
+  \caption{Data-collection setup for current calibration.}
+  \label{fig:ch3-current-cal-setup}
+\end{figure}
+
+\begin{figure}[H]
+  \centering
+  \includegraphics[width=0.90\textwidth]{ch3/figure_3.20.png}
+  \caption{Load setups used for current calibration.}
+  \label{fig:ch3-current-cal-loads}
+\end{figure}
+
+Figure~\ref{fig:ch3-current-cal-setup} shows the comparison between the
+prototype current channel and a reference instrument.
+Figure~\ref{fig:ch3-current-cal-loads} shows the different resistive and
+appliance loads used to span the current range needed for overload and
+arc-feature testing.
+
+The fitted current regression is shown in
+Figure~\ref{fig:ch3-current-regression}.
+\begin{figure}[H]
+  \centering
+  \includegraphics[width=0.80\textwidth]{ch3/figure_3.21.png}
+  \caption{Cubic regression for current calibration.}
+  \label{fig:ch3-current-regression}
+\end{figure}
+
+The implemented current calibration is
+\begin{equation}
+  I_{\mathrm{cal}} =
+  5.56854\times10^{-4}I_m^3
+  - 2.98472\times10^{-3}I_m^2
+  + 1.25081I_m
+  - 0.0275572 .
+  \label{eq:current-calibration}
+\end{equation}
+In (\ref{eq:current-calibration}), $I_m$ is the measured RMS current before
+the cubic correction and $I_{\mathrm{cal}}$ is the calibrated RMS current used
+by the overload logic, socket-temperature model, and waveform-feature
+extractor. Negative fitted values are clamped to zero in firmware.
+
+The NTC thermistor calibration setup is shown in
+Figure~\ref{fig:ch3-ntc-cal-setup}.
+\begin{figure}[H]
+  \centering
+  \includegraphics[width=0.85\textwidth]{ch3/figure_3.22.jpg}
+  \caption{Data-collection setup for NTC thermistor calibration.}
+  \label{fig:ch3-ntc-cal-setup}
+\end{figure}
+
+Figure~\ref{fig:ch3-ntc-cal-setup} shows the external thermistor measurement
+being compared with a reference temperature measurement. Thermistor placement
+is important because an external sensor can lag or under-read the hottest
+contact point inside a degraded socket [27], [29], [30].
+
+The firmware computes the NTC resistance from the voltage-divider output:
+\begin{equation}
+  R_{\mathrm{NTC}} =
+  \frac{V_{\mathrm{NTC}}R_D}{V_{\mathrm{CC}} - V_{\mathrm{NTC}}}.
+  \label{eq:ntc-resistance}
+\end{equation}
+In (\ref{eq:ntc-resistance}), $V_{\mathrm{NTC}}$ is the measured divider
+voltage, $R_D=3.3~\mathrm{k}\Omega$ is the fixed divider resistor, and
+$V_{\mathrm{CC}}=3.3\mathrm{V}$ is the divider supply. The resistance is then
+converted to temperature with the Beta equation:
+\begin{equation}
+  T_{\mathrm{NTC}} =
+  \left[
+  \frac{1}{T_0} +
+  \frac{1}{\beta}\ln\left(\frac{R_{\mathrm{NTC}}}{R_0}\right)
+  \right]^{-1}
+  - 273.15 .
+  \label{eq:ntc-beta}
+\end{equation}
+In (\ref{eq:ntc-beta}), $T_{\mathrm{NTC}}$ is in degrees Celsius, $T_0 =
+298.15~\mathrm{K}$, $R_0=10~\mathrm{k}\Omega$, and $\beta=4050$. The
+computed temperature is clamped from $-20\degreeC$ to $125\degreeC$ and
+filtered with a 3s time constant in the temperature-sensing routine.
+
+\section{Socket-Heating Temperature Models}
+\label{sec:ch3-socket-heating-models}
+
+The socket-heating computation uses two related models. The first is the
+expected normal socket temperature, which estimates the socket temperature
+expected under healthy contact behavior. The second is the estimated socket
+temperature, which is the protection-facing compensated value intended to
+respond to degraded-contact heating and external NTC under-reading. This
+separation is necessary because a raw external thermistor does not directly
+measure the internal contact hotspot [30], [46], [47].
+
+The firmware first decides whether the load is active:
+\begin{equation}
+  L =
+  \begin{cases}
+  1, & \text{if mains is present and } I_{\mathrm{rms}}\geq 0.35\mathrm{A},\\
+  0, & \text{otherwise}.
+  \end{cases}
+  \label{eq:load-active}
+\end{equation}
+In (\ref{eq:load-active}), $L$ is the load-active flag and
+$I_{\mathrm{rms}}$ is the calibrated RMS current. When $L=0$, the current
+dependent thermal rise is forced toward zero.
+
+The current-dependent shape term is
+\begin{equation}
+  s_I =
+  \left[
+  \mathrm{clamp}\left(\frac{I_{\mathrm{rms}}}{12.0},\,0,\,1.25\right)
+  \right]^2 .
+  \label{eq:thermal-current-shape}
+\end{equation}
+In (\ref{eq:thermal-current-shape}), $s_I$ is the normalized squared current
+term. The 12.0A denominator and 1.25 clamp are firmware constants. The square
+term reflects that heat generation associated with resistive loss rises with
+current squared.
+
+The ambient or baseline term is tracked from the NTC temperature only when the
+load is off or the current is below 0.18A:
+\begin{equation}
+  T_a[k] = T_a[k-1] + \alpha_a\left(T_{\mathrm{NTC}}[k] - T_a[k-1]\right),
+  \qquad
+  \alpha_a = \frac{\Delta t}{240\mathrm{s}} .
+  \label{eq:thermal-ambient}
+\end{equation}
+In (\ref{eq:thermal-ambient}), $T_a$ is the inferred ambient or baseline
+temperature, $\Delta t$ is the elapsed firmware update time, and
+$T_{\mathrm{NTC}}$ is the measured thermistor temperature. The 240s time
+constant prevents the baseline from following short-term load heating.
+
+The target normal rise is
+\begin{equation}
+  \Delta T_{\mathrm{normal,target}} =
+  \begin{cases}
+  0.20 + 12.0s_I, & L=1,\\
+  0, & L=0 .
+  \end{cases}
+  \label{eq:normal-target-rise}
+\end{equation}
+In (\ref{eq:normal-target-rise}), $0.20\degreeC$ is the normal base rise and
+$12.0\degreeC$ is the normal current-rise gain. The fitted-gain source file
+was not present in the codebase; the least-squares derivation should therefore
+be checked against Appendix~\ref{app:c} or the original characterization
+worksheet.
+
+The firmware filters this target with separate heating and cooling time
+constants:
+\begin{equation}
+  \Delta T_{\mathrm{normal}}[k]
+  =
+  \Delta T_{\mathrm{normal}}[k-1]
+  +
+  \alpha_n\left(
+  \Delta T_{\mathrm{normal,target}}[k] -
+  \Delta T_{\mathrm{normal}}[k-1]\right).
+  \label{eq:normal-rise-filter}
+\end{equation}
+In (\ref{eq:normal-rise-filter}), $\alpha_n=\Delta t/900\mathrm{s}$ when the
+target rise is increasing and $\alpha_n=\Delta t/1800\mathrm{s}$ when the
+target rise is decreasing. These time constants represent the slower thermal
+response of the socket compared with the electrical measurements.
+
+The expected normal socket temperature is then
+\begin{equation}
+  T_{\mathrm{normal,exp}} =
+  \mathrm{clamp}
+  \left(T_a + \Delta T_{\mathrm{normal}},\, -20,\,125\right).
+  \label{eq:expected-normal-socket}
+\end{equation}
+In (\ref{eq:expected-normal-socket}), $T_{\mathrm{normal,exp}}$ is the
+baseline or normal thermal estimate. It represents what the socket temperature
+should be under expected contact behavior for the measured current history.
+
+The measured NTC value is also compensated directly:
+\begin{equation}
+  T_{\mathrm{comp}} =
+  \mathrm{clamp}
+  \left(T_{\mathrm{NTC}} + \Delta T_{\mathrm{meas}},\, -20,\,125\right),
+  \qquad
+  \Delta T_{\mathrm{meas}} =
+  \begin{cases}
+  0.30 + 1.20s_I, & L=1,\\
+  0, & L=0 .
+  \end{cases}
+  \label{eq:measured-compensation}
+\end{equation}
+In (\ref{eq:measured-compensation}), $T_{\mathrm{comp}}$ is the compensated
+thermistor-based estimate, $0.30\degreeC$ is the measured base delta, and
+$1.20\degreeC$ is the measured current gain. These constants were verified
+from the firmware configuration; their original least-squares fitting
+worksheet must be verified manually if the derivation is required in the final
+defense copy.
+
+Finally, the protection-facing socket estimate is
+\begin{equation}
+  T_{\mathrm{socket,est}} =
+  \mathrm{clamp}
+  \left(
+  \max\left(T_{\mathrm{comp}}, T_{\mathrm{normal,exp}}\right),
+  -20,
+  125
+  \right).
+  \label{eq:estimated-socket-temp}
+\end{equation}
+In (\ref{eq:estimated-socket-temp}), $T_{\mathrm{socket,est}}$ is the
+estimated socket temperature used by the protection manager. The maximum
+operation makes the estimator conservative: it does not allow the compensated
+NTC estimate to fall below the expected normal socket estimate when load
+current indicates that some heating should be present.
+
+The verified thermal constants are summarized in
+Table~\ref{tab:ch3-thermal-constants}.
+\begin{table}[H]
+  \centering
+  \caption{Socket-heating constants verified from firmware}
+  \label{tab:ch3-thermal-constants}
+  \begin{tabular}{p{0.40\textwidth}p{0.20\textwidth}p{0.30\textwidth}}
+    \toprule
+    Constant & Value & Function \\
+    \midrule
+    Load-on current threshold & 0.35A & Enables current-dependent heating model \\
+    Ambient tracking current limit & 0.18A & Allows baseline tracking only at very low load \\
+    Ambient time constant & 240s & Slow baseline update \\
+    Normal reference current & 12.0A & Denominator for current-shape term \\
+    Normal base rise & 0.20°C & Minimum expected rise when load is active \\
+    Normal current gain & 12.0°C & Expected normal heating gain \\
+    Current-ratio clamp & 1.25 & Limits current-shape term \\
+    Heating time constant & 900s & Rise filter for normal estimate \\
+    Cooling time constant & 1800s & Fall filter for normal estimate \\
+    Measured base delta & 0.30°C & Direct NTC compensation offset \\
+    Measured current gain & 1.20°C & Direct NTC compensation gain \\
+    Estimated-temperature trip threshold & 40.0°C & Thermal relay trip threshold \\
+    Thermal warning and clear thresholds & 39.0°C / 38.6°C & Warning hysteresis \\
+    \bottomrule
+  \end{tabular}
+\end{table}
+
+Table~\ref{tab:ch3-thermal-constants} distinguishes the thermal estimator from
+the warning and trip thresholds. The estimator produces
+$T_{\mathrm{socket,est}}$, while the protection manager decides warning and
+relay action from that estimate.

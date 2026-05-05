@@ -1,0 +1,65 @@
+\section{Series Arc-Fault Detection}
+\label{sec:ch4-series-arc-detection}
+
+The series arc-fault tests evaluated whether waveform disturbance could be
+converted into a relay decision. During arcing, the current waveform was
+expected to show low-current gaps, restrike spikes, unstable cycle shape, and
+changes in mid/high-frequency content. These behaviors correspond to the
+features defined in Section~\ref{sec:ch3-waveform-features}, especially
+maximum low-current run, low-current ratio, zero-dwell behavior, midband
+residual ratio, and spectral flux.
+
+The trial-level results are summarized as confusion matrices in
+Table~\ref{tab:ch4-arc-confusion}. Here, ``relay trips'' is the positive
+prototype response and ``arcing event'' is the positive ground-truth condition.
+\begin{table}[H]
+  \centering
+  \caption{Trial-level confusion matrices for series arc-fault testing}
+  \label{tab:ch4-arc-confusion}
+  \begin{tabular}{p{0.26\textwidth}p{0.24\textwidth}cc}
+    \toprule
+    Device group & Prototype response & Arcing event & Normal event \\
+    \midrule
+    Recognized loads & Relay trips & 49 & 0 \\
+    Recognized loads & Relay remains on & 1 & 50 \\
+    \midrule
+    Unrecognized loads & Relay trips & 47 & 1 \\
+    Unrecognized loads & Relay remains on & 3 & 49 \\
+    \midrule
+    All tested loads & Relay trips & 96 & 1 \\
+    All tested loads & Relay remains on & 4 & 99 \\
+    \bottomrule
+  \end{tabular}
+\end{table}
+
+Table~\ref{tab:ch4-arc-confusion} shows that the prototype detected 96 of 100
+arc trials and produced one relay trip during 100 normal trials. The recognized
+load group had no normal-event false trip and one missed arc event. The
+unrecognized group was more difficult, with three missed arcs and one false
+trip. This difference is expected because unrecognized devices introduce
+waveform behavior not directly represented during model fitting.
+
+The result supports the arc-detection objective under the tested laboratory
+conditions. The classifier response was strongest when the arc created
+persistent low-current gaps and spectral disturbance, allowing the leaky arc
+counter to reach the relay-trip threshold. The missed trials indicate that not
+all arcs produced equally strong or persistent feature responses, especially
+when the load type differed from the fitted set. Therefore, the prototype
+should be interpreted as a controlled feasibility demonstration, not as a
+certified AFCI-equivalent device.
+
+\section{Arc-Fault Dataset Summary}
+\label{sec:ch4-arc-dataset-summary}
+
+The cleaned arc-training dataset contained 49,296 rows, of which 283 were arc
+markers, equivalent to about 0.577\% of the retained data. This confirms that
+the problem was highly imbalanced: most frames represented normal operation
+even in sessions that contained an arc event. The imbalance explains why
+frame-level accuracy alone can be misleading; a classifier can appear accurate
+by predicting mostly normal frames. Precision, recall, F1-score, and
+event-level metrics are therefore needed to interpret the safety behavior.
+
+Complete trial tables and raw collection logs are provided in
+Appendices~\ref{app:e} and~\ref{app:f}. These appendices are important because
+the summary table in the main text cannot show every feature frame, arc marker,
+or relay-state transition.

@@ -1,0 +1,23 @@
+\chapter{METHODOLOGY}
+\label{chap:methodology}
+
+This chapter describes the design, implementation, computation, training,
+deployment, and evaluation procedures used for the TinyML Smart Plug. The
+methodology begins with the system model and firmware flow, then proceeds to
+the physical prototype, progressive web application (PWA), TinyML workflow,
+sensor calibration, waveform-feature computation, protection logic, and test
+procedures. This order follows the flow of the prototype itself: the hardware
+measures voltage, current, and temperature; the firmware converts these
+measurements into calibrated electrical and thermal variables; the TinyML
+pipeline classifies load context and series-arc behavior; and the protection
+manager decides whether to warn, log, or disconnect the load.
+
+\input{chapters/chapter_3/01_system_model}
+\input{chapters/chapter_3/02_program_flow}
+\input{chapters/chapter_3/03_physical_setup}
+\input{chapters/chapter_3/04_pwa_monitoring}
+\input{chapters/chapter_3/05_tinyml_workflow}
+\input{chapters/chapter_3/06_sensor_calibration_computations}
+\input{chapters/chapter_3/07_waveform_features}
+\input{chapters/chapter_3/08_fault_detection_protection}
+\input{chapters/chapter_3/09_test_evaluation}

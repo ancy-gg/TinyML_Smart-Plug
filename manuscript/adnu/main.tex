@@ -1,0 +1,51 @@
+% !TEX program = xelatex
+% Main full-manuscript build file.
+% For faster checking, compile one of the build_*.tex files instead.
+\input{style/thesis_preamble.tex}
+
+\begin{document}
+\pagenumbering{roman}
+
+\input{misc/title.tex}
+\clearpage
+\input{misc/approval_form.tex}
+\clearpage
+
+% Abstract is single-spaced as requested.
+\begin{singlespace}
+\input{misc/abstract.tex}
+\end{singlespace}
+\clearpage
+
+\input{misc/acknowledgement.tex}
+\clearpage
+\input{misc/table_of_contents.tex}
+\input{misc/list_tables.tex}
+\input{misc/list_figures.tex}
+
+\clearpage
+\pagenumbering{arabic}
+\include{chapters/chapter_1/main}
+\include{chapters/chapter_2/main}
+\include{chapters/chapter_3/main}
+\include{chapters/chapter_4/main}
+\include{chapters/chapter_5/main}
+
+% The uploaded manuscript currently contains a manually numbered bibliography.
+% When bracketed citations are fully converted to \cite{...}, this can be replaced with:
+% \bibliographystyle{IEEEtran}
+% \bibliography{references}
+\input{misc/references.tex}
+
+\appendix
+\include{appendices/appendix_a}
+\include{appendices/appendix_b}
+\include{appendices/appendix_c}
+\include{appendices/appendix_d}
+\include{appendices/appendix_e}
+\include{appendices/appendix_f}
+\include{appendices/appendix_g}
+\include{appendices/appendix_h}
+\include{appendices/appendix_i}
+
+\end{document}

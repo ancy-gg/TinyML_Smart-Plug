@@ -1,0 +1,419 @@
+\chapter{INTRODUCTION}\label{chap:introduction}
+
+This chapter presents the foundation of the study by establishing the
+residential electrical-fire problem, the limitations of conventional
+protection in detecting progressive fault conditions, and the need for a
+complementary socket-level monitoring device. It also defines the
+problem addressed by the research, identifies the significance of the
+proposed system, states the objectives that guided the development and
+evaluation of the prototype, and clarifies the scope and limitations of
+the study.
+
+\section{Background of the Study}\label{background-of-the-study}
+
+Electrical faults remained one of the leading causes of residential
+fires in the Philippines. Bureau of Fire Protection records showed that
+electrical faults accounted for 27.09\% of reported fire incidents,
+while related literature also identified undetected electrical
+abnormalities, faulty outlets, overloaded circuits, degraded wiring, and
+faulty appliances as recurring causes of residential fire events
+{[}1{]}--{[}3{]}. These incidents did not only result in property loss,
+but also caused injuries, displacement, and long-term economic hardship
+for affected households.
+
+Residential electrical service in the Philippines, particularly in
+provincial and urban domestic settings such as those commonly found in
+Naga City, generally consisted of a 230V, single-phase, two-wire, 60Hz
+supply {[}4{]}. Although this configuration could technically
+accommodate more advanced protective devices, the actual residential
+protection landscape still depended primarily on miniature circuit
+breakers (MCBs), with wider adoption of specialized protective devices
+such as AFCIs and GFCIs remaining limited by cost, availability, and
+lack of mandatory implementation in ordinary homes {[}5{]}. As a result,
+many households still relied on protection systems that were effective
+mainly against high overcurrent and short-circuit events, but not
+against slowly developing pre-fire electrical conditions.
+
+This created a critical safety gap. Conventional MCBs were designed
+primarily to protect fixed building wiring from sustained overcurrent
+and short-circuit damage. They were not designed to warn occupants about
+gradual or localized electrical hazards before those hazards escalated
+into ignition. In particular, they did not directly detect progressive
+contact heating at a socket, persistent sub-trip overload behavior, or
+low-current series arc faults that occurred below the breaker's
+immediate trip region. In poor or degraded electrical connections, a
+small region of elevated resistance could generate intense localized
+heating under otherwise ordinary current flow. This condition could
+persist long enough to char surrounding material, deform outlet
+components, and eventually cause fire even without a classical breaker
+trip {[}6{]}, {[}7{]}.
+
+At the same time, recent developments in non-intrusive electrical
+monitoring, embedded machine learning, and low-cost microcontrollers
+made it possible to design a more accessible protective device.
+Non-intrusive sensing enabled waveform-based monitoring without
+modifying existing building wiring {[}8{]}. Machine learning methods,
+especially Random Forest-based classifiers, had already demonstrated
+strong performance in electrical-fault classification tasks {[}9{]}.
+TinyML deployment on microcontrollers further showed that real-time
+inference could be achieved within tight memory, latency, and power
+constraints {[}10{]}. These developments suggested that a practical,
+socket-level protective device for residential environments was already
+technically feasible.
+
+This study therefore developed an ESP32-based protective smart plug that
+combined voltage, current, and thermal sensing with hybrid fault
+detection. The system was designed as a complementary protection layer
+for Philippine single-phase residential circuits. It focused on three
+progressive fire-inducing fault conditions: overload-related hazardous
+overcurrent behavior, series arc faults from unstable electrical
+conduction, and contact heating at the plug-socket interface. Rather
+than replacing mandatory protection, the device was intended to provide
+earlier warning, localized monitoring, and automatic disconnection when
+hazardous conditions were detected before they escalated into more
+serious fire events.
+
+\section{Statement of the Problem}\label{statement-of-the-problem}
+
+The preceding discussion shows that residential electrical fire
+prevention does not only depend on clearing severe short circuits or
+major overloads. It also requires attention to progressive electrical
+hazards that may remain energized while still producing thermal or
+waveform abnormalities. This study was therefore concerned with the
+protection gap between normal household operation and the point at which
+conventional circuit protection is forced to operate.
+
+Residential electrical fires remained a persistent public safety concern
+because the electrical protection normally present in ordinary homes was
+not sufficient to address all dangerous fault mechanisms. The Philippine
+residential setup commonly relied on MCBs as the primary mandatory
+protective device {[}4{]}, {[}5{]}. While effective against major
+overload and short-circuit events, these devices did not provide early
+warning for progressive hazards and did not directly detect the
+low-current or localized fault mechanisms that often preceded electrical
+fires.
+
+A particular problem involved fault conditions that developed below the
+level of obvious breaker action. A household branch circuit could remain
+energized while a socket or terminal connection slowly degraded, while
+intermittent series arcing occurred during unstable conduction, or while
+a connected load remained in a hazardous but not immediately
+breaker-tripping overcurrent state. In such cases, occupants could
+remain unaware of the developing danger until visible damage, smoke, or
+ignition had already begun. This protection gap became more serious in
+settings where advanced commercial arc-fault protection was uncommon and
+where households continued to rely on low-cost, conventional protective
+hardware alone.
+
+Although advanced protective technologies already existed, their direct
+adoption in ordinary Philippine homes remained limited. AFCIs and
+related commercial systems could improve safety, but they were not yet
+common in many residential settings because of cost, product
+availability, installation practice, and regulatory limitations {[}5{]}.
+Existing research prototypes also often relied on intrusive
+instrumentation, laboratory-grade measurement equipment, or
+computation-heavy processing that was not suitable for low-cost embedded
+deployment. Moreover, arc-fault detection systems in both literature and
+practice still faced nuisance-alarm challenges when normal appliance
+behavior, switching events, or electrically noisy loads produced
+signatures similar to true faults.
+
+This study therefore addressed the need for an affordable, socket-level,
+non-intrusive protective device that could operate alongside
+conventional circuit protection. Specifically, the device needed to
+detect and respond to three progressive fault classes relevant to
+residential fire safety: overload-related hazardous current behavior,
+induced series arc faults, and contact heating at the socket interface.
+The device also needed to operate on resource-constrained embedded
+hardware, provide local protection even without cloud access, and
+support logging and remote visibility when network connectivity was
+available.
+
+\section{Significance of the Study}\label{significance-of-the-study}
+
+This study is expected to provide substantial benefits to residential
+users, fire-safety stakeholders, engineering researchers, and
+policymakers by addressing a practical gap in household electrical
+protection. Since progressive electrical hazards may develop before
+conventional protective devices operate, the development of a
+socket-level smart plug offers a complementary approach for earlier
+detection, localized monitoring, and automatic response. The study also
+supports the principles of Sustainable Development Goal 11 by
+contributing to safer and more resilient communities through an
+accessible residential safety technology {[}11{]}. The key beneficiaries
+and their potential gains are outlined below.
+
+\subsection{Residential Households}\label{residential-households}
+
+Residential households are the primary beneficiaries of this study. The
+proposed smart plug provides an added layer of protection against
+electrical hazards that are not easily visible to ordinary occupants,
+such as sustained overload, socket-contact heating, and series arc
+faults. By monitoring voltage, current, and temperature at the outlet
+level, the device can alert users and disconnect the connected load when
+hazardous conditions are detected. This gives households earlier
+awareness of possible electrical danger before the condition develops
+into visible damage, smoke, or fire.
+
+The study is especially relevant to ordinary residential users who rely
+mainly on conventional circuit breakers for electrical protection. While
+breakers remain necessary, they may not directly detect localized socket
+heating or low-current arc behavior. The prototype therefore
+demonstrates how a plug-through device can supplement existing household
+protection without requiring permanent rewiring of the home.
+
+\subsection{Local Government Units}\label{local-government-units}
+
+Local government units, disaster risk reduction offices, and fire-safety
+stakeholders may benefit from the study because it presents a possible
+technology-based approach for improving household-level fire prevention.
+Since electrical faults remain a recurring cause of residential fire
+incidents, devices capable of detecting early electrical abnormalities
+can support broader fire-risk reduction efforts.
+
+The study may also help fire-safety personnel and community safety
+programs explain the importance of monitoring progressive electrical
+hazards, not only severe short circuits. By showing that overload,
+contact heating, and series arc faults can be monitored at the socket
+level, the research provides a technical basis for promoting more
+proactive residential electrical-safety awareness.
+
+\subsection{Electrical Practitioners and Safety Inspectors}\label{electrical-practitioners-and-safety-inspectors}
+
+Electrical practitioners, technicians, and safety inspectors may benefit
+from the study because it highlights fault conditions that are not
+always addressed by ordinary visual inspection or conventional
+overcurrent protection. The prototype demonstrates how localized sensing
+can identify abnormal behavior at the plug-socket interface, where
+degraded contact, poor fit, corrosion, or thermal buildup may occur.
+
+The study may also support future diagnostic practices by showing the
+value of combining current behavior, temperature behavior, and
+fault-event logging. Although the device is not a substitute for
+professional electrical inspection, it provides a possible tool for
+observing early warning patterns that may guide maintenance,
+troubleshooting, or further assessment of residential electrical
+installations.
+
+\subsection{Engineering and Academic Community}\label{engineering-and-academic-community}
+
+The engineering and academic community may benefit from the study
+through its documented integration of embedded sensing, TinyML
+inference, threshold-based protection, relay actuation, and
+cloud-assisted monitoring in a single residential prototype. The study
+provides a development workflow that includes sensor calibration,
+waveform-feature extraction, series arc data collection, model training,
+embedded deployment, and controlled fault evaluation.
+
+This contribution is relevant to future research in embedded electrical
+safety, smart protection devices, TinyML, non-intrusive monitoring, and
+Internet-of-Things-based residential systems. It may also serve as a
+reference for researchers who aim to improve arc-fault classification,
+socket-heating estimation, overload response, or real-time protection on
+resource-constrained microcontrollers.
+
+\subsection{Policymakers and Standards Stakeholders}\label{policymakers-and-standards-stakeholders}
+
+Policymakers, standards stakeholders, and residential-safety advocates
+may benefit from the study because it demonstrates the feasibility of
+treating intelligent fault detection as a complement to existing
+electrical protection. The prototype does not replace code-mandated
+devices such as circuit breakers, but it shows how additional
+outlet-level protection may help address hazards that are difficult to
+detect using conventional protection alone.
+
+The findings may contribute to future discussions on affordable
+residential safety devices, smart-home electrical protection, and the
+gradual modernization of household fire-prevention strategies. By
+presenting a locally developed prototype for Philippine residential
+conditions, the study may help inform future research, policy planning,
+or pilot implementation of complementary electrical-safety technologies.
+
+\section{Objectives}\label{objectives}
+
+This study aimed to develop an intelligent ESP32-S3-based protective
+smart plug that provides complementary, socket-level protection for
+Philippine single-phase residential circuits by detecting progressive
+fire-inducing electrical faults through hybrid on-device sensing,
+analysis, and fault response.
+
+Specifically, the study aimed to:
+
+\begin{enumerate}
+\def\labelenumi{\arabic{enumi}.}
+\item
+  Design and develop an ESP32-S3-based smart plug prototype integrating
+  voltage, current, and temperature sensing, embedded processing,
+  relay-based load disconnection, and local audio-visual fault
+  indication for residential single-phase applications;
+\item
+  Calibrate and validate the voltage, current, and temperature sensing
+  subsystems against appropriate reference instruments to establish
+  measurement accuracy suitable for threshold-based protection and
+  machine learning-based analysis;
+\item
+  Implement a hybrid fault-detection system that uses on-device TinyML
+  classification for series arc-fault detection and deterministic
+  threshold-based logic for overload and socket-heating protection;
+\item
+  Develop a complementary protection, alert, and monitoring mechanism
+  that operates alongside existing safety devices through local
+  audio-visual alerts, relay disconnection, fault-event logging, and a
+  Firebase-integrated Progressive Web App for real-time visualization
+  and basic remote-control functions; and
+\item
+  Evaluate the developed system under controlled laboratory conditions
+  involving overload, induced series arc fault, and
+  socket/contact-heating scenarios in terms of detection behavior,
+  system response, measurement reliability, and operational feasibility.
+\end{enumerate}
+
+\section{Scope and Delimitations}\label{scope-and-delimitations}
+
+The scope and delimitations define the boundary within which the
+prototype was designed, tested, and interpreted. Since the study
+involved electrical safety, embedded sensing, machine learning, and
+controlled fault simulation, the boundaries are separated into the
+actual coverage of the work and the methodological, technical, and
+practical limitations that affected the interpretation of the findings.
+
+\subsection{Scope of the Study}\label{scope-of-the-study}
+
+This study focused on the design, development, calibration, and
+controlled evaluation of an intelligent protective smart plug for
+Philippine residential electrical systems. The prototype was intended
+for 230V, single-phase, two-wire, 60Hz circuits typical of ordinary
+household branch connections. It was developed as a plug-through,
+socket-level device that could be inserted into an existing outlet
+without requiring permanent modification of the building wiring.
+
+The study covered the complete prototype process, including hardware
+integration, firmware development, signal acquisition, sensor
+calibration, feature extraction, TinyML model deployment,
+threshold-based protection logic, relay actuation, local notification,
+cloud logging, and remote data visualization. The final system
+architecture used a ZMPT101B-based voltage sensor, an ACS37035 current
+sensor digitized through an MCP3204 external SAR ADC, and a TTC05103JSY
+10kΩ NTC thermistor for temperature measurements. Current analysis was
+executed on the ESP32-S3 Xiao using embedded sampling, windowed feature
+computation, and on-device inference for real-time protection decisions.
+
+The developed prototype monitored three primary fault conditions
+relevant to residential fire risk: overload current behavior, induced
+series arc faults, and contact heating at the plug-socket interface.
+Within this scope, the device was implemented as a complementary safety
+function rather than a replacement for breaker protection. Overload
+protection used current-based warning and trip logic, socket-heating
+protection used estimated socket-temperature behavior and a conservative
+40°C control threshold, and series arc-fault detection used on-device
+Random Forest inference based on extracted current features and
+lab-generated labeled data.
+
+The study evaluated the prototype under controlled laboratory scenarios
+involving resistive overload simulation, controlled series arc
+generation, and simulated contact heating using a degraded socket
+sample. The emphasis of the evaluation was on technical feasibility,
+detection behavior, protection response, measurement reliability, and
+prototype operability in a socket-level residential use case. It did not
+seek to replace utility protection, distribution-panel protection, or
+full-house fault-monitoring systems.
+
+\subsection{Methodological Limitations}\label{methodological-limitations}
+
+The study was conducted under controlled laboratory conditions rather
+than in occupied residential homes. Although this was necessary for
+safety, repeatability, and controlled comparison, laboratory conditions
+did not fully reproduce the variability of actual household
+environments. Factors such as wiring age, long-term humidity exposure,
+appliance diversity, plug fit, environmental contamination, user
+behavior, and branch-circuit variability in actual homes were not
+comprehensively represented. The findings therefore demonstrated
+controlled technical feasibility rather than complete real-house field
+performance.
+
+The series arc-fault dataset used for training, validation, and
+detection was based on controlled fault inducement rather than naturally
+occurring household arc events. The arc generator used a repeatable
+electrode separation and recontact mechanism to create series arcs under
+known conditions, and the collected labels were derived from induced
+test events. This approach was appropriate for safe data collection and
+reproducibility, but naturally occurring residential arc faults may
+exhibit wider variability in duration, intermittence, load interaction,
+and noise than the controlled setup reproduced. Consequently, model
+generalization to all real-world arc behaviors remained limited.
+
+The training and validation scope was also limited by the load families
+included in the experiments. The device was tested using selected load
+categories that were safe and practical for induced-fault
+experimentation. It did not comprehensively include all possible
+household load types, such as sensitive SMPS loads,
+phase-angle-controlled loads, or mixed electronic loads, because some of
+these devices could be damaged during induced fault testing. The
+resulting model performance should therefore be interpreted within the
+conditions and load classes represented in the collected dataset.
+
+\subsection{Technical Limitations}\label{technical-limitations}
+
+The contact-heating function was constrained by the non-intrusive
+thermal architecture of the prototype. The NTC thermistor did not
+directly measure the true internal contact-spot temperature inside the
+socket interface. Instead, it measured a delayed external thermal
+response that the firmware interpreted as an estimated
+socket-temperature proxy. For that reason, the implemented 40°C
+threshold should be understood as a conservative, device-specific
+control threshold for an indirect external sensor that could under-read
+the true hidden hotspot. This limitation was influenced by thermistor
+placement, thermal lag, enclosure conduction, and the presence of
+cooling hardware inside the prototype.
+
+The prototype also remained susceptible to nuisance detections under
+certain operating conditions. As with AFCI research and other
+arc-detection systems, normal events such as switching transitions,
+relay actuation, brushed-motor behavior, intermittent appliance
+conduction, or electrically noisy loads could generate arc-like
+signatures. Although the firmware and model pipeline were designed to
+reduce false positives, nuisance alarms and classification ambiguity
+remained possible, particularly for unseen load types or fault-adjacent
+events not fully represented in the training data.
+
+The device provided only local, socket-level sensing. It monitored the
+branch segment and connected load at the outlet where it was installed;
+it was not designed to provide whole-house monitoring, multi-branch
+coordination, or exact upstream fault localization. It therefore could
+not be treated as a substitute for panel-level protective
+infrastructure, wiring inspection, or full-building electrical
+diagnostics. In addition, very low-power loads were outside the reliable
+operating range of the arc-detection pipeline because low current levels
+may reduce signal-to-noise ratio and weaken waveform-feature
+reliability.
+
+Remote visualization, cloud logging, and web-based control also depended
+on Wi-Fi and internet availability. Core protection functions were
+implemented locally on the device, but convenience features such as
+Firebase logging, Progressive Web App visualization, and remote
+monitoring were not fully available when network connectivity was
+unstable or unavailable.
+
+\subsection{Practical Limitations}\label{practical-limitations}
+
+The prototype was constrained by practical hardware and packaging
+limitations. Because it used a relay, heatsink, fan, sensing modules,
+and protective enclosure, the device was larger and heavier than an
+ordinary household plug accessory and was not yet optimized for
+consumer-ready ergonomics. The available GPIO, memory, enclosure space,
+and power arrangement also limited future expansion of hardware
+features.
+
+The study was also limited to prototype performance and technical
+feasibility. It did not comprehensively address long-term field aging,
+certification, mass-manufacturing readiness, regulatory approval, market
+adoption, user acceptance, maintenance practice, or full economic
+comparison with commercial AFCI/GFCI solutions. Latched fault handling
+also required user awareness and intervention for confirmation, reset,
+or continued operation after certain protective events.
+
+For these reasons, the prototype was not presented as a complete
+solution to residential electrical fire prevention. It was instead
+framed as a complementary protective layer that could operate alongside
+existing technologies and provide earlier local awareness of progressive
+fire-inducing electrical faults under the tested conditions.

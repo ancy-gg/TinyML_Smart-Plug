@@ -1,0 +1,126 @@
+% Shared thesis preamble for the ADNU TinyML Smart Plug manuscript
+% Compile with XeLaTeX in MiKTeX/TeX Live for Times New Roman support.
+\documentclass[12pt,oneside]{report}
+
+% ADNU page setup: top 1 in, bottom 1 in, right 1 in, left 1.25 in.
+\usepackage[top=1in,bottom=1in,left=1.25in,right=1in]{geometry}
+
+% Font setup: XeLaTeX/LuaLaTeX uses Times New Roman; pdfLaTeX falls back to Times-like fonts.
+\usepackage{iftex}
+\ifPDFTeX
+  \usepackage[T1]{fontenc}
+  \usepackage[utf8]{inputenc}
+  \usepackage{newtxtext,newtxmath}
+\else
+  \usepackage{fontspec}
+  \setmainfont{Times New Roman}
+\fi
+
+% Spacing and paragraph format.
+\usepackage{setspace}
+\doublespacing
+\setlength{\parindent}{1.5cm}
+\setlength{\parskip}{0pt}
+\usepackage{indentfirst}
+\emergencystretch=3em
+
+% Heading formats requested by the adviser/user:
+% 1st level: 13 pt bold; 2nd level: 12 pt bold; 3rd level: 12 pt regular; 4th level: 12 pt italic.
+\usepackage{titlesec}
+\titleformat{\chapter}[display]
+  {\normalfont\bfseries\centering\fontsize{13}{15.6}\selectfont}
+  {\chaptertitlename\ \thechapter}
+  {0.25\baselineskip}
+  {\MakeUppercase}
+\titleformat{name=\chapter,numberless}[display]
+  {\normalfont\bfseries\centering\fontsize{13}{15.6}\selectfont}
+  {}
+  {0pt}
+  {\MakeUppercase}
+\titleformat{\section}
+  {\normalfont\bfseries\fontsize{13}{15.6}\selectfont}
+  {\thesection}{1em}{}
+\titleformat{\subsection}
+  {\normalfont\bfseries\fontsize{12}{14.4}\selectfont}
+  {\thesubsection}{1em}{}
+\titleformat{\subsubsection}
+  {\normalfont\fontsize{12}{14.4}\selectfont}
+  {\thesubsubsection}{1em}{}
+\titleformat{\paragraph}[runin]
+  {\normalfont\itshape\fontsize{12}{14.4}\selectfont}
+  {\theparagraph}{1em}{}
+\titlespacing*{\chapter}{0pt}{0pt}{0.75\baselineskip}
+\titlespacing*{\section}{0pt}{18pt}{0.25\baselineskip}
+\titlespacing*{\subsection}{0pt}{12pt}{0.25\baselineskip}
+\titlespacing*{\subsubsection}{0pt}{12pt}{0.25\baselineskip}
+\titlespacing*{\paragraph}{0pt}{12pt}{1em}
+\setcounter{secnumdepth}{4}
+\setcounter{tocdepth}{3}
+
+% Tables, figures, math, and references.
+\usepackage{graphicx}
+\graphicspath{{figures/}{figures/ch3/}{figures/ch4/}{figures/apx/}}
+\usepackage{float}
+\usepackage{booktabs}
+\usepackage{longtable}
+\usepackage{multirow}
+\usepackage{array}
+\usepackage{calc}
+\usepackage{amsmath,amssymb}
+\usepackage{caption}
+\usepackage{url}
+\usepackage{xurl}
+\usepackage{hyperref}
+\hypersetup{hidelinks,pdfborder={0 0 0}}
+\usepackage{cite}
+\usepackage{etoolbox}
+
+% Tables are single-spaced by default, including long tables.
+\AtBeginEnvironment{table}{\singlespacing}
+\AtBeginEnvironment{longtable}{\singlespacing}
+\captionsetup{
+  labelfont=bf,
+  textfont=normalfont,
+  labelsep=period,
+  justification=centering,
+  singlelinecheck=false
+}
+\captionsetup[figure]{position=bottom}
+\captionsetup[table]{position=top}
+\setlength{\LTpre}{0pt}
+\setlength{\LTpost}{0pt}
+
+% Pandoc/Word-conversion compatibility.
+\providecommand{\tightlist}{\setlength{\itemsep}{0pt}\setlength{\parskip}{0pt}}
+\providecommand{\real}[1]{#1}
+\newcommand{\degreeC}{\ensuremath{^\circ\mathrm{C}}}
+\newcounter{none}
+
+\newenvironment{thesisreferences}
+  {\begin{spacing}{1.5}\setlength{\parindent}{-0.5in}\setlength{\leftskip}{0.5in}\setlength{\parskip}{0pt}\sloppy}
+  {\par\end{spacing}}
+
+\newcommand{\inputmainrefs}{%
+  \makeatletter
+  \begingroup
+  \let\@writefile\@gobbletwo
+  \IfFileExists{logs/chapters/chapter_1/main.aux}{\@input{logs/chapters/chapter_1/main.aux}}{}%
+  \IfFileExists{logs/chapters/chapter_2/main.aux}{\@input{logs/chapters/chapter_2/main.aux}}{}%
+  \IfFileExists{logs/chapters/chapter_3/main.aux}{\@input{logs/chapters/chapter_3/main.aux}}{}%
+  \IfFileExists{logs/chapters/chapter_4/main.aux}{\@input{logs/chapters/chapter_4/main.aux}}{}%
+  \IfFileExists{logs/chapters/chapter_5/main.aux}{\@input{logs/chapters/chapter_5/main.aux}}{}%
+  \IfFileExists{logs/appendices/appendix_a.aux}{\@input{logs/appendices/appendix_a.aux}}{}%
+  \IfFileExists{logs/appendices/appendix_b.aux}{\@input{logs/appendices/appendix_b.aux}}{}%
+  \IfFileExists{logs/appendices/appendix_c.aux}{\@input{logs/appendices/appendix_c.aux}}{}%
+  \IfFileExists{logs/appendices/appendix_d.aux}{\@input{logs/appendices/appendix_d.aux}}{}%
+  \IfFileExists{logs/appendices/appendix_e.aux}{\@input{logs/appendices/appendix_e.aux}}{}%
+  \IfFileExists{logs/appendices/appendix_f.aux}{\@input{logs/appendices/appendix_f.aux}}{}%
+  \IfFileExists{logs/appendices/appendix_g.aux}{\@input{logs/appendices/appendix_g.aux}}{}%
+  \IfFileExists{logs/appendices/appendix_h.aux}{\@input{logs/appendices/appendix_h.aux}}{}%
+  \IfFileExists{logs/appendices/appendix_i.aux}{\@input{logs/appendices/appendix_i.aux}}{}%
+  \endgroup
+  \makeatother
+}
+
+% Equation numbering follows chapter format, e.g., (3.1), (3.2).
+\numberwithin{equation}{chapter}

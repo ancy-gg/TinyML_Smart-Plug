@@ -1,0 +1,2600 @@
+\chapter{Arc Fault Testing}\label{app:e}
+\textbf{Arc Fault Testing Data}
+
+This appendix contains the detailed arc-fault testing results, confusion
+matrices, and performance metrics for the recorded and unrecorded
+devices evaluated in Chapter 4.
+
+\section*{Recorded Appliances}
+
+\section{Arc Fault Test Result for Water Heater}\label{appendix-e.1.-arc-fault-test-result-for-water-heater}
+
+\textbf{Table E.1a.} Arc Fault Evaluation of Water Heater Test Result
+
+{\def\LTcaptype{none} % do not increment counter
+\begin{longtable}[]{@{}
+  >{\raggedright\arraybackslash}p{(\linewidth - 10\tabcolsep) * \real{0.1611}}
+  >{\raggedright\arraybackslash}p{(\linewidth - 10\tabcolsep) * \real{0.1611}}
+  >{\raggedright\arraybackslash}p{(\linewidth - 10\tabcolsep) * \real{0.1611}}
+  >{\raggedright\arraybackslash}p{(\linewidth - 10\tabcolsep) * \real{0.1611}}
+  >{\raggedright\arraybackslash}p{(\linewidth - 10\tabcolsep) * \real{0.1611}}
+  >{\raggedright\arraybackslash}p{(\linewidth - 10\tabcolsep) * \real{0.1611}}@{}}
+\toprule\noalign{}
+\multicolumn{3}{@{}>{\centering\arraybackslash}p{(\linewidth - 10\tabcolsep) * \real{0.4834} + 4\tabcolsep}}{%
+\begin{minipage}[b]{\linewidth}\centering
+\textbf{Normal Trials}
+\end{minipage}} &
+\multicolumn{3}{>{\centering\arraybackslash}p{(\linewidth - 10\tabcolsep) * \real{0.4834} + 4\tabcolsep}@{}}{%
+\begin{minipage}[b]{\linewidth}\centering
+\textbf{Arc Trials}
+\end{minipage}} \\
+\begin{minipage}[b]{\linewidth}\centering
+\textbf{Trial}
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+\textbf{Relay Tripped?}
+
+\textbf{(FP)}
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+\textbf{Relay Still On?}
+
+\textbf{(TN)}
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+\textbf{Trial}
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+\textbf{Relay Tripped?}
+
+\textbf{(TP)}
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+\textbf{Relay Still On?}
+
+\textbf{(FN)}
+\end{minipage} \\
+\midrule\noalign{}
+\endhead
+\begin{minipage}[b]{\linewidth}\centering
+1
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+FALSE
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+TRUE
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+1
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+TRUE
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+FALSE
+\end{minipage} \\
+\begin{minipage}[b]{\linewidth}\centering
+2
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+FALSE
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+TRUE
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+2
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+TRUE
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+FALSE
+\end{minipage} \\
+\begin{minipage}[b]{\linewidth}\centering
+3
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+FALSE
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+TRUE
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+3
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+TRUE
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+FALSE
+\end{minipage} \\
+\begin{minipage}[b]{\linewidth}\centering
+4
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+FALSE
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+TRUE
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+4
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+TRUE
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+FALSE
+\end{minipage} \\
+\begin{minipage}[b]{\linewidth}\centering
+5
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+FALSE
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+TRUE
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+5
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+TRUE
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+FALSE
+\end{minipage} \\
+\begin{minipage}[b]{\linewidth}\centering
+6
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+FALSE
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+TRUE
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+6
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+TRUE
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+FALSE
+\end{minipage} \\
+\begin{minipage}[b]{\linewidth}\centering
+7
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+FALSE
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+TRUE
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+7
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+TRUE
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+FALSE
+\end{minipage} \\
+\begin{minipage}[b]{\linewidth}\centering
+8
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+FALSE
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+TRUE
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+8
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+TRUE
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+FALSE
+\end{minipage} \\
+\begin{minipage}[b]{\linewidth}\centering
+9
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+FALSE
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+TRUE
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+9
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+TRUE
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+FALSE
+\end{minipage} \\
+\begin{minipage}[b]{\linewidth}\centering
+10
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+FALSE
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+TRUE
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+10
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+TRUE
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+FALSE
+\end{minipage} \\
+\begin{minipage}[b]{\linewidth}\centering
+\textbf{Total}
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+\textbf{0}
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+\textbf{10}
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+\textbf{Total}
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+\textbf{10}
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+\textbf{0}
+\end{minipage} \\
+\bottomrule\noalign{}
+\end{longtable}
+}
+
+\textbf{Table E.1b.} Arc Fault Evaluation of Water Heater Test Confusion
+Matrix
+
+{\def\LTcaptype{none} % do not increment counter
+\begin{longtable}[]{@{}
+  >{\raggedright\arraybackslash}p{(\linewidth - 10\tabcolsep) * \real{0.2820}}
+  >{\raggedright\arraybackslash}p{(\linewidth - 10\tabcolsep) * \real{0.0113}}
+  >{\raggedright\arraybackslash}p{(\linewidth - 10\tabcolsep) * \real{0.2820}}
+  >{\raggedright\arraybackslash}p{(\linewidth - 10\tabcolsep) * \real{0.0113}}
+  >{\raggedright\arraybackslash}p{(\linewidth - 10\tabcolsep) * \real{0.2820}}
+  >{\raggedright\arraybackslash}p{(\linewidth - 10\tabcolsep) * \real{0.1063}}@{}}
+\toprule\noalign{}
+\multicolumn{2}{@{}>{\centering\arraybackslash}p{(\linewidth - 10\tabcolsep) * \real{0.2932} + 2\tabcolsep}}{%
+\begin{minipage}[b]{\linewidth}\centering
+\end{minipage}} &
+\multicolumn{2}{>{\centering\arraybackslash}p{(\linewidth - 10\tabcolsep) * \real{0.2932} + 2\tabcolsep}}{%
+\begin{minipage}[b]{\linewidth}\centering
+\textbf{Arcing Event}
+\end{minipage}} &
+\multicolumn{2}{>{\centering\arraybackslash}p{(\linewidth - 10\tabcolsep) * \real{0.3883} + 2\tabcolsep}@{}}{%
+\begin{minipage}[b]{\linewidth}\centering
+\textbf{Normal Event}
+\end{minipage}} \\
+\midrule\noalign{}
+\endhead
+\multicolumn{2}{@{}>{\centering\arraybackslash}p{(\linewidth - 10\tabcolsep) * \real{0.2932} + 2\tabcolsep}}{%
+\begin{minipage}[b]{\linewidth}\centering
+\textbf{Relay Trips}
+\end{minipage}} &
+\multicolumn{2}{>{\centering\arraybackslash}p{(\linewidth - 10\tabcolsep) * \real{0.2932} + 2\tabcolsep}}{%
+\begin{minipage}[b]{\linewidth}\centering
+10
+\end{minipage}} &
+\multicolumn{2}{>{\centering\arraybackslash}p{(\linewidth - 10\tabcolsep) * \real{0.3883} + 2\tabcolsep}@{}}{%
+\begin{minipage}[b]{\linewidth}\centering
+0
+\end{minipage}} \\
+\multicolumn{2}{@{}>{\centering\arraybackslash}p{(\linewidth - 10\tabcolsep) * \real{0.2932} + 2\tabcolsep}}{%
+\begin{minipage}[b]{\linewidth}\centering
+\textbf{Relay remains on}
+\end{minipage}} &
+\multicolumn{2}{>{\centering\arraybackslash}p{(\linewidth - 10\tabcolsep) * \real{0.2932} + 2\tabcolsep}}{%
+\begin{minipage}[b]{\linewidth}\centering
+0
+\end{minipage}} &
+\multicolumn{2}{>{\centering\arraybackslash}p{(\linewidth - 10\tabcolsep) * \real{0.3883} + 2\tabcolsep}@{}}{%
+\begin{minipage}[b]{\linewidth}\centering
+10
+\end{minipage}} \\
+\bottomrule\noalign{}
+\end{longtable}
+}
+
+\textbf{Table E.1c.} Arc Fault Evaluation of Water Heater Test
+Performance Matrix
+
+{\def\LTcaptype{none} % do not increment counter
+\begin{longtable}[]{@{}llll@{}}
+\toprule\noalign{}
+\textbf{Accuracy} & \textbf{Precision} & \textbf{Recall} &
+\textbf{F1-Score} \\
+\midrule\noalign{}
+\endhead
+100\% & 100\% & 100\% & 100\% \\
+\bottomrule\noalign{}
+\end{longtable}
+}
+
+\section{Arc Fault Test Result for Halogen Lamp}\label{appendix-e.2.-arc-fault-test-result-for-halogen-lamp}
+
+\textbf{Table E.2a.} Arc Fault Evaluation of Halogen Lamp Test Result
+
+{\def\LTcaptype{none} % do not increment counter
+\begin{longtable}[]{@{}
+  >{\raggedright\arraybackslash}p{(\linewidth - 10\tabcolsep) * \real{0.1611}}
+  >{\raggedright\arraybackslash}p{(\linewidth - 10\tabcolsep) * \real{0.1611}}
+  >{\raggedright\arraybackslash}p{(\linewidth - 10\tabcolsep) * \real{0.1611}}
+  >{\raggedright\arraybackslash}p{(\linewidth - 10\tabcolsep) * \real{0.1611}}
+  >{\raggedright\arraybackslash}p{(\linewidth - 10\tabcolsep) * \real{0.1611}}
+  >{\raggedright\arraybackslash}p{(\linewidth - 10\tabcolsep) * \real{0.1611}}@{}}
+\toprule\noalign{}
+\multicolumn{3}{@{}>{\centering\arraybackslash}p{(\linewidth - 10\tabcolsep) * \real{0.4834} + 4\tabcolsep}}{%
+\begin{minipage}[b]{\linewidth}\centering
+\textbf{Normal Trials}
+\end{minipage}} &
+\multicolumn{3}{>{\centering\arraybackslash}p{(\linewidth - 10\tabcolsep) * \real{0.4834} + 4\tabcolsep}@{}}{%
+\begin{minipage}[b]{\linewidth}\centering
+\textbf{Arc Trials}
+\end{minipage}} \\
+\begin{minipage}[b]{\linewidth}\centering
+\textbf{Trial}
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+\textbf{Relay Tripped?}
+
+\textbf{(FP)}
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+\textbf{Relay Still On?}
+
+\textbf{(TN)}
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+\textbf{Trial}
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+\textbf{Relay Tripped?}
+
+\textbf{(TP)}
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+\textbf{Relay Still On?}
+
+\textbf{(FN)}
+\end{minipage} \\
+\midrule\noalign{}
+\endhead
+\begin{minipage}[b]{\linewidth}\centering
+1
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+FALSE
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+TRUE
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+1
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+TRUE
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+FALSE
+\end{minipage} \\
+\begin{minipage}[b]{\linewidth}\centering
+2
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+FALSE
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+TRUE
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+2
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+TRUE
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+FALSE
+\end{minipage} \\
+\begin{minipage}[b]{\linewidth}\centering
+3
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+FALSE
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+TRUE
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+3
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+TRUE
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+FALSE
+\end{minipage} \\
+\begin{minipage}[b]{\linewidth}\centering
+4
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+FALSE
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+TRUE
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+4
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+TRUE
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+FALSE
+\end{minipage} \\
+\begin{minipage}[b]{\linewidth}\centering
+5
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+FALSE
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+TRUE
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+5
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+TRUE
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+FALSE
+\end{minipage} \\
+\begin{minipage}[b]{\linewidth}\centering
+6
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+FALSE
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+TRUE
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+6
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+TRUE
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+FALSE
+\end{minipage} \\
+\begin{minipage}[b]{\linewidth}\centering
+7
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+FALSE
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+TRUE
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+7
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+TRUE
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+FALSE
+\end{minipage} \\
+\begin{minipage}[b]{\linewidth}\centering
+8
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+FALSE
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+TRUE
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+8
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+TRUE
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+FALSE
+\end{minipage} \\
+\begin{minipage}[b]{\linewidth}\centering
+9
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+FALSE
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+TRUE
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+9
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+TRUE
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+FALSE
+\end{minipage} \\
+\begin{minipage}[b]{\linewidth}\centering
+10
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+FALSE
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+TRUE
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+10
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+TRUE
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+FALSE
+\end{minipage} \\
+\begin{minipage}[b]{\linewidth}\centering
+\textbf{Total}
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+\textbf{0}
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+\textbf{10}
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+\textbf{Total}
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+\textbf{10}
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+\textbf{0}
+\end{minipage} \\
+\bottomrule\noalign{}
+\end{longtable}
+}
+
+\textbf{Table E.2b.} Arc Fault Evaluation of Halogen Lamp Test Confusion
+Matrix
+
+{\def\LTcaptype{none} % do not increment counter
+\begin{longtable}[]{@{}
+  >{\raggedright\arraybackslash}p{(\linewidth - 10\tabcolsep) * \real{0.2820}}
+  >{\raggedright\arraybackslash}p{(\linewidth - 10\tabcolsep) * \real{0.0113}}
+  >{\raggedright\arraybackslash}p{(\linewidth - 10\tabcolsep) * \real{0.2820}}
+  >{\raggedright\arraybackslash}p{(\linewidth - 10\tabcolsep) * \real{0.0113}}
+  >{\raggedright\arraybackslash}p{(\linewidth - 10\tabcolsep) * \real{0.2820}}
+  >{\raggedright\arraybackslash}p{(\linewidth - 10\tabcolsep) * \real{0.1063}}@{}}
+\toprule\noalign{}
+\multicolumn{2}{@{}>{\centering\arraybackslash}p{(\linewidth - 10\tabcolsep) * \real{0.2932} + 2\tabcolsep}}{%
+\begin{minipage}[b]{\linewidth}\centering
+\end{minipage}} &
+\multicolumn{2}{>{\centering\arraybackslash}p{(\linewidth - 10\tabcolsep) * \real{0.2932} + 2\tabcolsep}}{%
+\begin{minipage}[b]{\linewidth}\centering
+\textbf{Arcing Event}
+\end{minipage}} &
+\multicolumn{2}{>{\centering\arraybackslash}p{(\linewidth - 10\tabcolsep) * \real{0.3883} + 2\tabcolsep}@{}}{%
+\begin{minipage}[b]{\linewidth}\centering
+\textbf{Normal Event}
+\end{minipage}} \\
+\midrule\noalign{}
+\endhead
+\multicolumn{2}{@{}>{\centering\arraybackslash}p{(\linewidth - 10\tabcolsep) * \real{0.2932} + 2\tabcolsep}}{%
+\begin{minipage}[b]{\linewidth}\centering
+\textbf{Relay Trips}
+\end{minipage}} &
+\multicolumn{2}{>{\centering\arraybackslash}p{(\linewidth - 10\tabcolsep) * \real{0.2932} + 2\tabcolsep}}{%
+\begin{minipage}[b]{\linewidth}\centering
+10
+\end{minipage}} &
+\multicolumn{2}{>{\centering\arraybackslash}p{(\linewidth - 10\tabcolsep) * \real{0.3883} + 2\tabcolsep}@{}}{%
+\begin{minipage}[b]{\linewidth}\centering
+0
+\end{minipage}} \\
+\multicolumn{2}{@{}>{\centering\arraybackslash}p{(\linewidth - 10\tabcolsep) * \real{0.2932} + 2\tabcolsep}}{%
+\begin{minipage}[b]{\linewidth}\centering
+\textbf{Relay remains on}
+\end{minipage}} &
+\multicolumn{2}{>{\centering\arraybackslash}p{(\linewidth - 10\tabcolsep) * \real{0.2932} + 2\tabcolsep}}{%
+\begin{minipage}[b]{\linewidth}\centering
+0
+\end{minipage}} &
+\multicolumn{2}{>{\centering\arraybackslash}p{(\linewidth - 10\tabcolsep) * \real{0.3883} + 2\tabcolsep}@{}}{%
+\begin{minipage}[b]{\linewidth}\centering
+10
+\end{minipage}} \\
+\bottomrule\noalign{}
+\end{longtable}
+}
+
+\textbf{Table E.2c.} Arc Fault Evaluation of Halogen Lamp Test
+Performance Matrix
+
+{\def\LTcaptype{none} % do not increment counter
+\begin{longtable}[]{@{}llll@{}}
+\toprule\noalign{}
+\textbf{Accuracy} & \textbf{Precision} & \textbf{Recall} &
+\textbf{F1-Score} \\
+\midrule\noalign{}
+\endhead
+100\% & 100\% & 100\% & 100\% \\
+\bottomrule\noalign{}
+\end{longtable}
+}
+
+\section{Arc Fault Test Result for Electric Kettle}\label{appendix-e.3.-arc-fault-test-result-for-electric-kettle}
+
+\textbf{Table E.3a.} Arc Fault Evaluation of Electric Kettle Test Result
+
+{\def\LTcaptype{none} % do not increment counter
+\begin{longtable}[]{@{}
+  >{\raggedright\arraybackslash}p{(\linewidth - 10\tabcolsep) * \real{0.1611}}
+  >{\raggedright\arraybackslash}p{(\linewidth - 10\tabcolsep) * \real{0.1611}}
+  >{\raggedright\arraybackslash}p{(\linewidth - 10\tabcolsep) * \real{0.1611}}
+  >{\raggedright\arraybackslash}p{(\linewidth - 10\tabcolsep) * \real{0.1611}}
+  >{\raggedright\arraybackslash}p{(\linewidth - 10\tabcolsep) * \real{0.1611}}
+  >{\raggedright\arraybackslash}p{(\linewidth - 10\tabcolsep) * \real{0.1611}}@{}}
+\toprule\noalign{}
+\multicolumn{3}{@{}>{\centering\arraybackslash}p{(\linewidth - 10\tabcolsep) * \real{0.4834} + 4\tabcolsep}}{%
+\begin{minipage}[b]{\linewidth}\centering
+\textbf{Normal Trials}
+\end{minipage}} &
+\multicolumn{3}{>{\centering\arraybackslash}p{(\linewidth - 10\tabcolsep) * \real{0.4834} + 4\tabcolsep}@{}}{%
+\begin{minipage}[b]{\linewidth}\centering
+\textbf{Arc Trials}
+\end{minipage}} \\
+\begin{minipage}[b]{\linewidth}\centering
+\textbf{Trial}
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+\textbf{Relay Tripped?}
+
+\textbf{(FP)}
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+\textbf{Relay Still On?}
+
+\textbf{(TN)}
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+\textbf{Trial}
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+\textbf{Relay Tripped?}
+
+\textbf{(TP)}
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+\textbf{Relay Still On?}
+
+\textbf{(FN)}
+\end{minipage} \\
+\midrule\noalign{}
+\endhead
+\begin{minipage}[b]{\linewidth}\centering
+1
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+FALSE
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+TRUE
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+1
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+TRUE
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+FALSE
+\end{minipage} \\
+\begin{minipage}[b]{\linewidth}\centering
+2
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+FALSE
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+TRUE
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+2
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+TRUE
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+FALSE
+\end{minipage} \\
+\begin{minipage}[b]{\linewidth}\centering
+3
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+FALSE
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+TRUE
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+3
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+TRUE
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+FALSE
+\end{minipage} \\
+\begin{minipage}[b]{\linewidth}\centering
+4
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+FALSE
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+TRUE
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+4
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+TRUE
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+FALSE
+\end{minipage} \\
+\begin{minipage}[b]{\linewidth}\centering
+5
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+FALSE
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+TRUE
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+5
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+TRUE
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+FALSE
+\end{minipage} \\
+\begin{minipage}[b]{\linewidth}\centering
+6
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+FALSE
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+TRUE
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+6
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+TRUE
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+FALSE
+\end{minipage} \\
+\begin{minipage}[b]{\linewidth}\centering
+7
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+FALSE
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+TRUE
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+7
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+TRUE
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+FALSE
+\end{minipage} \\
+\begin{minipage}[b]{\linewidth}\centering
+8
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+FALSE
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+TRUE
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+8
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+TRUE
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+FALSE
+\end{minipage} \\
+\begin{minipage}[b]{\linewidth}\centering
+9
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+FALSE
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+TRUE
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+9
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+TRUE
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+FALSE
+\end{minipage} \\
+\begin{minipage}[b]{\linewidth}\centering
+10
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+FALSE
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+TRUE
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+10
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+TRUE
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+FALSE
+\end{minipage} \\
+\begin{minipage}[b]{\linewidth}\centering
+\textbf{Total}
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+\textbf{0}
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+\textbf{10}
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+\textbf{Total}
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+\textbf{10}
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+\textbf{0}
+\end{minipage} \\
+\bottomrule\noalign{}
+\end{longtable}
+}
+
+\textbf{Table E.3b.} Arc Fault Evaluation of Electric Kettle Test
+Confusion Matrix
+
+{\def\LTcaptype{none} % do not increment counter
+\begin{longtable}[]{@{}
+  >{\raggedright\arraybackslash}p{(\linewidth - 10\tabcolsep) * \real{0.2820}}
+  >{\raggedright\arraybackslash}p{(\linewidth - 10\tabcolsep) * \real{0.0113}}
+  >{\raggedright\arraybackslash}p{(\linewidth - 10\tabcolsep) * \real{0.2820}}
+  >{\raggedright\arraybackslash}p{(\linewidth - 10\tabcolsep) * \real{0.0113}}
+  >{\raggedright\arraybackslash}p{(\linewidth - 10\tabcolsep) * \real{0.2820}}
+  >{\raggedright\arraybackslash}p{(\linewidth - 10\tabcolsep) * \real{0.1063}}@{}}
+\toprule\noalign{}
+\multicolumn{2}{@{}>{\centering\arraybackslash}p{(\linewidth - 10\tabcolsep) * \real{0.2932} + 2\tabcolsep}}{%
+\begin{minipage}[b]{\linewidth}\centering
+\end{minipage}} &
+\multicolumn{2}{>{\centering\arraybackslash}p{(\linewidth - 10\tabcolsep) * \real{0.2932} + 2\tabcolsep}}{%
+\begin{minipage}[b]{\linewidth}\centering
+\textbf{Arcing Event}
+\end{minipage}} &
+\multicolumn{2}{>{\centering\arraybackslash}p{(\linewidth - 10\tabcolsep) * \real{0.3883} + 2\tabcolsep}@{}}{%
+\begin{minipage}[b]{\linewidth}\centering
+\textbf{Normal Event}
+\end{minipage}} \\
+\midrule\noalign{}
+\endhead
+\multicolumn{2}{@{}>{\centering\arraybackslash}p{(\linewidth - 10\tabcolsep) * \real{0.2932} + 2\tabcolsep}}{%
+\begin{minipage}[b]{\linewidth}\centering
+\textbf{Relay Trips}
+\end{minipage}} &
+\multicolumn{2}{>{\centering\arraybackslash}p{(\linewidth - 10\tabcolsep) * \real{0.2932} + 2\tabcolsep}}{%
+\begin{minipage}[b]{\linewidth}\centering
+10
+\end{minipage}} &
+\multicolumn{2}{>{\centering\arraybackslash}p{(\linewidth - 10\tabcolsep) * \real{0.3883} + 2\tabcolsep}@{}}{%
+\begin{minipage}[b]{\linewidth}\centering
+0
+\end{minipage}} \\
+\multicolumn{2}{@{}>{\centering\arraybackslash}p{(\linewidth - 10\tabcolsep) * \real{0.2932} + 2\tabcolsep}}{%
+\begin{minipage}[b]{\linewidth}\centering
+\textbf{Relay remains on}
+\end{minipage}} &
+\multicolumn{2}{>{\centering\arraybackslash}p{(\linewidth - 10\tabcolsep) * \real{0.2932} + 2\tabcolsep}}{%
+\begin{minipage}[b]{\linewidth}\centering
+0
+\end{minipage}} &
+\multicolumn{2}{>{\centering\arraybackslash}p{(\linewidth - 10\tabcolsep) * \real{0.3883} + 2\tabcolsep}@{}}{%
+\begin{minipage}[b]{\linewidth}\centering
+10
+\end{minipage}} \\
+\bottomrule\noalign{}
+\end{longtable}
+}
+
+\textbf{Table E.3c.} Arc Fault Evaluation of Electric Kettle Test
+Performance Matrix
+
+{\def\LTcaptype{none} % do not increment counter
+\begin{longtable}[]{@{}llll@{}}
+\toprule\noalign{}
+\textbf{Accuracy} & \textbf{Precision} & \textbf{Recall} &
+\textbf{F1-Score} \\
+\midrule\noalign{}
+\endhead
+100\% & 100\% & 100\% & 100\% \\
+\bottomrule\noalign{}
+\end{longtable}
+}
+
+\section{Arc Fault Test Result for 40W Electric Fan}\label{appendix-e.4.-arc-fault-test-result-for-40w-electric-fan}
+
+\textbf{Table E.4a.} Arc Fault Evaluation of 40W Electric Fan Test
+Result
+
+{\def\LTcaptype{none} % do not increment counter
+\begin{longtable}[]{@{}
+  >{\raggedright\arraybackslash}p{(\linewidth - 10\tabcolsep) * \real{0.1611}}
+  >{\raggedright\arraybackslash}p{(\linewidth - 10\tabcolsep) * \real{0.1611}}
+  >{\raggedright\arraybackslash}p{(\linewidth - 10\tabcolsep) * \real{0.1611}}
+  >{\raggedright\arraybackslash}p{(\linewidth - 10\tabcolsep) * \real{0.1611}}
+  >{\raggedright\arraybackslash}p{(\linewidth - 10\tabcolsep) * \real{0.1611}}
+  >{\raggedright\arraybackslash}p{(\linewidth - 10\tabcolsep) * \real{0.1611}}@{}}
+\toprule\noalign{}
+\multicolumn{3}{@{}>{\centering\arraybackslash}p{(\linewidth - 10\tabcolsep) * \real{0.4834} + 4\tabcolsep}}{%
+\begin{minipage}[b]{\linewidth}\centering
+\textbf{Normal Trials}
+\end{minipage}} &
+\multicolumn{3}{>{\centering\arraybackslash}p{(\linewidth - 10\tabcolsep) * \real{0.4834} + 4\tabcolsep}@{}}{%
+\begin{minipage}[b]{\linewidth}\centering
+\textbf{Arc Trials}
+\end{minipage}} \\
+\begin{minipage}[b]{\linewidth}\centering
+\textbf{Trial}
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+\textbf{Relay Tripped?}
+
+\textbf{(FP)}
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+\textbf{Relay Still On?}
+
+\textbf{(TN)}
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+\textbf{Trial}
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+\textbf{Relay Tripped?}
+
+\textbf{(TP)}
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+\textbf{Relay Still On?}
+
+\textbf{(FN)}
+\end{minipage} \\
+\midrule\noalign{}
+\endhead
+\begin{minipage}[b]{\linewidth}\centering
+1
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+FALSE
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+TRUE
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+1
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+TRUE
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+FALSE
+\end{minipage} \\
+\begin{minipage}[b]{\linewidth}\centering
+2
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+FALSE
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+TRUE
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+2
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+TRUE
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+FALSE
+\end{minipage} \\
+\begin{minipage}[b]{\linewidth}\centering
+3
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+FALSE
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+TRUE
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+3
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+TRUE
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+FALSE
+\end{minipage} \\
+\begin{minipage}[b]{\linewidth}\centering
+4
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+FALSE
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+TRUE
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+4
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+TRUE
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+FALSE
+\end{minipage} \\
+\begin{minipage}[b]{\linewidth}\centering
+5
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+FALSE
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+TRUE
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+5
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+TRUE
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+FALSE
+\end{minipage} \\
+\begin{minipage}[b]{\linewidth}\centering
+6
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+FALSE
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+TRUE
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+6
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+TRUE
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+FALSE
+\end{minipage} \\
+\begin{minipage}[b]{\linewidth}\centering
+7
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+FALSE
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+TRUE
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+7
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+TRUE
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+FALSE
+\end{minipage} \\
+\begin{minipage}[b]{\linewidth}\centering
+8
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+FALSE
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+TRUE
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+8
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+TRUE
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+FALSE
+\end{minipage} \\
+\begin{minipage}[b]{\linewidth}\centering
+9
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+FALSE
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+TRUE
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+9
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+TRUE
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+FALSE
+\end{minipage} \\
+\begin{minipage}[b]{\linewidth}\centering
+10
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+FALSE
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+TRUE
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+10
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+TRUE
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+FALSE
+\end{minipage} \\
+\begin{minipage}[b]{\linewidth}\centering
+\textbf{Total}
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+\textbf{0}
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+\textbf{10}
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+\textbf{Total}
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+\textbf{10}
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+\textbf{0}
+\end{minipage} \\
+\bottomrule\noalign{}
+\end{longtable}
+}
+
+\textbf{Table E.4b.} Arc Fault Evaluation of 40W Electric Fan Test
+Confusion Matrix
+
+{\def\LTcaptype{none} % do not increment counter
+\begin{longtable}[]{@{}
+  >{\raggedright\arraybackslash}p{(\linewidth - 10\tabcolsep) * \real{0.2820}}
+  >{\raggedright\arraybackslash}p{(\linewidth - 10\tabcolsep) * \real{0.0113}}
+  >{\raggedright\arraybackslash}p{(\linewidth - 10\tabcolsep) * \real{0.2820}}
+  >{\raggedright\arraybackslash}p{(\linewidth - 10\tabcolsep) * \real{0.0113}}
+  >{\raggedright\arraybackslash}p{(\linewidth - 10\tabcolsep) * \real{0.2820}}
+  >{\raggedright\arraybackslash}p{(\linewidth - 10\tabcolsep) * \real{0.1063}}@{}}
+\toprule\noalign{}
+\multicolumn{2}{@{}>{\centering\arraybackslash}p{(\linewidth - 10\tabcolsep) * \real{0.2932} + 2\tabcolsep}}{%
+\begin{minipage}[b]{\linewidth}\centering
+\end{minipage}} &
+\multicolumn{2}{>{\centering\arraybackslash}p{(\linewidth - 10\tabcolsep) * \real{0.2932} + 2\tabcolsep}}{%
+\begin{minipage}[b]{\linewidth}\centering
+\textbf{Arcing Event}
+\end{minipage}} &
+\multicolumn{2}{>{\centering\arraybackslash}p{(\linewidth - 10\tabcolsep) * \real{0.3883} + 2\tabcolsep}@{}}{%
+\begin{minipage}[b]{\linewidth}\centering
+\textbf{Normal Event}
+\end{minipage}} \\
+\midrule\noalign{}
+\endhead
+\multicolumn{2}{@{}>{\centering\arraybackslash}p{(\linewidth - 10\tabcolsep) * \real{0.2932} + 2\tabcolsep}}{%
+\begin{minipage}[b]{\linewidth}\centering
+\textbf{Relay Trips}
+\end{minipage}} &
+\multicolumn{2}{>{\centering\arraybackslash}p{(\linewidth - 10\tabcolsep) * \real{0.2932} + 2\tabcolsep}}{%
+\begin{minipage}[b]{\linewidth}\centering
+10
+\end{minipage}} &
+\multicolumn{2}{>{\centering\arraybackslash}p{(\linewidth - 10\tabcolsep) * \real{0.3883} + 2\tabcolsep}@{}}{%
+\begin{minipage}[b]{\linewidth}\centering
+0
+\end{minipage}} \\
+\multicolumn{2}{@{}>{\centering\arraybackslash}p{(\linewidth - 10\tabcolsep) * \real{0.2932} + 2\tabcolsep}}{%
+\begin{minipage}[b]{\linewidth}\centering
+\textbf{Relay remains on}
+\end{minipage}} &
+\multicolumn{2}{>{\centering\arraybackslash}p{(\linewidth - 10\tabcolsep) * \real{0.2932} + 2\tabcolsep}}{%
+\begin{minipage}[b]{\linewidth}\centering
+0
+\end{minipage}} &
+\multicolumn{2}{>{\centering\arraybackslash}p{(\linewidth - 10\tabcolsep) * \real{0.3883} + 2\tabcolsep}@{}}{%
+\begin{minipage}[b]{\linewidth}\centering
+10
+\end{minipage}} \\
+\bottomrule\noalign{}
+\end{longtable}
+}
+
+\textbf{Table E.4c.} Arc Fault Evaluation of 40W Electric Fan Test
+Performance Matrix
+
+{\def\LTcaptype{none} % do not increment counter
+\begin{longtable}[]{@{}llll@{}}
+\toprule\noalign{}
+\textbf{Accuracy} & \textbf{Precision} & \textbf{Recall} &
+\textbf{F1-Score} \\
+\midrule\noalign{}
+\endhead
+100\% & 100\% & 100\% & 100\% \\
+\bottomrule\noalign{}
+\end{longtable}
+}
+
+\section{Arc Fault Test Result for Handheld Vacuum}\label{appendix-e.5.-arc-fault-test-result-for-handheld-vacuum}
+
+\textbf{Table E.5a.} Arc Fault Evaluation of Handheld Vacuum Test Result
+
+{\def\LTcaptype{none} % do not increment counter
+\begin{longtable}[]{@{}
+  >{\raggedright\arraybackslash}p{(\linewidth - 10\tabcolsep) * \real{0.1611}}
+  >{\raggedright\arraybackslash}p{(\linewidth - 10\tabcolsep) * \real{0.1611}}
+  >{\raggedright\arraybackslash}p{(\linewidth - 10\tabcolsep) * \real{0.1611}}
+  >{\raggedright\arraybackslash}p{(\linewidth - 10\tabcolsep) * \real{0.1611}}
+  >{\raggedright\arraybackslash}p{(\linewidth - 10\tabcolsep) * \real{0.1611}}
+  >{\raggedright\arraybackslash}p{(\linewidth - 10\tabcolsep) * \real{0.1611}}@{}}
+\toprule\noalign{}
+\multicolumn{3}{@{}>{\centering\arraybackslash}p{(\linewidth - 10\tabcolsep) * \real{0.4834} + 4\tabcolsep}}{%
+\begin{minipage}[b]{\linewidth}\centering
+\textbf{Normal Trials}
+\end{minipage}} &
+\multicolumn{3}{>{\centering\arraybackslash}p{(\linewidth - 10\tabcolsep) * \real{0.4834} + 4\tabcolsep}@{}}{%
+\begin{minipage}[b]{\linewidth}\centering
+\textbf{Arc Trials}
+\end{minipage}} \\
+\begin{minipage}[b]{\linewidth}\centering
+\textbf{Trial}
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+\textbf{Relay Tripped?}
+
+\textbf{(FP)}
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+\textbf{Relay Still On?}
+
+\textbf{(TN)}
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+\textbf{Trial}
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+\textbf{Relay Tripped?}
+
+\textbf{(TP)}
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+\textbf{Relay Still On?}
+
+\textbf{(FN)}
+\end{minipage} \\
+\midrule\noalign{}
+\endhead
+\begin{minipage}[b]{\linewidth}\centering
+1
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+FALSE
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+TRUE
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+1
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+TRUE
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+FALSE
+\end{minipage} \\
+\begin{minipage}[b]{\linewidth}\centering
+2
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+FALSE
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+TRUE
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+2
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+TRUE
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+FALSE
+\end{minipage} \\
+\begin{minipage}[b]{\linewidth}\centering
+3
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+FALSE
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+TRUE
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+3
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+TRUE
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+FALSE
+\end{minipage} \\
+\begin{minipage}[b]{\linewidth}\centering
+4
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+FALSE
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+TRUE
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+4
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+FALSE
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+TRUE
+\end{minipage} \\
+\begin{minipage}[b]{\linewidth}\centering
+5
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+FALSE
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+TRUE
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+5
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+TRUE
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+FALSE
+\end{minipage} \\
+\begin{minipage}[b]{\linewidth}\centering
+6
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+FALSE
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+TRUE
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+6
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+TRUE
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+FALSE
+\end{minipage} \\
+\begin{minipage}[b]{\linewidth}\centering
+7
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+FALSE
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+TRUE
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+7
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+TRUE
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+FALSE
+\end{minipage} \\
+\begin{minipage}[b]{\linewidth}\centering
+8
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+FALSE
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+TRUE
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+8
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+TRUE
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+FALSE
+\end{minipage} \\
+\begin{minipage}[b]{\linewidth}\centering
+9
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+FALSE
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+TRUE
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+9
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+TRUE
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+FALSE
+\end{minipage} \\
+\begin{minipage}[b]{\linewidth}\centering
+10
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+FALSE
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+TRUE
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+10
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+TRUE
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+FALSE
+\end{minipage} \\
+\begin{minipage}[b]{\linewidth}\centering
+\textbf{Total}
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+\textbf{0}
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+\textbf{10}
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+\textbf{Total}
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+\textbf{9}
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+\textbf{1}
+\end{minipage} \\
+\bottomrule\noalign{}
+\end{longtable}
+}
+
+\textbf{Table E.5b.} Arc Fault Evaluation of Handheld Vacuum Test
+Confusion Matrix
+
+{\def\LTcaptype{none} % do not increment counter
+\begin{longtable}[]{@{}
+  >{\raggedright\arraybackslash}p{(\linewidth - 10\tabcolsep) * \real{0.2820}}
+  >{\raggedright\arraybackslash}p{(\linewidth - 10\tabcolsep) * \real{0.0113}}
+  >{\raggedright\arraybackslash}p{(\linewidth - 10\tabcolsep) * \real{0.2820}}
+  >{\raggedright\arraybackslash}p{(\linewidth - 10\tabcolsep) * \real{0.0113}}
+  >{\raggedright\arraybackslash}p{(\linewidth - 10\tabcolsep) * \real{0.2820}}
+  >{\raggedright\arraybackslash}p{(\linewidth - 10\tabcolsep) * \real{0.1063}}@{}}
+\toprule\noalign{}
+\multicolumn{2}{@{}>{\centering\arraybackslash}p{(\linewidth - 10\tabcolsep) * \real{0.2932} + 2\tabcolsep}}{%
+\begin{minipage}[b]{\linewidth}\centering
+\end{minipage}} &
+\multicolumn{2}{>{\centering\arraybackslash}p{(\linewidth - 10\tabcolsep) * \real{0.2932} + 2\tabcolsep}}{%
+\begin{minipage}[b]{\linewidth}\centering
+\textbf{Arcing Event}
+\end{minipage}} &
+\multicolumn{2}{>{\centering\arraybackslash}p{(\linewidth - 10\tabcolsep) * \real{0.3883} + 2\tabcolsep}@{}}{%
+\begin{minipage}[b]{\linewidth}\centering
+\textbf{Normal Event}
+\end{minipage}} \\
+\midrule\noalign{}
+\endhead
+\multicolumn{2}{@{}>{\centering\arraybackslash}p{(\linewidth - 10\tabcolsep) * \real{0.2932} + 2\tabcolsep}}{%
+\begin{minipage}[b]{\linewidth}\centering
+\textbf{Relay Trips}
+\end{minipage}} &
+\multicolumn{2}{>{\centering\arraybackslash}p{(\linewidth - 10\tabcolsep) * \real{0.2932} + 2\tabcolsep}}{%
+\begin{minipage}[b]{\linewidth}\centering
+9
+\end{minipage}} &
+\multicolumn{2}{>{\centering\arraybackslash}p{(\linewidth - 10\tabcolsep) * \real{0.3883} + 2\tabcolsep}@{}}{%
+\begin{minipage}[b]{\linewidth}\centering
+0
+\end{minipage}} \\
+\multicolumn{2}{@{}>{\centering\arraybackslash}p{(\linewidth - 10\tabcolsep) * \real{0.2932} + 2\tabcolsep}}{%
+\begin{minipage}[b]{\linewidth}\centering
+\textbf{Relay remains on}
+\end{minipage}} &
+\multicolumn{2}{>{\centering\arraybackslash}p{(\linewidth - 10\tabcolsep) * \real{0.2932} + 2\tabcolsep}}{%
+\begin{minipage}[b]{\linewidth}\centering
+1
+\end{minipage}} &
+\multicolumn{2}{>{\centering\arraybackslash}p{(\linewidth - 10\tabcolsep) * \real{0.3883} + 2\tabcolsep}@{}}{%
+\begin{minipage}[b]{\linewidth}\centering
+10
+\end{minipage}} \\
+\bottomrule\noalign{}
+\end{longtable}
+}
+
+\textbf{Table E.5c.} Arc Fault Evaluation of Handheld Vacuum Test
+Performance Matrix
+
+{\def\LTcaptype{none} % do not increment counter
+\begin{longtable}[]{@{}llll@{}}
+\toprule\noalign{}
+\textbf{Accuracy} & \textbf{Precision} & \textbf{Recall} &
+\textbf{F1-Score} \\
+\midrule\noalign{}
+\endhead
+95\% & 100\% & 90\% & 94.74\% \\
+\bottomrule\noalign{}
+\end{longtable}
+}
+
+\section{Arc Fault Test Result for Vacuum Cleaner (Electrolux)}\label{appendix-e.6.-arc-fault-test-result-for-vacuum-cleaner-electrolux}
+
+\textbf{Table E.6a.} Arc Fault Evaluation of Vacuum Cleaner (Electrolux)
+Test Result
+
+{\def\LTcaptype{none} % do not increment counter
+\begin{longtable}[]{@{}
+  >{\raggedright\arraybackslash}p{(\linewidth - 10\tabcolsep) * \real{0.1611}}
+  >{\raggedright\arraybackslash}p{(\linewidth - 10\tabcolsep) * \real{0.1611}}
+  >{\raggedright\arraybackslash}p{(\linewidth - 10\tabcolsep) * \real{0.1611}}
+  >{\raggedright\arraybackslash}p{(\linewidth - 10\tabcolsep) * \real{0.1611}}
+  >{\raggedright\arraybackslash}p{(\linewidth - 10\tabcolsep) * \real{0.1611}}
+  >{\raggedright\arraybackslash}p{(\linewidth - 10\tabcolsep) * \real{0.1611}}@{}}
+\toprule\noalign{}
+\multicolumn{3}{@{}>{\centering\arraybackslash}p{(\linewidth - 10\tabcolsep) * \real{0.4834} + 4\tabcolsep}}{%
+\begin{minipage}[b]{\linewidth}\centering
+\textbf{Normal Trials}
+\end{minipage}} &
+\multicolumn{3}{>{\centering\arraybackslash}p{(\linewidth - 10\tabcolsep) * \real{0.4834} + 4\tabcolsep}@{}}{%
+\begin{minipage}[b]{\linewidth}\centering
+\textbf{Arc Trials}
+\end{minipage}} \\
+\begin{minipage}[b]{\linewidth}\centering
+\textbf{Trial}
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+\textbf{Relay Tripped?}
+
+\textbf{(FP)}
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+\textbf{Relay Still On?}
+
+\textbf{(TN)}
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+\textbf{Trial}
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+\textbf{Relay Tripped?}
+
+\textbf{(TP)}
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+\textbf{Relay Still On?}
+
+\textbf{(FN)}
+\end{minipage} \\
+\midrule\noalign{}
+\endhead
+\begin{minipage}[b]{\linewidth}\centering
+1
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+FALSE
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+TRUE
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+1
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+TRUE
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+FALSE
+\end{minipage} \\
+\begin{minipage}[b]{\linewidth}\centering
+2
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+FALSE
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+TRUE
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+2
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+TRUE
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+FALSE
+\end{minipage} \\
+\begin{minipage}[b]{\linewidth}\centering
+3
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+FALSE
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+TRUE
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+3
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+TRUE
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+FALSE
+\end{minipage} \\
+\begin{minipage}[b]{\linewidth}\centering
+4
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+FALSE
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+TRUE
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+4
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+FALSE
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+TRUE
+\end{minipage} \\
+\begin{minipage}[b]{\linewidth}\centering
+5
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+FALSE
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+TRUE
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+5
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+TRUE
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+FALSE
+\end{minipage} \\
+\begin{minipage}[b]{\linewidth}\centering
+6
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+FALSE
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+TRUE
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+6
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+TRUE
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+FALSE
+\end{minipage} \\
+\begin{minipage}[b]{\linewidth}\centering
+7
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+FALSE
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+TRUE
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+7
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+TRUE
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+FALSE
+\end{minipage} \\
+\begin{minipage}[b]{\linewidth}\centering
+8
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+FALSE
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+TRUE
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+8
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+TRUE
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+FALSE
+\end{minipage} \\
+\begin{minipage}[b]{\linewidth}\centering
+9
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+FALSE
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+TRUE
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+9
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+TRUE
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+FALSE
+\end{minipage} \\
+\begin{minipage}[b]{\linewidth}\centering
+10
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+FALSE
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+TRUE
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+10
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+TRUE
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+FALSE
+\end{minipage} \\
+\begin{minipage}[b]{\linewidth}\centering
+\textbf{Total}
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+\textbf{0}
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+\textbf{10}
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+\textbf{Total}
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+\textbf{9}
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+\textbf{1}
+\end{minipage} \\
+\bottomrule\noalign{}
+\end{longtable}
+}
+
+\textbf{Table E.6b.} Arc Fault Evaluation of Vacuum Cleaner (Electrolux)
+Test Confusion Matrix
+
+{\def\LTcaptype{none} % do not increment counter
+\begin{longtable}[]{@{}
+  >{\raggedright\arraybackslash}p{(\linewidth - 10\tabcolsep) * \real{0.2820}}
+  >{\raggedright\arraybackslash}p{(\linewidth - 10\tabcolsep) * \real{0.0113}}
+  >{\raggedright\arraybackslash}p{(\linewidth - 10\tabcolsep) * \real{0.2820}}
+  >{\raggedright\arraybackslash}p{(\linewidth - 10\tabcolsep) * \real{0.0113}}
+  >{\raggedright\arraybackslash}p{(\linewidth - 10\tabcolsep) * \real{0.2820}}
+  >{\raggedright\arraybackslash}p{(\linewidth - 10\tabcolsep) * \real{0.1063}}@{}}
+\toprule\noalign{}
+\multicolumn{2}{@{}>{\centering\arraybackslash}p{(\linewidth - 10\tabcolsep) * \real{0.2932} + 2\tabcolsep}}{%
+\begin{minipage}[b]{\linewidth}\centering
+\end{minipage}} &
+\multicolumn{2}{>{\centering\arraybackslash}p{(\linewidth - 10\tabcolsep) * \real{0.2932} + 2\tabcolsep}}{%
+\begin{minipage}[b]{\linewidth}\centering
+\textbf{Arcing Event}
+\end{minipage}} &
+\multicolumn{2}{>{\centering\arraybackslash}p{(\linewidth - 10\tabcolsep) * \real{0.3883} + 2\tabcolsep}@{}}{%
+\begin{minipage}[b]{\linewidth}\centering
+\textbf{Normal Event}
+\end{minipage}} \\
+\midrule\noalign{}
+\endhead
+\multicolumn{2}{@{}>{\centering\arraybackslash}p{(\linewidth - 10\tabcolsep) * \real{0.2932} + 2\tabcolsep}}{%
+\begin{minipage}[b]{\linewidth}\centering
+\textbf{Relay Trips}
+\end{minipage}} &
+\multicolumn{2}{>{\centering\arraybackslash}p{(\linewidth - 10\tabcolsep) * \real{0.2932} + 2\tabcolsep}}{%
+\begin{minipage}[b]{\linewidth}\centering
+9
+\end{minipage}} &
+\multicolumn{2}{>{\centering\arraybackslash}p{(\linewidth - 10\tabcolsep) * \real{0.3883} + 2\tabcolsep}@{}}{%
+\begin{minipage}[b]{\linewidth}\centering
+0
+\end{minipage}} \\
+\multicolumn{2}{@{}>{\centering\arraybackslash}p{(\linewidth - 10\tabcolsep) * \real{0.2932} + 2\tabcolsep}}{%
+\begin{minipage}[b]{\linewidth}\centering
+\textbf{Relay remains on}
+\end{minipage}} &
+\multicolumn{2}{>{\centering\arraybackslash}p{(\linewidth - 10\tabcolsep) * \real{0.2932} + 2\tabcolsep}}{%
+\begin{minipage}[b]{\linewidth}\centering
+1
+\end{minipage}} &
+\multicolumn{2}{>{\centering\arraybackslash}p{(\linewidth - 10\tabcolsep) * \real{0.3883} + 2\tabcolsep}@{}}{%
+\begin{minipage}[b]{\linewidth}\centering
+10
+\end{minipage}} \\
+\bottomrule\noalign{}
+\end{longtable}
+}
+
+\textbf{Table E.6c.} Arc Fault Evaluation of Vacuum Cleaner (Electrolux)
+Test Performance Matrix
+
+{\def\LTcaptype{none} % do not increment counter
+\begin{longtable}[]{@{}llll@{}}
+\toprule\noalign{}
+\textbf{Accuracy} & \textbf{Precision} & \textbf{Recall} &
+\textbf{F1-Score} \\
+\midrule\noalign{}
+\endhead
+95\% & 100\% & 90\% & 94.74\% \\
+\bottomrule\noalign{}
+\end{longtable}
+}
+
+\section{Arc Fault Test Result for Angle Grinder}\label{appendix-e.7.-arc-fault-test-result-for-angle-grinder}
+
+\textbf{Table E.7a.} Arc Fault Evaluation of Angle Grinder Test Result
+
+{\def\LTcaptype{none} % do not increment counter
+\begin{longtable}[]{@{}
+  >{\raggedright\arraybackslash}p{(\linewidth - 10\tabcolsep) * \real{0.1611}}
+  >{\raggedright\arraybackslash}p{(\linewidth - 10\tabcolsep) * \real{0.1611}}
+  >{\raggedright\arraybackslash}p{(\linewidth - 10\tabcolsep) * \real{0.1611}}
+  >{\raggedright\arraybackslash}p{(\linewidth - 10\tabcolsep) * \real{0.1611}}
+  >{\raggedright\arraybackslash}p{(\linewidth - 10\tabcolsep) * \real{0.1611}}
+  >{\raggedright\arraybackslash}p{(\linewidth - 10\tabcolsep) * \real{0.1611}}@{}}
+\toprule\noalign{}
+\multicolumn{3}{@{}>{\centering\arraybackslash}p{(\linewidth - 10\tabcolsep) * \real{0.4834} + 4\tabcolsep}}{%
+\begin{minipage}[b]{\linewidth}\centering
+\textbf{Normal Trials}
+\end{minipage}} &
+\multicolumn{3}{>{\centering\arraybackslash}p{(\linewidth - 10\tabcolsep) * \real{0.4834} + 4\tabcolsep}@{}}{%
+\begin{minipage}[b]{\linewidth}\centering
+\textbf{Arc Trials}
+\end{minipage}} \\
+\begin{minipage}[b]{\linewidth}\centering
+\textbf{Trial}
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+\textbf{Relay Tripped?}
+
+\textbf{(FP)}
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+\textbf{Relay Still On?}
+
+\textbf{(TN)}
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+\textbf{Trial}
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+\textbf{Relay Tripped?}
+
+\textbf{(TP)}
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+\textbf{Relay Still On?}
+
+\textbf{(FN)}
+\end{minipage} \\
+\midrule\noalign{}
+\endhead
+\begin{minipage}[b]{\linewidth}\centering
+1
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+FALSE
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+TRUE
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+1
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+TRUE
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+FALSE
+\end{minipage} \\
+\begin{minipage}[b]{\linewidth}\centering
+2
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+FALSE
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+TRUE
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+2
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+TRUE
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+FALSE
+\end{minipage} \\
+\begin{minipage}[b]{\linewidth}\centering
+3
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+FALSE
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+TRUE
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+3
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+TRUE
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+FALSE
+\end{minipage} \\
+\begin{minipage}[b]{\linewidth}\centering
+4
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+FALSE
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+TRUE
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+4
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+TRUE
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+FALSE
+\end{minipage} \\
+\begin{minipage}[b]{\linewidth}\centering
+5
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+FALSE
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+TRUE
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+5
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+TRUE
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+FALSE
+\end{minipage} \\
+\begin{minipage}[b]{\linewidth}\centering
+6
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+FALSE
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+TRUE
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+6
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+TRUE
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+FALSE
+\end{minipage} \\
+\begin{minipage}[b]{\linewidth}\centering
+7
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+FALSE
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+TRUE
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+7
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+TRUE
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+FALSE
+\end{minipage} \\
+\begin{minipage}[b]{\linewidth}\centering
+8
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+FALSE
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+TRUE
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+8
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+TRUE
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+FALSE
+\end{minipage} \\
+\begin{minipage}[b]{\linewidth}\centering
+9
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+FALSE
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+TRUE
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+9
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+FALSE
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+TRUE
+\end{minipage} \\
+\begin{minipage}[b]{\linewidth}\centering
+10
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+FALSE
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+TRUE
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+10
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+TRUE
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+FALSE
+\end{minipage} \\
+\begin{minipage}[b]{\linewidth}\centering
+\textbf{Total}
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+\textbf{0}
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+\textbf{10}
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+\textbf{Total}
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+\textbf{9}
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+\textbf{1}
+\end{minipage} \\
+\bottomrule\noalign{}
+\end{longtable}
+}
+
+\textbf{Table E.7b.} Arc Fault Evaluation of Angle Grinder Test
+Confusion Matrix
+
+{\def\LTcaptype{none} % do not increment counter
+\begin{longtable}[]{@{}
+  >{\raggedright\arraybackslash}p{(\linewidth - 10\tabcolsep) * \real{0.2820}}
+  >{\raggedright\arraybackslash}p{(\linewidth - 10\tabcolsep) * \real{0.0113}}
+  >{\raggedright\arraybackslash}p{(\linewidth - 10\tabcolsep) * \real{0.2820}}
+  >{\raggedright\arraybackslash}p{(\linewidth - 10\tabcolsep) * \real{0.0113}}
+  >{\raggedright\arraybackslash}p{(\linewidth - 10\tabcolsep) * \real{0.2820}}
+  >{\raggedright\arraybackslash}p{(\linewidth - 10\tabcolsep) * \real{0.1063}}@{}}
+\toprule\noalign{}
+\multicolumn{2}{@{}>{\centering\arraybackslash}p{(\linewidth - 10\tabcolsep) * \real{0.2932} + 2\tabcolsep}}{%
+\begin{minipage}[b]{\linewidth}\centering
+\end{minipage}} &
+\multicolumn{2}{>{\centering\arraybackslash}p{(\linewidth - 10\tabcolsep) * \real{0.2932} + 2\tabcolsep}}{%
+\begin{minipage}[b]{\linewidth}\centering
+\textbf{Arcing Event}
+\end{minipage}} &
+\multicolumn{2}{>{\centering\arraybackslash}p{(\linewidth - 10\tabcolsep) * \real{0.3883} + 2\tabcolsep}@{}}{%
+\begin{minipage}[b]{\linewidth}\centering
+\textbf{Normal Event}
+\end{minipage}} \\
+\midrule\noalign{}
+\endhead
+\multicolumn{2}{@{}>{\centering\arraybackslash}p{(\linewidth - 10\tabcolsep) * \real{0.2932} + 2\tabcolsep}}{%
+\begin{minipage}[b]{\linewidth}\centering
+\textbf{Relay Trips}
+\end{minipage}} &
+\multicolumn{2}{>{\centering\arraybackslash}p{(\linewidth - 10\tabcolsep) * \real{0.2932} + 2\tabcolsep}}{%
+\begin{minipage}[b]{\linewidth}\centering
+9
+\end{minipage}} &
+\multicolumn{2}{>{\centering\arraybackslash}p{(\linewidth - 10\tabcolsep) * \real{0.3883} + 2\tabcolsep}@{}}{%
+\begin{minipage}[b]{\linewidth}\centering
+0
+\end{minipage}} \\
+\multicolumn{2}{@{}>{\centering\arraybackslash}p{(\linewidth - 10\tabcolsep) * \real{0.2932} + 2\tabcolsep}}{%
+\begin{minipage}[b]{\linewidth}\centering
+\textbf{Relay remains on}
+\end{minipage}} &
+\multicolumn{2}{>{\centering\arraybackslash}p{(\linewidth - 10\tabcolsep) * \real{0.2932} + 2\tabcolsep}}{%
+\begin{minipage}[b]{\linewidth}\centering
+1
+\end{minipage}} &
+\multicolumn{2}{>{\centering\arraybackslash}p{(\linewidth - 10\tabcolsep) * \real{0.3883} + 2\tabcolsep}@{}}{%
+\begin{minipage}[b]{\linewidth}\centering
+10
+\end{minipage}} \\
+\bottomrule\noalign{}
+\end{longtable}
+}
+
+\textbf{Table E.7c.} Arc Fault Evaluation of Angle Grinder Test
+Performance Matrix
+
+{\def\LTcaptype{none} % do not increment counter
+\begin{longtable}[]{@{}llll@{}}
+\toprule\noalign{}
+\textbf{Accuracy} & \textbf{Precision} & \textbf{Recall} &
+\textbf{F1-Score} \\
+\midrule\noalign{}
+\endhead
+95\% & 100\% & 90\% & 94.74\% \\
+\bottomrule\noalign{}
+\end{longtable}
+}
+
+\section{Arc Fault Test Result for Bench Cutter}\label{appendix-e.8.-arc-fault-test-result-for-bench-cutter}
+
+\textbf{Table E.8a.} Arc Fault Evaluation of Bench Cutter Test Result
+
+{\def\LTcaptype{none} % do not increment counter
+\begin{longtable}[]{@{}
+  >{\raggedright\arraybackslash}p{(\linewidth - 10\tabcolsep) * \real{0.1611}}
+  >{\raggedright\arraybackslash}p{(\linewidth - 10\tabcolsep) * \real{0.1611}}
+  >{\raggedright\arraybackslash}p{(\linewidth - 10\tabcolsep) * \real{0.1611}}
+  >{\raggedright\arraybackslash}p{(\linewidth - 10\tabcolsep) * \real{0.1611}}
+  >{\raggedright\arraybackslash}p{(\linewidth - 10\tabcolsep) * \real{0.1611}}
+  >{\raggedright\arraybackslash}p{(\linewidth - 10\tabcolsep) * \real{0.1611}}@{}}
+\toprule\noalign{}
+\multicolumn{3}{@{}>{\centering\arraybackslash}p{(\linewidth - 10\tabcolsep) * \real{0.4834} + 4\tabcolsep}}{%
+\begin{minipage}[b]{\linewidth}\centering
+\textbf{Normal Trials}
+\end{minipage}} &
+\multicolumn{3}{>{\centering\arraybackslash}p{(\linewidth - 10\tabcolsep) * \real{0.4834} + 4\tabcolsep}@{}}{%
+\begin{minipage}[b]{\linewidth}\centering
+\textbf{Arc Trials}
+\end{minipage}} \\
+\begin{minipage}[b]{\linewidth}\centering
+\textbf{Trial}
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+\textbf{Relay Tripped?}
+
+\textbf{(FP)}
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+\textbf{Relay Still On?}
+
+\textbf{(TN)}
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+\textbf{Trial}
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+\textbf{Relay Tripped?}
+
+\textbf{(TP)}
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+\textbf{Relay Still On?}
+
+\textbf{(FN)}
+\end{minipage} \\
+\midrule\noalign{}
+\endhead
+\begin{minipage}[b]{\linewidth}\centering
+1
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+FALSE
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+TRUE
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+1
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+TRUE
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+FALSE
+\end{minipage} \\
+\begin{minipage}[b]{\linewidth}\centering
+2
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+FALSE
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+TRUE
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+2
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+TRUE
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+FALSE
+\end{minipage} \\
+\begin{minipage}[b]{\linewidth}\centering
+3
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+FALSE
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+TRUE
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+3
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+TRUE
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+FALSE
+\end{minipage} \\
+\begin{minipage}[b]{\linewidth}\centering
+4
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+FALSE
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+TRUE
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+4
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+TRUE
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+FALSE
+\end{minipage} \\
+\begin{minipage}[b]{\linewidth}\centering
+5
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+FALSE
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+TRUE
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+5
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+TRUE
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+FALSE
+\end{minipage} \\
+\begin{minipage}[b]{\linewidth}\centering
+6
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+FALSE
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+TRUE
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+6
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+FALSE
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+TRUE
+\end{minipage} \\
+\begin{minipage}[b]{\linewidth}\centering
+7
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+FALSE
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+TRUE
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+7
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+TRUE
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+FALSE
+\end{minipage} \\
+\begin{minipage}[b]{\linewidth}\centering
+8
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+FALSE
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+TRUE
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+8
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+TRUE
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+FALSE
+\end{minipage} \\
+\begin{minipage}[b]{\linewidth}\centering
+9
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+FALSE
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+TRUE
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+9
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+TRUE
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+FALSE
+\end{minipage} \\
+\begin{minipage}[b]{\linewidth}\centering
+10
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+FALSE
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+TRUE
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+10
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+TRUE
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+FALSE
+\end{minipage} \\
+\begin{minipage}[b]{\linewidth}\centering
+\textbf{Total}
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+\textbf{0}
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+\textbf{10}
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+\textbf{Total}
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+\textbf{9}
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+\textbf{1}
+\end{minipage} \\
+\bottomrule\noalign{}
+\end{longtable}
+}
+
+\textbf{Table E.8b.} Arc Fault Evaluation of Bench Cutter Test Confusion
+Matrix
+
+{\def\LTcaptype{none} % do not increment counter
+\begin{longtable}[]{@{}
+  >{\raggedright\arraybackslash}p{(\linewidth - 10\tabcolsep) * \real{0.2820}}
+  >{\raggedright\arraybackslash}p{(\linewidth - 10\tabcolsep) * \real{0.0113}}
+  >{\raggedright\arraybackslash}p{(\linewidth - 10\tabcolsep) * \real{0.2820}}
+  >{\raggedright\arraybackslash}p{(\linewidth - 10\tabcolsep) * \real{0.0113}}
+  >{\raggedright\arraybackslash}p{(\linewidth - 10\tabcolsep) * \real{0.2820}}
+  >{\raggedright\arraybackslash}p{(\linewidth - 10\tabcolsep) * \real{0.1063}}@{}}
+\toprule\noalign{}
+\multicolumn{2}{@{}>{\centering\arraybackslash}p{(\linewidth - 10\tabcolsep) * \real{0.2932} + 2\tabcolsep}}{%
+\begin{minipage}[b]{\linewidth}\centering
+\end{minipage}} &
+\multicolumn{2}{>{\centering\arraybackslash}p{(\linewidth - 10\tabcolsep) * \real{0.2932} + 2\tabcolsep}}{%
+\begin{minipage}[b]{\linewidth}\centering
+\textbf{Arcing Event}
+\end{minipage}} &
+\multicolumn{2}{>{\centering\arraybackslash}p{(\linewidth - 10\tabcolsep) * \real{0.3883} + 2\tabcolsep}@{}}{%
+\begin{minipage}[b]{\linewidth}\centering
+\textbf{Normal Event}
+\end{minipage}} \\
+\midrule\noalign{}
+\endhead
+\multicolumn{2}{@{}>{\centering\arraybackslash}p{(\linewidth - 10\tabcolsep) * \real{0.2932} + 2\tabcolsep}}{%
+\begin{minipage}[b]{\linewidth}\centering
+\textbf{Relay Trips}
+\end{minipage}} &
+\multicolumn{2}{>{\centering\arraybackslash}p{(\linewidth - 10\tabcolsep) * \real{0.2932} + 2\tabcolsep}}{%
+\begin{minipage}[b]{\linewidth}\centering
+9
+\end{minipage}} &
+\multicolumn{2}{>{\centering\arraybackslash}p{(\linewidth - 10\tabcolsep) * \real{0.3883} + 2\tabcolsep}@{}}{%
+\begin{minipage}[b]{\linewidth}\centering
+0
+\end{minipage}} \\
+\multicolumn{2}{@{}>{\centering\arraybackslash}p{(\linewidth - 10\tabcolsep) * \real{0.2932} + 2\tabcolsep}}{%
+\begin{minipage}[b]{\linewidth}\centering
+\textbf{Relay remains on}
+\end{minipage}} &
+\multicolumn{2}{>{\centering\arraybackslash}p{(\linewidth - 10\tabcolsep) * \real{0.2932} + 2\tabcolsep}}{%
+\begin{minipage}[b]{\linewidth}\centering
+1
+\end{minipage}} &
+\multicolumn{2}{>{\centering\arraybackslash}p{(\linewidth - 10\tabcolsep) * \real{0.3883} + 2\tabcolsep}@{}}{%
+\begin{minipage}[b]{\linewidth}\centering
+10
+\end{minipage}} \\
+\bottomrule\noalign{}
+\end{longtable}
+}
+
+\textbf{Table E.8c.} Arc Fault Evaluation of Bench Cutter Test
+Performance Matrix
+
+{\def\LTcaptype{none} % do not increment counter
+\begin{longtable}[]{@{}llll@{}}
+\toprule\noalign{}
+\textbf{Accuracy} & \textbf{Precision} & \textbf{Recall} &
+\textbf{F1-Score} \\
+\midrule\noalign{}
+\endhead
+95\% & 100\% & 90\% & 94.74\% \\
+\bottomrule\noalign{}
+\end{longtable}
+}
+
+\section{Arc Fault Test Result for Impact Drill}\label{appendix-e.9.-arc-fault-test-result-for-impact-drill}
+
+\textbf{Table E.9a.} Arc Fault Evaluation of Impact Drill Test Result
+
+{\def\LTcaptype{none} % do not increment counter
+\begin{longtable}[]{@{}
+  >{\raggedright\arraybackslash}p{(\linewidth - 10\tabcolsep) * \real{0.1611}}
+  >{\raggedright\arraybackslash}p{(\linewidth - 10\tabcolsep) * \real{0.1611}}
+  >{\raggedright\arraybackslash}p{(\linewidth - 10\tabcolsep) * \real{0.1611}}
+  >{\raggedright\arraybackslash}p{(\linewidth - 10\tabcolsep) * \real{0.1611}}
+  >{\raggedright\arraybackslash}p{(\linewidth - 10\tabcolsep) * \real{0.1611}}
+  >{\raggedright\arraybackslash}p{(\linewidth - 10\tabcolsep) * \real{0.1611}}@{}}
+\toprule\noalign{}
+\multicolumn{3}{@{}>{\centering\arraybackslash}p{(\linewidth - 10\tabcolsep) * \real{0.4834} + 4\tabcolsep}}{%
+\begin{minipage}[b]{\linewidth}\centering
+\textbf{Normal Trials}
+\end{minipage}} &
+\multicolumn{3}{>{\centering\arraybackslash}p{(\linewidth - 10\tabcolsep) * \real{0.4834} + 4\tabcolsep}@{}}{%
+\begin{minipage}[b]{\linewidth}\centering
+\textbf{Arc Trials}
+\end{minipage}} \\
+\begin{minipage}[b]{\linewidth}\centering
+\textbf{Trial}
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+\textbf{Relay Tripped?}
+
+\textbf{(FP)}
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+\textbf{Relay Still On?}
+
+\textbf{(TN)}
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+\textbf{Trial}
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+\textbf{Relay Tripped?}
+
+\textbf{(TP)}
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+\textbf{Relay Still On?}
+
+\textbf{(FN)}
+\end{minipage} \\
+\midrule\noalign{}
+\endhead
+\begin{minipage}[b]{\linewidth}\centering
+1
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+FALSE
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+TRUE
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+1
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+TRUE
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+FALSE
+\end{minipage} \\
+\begin{minipage}[b]{\linewidth}\centering
+2
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+FALSE
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+TRUE
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+2
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+TRUE
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+FALSE
+\end{minipage} \\
+\begin{minipage}[b]{\linewidth}\centering
+3
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+FALSE
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+TRUE
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+3
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+TRUE
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+FALSE
+\end{minipage} \\
+\begin{minipage}[b]{\linewidth}\centering
+4
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+FALSE
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+TRUE
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+4
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+TRUE
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+FALSE
+\end{minipage} \\
+\begin{minipage}[b]{\linewidth}\centering
+5
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+FALSE
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+TRUE
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+5
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+TRUE
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+FALSE
+\end{minipage} \\
+\begin{minipage}[b]{\linewidth}\centering
+6
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+FALSE
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+TRUE
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+6
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+TRUE
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+FALSE
+\end{minipage} \\
+\begin{minipage}[b]{\linewidth}\centering
+7
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+FALSE
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+TRUE
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+7
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+TRUE
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+FALSE
+\end{minipage} \\
+\begin{minipage}[b]{\linewidth}\centering
+8
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+FALSE
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+TRUE
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+8
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+TRUE
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+FALSE
+\end{minipage} \\
+\begin{minipage}[b]{\linewidth}\centering
+9
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+TRUE
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+FALSE
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+9
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+TRUE
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+FALSE
+\end{minipage} \\
+\begin{minipage}[b]{\linewidth}\centering
+10
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+FALSE
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+TRUE
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+10
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+TRUE
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+FALSE
+\end{minipage} \\
+\begin{minipage}[b]{\linewidth}\centering
+\textbf{Total}
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+\textbf{1}
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+\textbf{9}
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+\textbf{Total}
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+\textbf{10}
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+\textbf{0}
+\end{minipage} \\
+\bottomrule\noalign{}
+\end{longtable}
+}
+
+\textbf{Table E.9b.} Arc Fault Evaluation of Impact Drill Test Confusion
+Matrix
+
+{\def\LTcaptype{none} % do not increment counter
+\begin{longtable}[]{@{}
+  >{\raggedright\arraybackslash}p{(\linewidth - 10\tabcolsep) * \real{0.2820}}
+  >{\raggedright\arraybackslash}p{(\linewidth - 10\tabcolsep) * \real{0.0113}}
+  >{\raggedright\arraybackslash}p{(\linewidth - 10\tabcolsep) * \real{0.2820}}
+  >{\raggedright\arraybackslash}p{(\linewidth - 10\tabcolsep) * \real{0.0113}}
+  >{\raggedright\arraybackslash}p{(\linewidth - 10\tabcolsep) * \real{0.2820}}
+  >{\raggedright\arraybackslash}p{(\linewidth - 10\tabcolsep) * \real{0.1063}}@{}}
+\toprule\noalign{}
+\multicolumn{2}{@{}>{\centering\arraybackslash}p{(\linewidth - 10\tabcolsep) * \real{0.2932} + 2\tabcolsep}}{%
+\begin{minipage}[b]{\linewidth}\centering
+\end{minipage}} &
+\multicolumn{2}{>{\centering\arraybackslash}p{(\linewidth - 10\tabcolsep) * \real{0.2932} + 2\tabcolsep}}{%
+\begin{minipage}[b]{\linewidth}\centering
+\textbf{Arcing Event}
+\end{minipage}} &
+\multicolumn{2}{>{\centering\arraybackslash}p{(\linewidth - 10\tabcolsep) * \real{0.3883} + 2\tabcolsep}@{}}{%
+\begin{minipage}[b]{\linewidth}\centering
+\textbf{Normal Event}
+\end{minipage}} \\
+\midrule\noalign{}
+\endhead
+\multicolumn{2}{@{}>{\centering\arraybackslash}p{(\linewidth - 10\tabcolsep) * \real{0.2932} + 2\tabcolsep}}{%
+\begin{minipage}[b]{\linewidth}\centering
+\textbf{Relay Trips}
+\end{minipage}} &
+\multicolumn{2}{>{\centering\arraybackslash}p{(\linewidth - 10\tabcolsep) * \real{0.2932} + 2\tabcolsep}}{%
+\begin{minipage}[b]{\linewidth}\centering
+10
+\end{minipage}} &
+\multicolumn{2}{>{\centering\arraybackslash}p{(\linewidth - 10\tabcolsep) * \real{0.3883} + 2\tabcolsep}@{}}{%
+\begin{minipage}[b]{\linewidth}\centering
+1
+\end{minipage}} \\
+\multicolumn{2}{@{}>{\centering\arraybackslash}p{(\linewidth - 10\tabcolsep) * \real{0.2932} + 2\tabcolsep}}{%
+\begin{minipage}[b]{\linewidth}\centering
+\textbf{Relay remains on}
+\end{minipage}} &
+\multicolumn{2}{>{\centering\arraybackslash}p{(\linewidth - 10\tabcolsep) * \real{0.2932} + 2\tabcolsep}}{%
+\begin{minipage}[b]{\linewidth}\centering
+0
+\end{minipage}} &
+\multicolumn{2}{>{\centering\arraybackslash}p{(\linewidth - 10\tabcolsep) * \real{0.3883} + 2\tabcolsep}@{}}{%
+\begin{minipage}[b]{\linewidth}\centering
+9
+\end{minipage}} \\
+\bottomrule\noalign{}
+\end{longtable}
+}
+
+\textbf{Table E.9c.} Arc Fault Evaluation of Impact Drill Test
+Performance Matrix
+
+{\def\LTcaptype{none} % do not increment counter
+\begin{longtable}[]{@{}llll@{}}
+\toprule\noalign{}
+\textbf{Accuracy} & \textbf{Precision} & \textbf{Recall} &
+\textbf{F1-Score} \\
+\midrule\noalign{}
+\endhead
+95\% & 90.91\% & 100\% & 95.24\% \\
+\bottomrule\noalign{}
+\end{longtable}
+}
+
+\section{Arc Fault Test Result for Heat Gun}\label{appendix-e.10.-arc-fault-test-result-for-heat-gun}
+
+\textbf{Table E.10a.} Arc Fault Evaluation of Heat Gun Test Result
+
+{\def\LTcaptype{none} % do not increment counter
+\begin{longtable}[]{@{}
+  >{\raggedright\arraybackslash}p{(\linewidth - 10\tabcolsep) * \real{0.1611}}
+  >{\raggedright\arraybackslash}p{(\linewidth - 10\tabcolsep) * \real{0.1611}}
+  >{\raggedright\arraybackslash}p{(\linewidth - 10\tabcolsep) * \real{0.1611}}
+  >{\raggedright\arraybackslash}p{(\linewidth - 10\tabcolsep) * \real{0.1611}}
+  >{\raggedright\arraybackslash}p{(\linewidth - 10\tabcolsep) * \real{0.1611}}
+  >{\raggedright\arraybackslash}p{(\linewidth - 10\tabcolsep) * \real{0.1611}}@{}}
+\toprule\noalign{}
+\multicolumn{3}{@{}>{\centering\arraybackslash}p{(\linewidth - 10\tabcolsep) * \real{0.4834} + 4\tabcolsep}}{%
+\begin{minipage}[b]{\linewidth}\centering
+\textbf{Normal Trials}
+\end{minipage}} &
+\multicolumn{3}{>{\centering\arraybackslash}p{(\linewidth - 10\tabcolsep) * \real{0.4834} + 4\tabcolsep}@{}}{%
+\begin{minipage}[b]{\linewidth}\centering
+\textbf{Arc Trials}
+\end{minipage}} \\
+\begin{minipage}[b]{\linewidth}\centering
+\textbf{Trial}
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+\textbf{Relay Tripped?}
+
+\textbf{(FP)}
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+\textbf{Relay Still On?}
+
+\textbf{(TN)}
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+\textbf{Trial}
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+\textbf{Relay Tripped?}
+
+\textbf{(TP)}
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+\textbf{Relay Still On?}
+
+\textbf{(FN)}
+\end{minipage} \\
+\midrule\noalign{}
+\endhead
+\begin{minipage}[b]{\linewidth}\centering
+1
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+FALSE
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+TRUE
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+1
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+TRUE
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+FALSE
+\end{minipage} \\
+\begin{minipage}[b]{\linewidth}\centering
+2
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+FALSE
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+TRUE
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+2
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+TRUE
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+FALSE
+\end{minipage} \\
+\begin{minipage}[b]{\linewidth}\centering
+3
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+FALSE
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+TRUE
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+3
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+TRUE
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+FALSE
+\end{minipage} \\
+\begin{minipage}[b]{\linewidth}\centering
+4
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+FALSE
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+TRUE
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+4
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+TRUE
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+FALSE
+\end{minipage} \\
+\begin{minipage}[b]{\linewidth}\centering
+5
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+FALSE
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+TRUE
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+5
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+TRUE
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+FALSE
+\end{minipage} \\
+\begin{minipage}[b]{\linewidth}\centering
+6
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+FALSE
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+TRUE
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+6
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+TRUE
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+FALSE
+\end{minipage} \\
+\begin{minipage}[b]{\linewidth}\centering
+7
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+FALSE
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+TRUE
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+7
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+TRUE
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+FALSE
+\end{minipage} \\
+\begin{minipage}[b]{\linewidth}\centering
+8
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+FALSE
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+TRUE
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+8
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+TRUE
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+FALSE
+\end{minipage} \\
+\begin{minipage}[b]{\linewidth}\centering
+9
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+FALSE
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+TRUE
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+9
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+TRUE
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+FALSE
+\end{minipage} \\
+\begin{minipage}[b]{\linewidth}\centering
+10
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+FALSE
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+TRUE
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+10
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+TRUE
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+FALSE
+\end{minipage} \\
+\begin{minipage}[b]{\linewidth}\centering
+\textbf{Total}
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+\textbf{0}
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+\textbf{10}
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+\textbf{Total}
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+\textbf{10}
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+\textbf{0}
+\end{minipage} \\
+\bottomrule\noalign{}
+\end{longtable}
+}
+
+\textbf{Table E.10b.} Arc Fault Evaluation of Heat Gun Test Confusion
+Matrix
+
+{\def\LTcaptype{none} % do not increment counter
+\begin{longtable}[]{@{}
+  >{\raggedright\arraybackslash}p{(\linewidth - 10\tabcolsep) * \real{0.2820}}
+  >{\raggedright\arraybackslash}p{(\linewidth - 10\tabcolsep) * \real{0.0113}}
+  >{\raggedright\arraybackslash}p{(\linewidth - 10\tabcolsep) * \real{0.2820}}
+  >{\raggedright\arraybackslash}p{(\linewidth - 10\tabcolsep) * \real{0.0113}}
+  >{\raggedright\arraybackslash}p{(\linewidth - 10\tabcolsep) * \real{0.2820}}
+  >{\raggedright\arraybackslash}p{(\linewidth - 10\tabcolsep) * \real{0.1063}}@{}}
+\toprule\noalign{}
+\multicolumn{2}{@{}>{\centering\arraybackslash}p{(\linewidth - 10\tabcolsep) * \real{0.2932} + 2\tabcolsep}}{%
+\begin{minipage}[b]{\linewidth}\centering
+\end{minipage}} &
+\multicolumn{2}{>{\centering\arraybackslash}p{(\linewidth - 10\tabcolsep) * \real{0.2932} + 2\tabcolsep}}{%
+\begin{minipage}[b]{\linewidth}\centering
+\textbf{Arcing Event}
+\end{minipage}} &
+\multicolumn{2}{>{\centering\arraybackslash}p{(\linewidth - 10\tabcolsep) * \real{0.3883} + 2\tabcolsep}@{}}{%
+\begin{minipage}[b]{\linewidth}\centering
+\textbf{Normal Event}
+\end{minipage}} \\
+\midrule\noalign{}
+\endhead
+\multicolumn{2}{@{}>{\centering\arraybackslash}p{(\linewidth - 10\tabcolsep) * \real{0.2932} + 2\tabcolsep}}{%
+\begin{minipage}[b]{\linewidth}\centering
+\textbf{Relay Trips}
+\end{minipage}} &
+\multicolumn{2}{>{\centering\arraybackslash}p{(\linewidth - 10\tabcolsep) * \real{0.2932} + 2\tabcolsep}}{%
+\begin{minipage}[b]{\linewidth}\centering
+10
+\end{minipage}} &
+\multicolumn{2}{>{\centering\arraybackslash}p{(\linewidth - 10\tabcolsep) * \real{0.3883} + 2\tabcolsep}@{}}{%
+\begin{minipage}[b]{\linewidth}\centering
+0
+\end{minipage}} \\
+\multicolumn{2}{@{}>{\centering\arraybackslash}p{(\linewidth - 10\tabcolsep) * \real{0.2932} + 2\tabcolsep}}{%
+\begin{minipage}[b]{\linewidth}\centering
+\textbf{Relay remains on}
+\end{minipage}} &
+\multicolumn{2}{>{\centering\arraybackslash}p{(\linewidth - 10\tabcolsep) * \real{0.2932} + 2\tabcolsep}}{%
+\begin{minipage}[b]{\linewidth}\centering
+0
+\end{minipage}} &
+\multicolumn{2}{>{\centering\arraybackslash}p{(\linewidth - 10\tabcolsep) * \real{0.3883} + 2\tabcolsep}@{}}{%
+\begin{minipage}[b]{\linewidth}\centering
+10
+\end{minipage}} \\
+\bottomrule\noalign{}
+\end{longtable}
+}
+
+\textbf{Table E.10c.} Arc Fault Evaluation of Heat Gun Test Performance
+Matrix
+
+{\def\LTcaptype{none} % do not increment counter
+\begin{longtable}[]{@{}llll@{}}
+\toprule\noalign{}
+\textbf{Accuracy} & \textbf{Precision} & \textbf{Recall} &
+\textbf{F1-Score} \\
+\midrule\noalign{}
+\endhead
+100\% & 100\% & 100\% & 100\% \\
+\bottomrule\noalign{}
+\end{longtable}
+}

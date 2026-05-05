@@ -1,0 +1,29 @@
+\section{Overall Prototype Feasibility}
+\label{sec:ch4-overall-feasibility}
+
+The combined results show that the TinyML Smart Plug achieved the intended
+hybrid behavior under controlled laboratory conditions. The calibrated voltage,
+current, and temperature measurements were accurate enough to support the
+implemented thresholds. The overload tests showed warning behavior followed by
+relay trip only when sustained overload persisted. The socket-heating tests
+showed that degraded contact can cause faster and more severe heating than
+current magnitude alone suggests. The arc-fault tests showed that waveform
+features and Random Forest inference can support local relay action for
+series-arc events in the tested load set.
+
+The prototype is best interpreted as complementary protection. It adds
+socket-level monitoring of overload persistence, thermal rise, and waveform
+disturbance, but it is not a replacement for circuit breakers, AFCIs, GFCIs,
+proper wiring practice, contact inspection, or certified protection devices.
+This boundary matters because the tests were conducted on a laboratory bench,
+the thermal estimator was deliberately conservative, and the TinyML model was
+trained and evaluated on a finite set of loads and arc conditions.
+
+The results nevertheless support the study objective: a compact
+microcontroller-based smart plug can combine calibrated sensing, deterministic
+threshold logic, compensated socket-temperature estimation, local TinyML
+inference, relay latching, and PWA monitoring in a single prototype. The next
+engineering step is not simply to lower thresholds or add more model
+complexity; it is to broaden the dataset, validate the thermal estimator
+against additional socket constructions, test across more appliance families,
+and compare behavior against applicable protection-device standards.

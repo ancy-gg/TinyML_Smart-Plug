@@ -1,0 +1,163 @@
+\section{Fault Detection and Protection Logic}
+\label{sec:ch3-protection-logic}
+
+The protection manager receives calibrated voltage, calibrated RMS current,
+estimated socket temperature, and TinyML arc output. It then assigns warning
+and trip states according to thresholds and persistence rules in the firmware.
+The relay is opened only after a trip condition is accepted by the protection
+logic; warnings alone do not disconnect the load.
+
+\section{Voltage Protection}
+\label{sec:ch3-voltage-protection}
+
+Voltage protection uses calibrated RMS voltage and mains-present state. The
+firmware defines the normal operating band as 200--250V. Instantaneous
+undervoltage protection is set at 170V, delayed undervoltage is set below
+200V for 7s, delayed overvoltage is set above 250V for 7s, and
+instantaneous overvoltage is set at 260V. Recovery requires the voltage to
+return to 212--250V and remain stable for 5min.
+
+These values are summarized in Table~\ref{tab:ch3-voltage-thresholds}.
+\begin{table}[H]
+  \centering
+  \caption{Voltage-protection thresholds verified from firmware}
+  \label{tab:ch3-voltage-thresholds}
+  \begin{tabular}{p{0.36\textwidth}p{0.20\textwidth}p{0.34\textwidth}}
+    \toprule
+    Condition & Firmware value & Interpretation \\
+    \midrule
+    Normal lower limit & 200V & Lower edge of normal operation \\
+    Normal upper limit & 250V & Upper edge of normal operation \\
+    Instant undervoltage & 170V & Immediate severe undervoltage trip \\
+    Delayed undervoltage & 200V for 7s & Persistent low-voltage trip \\
+    Delayed overvoltage & 250V for 7s & Persistent high-voltage trip \\
+    Instant overvoltage & 260V & Immediate severe overvoltage trip \\
+    Recovery band & 212--250V for 5min & Stable voltage required before recovery \\
+    \bottomrule
+  \end{tabular}
+\end{table}
+
+Table~\ref{tab:ch3-voltage-thresholds} shows that the voltage logic includes
+both instantaneous and delayed decisions. This avoids treating every brief
+voltage excursion as a latched trip while still allowing severe voltage
+conditions to disconnect promptly.
+
+\section{Overload Protection}
+\label{sec:ch3-overload-protection}
+
+The overload logic separates warning from relay trip. A warning begins when
+current exceeds 10.0A after the warning delay and clears below 9.6A. A
+sustained-overload trip requires the current average to remain above 14.5A
+long enough for the overload score to reach the trip score.
+
+The persistence score is represented as
+\begin{equation}
+  S_{\mathrm{OL}}[k] =
+  \min\left(S_{\max}, S_{\mathrm{OL}}[k-1] + 1\right),
+  \qquad I_{\mathrm{avg}}\geq 14.5\mathrm{A},
+  \label{eq:overload-score-rise}
+\end{equation}
+and
+\begin{equation}
+  S_{\mathrm{OL}}[k] =
+  \max\left(0, S_{\mathrm{OL}}[k-1] - 1\right),
+  \qquad I_{\mathrm{avg}}\leq 14.1\mathrm{A}.
+  \label{eq:overload-score-fall}
+\end{equation}
+In (\ref{eq:overload-score-rise}) and (\ref{eq:overload-score-fall}),
+$S_{\mathrm{OL}}$ is the sustained-overload score, $I_{\mathrm{avg}}$ is the
+firmware's 1s averaged current, and $S_{\max}=6$. The score is updated every
+10s, and relay trip occurs at $S_{\mathrm{OL}}=6$. Therefore, a persistent
+overload near or above 14.5A trips after about 60s, while shorter excursions
+can produce warnings without disconnection. Persistence-based behavior is
+consistent with the principle that overcurrent protection should distinguish
+brief transients from sustained thermal stress [22].
+
+\section{Socket-Heating Protection}
+\label{sec:ch3-heating-protection}
+
+Socket-heating protection uses the estimated socket temperature
+$T_{\mathrm{socket,est}}$ from (\ref{eq:estimated-socket-temp}). The firmware
+uses a warning threshold of $39.0\degreeC$, a warning-clear threshold of
+$38.6\degreeC$, and a trip threshold of $40.0\degreeC$. The warning hysteresis
+reduces rapid warning toggling near the threshold, while the trip threshold
+creates a conservative response to possible contact heating.
+
+The trip rule is
+\begin{equation}
+  H =
+  \begin{cases}
+  1, & T_{\mathrm{socket,est}}\geq 40.0\degreeC,\\
+  0, & T_{\mathrm{socket,est}}<40.0\degreeC .
+  \end{cases}
+  \label{eq:heating-trip-rule}
+\end{equation}
+In (\ref{eq:heating-trip-rule}), $H$ is the heating-trip state. This trip
+criterion is intentionally based on the compensated socket estimate rather
+than the direct NTC temperature because the external NTC can under-read the
+contact hotspot during degraded-contact heating [30], [46], [47].
+
+\section{Series Arc-Fault Protection}
+\label{sec:ch3-arc-protection}
+
+The Random Forest arc model produces a frame-level arc class. The protection
+manager does not trip from a single isolated model output. Instead, the
+firmware uses a leaky counter:
+\begin{equation}
+  C_{\mathrm{arc}}[k] =
+  \min\left(16, C_{\mathrm{arc}}[k-1] + 2\right),
+  \qquad \hat{y}_{\mathrm{arc}}=1,
+  \label{eq:arc-counter-rise}
+\end{equation}
+and
+\begin{equation}
+  C_{\mathrm{arc}}[k] =
+  \max\left(0, C_{\mathrm{arc}}[k-1] - 6\right),
+  \qquad \hat{y}_{\mathrm{arc}}=0 .
+  \label{eq:arc-counter-fall}
+\end{equation}
+In (\ref{eq:arc-counter-rise}) and (\ref{eq:arc-counter-fall}),
+$C_{\mathrm{arc}}$ is the arc persistence counter and
+$\hat{y}_{\mathrm{arc}}$ is the TinyML model output. The relay trips when
+$C_{\mathrm{arc}}\geq 8$. The counter therefore requires repeated arc-positive
+frames and quickly decays when the classifier output returns to normal.
+
+The firmware also includes a current-return verification path. If current
+falls below 0.03A before the arc counter reaches the trip threshold, the
+system waits up to 200ms to verify whether current returns before treating the
+event as an arc trip. This guards against disconnecting on a simple load turn
+off while still allowing fast response to arc-like interruption and restrike.
+
+\section{Protection Priority and Latching}
+\label{sec:ch3-priority-latching}
+
+When multiple protection conditions are present, the firmware assigns
+priorities: socket heating has priority 90, arc fault has priority 80,
+sustained overload has priority 60, and voltage protection has priority 50.
+The relay-latching circuit is pulsed by the firmware after a trip decision and
+the fault state remains latched until the user clears it. The priority values
+do not change the underlying detection equations; they determine which fault
+reason is reported when conditions overlap.
+
+The principal thresholds are summarized in Table~\ref{tab:ch3-protection-summary}.
+\begin{table}[H]
+  \centering
+  \caption{Principal protection thresholds verified from firmware}
+  \label{tab:ch3-protection-summary}
+  \begin{tabular}{p{0.26\textwidth}p{0.30\textwidth}p{0.34\textwidth}}
+    \toprule
+    Protection function & Warning or model threshold & Relay-trip condition \\
+    \midrule
+    Voltage & Outside 200--250V band & Instant 170/260V or delayed 7s low/high voltage \\
+    Overload & Warning above 10.0A; clear below 9.6A & 1s current average at or above 14.5A for about 60s \\
+    Socket heating & Warning at 39.0°C; clear at 38.6°C & Estimated socket temperature at or above 40.0°C \\
+    Series arc fault & RF probability threshold depends on context & Arc counter reaches 8 from repeated arc-positive frames \\
+    \bottomrule
+  \end{tabular}
+\end{table}
+
+Table~\ref{tab:ch3-protection-summary} shows that the prototype uses a hybrid
+method: deterministic thresholds for voltage, overload, and temperature, and
+TinyML-supported classification for series arcs. The hybrid design is intended
+to complement existing protection devices by observing socket-level thermal
+and waveform behavior that may not be sufficient to trip a branch breaker.

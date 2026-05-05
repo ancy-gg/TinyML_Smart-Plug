@@ -1,0 +1,138 @@
+\section{Physical Setup and Hardware Implementation}
+\label{sec:ch3-physical-setup}
+
+The physical implementation combined a line-side plug, protected outlet,
+solid-state relay module, ESP32-S3 controller, voltage sensor, current sensor,
+NTC thermistor, anti-aliasing circuit, backup supply, OLED display, buzzer,
+and enclosure. The hardware was organized so that mains conductors, sensing
+circuits, low-voltage logic, and user-interface wiring could be traced
+separately during testing.
+
+Figure~\ref{fig:ch3-block-diagram} gives the hardware block-level view before
+the detailed schematic is introduced.
+\begin{figure}[H]
+  \centering
+  \includegraphics[width=0.95\textwidth]{ch3/figure_3.4.png}
+  \caption{Block diagram of the prototype hardware.}
+  \label{fig:ch3-block-diagram}
+\end{figure}
+
+Figure~\ref{fig:ch3-block-diagram} shows that the relay is positioned as the
+final protective actuator, while the voltage, current, and temperature sensors
+serve as inputs to the ESP32-S3. This placement allows the firmware to remove
+power from the protected outlet after a protection condition is confirmed.
+
+The full circuit schematic is shown in Figure~\ref{fig:ch3-full-schematic}.
+\begin{figure}[H]
+  \centering
+  \includegraphics[width=\textwidth]{ch3/figure_3.5.png}
+  \caption{Full schematic of the TinyML Smart Plug prototype.}
+  \label{fig:ch3-full-schematic}
+\end{figure}
+
+Figure~\ref{fig:ch3-full-schematic} identifies the current-sensing path, NTC
+temperature path, voltage-sensing path, MCP3204 ADC, relay-latching circuit,
+and auxiliary supply. The schematic also shows the current-channel
+anti-aliasing stage used before waveform sampling. This stage is necessary
+because FFT-based and band-energy features are sensitive to out-of-band signal
+content folded into the sampled spectrum [70].
+
+The anti-aliasing circuit and its frequency response are shown in
+Figures~\ref{fig:ch3-aaf-circuit} and~\ref{fig:ch3-aaf-bode}.
+\begin{figure}[H]
+  \centering
+  \includegraphics[width=0.70\textwidth]{ch3/figure_3.6.png}
+  \caption{Second-order multiple-feedback low-pass anti-aliasing circuit.}
+  \label{fig:ch3-aaf-circuit}
+\end{figure}
+
+\begin{figure}[H]
+  \centering
+  \includegraphics[width=0.70\textwidth]{ch3/figure_3.7.png}
+  \caption{Bode response of the anti-aliasing filter.}
+  \label{fig:ch3-aaf-bode}
+\end{figure}
+
+Figure~\ref{fig:ch3-aaf-circuit} shows the analog low-pass filter placed
+between the current sensor and the ADC. Figure~\ref{fig:ch3-aaf-bode} verifies
+that the filter attenuates higher-frequency content before sampling. The
+implemented firmware also applies a digital soft anti-aliasing filter in the
+current-feature path, so the analog and digital filters work together rather
+than as isolated design elements [57].
+
+The internal arrangement was first modeled before assembly. Figure~\ref{fig:ch3-model-no-case}
+shows the prototype layout without the case.
+\begin{figure}[H]
+  \centering
+  \includegraphics[width=0.85\textwidth]{ch3/figure_3.8.png}
+  \caption{Three-dimensional model of the prototype without the case.}
+  \label{fig:ch3-model-no-case}
+\end{figure}
+
+Figure~\ref{fig:ch3-model-no-case} was used to check the relative placement of
+the PCB, outlet, relay, fan, and front-panel controls before final enclosure
+assembly. This reduced the chance that the enclosure would interfere with
+airflow, wiring, or user access.
+
+The corresponding assembled device without the outer case is shown in
+Figure~\ref{fig:ch3-actual-no-case}.
+\begin{figure}[H]
+  \centering
+  \includegraphics[width=0.85\textwidth]{ch3/figure_3.9.png}
+  \caption{Actual prototype assembly without the case.}
+  \label{fig:ch3-actual-no-case}
+\end{figure}
+
+Figure~\ref{fig:ch3-actual-no-case} confirms that the physical wiring followed
+the planned internal organization. The exposed view was used during bench
+testing to probe the sensing, supply, relay, and communication subsystems.
+
+The enclosure model is shown in Figure~\ref{fig:ch3-model-with-case}.
+\begin{figure}[H]
+  \centering
+  \includegraphics[width=0.85\textwidth]{ch3/figure_3.10.png}
+  \caption{Three-dimensional model of the prototype with the case.}
+  \label{fig:ch3-model-with-case}
+\end{figure}
+
+Figure~\ref{fig:ch3-model-with-case} shows the intended user-facing
+arrangement: outlet access, front controls, ventilation, and rear plug
+connection. The enclosure therefore served both a mechanical and an
+operator-interface purpose.
+
+The completed enclosed prototype is shown in Figure~\ref{fig:ch3-actual-with-case}.
+\begin{figure}[H]
+  \centering
+  \includegraphics[width=0.85\textwidth]{ch3/figure_3.11.png}
+  \caption{Actual prototype with the case installed.}
+  \label{fig:ch3-actual-with-case}
+\end{figure}
+
+Figure~\ref{fig:ch3-actual-with-case} shows the plug side and outlet side of
+the completed device. This view documents the final physical form used for the
+overload, socket-heating, and series arc-fault tests described later in this
+chapter.
+
+The major hardware elements are summarized in Table~\ref{tab:ch3-hardware}.
+\begin{table}[H]
+  \centering
+  \caption{Major hardware elements of the prototype}
+  \label{tab:ch3-hardware}
+  \begin{tabular}{p{0.30\textwidth}p{0.25\textwidth}p{0.35\textwidth}}
+    \toprule
+    Subsystem & Component used & Purpose \\
+    \midrule
+    Microcontroller & ESP32-S3 & Local computation, Wi-Fi communication, TinyML inference, relay control \\
+    Voltage sensing & ZMPT101B module & RMS voltage measurement and voltage protection input \\
+    Current sensing & ACS37035 with MCP3204 ADC & RMS current measurement and waveform-feature source \\
+    Temperature sensing & 10 k$\Omega$ NTC thermistor & External socket-temperature measurement for thermal estimation \\
+    Protection actuator & Solid-state relay module & Load disconnection after latched protection condition \\
+    User interface & OLED, buzzer, LEDs, PWA & Local and remote warning and monitoring \\
+    \bottomrule
+  \end{tabular}
+\end{table}
+
+Table~\ref{tab:ch3-hardware} shows that the prototype combines conventional
+sensing and switching hardware with local embedded inference. The hardware
+alone does not determine the protection behavior; the firmware computations in
+the following sections define how the raw signals are interpreted.

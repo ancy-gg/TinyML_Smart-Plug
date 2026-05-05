@@ -1,0 +1,907 @@
+\chapter{REVIEW OF RELATED LITERATURE}\label{chap:review-of-related-literature}
+
+This chapter reviews the literature that supports the development of the
+proposed TinyML Smart Plug as a socket-level protection device for
+progressive electrical-fire precursors. Rather than treating electrical
+faults as a single undifferentiated class of events, the review is
+organized around the specific hazards that motivated the prototype:
+overload-related thermal stress, localized contact heating at the
+plug-socket interface, series arc faults, and abnormal supply conditions
+that may intensify equipment stress or affect protection behavior. It
+also reviews related literature on non-intrusive load monitoring, TinyML
+deployment on microcontrollers, current-signal feature extraction,
+embedded fault detection, and validation practices for
+protection-oriented devices. The chapter is divided into three major
+parts: theoretical background, related studies, and synthesis.
+
+\section{Theoretical Background}\label{theoretical-background}
+
+This section presents the theoretical concepts needed to understand the
+fault conditions addressed by the study. It begins with the residential
+electrical-fire problem and then narrows the discussion to electrical
+fault mechanisms, conventional protective devices, contact heating,
+external temperature measurement, waveform disturbance, conduction
+intermittence, and load-family behavior. These concepts establish why
+the proposed system was designed as a complementary socket-level
+protection device rather than as a replacement for existing circuit
+protection.
+
+\subsection{Residential Fire-Risk and Protection Gap}\label{residential-fire-risk-and-protection-gap}
+
+Electrical faults remain a persistent residential safety problem because
+not all hazardous conditions develop as instant catastrophic failures.
+In the Philippines, {[}1{]} identified electrical issues as the leading
+cause of recorded fire incidents, emphasizing that domestic electrical
+safety remains a practical and not merely theoretical concern. This is
+reinforced by NFPA fire statistics showing that electrical failure or
+malfunction continues to account for a substantial share of home
+structure fires, injuries, and losses {[}2{]}.
+
+The core implication for this study is that many dangerous electrical
+events evolve gradually. Some are cleared quickly by conventional
+protection, but others develop in a sub-breaker regime in which heat,
+contact degradation, and intermittent conduction are already becoming
+hazardous while the branch circuit still appears electrically
+acceptable. This gap between ordinary operation and fully developed
+failure is the operating space addressed by the proposed smart plug.
+
+Since residential fire risk can arise from different electrical
+mechanisms, the next section distinguishes among the fault classes that
+may occur in household circuits and clarifies which of these are most
+relevant to the proposed device.
+
+\subsection{Electrical Fault Mechanisms}\label{electrical-fault-mechanisms}
+
+Overload is a sustained current demand above the intended operating
+capacity of a conductor, outlet, or protection device. It is
+fundamentally a thermal process because Joule heating rises with current
+and time. Conventional low-voltage breakers are intentionally
+inverse-time devices: lower overcurrents are tolerated longer, while
+larger overcurrents trip more quickly {[}12{]}. This design is necessary
+to avoid nuisance trips, but it also means that a localized plug, relay,
+receptacle, or appliance cord can remain under significant thermal
+stress before upstream protection is forced to operate. For common
+PVC-insulated low-voltage cables, the 70°C conductor temperature remains
+a meaningful thermal reference, and repeated thermal stress accelerates
+insulation aging and deterioration {[}13{]}, {[}14{]}.
+
+Short circuits and ground faults are more abrupt fault classes. A short
+circuit produces a low-impedance path and very high current, while a
+ground fault diverts current through an unintended path to earth or
+grounded metal. For personnel protection, the danger of ground-fault
+current is severe because fibrillation can occur at relatively low
+current levels, especially when body resistance is reduced by moisture
+{[}15{]}. In practice, these fault classes are already well served by
+breakers and residual-current or ground-fault protective devices, so
+they are reviewed here mainly to clarify why they were not the primary
+target of the present smart plug.
+
+Arc faults occupy a more difficult middle ground. A parallel arc can
+resemble a short circuit and may trip conventional overcurrent
+protection, but a series arc is limited by the load current and may
+therefore remain below the normal breaker trip region. AFCI literature
+consistently identifies this as the main reason arc-fault protection was
+developed: the waveform can be thermally dangerous without becoming a
+classical overcurrent event {[}16{]}. For a smart plug intended to
+protect the immediate load connection, this distinction is crucial
+because many plug-side and cord-side failures are series-arc-like before
+they ever become hard faults.
+
+High-resistance connection faults are especially relevant to this study
+because they explain why socket-level temperature monitoring is needed.
+A loose, corroded, worn, oxidized, or mechanically weakened contact
+increases local resistance, so the same operating current generates
+disproportionate local heating according to P=I\textsuperscript{2}R.
+Classic NIST work on glowing electrical connections and later studies on
+high-resistance mechanisms show that such faults can persist for long
+periods, ignite nearby polymers, and remain effectively invisible to
+ordinary breakers or GFCIs because the total current may stay within an
+otherwise normal appliance range {[}17{]}, {[}18{]}.
+
+Overvoltage and undervoltage are not the main fire mechanisms targeted
+by the research prototype, yet they remain important because they
+influence equipment stress and protection logic. Transient overvoltages
+can damage connected electronics, which is why surge protective devices
+are used to limit overvoltage at the load side {[}19{]}, {[}20{]}.
+Sustained undervoltage can also be harmful because some loads,
+especially motors, may overheat or operate inefficiently under depressed
+supply conditions. In the context of this study, voltage supervision
+therefore serves two purposes: direct protection against abnormal supply
+conditions and better interpretation of current-based fault signatures.
+
+After identifying the major electrical fault mechanisms, it is necessary
+to examine how existing protective devices respond to these conditions.
+This establishes why some faults are already adequately handled by
+conventional protection, while others require complementary monitoring.
+
+\subsection{Conventional Protective Devices and Their Limits}\label{conventional-protective-devices-and-their-limits}
+
+Conventional protection is effective because it is selective, but that
+same selectivity creates blind spots. Miniature circuit breakers
+primarily protect branch wiring against overload and short circuit.
+Their thermal-magnetic behavior, including fast tripping at high
+multiples of rated current and delayed tripping at lower overcurrent
+levels, is intentionally coordinated around conductor protection rather
+than local receptacle or plug-blade temperature {[}3{]}, {[}21{]},
+{[}22{]}.
+
+Ground-fault circuit interrupters compare outgoing and returning current
+and trip on small imbalances, typically around the milliampere range
+associated with leakage or shock hazards {[}23{]}. AFCIs were introduced
+to detect wiring arcs that overcurrent protection can miss, especially
+series arcs in branch circuits {[}16{]}. Surge protective devices,
+meanwhile, are intended to clamp transient overvoltages and prevent
+damage to downstream equipment {[}19{]}, {[}20{]}.
+
+Taken together, these devices provide important layers of protection,
+but none directly measure the thermal condition of the plug-socket
+interface. They are therefore not designed to identify a local hotspot
+created by poor contact pressure, oxidation, or partial separation while
+the total current remains modest. This is the central theoretical
+justification for the proposed prototype: not replacement protection,
+but complementary protection at the socket level, where early-stage
+heating and unstable conduction can begin.
+
+Because conventional protection does not directly observe the
+plug-socket interface, the next section focuses on the thermal behavior
+of poor contacts and degraded sockets, which form one of the main fault
+targets of the study.
+
+\subsection{Thermal Behavior of Poor Contacts and Degraded Sockets}\label{thermal-behavior-of-poor-contacts-and-degraded-sockets}
+
+The literature on glowing contacts, poor plug-receptacle interfaces, and
+overheated outlets converges on a single physical principle:
+electrical-fire precursors are often thermally local before becoming
+electrically global. The Development and Analysis of Electrical
+Receptacle Fires, authored by {[}24{]}, documented that loose terminal
+conditions resulted in substantial overheating, visible damage, and
+failure in receptacle systems. Later fire studies showed that glowing
+connections can persist, consume surrounding non-metal parts, and ignite
+plastics even though conventional protection may not operate {[}7{]},
+{[}17{]}.
+
+The importance of a socket-level monitor is therefore not merely that it
+measures temperature, but that it measures temperature near the region
+where hidden degradation manifests first. The thermal process may be
+modeled as a first-order system in which the local node temperature
+rises progressively toward a steady-state value set by injected Joule
+heating, thermal resistance to ambient, and thermal capacitance. In this
+view, dangerous faults do not need to create instant flame to be
+serious; they only need enough sustained local power to initiate
+oxidation, polymer softening, charring, and further growth of contact
+resistance.
+
+Standards and fire studies also show that external body temperature is
+not equivalent to true contact temperature. IEC 60884-1 classifies
+household plugs and socket-outlets for ordinary ambient temperatures not
+normally exceeding 40°C and uses temperature-rise criteria at internal
+conductive points rather than prescribing one universal external body
+limit {[}25{]}. IEC 60227 similarly preserves 70°C as a meaningful
+conductor-temperature reference for common PVC-insulated cable families,
+since this region is associated with insulation stress and visible wire
+degradation {[}14{]}. UL 498 also provides temperature-rise limits for
+attachment plugs and receptacles under test conditions {[}26{]}. When
+these standards are interpreted together with thermal lag and hidden
+contact-spot behavior, an early external intervention threshold becomes
+more defensible for a non-intrusive prototype.
+
+\subsection{External Temperature Measurement and Hotspot Underestimation}\label{external-temperature-measurement-and-hotspot-underestimation}
+
+For embedded socket monitoring, the NTC thermistor is useful because it
+is low-cost, sensitive in the temperature range of interest, easy to
+interface with, and suitable for continuous protection duty {[}27{]},
+{[}28{]}. However, the same literature also warns that NTC measurements
+must be interpreted with care. {[}27{]} defines thermal time constant as
+the time required for the sensor to traverse 63.2\% of a sudden
+temperature change, while {[}28{]} notes that the thermistor is useful
+for over-temperature protection but does not directly measure the
+hottest internal point of the system. {[}29{]} further explains that
+poor sensor placement increases lag because the controller only reacts
+to the temperature it ``sees'' through the measurement point.
+
+This matters directly for receptacle monitoring because the hottest
+point is usually inside the contact interface, and not at the external
+surface touched by the thermistor. {[}30{]} argued that surface
+temperature is a poor severity indicator when overheated contact spots
+are thermally separated from external surfaces. The study by {[}31{]} on
+indirect thermography indicates that the internal temperature of
+electromechanical relay contacts can significantly exceed the package
+temperature. In other words, an external sensor reading near 40°C can
+correspond to a hidden contact zone already much hotter than the
+measured point.
+
+For that reason, the 40°C threshold used in this study is best
+interpreted as a conservative early intervention threshold for a
+non-intrusive, thermally lagged sensor used to estimate a hidden
+hotspot. It sits below the internal temperature region associated with
+clearly abnormal accessible heating and well below severe
+material-stress levels, while remaining sufficiently above normal
+ambient temperatures. This provides a safety margin for sensor lag,
+thermal gradients, and placement uncertainty.
+
+With the thermal aspects of the fault problem established, we now turn
+our attention to series arc faults. Unlike contact heating, which is
+mainly thermal and localized, series arcs need to be detected based on
+their waveform behavior, as they can occur at current levels that are
+limited by the load.
+
+\subsection{Waveform Disturbance and Conduction Intermittence}\label{waveform-disturbance-and-conduction-intermittence}
+
+Arc fault detection is possible only because arcing modifies the current
+waveform in ways that healthy operation does not. The literature
+repeatedly describes arc currents as random, discontinuous, pulse-rich,
+and rich in abnormal harmonic or high-frequency energy, but it also
+warns that the exact appearance depends strongly on the connected load
+{[}32{]}--{[}34{]}. This has two important implications for the study.
+
+First, it justifies a waveform-disturbance family of features. These
+include descriptors related to harmonic distortion, spectral change,
+residual impulsiveness, and band-energy redistribution. In the
+literature, THD, high-frequency noise, residual or singular components,
+and spectral fluctuation are regularly used because arcs inject
+non-stationary energy that does not behave like ordinary steady-state
+appliance current {[}34{]}--{[}39{]}.
+
+Second, it justifies a conduction-intermittence family of features.
+Series arcs and unstable contacts often create partial conduction,
+zero-current gaps, restrikes, half-cycle asymmetry, and irregular
+zero-cross behavior. Accordingly, the literature emphasizes zero-current
+features, pulse counting, current-fluctuation descriptors, and
+zero-cross interval instability because they directly represent the
+intermittent-recontact nature of arcing and poor electrical connection
+{[}34{]}, {[}36{]}, {[}37{]}.
+
+Viewed together, waveform disturbance and conduction intermittence form
+a multi-domain profile of an arc fault. However, these indicators cannot
+be interpreted in isolation because many normal household loads are also
+electrically nonlinear. The next section therefore discusses the
+importance of non-intrusive load monitoring and load-family context in
+reducing false detections.
+
+\subsection{Non-Intrusive Load Monitoring and Load Families}\label{non-intrusive-load-monitoring-and-load-families}
+
+A further theoretical issue is that many healthy appliances are already
+nonlinear. Motors produce inrush and commutation effects; rectifier and
+SMPS loads draw peaky current; and phase-angle-controlled loads
+intentionally chop the waveform. NILM research demonstrates that these
+differences are not just nuisance artifacts but informative load
+signatures that can be extracted from current and voltage waveforms for
+appliance identification and load disaggregation {[}8{]},
+{[}40{]}--{[}42{]}.
+
+This is precisely why load family matters in fault detection. A waveform
+that looks abnormal for a resistive heater may be normal for a universal
+motor or rectifier load. Consequently, the detector must distinguish
+fault-induced non-stationarity from load-intrinsic nonlinearity.
+Context-aware inference, whether framed as NILM, load-family
+recognition, or appliance-family conditioning, is therefore not optional
+but a false-positive control strategy.
+
+TinyML makes this context-aware approach feasible on embedded hardware.
+Reviews of machine learning for microcontroller-class hardware and
+TensorFlow Lite Micro show that lightweight models can run within tight
+power, memory, and latency budgets when the feature space and runtime
+are carefully designed {[}32{]}, {[}43{]}. This makes a hybrid embedded
+architecture realistic: deterministic thresholds for hard safety limits,
+with lightweight inference for ambiguous waveform cases such as
+load-dependent series arcs.
+
+To summarize the theoretical boundary of the study, Table 2.1 compares
+the main electrical fault classes reviewed in this section. The table
+identifies the primary hazard associated with each fault, whether
+conventional protection generally handles it, and how each fault class
+relates to the proposed smart plug.
+
+\subparagraph{\texorpdfstring{\textbf{Table 2.1.} Summary of Electrical
+Faults}{Table 2.1. Summary of Electrical Faults}}\label{table-2.1.-summary-of-electrical-faults}
+
+{\def\LTcaptype{none} % do not increment counter
+\begin{longtable}[]{@{}
+  >{\raggedright\arraybackslash}p{(\linewidth - 6\tabcolsep) * \real{0.1994}}
+  >{\raggedright\arraybackslash}p{(\linewidth - 6\tabcolsep) * \real{0.2685}}
+  >{\raggedright\arraybackslash}p{(\linewidth - 6\tabcolsep) * \real{0.1849}}
+  >{\raggedright\arraybackslash}p{(\linewidth - 6\tabcolsep) * \real{0.2781}}@{}}
+\toprule\noalign{}
+\begin{minipage}[b]{\linewidth}\raggedright
+\textbf{Fault class}
+\end{minipage} & \begin{minipage}[b]{\linewidth}\raggedright
+\textbf{Primary hazard}
+\end{minipage} & \begin{minipage}[b]{\linewidth}\raggedright
+\textbf{Handled by Conventional Protection}
+\end{minipage} & \begin{minipage}[b]{\linewidth}\raggedright
+\textbf{Relevance}
+\end{minipage} \\
+\begin{minipage}[b]{\linewidth}\raggedright
+Overload
+\end{minipage} & \begin{minipage}[b]{\linewidth}\raggedright
+Thermal stress, insulation degradation, fire risk
+\end{minipage} & \begin{minipage}[b]{\linewidth}\raggedright
+Partially
+\end{minipage} & \begin{minipage}[b]{\linewidth}\raggedright
+A central target because branch breakers protect wiring, not necessarily
+the plug-socket interface.
+\end{minipage} \\
+\begin{minipage}[b]{\linewidth}\raggedright
+Short circuit
+\end{minipage} & \begin{minipage}[b]{\linewidth}\raggedright
+Immediate high-current damage and fire
+\end{minipage} & \begin{minipage}[b]{\linewidth}\raggedright
+Yes
+\end{minipage} & \begin{minipage}[b]{\linewidth}\raggedright
+Reviewed for scope delimitation; not the main target of the smart plug.
+\end{minipage} \\
+\begin{minipage}[b]{\linewidth}\raggedright
+Ground fault
+\end{minipage} & \begin{minipage}[b]{\linewidth}\raggedright
+Shock and leakage hazard
+\end{minipage} & \begin{minipage}[b]{\linewidth}\raggedright
+Yes
+\end{minipage} & \begin{minipage}[b]{\linewidth}\raggedright
+Reviewed to distinguish personnel-protection devices from the proposed
+socket-level fire-prevention focus.
+\end{minipage} \\
+\begin{minipage}[b]{\linewidth}\raggedright
+Series arc fault
+\end{minipage} & \begin{minipage}[b]{\linewidth}\raggedright
+Ignition-capable arcing below ordinary breaker trip levels
+\end{minipage} & \begin{minipage}[b]{\linewidth}\raggedright
+Not always
+\end{minipage} & \begin{minipage}[b]{\linewidth}\raggedright
+A central target because its current is load-limited and often
+waveform-dependent.
+\end{minipage} \\
+\begin{minipage}[b]{\linewidth}\raggedright
+High-resistance Connection
+\end{minipage} & \begin{minipage}[b]{\linewidth}\raggedright
+Localized contact heating, glowing, melting, ignition
+\end{minipage} & \begin{minipage}[b]{\linewidth}\raggedright
+No
+\end{minipage} & \begin{minipage}[b]{\linewidth}\raggedright
+A central target because the contact can overheat without causing a
+classical overcurrent event.
+\end{minipage} \\
+\begin{minipage}[b]{\linewidth}\raggedright
+Overvoltage
+\end{minipage} & \begin{minipage}[b]{\linewidth}\raggedright
+Equipment damage and stress
+\end{minipage} & \begin{minipage}[b]{\linewidth}\raggedright
+Partially
+\end{minipage} & \begin{minipage}[b]{\linewidth}\raggedright
+Included because voltage supervision improves protection and event
+interpretation.
+\end{minipage} \\
+\begin{minipage}[b]{\linewidth}\raggedright
+Undervoltage
+\end{minipage} & \begin{minipage}[b]{\linewidth}\raggedright
+Equipment stress, motor overheating, unreliable operation
+\end{minipage} & \begin{minipage}[b]{\linewidth}\raggedright
+Partially
+\end{minipage} & \begin{minipage}[b]{\linewidth}\raggedright
+Included as a supporting protection and measurement-quality condition.
+\end{minipage} \\
+\midrule\noalign{}
+\endhead
+\bottomrule\noalign{}
+\endlastfoot
+\end{longtable}
+}
+
+Table 2.1 shows that the proposed smart plug is not intended to replace
+breakers, GFCIs, AFCIs, or surge protective devices. Instead, it is
+positioned as a complementary protection layer for progressive
+fire-inducing faults that may remain dangerous before conventional
+protection is forced to operate. Standard circuit breakers are already
+effective at mitigating immediate, high-current events; therefore, this
+research excludes short circuits and high-current parallel arc faults as
+primary targets. The scope instead concentrates on more insidious fault
+conditions such as overload behavior that creates slow cumulative heat
+damage, series arc faults that operate below ordinary breaker
+thresholds, and contact heating caused by degraded plug-socket
+interfaces.
+
+It also clarifies why the study uses the term contact heating rather
+than treating high-resistance connection as the final hazard itself. A
+high-resistance connection is the electrical condition, but the
+fire-relevant consequence is localized heating. Contact heating is
+therefore defined in this study as the hazardous thermal state that
+occurs when a poor or loose localized connection at the plug-socket
+interface generates intense heat from ordinary operating current. This
+is the specific thermal pathway the prototype aims to detect because it
+can develop without immediate conventional protection response.
+
+\section{Related Studies}\label{sec:related-studies}
+
+With the theoretical basis of residential faults and the limitations of
+standard protective devices established, this section evaluates existing
+research to determine the most appropriate technical direction for the
+study. The review begins with non-intrusive load monitoring because load
+context affects how waveform disturbances should be interpreted. It then
+moves to TinyML feasibility, arc-fault detection features,
+threshold-based overload protection, receptacle heating studies, TinyML
+training strategy, and validation practices.
+
+\subsection{Non-Intrusive Load Monitoring and Load-Family Identification Studies}\label{non-intrusive-load-monitoring-and-load-family-identification-studies}
+
+Recent non-intrusive load monitoring studies support the idea that
+useful appliance information can be extracted from centralized
+electrical measurements without installing dedicated sensors on every
+device. {[}8{]} shows that NILM can be used not only for energy
+disaggregation but also for automation-oriented services in residential
+buildings, while the PLAID dataset in {[}40{]} demonstrates that
+plug-load identification from sampled voltage and current waveforms is
+feasible across many household appliances and operating instances.
+Together, these studies justify the use of one electrical measurement
+stream for both protection and context recognition {[}8{]}, {[}40{]}.
+
+Feature-based NILM studies are especially relevant because they show
+that load identification does not always require large end-to-end
+deep-learning models. {[}41{]} uses steady-state current waveform
+features in a rule-based framework, while {[}42{]} demonstrates that
+percentage THD can serve as a meaningful descriptor of load patterns in
+smart-home environments. These findings support classifying appliances
+into load families, such as resistive, inductive, rectifier/SMPS,
+phase-angle-controlled, and brush-motor loads, before interpreting
+abnormal waveform behavior {[}41{]}, {[}42{]}.
+
+The importance of load-family recognition in this study is therefore
+protective, not merely descriptive. Healthy household loads can
+naturally produce commutation spikes, conduction gaps, or harmonic
+distortion that may resemble fault behavior if they are evaluated
+without context. The NILM literature supports the claim that family
+recognition provides a necessary interpretive layer before a
+protection-oriented detector decides whether a waveform disturbance is
+intrinsic to the load or evidence of a developing electrical fault
+{[}8{]}, {[}40{]}--{[}42{]}.
+
+Since load-family recognition requires embedded interpretation of
+waveform features, the next section examines whether machine-learning
+inference can realistically be performed on a microcontroller-class
+smart plug.
+
+\subsection{TinyML Feasibility on Resource-Constrained Microcontrollers}\label{tinyml-feasibility-on-resource-constrained-microcontrollers}
+
+The feasibility of running machine-learning models on
+microcontroller-class hardware is well established in the TinyML
+literature. The review in {[}32{]} explains that successful deployment
+depends on a hardware-aware workflow in which data preparation, feature
+design, model selection, and resource limits are considered together
+rather than separately. This is directly relevant to the study, since
+the proposed smart plug must perform sensing, signal processing,
+inference, actuation, and communication inside a constrained embedded
+system {[}32{]}.
+
+This feasibility is reinforced by {[}43{]}, which presents TensorFlow
+Lite Micro as an inference framework designed for systems with severe
+memory and runtime constraints, and by {[}10{]}, which shows that
+TinyML-style anomaly detection can be built around low-cost runtime
+operations when the processing pipeline is designed carefully. These
+studies support a compact, feature-based embedded pipeline over a large
+end-to-end model that would be harder to justify on a small
+microcontroller {[}10{]}, {[}43{]}.
+
+The practical implication is that the strongest embedded design is not
+necessarily the most complex one, but the one that preserves physical
+interpretability and remains deployable under real runtime limits. This
+supports the study's hybrid philosophy: deterministic threshold logic
+for conditions with clear physical limits, and lightweight inference for
+ambiguous waveform cases in which feature interaction and load context
+materially improve detection quality {[}10{]}, {[}32{]}, {[}43{]}.
+
+Having established that TinyML deployment is feasible, the review now
+focuses on the most difficult fault class for the proposed system:
+series arc detection. Unlike overload and socket heating, arc faults
+often require multi-feature interpretation because their current
+magnitude alone may not be sufficient.
+
+\subsection{Arc-Fault Detection Studies and the Relevance of Multi-Domain Features}\label{arc-fault-detection-studies-and-the-relevance-of-multi-domain-features}
+
+Recent arc-fault literature consistently shows that low-voltage series
+arcs are difficult to detect because they are load-dependent,
+stochastic, and often masked by healthy nonlinear appliances. The review
+in {[}33{]} identifies recurring challenges in AI-based arc-fault
+detection, including limited data, false alarms, missed detections, and
+poor generalization across loads. This is important to the study because
+it shows that arc detection should be framed as a constrained,
+multi-feature classification problem rather than as a single-threshold
+decision on one waveform quantity {[}33{]}.
+
+Feature-oriented studies point in the same direction. {[}34{]} combines
+current-fluctuation features with zero-current features to capture the
+concealed and random character of series arcs. {[}35{]} examines THD as
+a discriminant for series-arc behavior in single-phase networks, while
+{[}36{]} combines high-frequency noise sensing with zero-crossing period
+analysis in a multi-load setting. More recent works such as {[}37{]},
+{[}38{]}, and {[}39{]} also rely on multi-feature fusion, even though
+their final models differ. The common message across these studies is
+that useful arc evidence comes from combining complementary indicators
+of distortion, randomness, interruption, and context rather than from
+relying on current magnitude alone {[}34{]}--{[}39{]}.
+
+Another consistent lesson from this literature is that useful arc
+information is not confined to a single frequency band or a single
+analysis domain. Some studies exploit high-frequency content, some rely
+on zero-current or cycle-randomness descriptors, and others combine
+several feature families before classification. For the study, this
+supports organizing the current-signal review into two coherent groups:
+waveform disturbance and conduction intermittence. These groups are not
+independent mechanisms, but complementary views of the same arc process
+{[}34{]}--{[}39{]}, {[}49{]}.
+
+\subsubsection{Waveform Disturbance}\label{sec:waveform-disturbance}
+
+Waveform-disturbance features describe how arcing injects broadband
+distortion, cycle asymmetry, and unstable spectral content into the
+current waveform. A useful starting point is the family of
+frequency-band energy features. {[}49{]} performs FFT-based integration
+of current content above 100Hz and shows that arc states increase
+integrated spectral content, while {[}50{]} uses time-frequency
+decomposition and sub-band energy to characterize serial arc behavior.
+These studies support the logic of the midband residual ratio, which
+isolates spectral energy in a selected midband after suppressing the
+dominant fundamental structure, then normalizes that energy against a
+baseline current reference so that the resulting ratio is more
+comparable across loads {[}49{]}, {[}50{]}.
+
+A second waveform-disturbance descriptor is spectral change over time.
+{[}49{]} treats cycle-to-cycle difference and current-cycle similarity
+as ways to capture arc randomness, while {[}51{]} includes spectral flux
+in a broader waveform-monitoring feature space. For the study, spectral
+flux is therefore best understood as a frame-to-frame measure of
+spectral instability rather than as a direct measure of arc magnitude.
+This makes it useful for identifying the non-stationary spectral
+injections associated with unstable conduction {[}49{]}, {[}51{]}.
+
+Waveform disturbance also includes half-cycle shape distortion. {[}49{]}
+explicitly notes that, under arc conditions, the current can exhibit
+missing waveforms, positive-negative irregularity, and semi-axis
+asymmetry. That observation supports the use of half-cycle asymmetry in
+the study, where the positive and negative portions of the waveform are
+compared as a compact way to quantify unequal conduction between half
+cycles {[}49{]}.
+
+For harmonic distortion, the literature supports a contextual rather
+than absolute interpretation. {[}35{]} investigated THD for series-arc
+detection, while {[}42{]} shows that THD is also informative for
+distinguishing healthy load patterns, and {[}52{]} explicitly uses THD
+together with the amplitudes of the third and fifth harmonics, RMS, RMS
+change rate, and pulse-derived features. This means THD should not be
+treated as a standalone proof of arcing; instead, it is better used as
+one disturbance feature inside a broader decision process that already
+accounts for the natural nonlinearity of certain appliance families
+{[}35{]}, {[}42{]}, {[}52{]}.
+
+Finally, high-frequency energy elevation is one of the most common
+spectral signatures of series arcing. {[}53{]} designed a band-pass
+filter specifically to isolate arc-related content and then developed an
+algorithm using arc-signal energy and pulse counts, while {[}36{]} also
+relies on high-frequency noise as part of its detection logic. These
+studies support the study's use of a high-frequency energy-change
+feature that tracks whether the upper-band energy share increases
+relative to a baseline or broader band, thereby capturing the broadband
+elevation that often accompanies arcing {[}36{]}, {[}53{]}.
+
+Waveform-disturbance features are useful because they capture the
+spectral and harmonic effects of arcing. However, arcing is also a
+conduction problem: the current may extinguish, restrike, and become
+discontinuous.
+
+\subsubsection{Conduction Intermittence}\label{sec:conduction-intermittence}
+
+Conduction-intermittence features describe how series arcs repeatedly
+extinguish and restrike, producing irregular current continuity even
+when the overall load current remains modest. {[}34{]} is the clearest
+support for this line of reasoning because it explicitly computes a
+zero-current time-proportional coefficient and combines it with a
+current-fluctuation measure. That makes {[}34{]} the proper anchor for
+the study's low-current runtime and low-current ratio features: both are
+intended to quantify how much of the observation window is spent in weak
+or interrupted conduction {[}34{]}.
+
+The same physical logic supports dispersion-based zero-cross metrics. In
+a healthy waveform, zero-cross intervals remain relatively regular,
+whereas in an arc state, they become more erratic because extinction and
+restrike disturb the timing of conduction around the zero region.
+{[}36{]} relies directly on zero-crossing period analysis, and {[}34{]}
+likewise centers its method on zero-current behavior. Hence, the study
+used the term zero-cross variance, which is derived from the dispersion
+of zero-cross intervals as outlined by studies {[}34{]} and {[}36{]}.
+
+Changes in RMS from one analysis interval to the next also belong to the
+conduction-intermittence family when they are interpreted as evidence of
+unstable conduction rather than simple load switching. {[}52{]}
+explicitly includes RMS and the change rate of RMS between adjacent
+cycles in its lightweight arc-fault method. This provides direct support
+for the study's use of an absolute delta-of-RMS feature to capture
+cycle-to-cycle instability that is too persistent and irregular to be
+explained by healthy steady-state conduction {[}52{]}.
+
+{[}54{]} introduces a moving Z-score method calculated from dual FFT
+bands. Building on this concept, the current study employs an absolute
+z-deviation from a rolling RMS baseline, adapting the normalization
+principle outlined in {[}54{]}. This feature generates a load-relative
+deviation score that helps maintain meaningful thresholds across
+appliances with significantly different baseline currents {[}54{]}.
+
+The arc-fault literature supports feature-based classification because
+series arcs are ambiguous and load-dependent. In contrast, overload is
+more directly tied to current magnitude and heating duration.
+
+\subsection{Studies on Overload Monitoring and Threshold-Based Protection}\label{studies-on-overload-monitoring-and-threshold-based-protection}
+
+Threshold-based domestic protection remains relevant because overload is
+a physical stress problem before it is a machine-learning problem.
+{[}44{]} presents a smart overload trip system that measures current and
+disconnects supply when the current exceeds a preset value, while
+{[}45{]} presents an ESP32-based smart multiplug with current and
+temperature monitoring, remote control, and protective thresholding.
+These studies support the study's use of direct and interpretable
+current-limit logic for overload protection {[}44{]}, {[}45{]}.
+
+Their importance to the study is architectural. They show that the
+smart-plug form factor can already accommodate sensing, communication,
+and protective switching. The present study therefore extends an already
+credible embedded architecture, but directs it toward a broader
+protection role by combining threshold protection with context-aware
+fault interpretation rather than stopping at current monitoring alone
+{[}44{]}, {[}45{]}.
+
+Since overload protection addresses current-related thermal stress, the
+next related fault concern is localized socket heating. Unlike overload,
+contact heating may occur even when total load current remains within a
+range that does not immediately force upstream breaker operation.
+
+\subsection{Receptacle Heating Studies and Early Socket-Temperature Trip}\label{receptacle-heating-studies-and-early-socket-temperature-trip}
+
+The most important heating studies for this project are the ones showing
+that poor contact is a local and progressive fire mechanism. {[}24{]}
+demonstrated that loose terminal conditions can produce severe
+overheating and receptacle damage across many test configurations.
+{[}17{]} showed that receptacles and attachment plugs subjected to
+glowing conditions could suffer severe material damage, while the
+current path itself could continue functioning. These findings strongly
+support the idea that a connection can remain electrically functional
+even when thermally dangerous.
+
+{[}46{]} simulated poor electric contact between plug and receptacle and
+showed that contact pressure strongly influences temperature rise and
+fire risk. {[}47{]} experimentally studied the ignition process caused
+by poor electrical contact and described a staged mechanism progressing
+from resistive heating and pyrolysis to arc-accelerated ignition.
+{[}7{]} also investigated glowing contact in electrical fires and
+highlighted that glowing phenomena may persist for hours while
+transferring hazardous heat to surrounding materials. Taken together,
+these studies show that socket heating is not a secondary symptom but a
+primary ignition pathway.
+
+The temperature-threshold question is best interpreted through studies
+of hidden versus measured temperature. {[}30{]} argued that there can be
+a large difference between overheated contact-spot temperature and
+external surface temperature. {[}31{]} again demonstrated that external
+package temperature can under-read internal contact temperature. This is
+the strongest scientific support for an early trip threshold such as
+40°C at an external NTC sensor. The argument is not that all outlets
+melt at 40°C, but that a 40°C external reading can already correspond to
+a hidden contact region operating far above that value. Considering the
+literature on standards, degradation, thermal lag, and indirect sensing,
+along with the limitations of the NTC sensor, the 40°C threshold is
+treated in this study as a conservative estimated tripping temperature.
+
+The related studies on overload and socket heating justify deterministic
+threshold protection, while the arc-fault studies justify feature-based
+inference. The next section connects these two approaches by discussing
+how TinyML training should be structured for embedded fault detection.
+
+\subsection{TinyML Training}\label{tinyml-training}
+
+The reviewed literature also supports the overall training strategy used
+by the study. First, feature nomination should begin from fault physics
+rather than from blind feature accumulation. NILM and arc studies
+consistently favor features that describe harmonic content, waveform
+stability, conduction gaps, restrikes, and cross-cycle irregularity
+because these are closer to the physical differences between healthy
+nonlinear loads and unstable electrical faults {[}34{]}--{[}37{]},
+{[}41{]}, {[}42{]}. This supports the study's decision to treat waveform
+disturbance and conduction intermittence as two coherent feature
+families.
+
+Second, the training data should represent the operating regimes the
+detector will actually see. That means not only arc windows, but also
+normal steady-state windows, turn-on transients, and load-family
+diversity. The literature on load dependence and false positives makes
+this especially important: a detector trained only on clean resistive
+examples will not generalize well to motors, rectifiers, or phase-angle
+loads {[}8{]}, {[}33{]}, {[}40{]}. Thus, the training pipeline used in
+the project, which captures start, steady, and arc segments, follows a
+structure already justified by the literature.
+
+Third, model selection in TinyML is not solely about raw test accuracy.
+The reviews by {[}32{]} and {[}43{]} both imply that model choice must
+account for runtime footprint, deterministic behavior, and deployment
+simplicity. For this reason, a practical workflow is to screen plausible
+feature subsets using a relatively fast ensemble method, then finalize a
+compact classifier such as a Random Forest or other lightweight model
+for deployment. This kind of staged search is consistent with the
+broader TinyML literature because it balances exploratory breadth with
+embedded realism.
+
+Finally, the load-family context should be trained separately or jointly
+in a way that informs the final arc decision. The literature strongly
+suggests that context should influence thresholds, persistence rules, or
+posterior interpretation rather than being treated as an isolated
+auxiliary label {[}8{]}, {[}33{]}, {[}41{]}. In practical terms, this
+means a smart plug should recognize whether it is observing a resistive
+heater, a motor, a rectifier, or a phase-angle-controlled load before
+deciding how aggressively to interpret impulsive waveform disturbances.
+
+After establishing how the model should be trained, the next concern is
+how the system should be validated. Because the proposed device
+addresses different fault classes, the validation procedure must also be
+divided according to the physical behavior of each fault.
+
+\subsection{Testing and Validation}\label{testing-and-validation}
+
+The validation literature supports using controlled, repeatable
+fault-induction methods rather than waiting for naturally occurring
+household faults. {[}48{]} constructs a dedicated AC arc-fault platform
+with a fixed electrode, a moving electrode driven by a stepper motor,
+and multiple household loads, which is the kind of repeatable setup
+needed for arc-data collection and algorithm evaluation. This supports
+the use of controlled arc-generation procedures in the study {[}48{]}.
+
+Validation should also extend beyond one appliance type. The
+load-diversity argument in NILM and arc-fault work implies that good
+performance on one heater or one motor is insufficient. A
+protection-oriented smart plug should therefore be validated across
+several load families, nuisance events, and non-fault transients so that
+its specificity is tested alongside its sensitivity {[}33{]}, {[}40{]},
+{[}41{]}, {[}48{]}.
+
+For overload and contact-heating validation, the literature supports a
+layered approach. Threshold-based smart-plug studies validate whether
+trip logic responds consistently when safety limits are exceeded, while
+poor-contact studies justify separate thermal validation for localized
+heating risk. The resulting implication for the study is that overload,
+arc detection, and contact heating should not be merged into one generic
+accuracy test; they require distinct procedures, reference measurements,
+and nuisance checks {[}44{]}--{[}48{]}.
+
+Table 2.2 summarizes how the reviewed literature maps to the feature and
+decision families used in the study. It groups the quantities into
+waveform disturbance, conduction intermittence, and deterministic stress
+variables to clarify why the prototype combines feature-based TinyML
+inference with threshold-based protection logic.
+
+\subparagraph{\texorpdfstring{\textbf{Table 2.2.} Feature Families
+Relevant in the
+Study}{Table 2.2. Feature Families Relevant in the Study}}\label{table-2.2.-feature-families-relevant-in-the-study}
+
+{\def\LTcaptype{none} % do not increment counter
+\begin{longtable}[]{@{}
+  >{\raggedright\arraybackslash}p{(\linewidth - 4\tabcolsep) * \real{0.2024}}
+  >{\raggedright\arraybackslash}p{(\linewidth - 4\tabcolsep) * \real{0.3228}}
+  >{\raggedright\arraybackslash}p{(\linewidth - 4\tabcolsep) * \real{0.4015}}@{}}
+\toprule\noalign{}
+\begin{minipage}[b]{\linewidth}\centering
+\textbf{Feature Family}
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+\textbf{Representative Quantities}
+\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
+\textbf{Literature}
+\end{minipage} \\
+\begin{minipage}[b]{\linewidth}\raggedright
+Waveform disturbance
+\end{minipage} & \begin{minipage}[b]{\linewidth}\raggedright
+Midband Residual Ratio;
+
+Spectral Flux at Mid to High Frequency;
+
+Halfcycle Assymetry;
+
+Current Total Harmonic Distortion;
+
+High Frequency Energy-Change
+\end{minipage} & \begin{minipage}[b]{\linewidth}\raggedright
+Arc studies repeatedly report that series arcs inject random harmonic
+and high-frequency disturbance, while NILM studies show that healthy
+loads also have family-specific spectral signatures, making these
+features informative but context-dependent {[}34{]}-{[}39{]}, {[}41{]},
+{[}42{]}, {[}49{]}-{[}53{]}.
+\end{minipage} \\
+\begin{minipage}[b]{\linewidth}\raggedright
+Conduction intermittence
+\end{minipage} & \begin{minipage}[b]{\linewidth}\raggedright
+Low-Current Runtime and Low Current Ratio;
+
+Zero-Cross Variance;
+
+Absolute Delta of Current RMS;
+
+Absolute Z-Deviation from Baseline
+\end{minipage} & \begin{minipage}[b]{\linewidth}\raggedright
+These quantities represent restrikes, current interruption, partial
+conduction, and unstable cycle timing, which are physically consistent
+with series arcs and weak-contact behavior {[}34{]}, {[}36{]}, {[}37{]},
+{[}52{]}, {[}54{]}.
+\end{minipage} \\
+\begin{minipage}[b]{\linewidth}\raggedright
+Deterministic stress variables
+\end{minipage} & \begin{minipage}[b]{\linewidth}\raggedright
+Irms; temperature estimate; voltage sag or abnormal supply condition
+\end{minipage} & \begin{minipage}[b]{\linewidth}\raggedright
+These variables directly encode thermal or electrical stress and
+therefore remain essential even when machine learning is added. They
+improve interpretability and provide hard safety overrides for overload
+and heating events {[}3{]}, {[}27{]}-{[}29{]}, {[}44{]}, {[}45{]}.
+\end{minipage} \\
+\midrule\noalign{}
+\endhead
+\bottomrule\noalign{}
+\endlastfoot
+\end{longtable}
+}
+
+Table 2.2 shows that the proposed feature set is not arbitrary. The
+waveform-disturbance features represent spectral and harmonic effects of
+arcing, while the conduction-intermittence features represent the
+extinguish-and-restrike behavior of unstable current flow. The
+deterministic stress variables remain necessary because some faults,
+particularly overload and socket heating, are better handled through
+direct physical thresholds than through classification alone. This table
+therefore supports the hybrid architecture of the study: machine
+learning is used where waveform interpretation is ambiguous, while
+deterministic logic is retained where physical safety limits are clear.
+
+\section{Synthesis}\label{synthesis}
+
+The reviewed literature supports the proposed smart plug most strongly
+when the device is framed as a complementary socket-level protection
+layer. Existing smart-plug and overload-monitoring studies already show
+that compact embedded devices can measure current and temperature,
+communicate with users, and actuate protective switching {[}44{]},
+{[}45{]}. At the same time, poor-contact fire studies show that the
+plug-receptacle interface is itself a meaningful origin of heating and
+ignition risk {[}46{]}, {[}47{]}. Taken together, these findings justify
+a protection device that monitors hazards locally at the socket rather
+than relying only on upstream protection behavior {[}44{]}--{[}47{]}.
+
+The literature also shows that overload, contact heating, and series
+arcing are related but not equivalent fault classes. Overload is
+fundamentally a current-stress problem and is therefore well-suited to
+deterministic threshold logic. Contact heating is a localized thermal
+problem caused by degraded or poor electrical contact and therefore
+requires direct local temperature supervision. Series arcing, by
+contrast, is load-dependent and stochastic; it often appears as a
+mixture of spectral disturbance, zero-current behavior, and cycle
+irregularity rather than as a dramatic increase in current magnitude.
+This is why the most defensible design is a hybrid one: hard thresholds
+for direct electrical or thermal stress, and feature-based inference for
+ambiguous waveform cases {[}34{]}--{[}39{]}, {[}44{]}--{[}47{]}.
+
+A second synthesis point concerns context. NILM and load-identification
+studies establish that healthy appliances have distinct waveform
+signatures, while arc-fault studies show that many healthy nonlinear
+behaviors can resemble fault signatures if load context is ignored.
+Therefore, load-family recognition is not merely an added analytics
+feature; it is part of the protection logic itself because it helps
+separate load-intrinsic nonlinearity from fault-induced non-stationarity
+{[}8{]}, {[}33{]}--{[}42{]}.
+
+A third synthesis point concerns implementation feasibility. The TinyML
+literature shows that on-device inference is realistic on
+microcontroller-class hardware when the pipeline is built around compact
+features, controlled memory use, and deployment-aware model selection.
+That makes the proposed architecture technically plausible: a smart plug
+can combine deterministic rules with a lightweight model, provided the
+feature computation, inference path, and safety logic are kept small,
+interpretable, and robust {[}10{]}, {[}32{]}, {[}43{]}.
+
+The gap addressed by the study is therefore clear. Prior work has
+separately shown the feasibility of smart-plug monitoring, the need for
+local supervision of poor-contact heating, the value of load-aware
+waveform interpretation, and the practicality of TinyML on constrained
+hardware. What remains comparatively underdeveloped is a single embedded
+device that unifies these ideas into one protection-oriented platform.
+The proposed TinyML Smart Plug addresses that gap by combining
+socket-level thermal supervision, threshold-based overload protection,
+load-family recognition, and multi-feature series-arc interpretation in
+one embedded system {[}8{]}, {[}10{]}, {[}32{]}--{[}47{]}.

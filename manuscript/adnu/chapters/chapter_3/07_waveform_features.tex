@@ -1,0 +1,152 @@
+\section{Waveform Feature Computation}
+\label{sec:ch3-waveform-features}
+
+The arc-detection firmware computes waveform features from current samples
+rather than from RMS current alone. This is necessary because a series arc can
+leave the load current below a conventional breaker trip level while still
+introducing low-current gaps, restrike pulses, irregular zero-crossing
+behavior, and mid/high-frequency energy [34], [35], [53], [54]. The firmware
+uses a 512-sample frame at a 27kHz target sampling rate, with a 256-sample
+hop. A Hann window is applied before the FFT to reduce spectral leakage, which
+is standard practice in discrete Fourier analysis [70], [75].
+
+The current RMS value used in the feature frame is computed as
+\begin{equation}
+  I_{\mathrm{rms}} =
+  \sqrt{\frac{1}{N}\sum_{n=0}^{N-1} i[n]^2}.
+  \label{eq:feature-rms}
+\end{equation}
+In (\ref{eq:feature-rms}), $i[n]$ is the calibrated current sample after the
+firmware's current conversion path and $N$ is the number of samples in the
+frame. RMS current represents the effective load current and is used both as a
+protection variable and as a baseline reference for several arc features.
+
+The firmware also computes current THD from the fundamental and harmonic tone
+powers:
+\begin{equation}
+  \mathrm{THD}_I =
+  100\sqrt{\frac{\sum_{h=2}^{10}P_h}{P_1}} .
+  \label{eq:feature-thd}
+\end{equation}
+In (\ref{eq:feature-thd}), $P_1$ is the tracked fundamental tone power and
+$P_h$ is the tone power of harmonic $h$. The firmware limits the harmonic sum
+to available harmonics below Nyquist. THD is useful because arcing and
+nonlinear loads can distort the current waveform, although THD alone is not
+sufficient for reliable arc detection [35].
+
+The mid/high-frequency spectral flux feature compares the normalized magnitude
+spectrum of the present frame with the previous frame:
+\begin{equation}
+  F_{\mathrm{midhf}} =
+  50\sum_{k=k_0}^{k_1}
+  \left|
+  \frac{M_k}{\sum_{r=k_0}^{k_1}M_r}
+  -
+  \frac{M_{k,\mathrm{prev}}}{\sum_{r=k_0}^{k_1}M_{r,\mathrm{prev}}}
+  \right|.
+  \label{eq:feature-spectral-flux}
+\end{equation}
+In (\ref{eq:feature-spectral-flux}), $M_k$ is the FFT magnitude in the 900Hz
+to 9000Hz flux band after skipping bins around mains harmonics. The factor 50
+comes from the firmware expression $0.5 \times 100$. This feature increases
+when the mid/high-frequency spectrum changes abruptly from one frame to the
+next, which is consistent with intermittent arc restrike behavior.
+
+The high-frequency energy delta compares the high-frequency energy share with
+its baseline:
+\begin{equation}
+  \Delta E_{\mathrm{HF}} =
+  10\log_{10}
+  \left(
+  \frac{E_{\mathrm{HF}}/(E_{\mathrm{HF}}+E_{\mathrm{UM}})+\epsilon}
+       {B_{\mathrm{HF}}+\epsilon}
+  \right).
+  \label{eq:feature-hf-delta}
+\end{equation}
+In (\ref{eq:feature-hf-delta}), $E_{\mathrm{HF}}$ is the 4500--9000Hz band
+energy, $E_{\mathrm{UM}}$ is the 900--4500Hz upper-midband energy,
+$B_{\mathrm{HF}}$ is the baseline high-frequency share, and $\epsilon$ is a
+small numerical offset. This feature detects a rise in high-frequency content
+relative to recent non-arcing operation.
+
+The midband residual ratio is computed from FFT energy in the 220--3200Hz
+midband after excluding harmonic bins:
+\begin{equation}
+  R_{\mathrm{mid}} =
+  20\log_{10}
+  \left(
+  \frac{\sqrt{E_{\mathrm{mid,res}}}/N}
+       {\max(B_I,\,0.10)}
+  \right).
+  \label{eq:feature-midband-ratio}
+\end{equation}
+In (\ref{eq:feature-midband-ratio}), $E_{\mathrm{mid,res}}$ is the residual
+midband energy, $N$ is the frame length, and $B_I$ is the baseline RMS current.
+The firmware uses a 0.10A floor to prevent division by a near-zero baseline.
+This feature emphasizes non-harmonic disturbance relative to the normal current
+level.
+
+The low-current ratio measures the portion of the frame close to zero current:
+\begin{equation}
+  L_{\mathrm{ratio}} =
+  \frac{100}{N}\sum_{n=0}^{N-1}
+  \mathbf{1}
+  \left(
+  |i_c[n]| \leq
+  \max(0.035,\,0.06\max(I_{\mathrm{rms}},0.10))
+  \right).
+  \label{eq:feature-low-current-ratio}
+\end{equation}
+In (\ref{eq:feature-low-current-ratio}), $i_c[n]$ is the cleaned current
+sample and $\mathbf{1}(\cdot)$ is an indicator function. The 0.035A floor and
+0.06 current fraction were verified from the firmware configuration. A high
+low-current ratio can indicate current interruption or gap behavior during a
+series arc.
+
+The maximum low-current run is computed as
+\begin{equation}
+  t_{\mathrm{low,max}} =
+  \frac{1000\,N_{\mathrm{run,max}}}{f_s}.
+  \label{eq:feature-low-current-run}
+\end{equation}
+In (\ref{eq:feature-low-current-run}), $N_{\mathrm{run,max}}$ is the longest
+consecutive run of samples satisfying the low-current condition in
+(\ref{eq:feature-low-current-ratio}) and $f_s$ is the sampling rate in hertz.
+The result is expressed in milliseconds and is one of the six deployed
+base features in the final arc model.
+
+The RMS-current baseline z-score is
+\begin{equation}
+  Z_I =
+  \frac{|I_{\mathrm{rms}}-\mu_I|}{\sigma_I+10^{-6}} .
+  \label{eq:feature-irms-zscore}
+\end{equation}
+In (\ref{eq:feature-irms-zscore}), $\mu_I$ and $\sigma_I$ are the adaptive
+baseline mean and standard deviation maintained by the firmware. The baseline
+is frozen when arc-like features or large current steps are detected, which
+prevents the baseline from immediately absorbing a fault signature.
+
+The feature groups used by the firmware are summarized in
+Table~\ref{tab:ch3-feature-groups}.
+\begin{table}[H]
+  \centering
+  \caption{Waveform features and physical interpretation}
+  \label{tab:ch3-feature-groups}
+  \begin{tabular}{p{0.26\textwidth}p{0.34\textwidth}p{0.30\textwidth}}
+    \toprule
+    Feature group & Computation basis & Physical meaning \\
+    \midrule
+    RMS and z-score & Frame RMS and adaptive baseline & Load magnitude and unusual current change \\
+    Low-current gap features & Low-current ratio, zero dwell, maximum low-current run & Current interruption and restrike gap behavior \\
+    Spectral features & FFT bands, spectral flux, high-frequency energy delta & Broadband and frame-to-frame disturbance \\
+    Residual features & Cleaned waveform minus low-frequency baseline & Non-harmonic spikes and midband disturbance \\
+    Shape features & Cycle NMSE, peak fluctuation, half-cycle asymmetry & Irregular cycle shape and asymmetry \\
+    Pulse features & Residual pulse count per cycle & Short spikes consistent with arc restrike \\
+    \bottomrule
+  \end{tabular}
+\end{table}
+
+Table~\ref{tab:ch3-feature-groups} shows why the final classifier used a
+combination of features. No single feature is expected to identify all arc
+faults across appliance families; the classifier instead combines gap,
+spectral, residual, and context information.

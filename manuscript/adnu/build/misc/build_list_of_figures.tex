@@ -1,0 +1,8 @@
+% !TEX program = xelatex
+% Fast build: list of figures using the latest full-build .lof file.
+\input{style/thesis_preamble.tex}
+\begin{document}
+\pagenumbering{roman}
+\chapter*{LIST OF FIGURES}
+\IfFileExists{logs/main.lof}{\input{logs/main.lof}}{Run the full main.tex build once to generate logs/main.lof.}
+\end{document}
