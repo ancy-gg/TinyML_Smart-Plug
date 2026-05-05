@@ -9,10 +9,6 @@ public:
   TempSensor(int pin);
   void begin();
   float readTempC();
-  // Socket hotspot estimate with an expected-normal comparison curve.
-  // - estimateSocketTempC(): live hotspot estimate used by protection/UI
-  // - expectedNormalSocketTempC(): healthy-socket reference curve for same load
-  // - socketTempExcessC(): how much hotter the estimate is than expected
   float estimateSocketTempC(float ntcTempC, float irmsA, bool mainsPresent);
   float expectedNormalSocketTempC() const { return _expectedNormalC; }
   float socketTempExcessC() const { return _socketExcessC; }

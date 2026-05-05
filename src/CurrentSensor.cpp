@@ -142,8 +142,6 @@ size_t CurrentSensor::capture(uint16_t* dst, size_t n, float* measuredFsHz) {
   spi_device_release_bus(_dev);
 
   if (measuredFsHz && captureT1 > captureT0 && count > 0) {
-    // Report the truthful in-frame capture cadence, excluding one-time preflush and
-    // warmup overhead that would otherwise jitter the apparent sample rate.
     float rawFs = (count * 1000000.0f) / float(captureT1 - captureT0);
     if (!isfinite(rawFs) || rawFs <= 0.0f) rawFs = 0.0f;
     *measuredFsHz = rawFs;

@@ -1151,7 +1151,6 @@ static void onOtaEvent(OtaEvent ev, int progress) {
       notification.showStatus("OTA FAILED", "Sense restart err");
       delay(700);
     }
-    // FAIL debug/log is handled after exclusive OTA mode exits.
   }
 }
 
@@ -1904,8 +1903,6 @@ void loop() {
   f.delta_hf_energy = fabsf(f.hf_energy_delta - prevHfDelta);
   f.delta_flux = fabsf(f.spectral_flux_midhf - prevFlux);
   f.v_sag_pct = (healthyVoltageBaseline > 10.0f) ? fmaxf(0.0f, ((healthyVoltageBaseline - vFast) / healthyVoltageBaseline) * 100.0f) : 0.0f;
-  // Hold the temporal energy feature at the exact value consumed this frame so
-  // runtime contexting, arc inference, logging, and retraining see the same input.
   f.suspicious_run_energy =
       tinymlClampFeatureValue(TINYML_FEATURE_SUSPICIOUS_RUN_ENERGY, suspiciousRunEnergy);
   f.invalid_loaded_flag = invalidWhileLoaded ? 1 : 0;
@@ -2119,10 +2116,6 @@ void loop() {
        (inferF.zero_dwell_ratio >= ARC_SIG_ZERO_DWELL_RATIO && inferF.abs_irms_zscore_vs_baseline >= 1.20f) ||
        (inferF.halfcycle_asymmetry >= 10.0f && inferF.zcv >= 0.12f));
 
-  // Model-only prediction path:
-  // - suspicious run bookkeeping remains available for CSV/debug
-  // - but only the model output may arm the leaky integrator
-  // - fallback / temporal heuristics no longer force model_pred high
   bool suspiciousFrame = (rawPred == 1);
   if (arcBlankActive || relayArtifactBlankActive || invalidOff) suspiciousFrame = false;
 

@@ -1,14 +1,29 @@
 {
-	"folders": [
-		{
-			"path": ".."
-		},
-		{
-			"name": "arcstep",
-			"path": "../arcstep"
-		}
-	],
-	"settings": {
-		"python-envs.defaultEnvManager": "ms-python.python:system"
-	}
+  "folders": [
+    {
+      "name": "TinyML Smart Plug",
+      "path": ".."
+    },
+	{
+      "name": "Arc Generator",
+      "path": "../arcstep"
+    },
+    {
+      "name": "ADNU Manuscript",
+      "path": "../manuscript/adnu"
+    },
+    {
+      "name": "ASEAN Manuscript",
+      "path": "../manuscript/asean"
+    },
+    {
+      "name": "IEEE Manuscript",
+      "path": "../manuscript/ieee"
+    },
+  ],
+  "settings": {
+    "python-envs.defaultEnvManager": "ms-python.python:system",
+    "latex-workshop.latex.recipe.default": "latexmk (xelatex)",
+    "latex-workshop.view.pdf.viewer": "tab"
+  }
 }

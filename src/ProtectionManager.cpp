@@ -104,7 +104,7 @@ static inline uint32_t elapsedSince_(uint32_t startMs, uint32_t endMs) {
   return endMs - startMs;
 }
 
-}  // namespace
+} 
 
 void ProtectionManager::writeLatchOn_(bool asserted) { if (_pinLatchOn >= 0) digitalWrite(_pinLatchOn, asserted ? HIGH : LOW); }
 void ProtectionManager::writeLatchOff_(bool asserted){ if (_pinLatchOff >= 0) digitalWrite(_pinLatchOff, asserted ? HIGH : LOW); }

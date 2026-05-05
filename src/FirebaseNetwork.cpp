@@ -462,10 +462,6 @@ void FirebaseNetwork::clearControlToken_(const char* path, String& cache, bool& 
   (void)path;
   pendingFlag = false;
   cache = "";
-  // Avoid synchronous token-clear writes from the main loop. The handled-token
-  // cache already prevents replaying the same command, and keeping consume()
-  // fully local prevents relay/control actions from stalling UI, buzzer, or
-  // logging when Firebase is slow.
 }
 
 bool FirebaseNetwork::consumePortalRequest() {

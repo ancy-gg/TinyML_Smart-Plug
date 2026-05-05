@@ -502,9 +502,6 @@ bool ArcDetection::compute(const uint16_t* raw, size_t n, float fs_hz,
   for (size_t i = 0; i < n; ++i) sig[i] = sigMed[i] - (float)mean;
 
   if (CURRENT_SOFT_AAF_ENABLE) {
-    // Analog front-end is already ~10 kHz/Q≈0.73. Run a conservative cascaded
-    // digital LPF below that corner so feature extraction sees a cleaner band-
-    // limited waveform even when the measured ADC rate wanders.
     BiquadLPF softAaf[CURRENT_SOFT_AAF_STAGES];
     bool aafReady = true;
     for (uint8_t st = 0; st < CURRENT_SOFT_AAF_STAGES; ++st) {

@@ -18,9 +18,7 @@ static constexpr const char* FW_VERSION       = "v7.8.2-p-gen0-final";
 static constexpr const char* OTA_DESIRED_VERSION_PATH = "/ota/desired_version";
 static constexpr const char* OTA_FIRMWARE_URL_PATH    = "/ota/firmware_url";
 
-// =========================
-// Fault / data types
-// =========================
+// Faults
 enum FaultState : uint8_t {
   STATE_NORMAL = 0,
   STATE_OVERLOAD,
@@ -49,12 +47,8 @@ static inline const char* stateToCstr(FaultState s) {
   }
 }
 
+// Family inference
 
-// =========================
-// Context / family inference
-// =========================
-// Canonical compact runtime taxonomy used by the current trainer/model headers.
-// Keep legacy aliases below so older firmware/PWA/trainer symbols still compile.
 #ifndef CONTEXT_FAMILY_UNKNOWN
 #define CONTEXT_FAMILY_UNKNOWN -1
 #endif
@@ -77,26 +71,6 @@ static inline const char* stateToCstr(FaultState s) {
 #define CONTEXT_FAMILY_OTHER_MIXED 5
 #endif
 
-// Legacy family-name aliases from older code/data.
-#ifndef CONTEXT_FAMILY_RESISTIVE
-#define CONTEXT_FAMILY_RESISTIVE CONTEXT_FAMILY_RESISTIVE_LINEAR
-#endif
-#ifndef CONTEXT_FAMILY_SMPS
-#define CONTEXT_FAMILY_SMPS CONTEXT_FAMILY_RECTIFIER_SMPS
-#endif
-#ifndef CONTEXT_FAMILY_DIMMER_PHASE
-#define CONTEXT_FAMILY_DIMMER_PHASE CONTEXT_FAMILY_PHASE_ANGLE_CONTROLLED
-#endif
-#ifndef CONTEXT_FAMILY_UNIVERSAL_MOTOR
-#define CONTEXT_FAMILY_UNIVERSAL_MOTOR CONTEXT_FAMILY_BRUSH_UNIVERSAL_MOTOR
-#endif
-#ifndef CONTEXT_FAMILY_MIXED_UNKNOWN
-#define CONTEXT_FAMILY_MIXED_UNKNOWN CONTEXT_FAMILY_OTHER_MIXED
-#endif
-#ifndef CONTEXT_FAMILY_OTHER
-#define CONTEXT_FAMILY_OTHER CONTEXT_FAMILY_OTHER_MIXED
-#endif
-
 enum ApplianceFamily : int8_t {
   FAMILY_UNKNOWN = CONTEXT_FAMILY_UNKNOWN,
   FAMILY_RESISTIVE_LINEAR = CONTEXT_FAMILY_RESISTIVE_LINEAR,
@@ -105,14 +79,6 @@ enum ApplianceFamily : int8_t {
   FAMILY_PHASE_ANGLE_CONTROLLED = CONTEXT_FAMILY_PHASE_ANGLE_CONTROLLED,
   FAMILY_BRUSH_UNIVERSAL_MOTOR = CONTEXT_FAMILY_BRUSH_UNIVERSAL_MOTOR,
   FAMILY_OTHER_MIXED = CONTEXT_FAMILY_OTHER_MIXED,
-
-  // Legacy enum aliases kept so older code still compiles.
-  FAMILY_RESISTIVE = FAMILY_RESISTIVE_LINEAR,
-  FAMILY_SMPS = FAMILY_RECTIFIER_SMPS,
-  FAMILY_DIMMER_PHASE = FAMILY_PHASE_ANGLE_CONTROLLED,
-  FAMILY_UNIVERSAL_MOTOR = FAMILY_BRUSH_UNIVERSAL_MOTOR,
-  FAMILY_MIXED_UNKNOWN = FAMILY_OTHER_MIXED,
-  FAMILY_OTHER = FAMILY_OTHER_MIXED,
 
   FAMILY_COUNT = 6
 };
@@ -138,9 +104,6 @@ struct FeatureFrame {
   float temp_c = 0.0f;
   float temp_ntc_c = 0.0f;
 
-  // Keep the full computed feature space available for logging, future retraining,
-  // and metadata-driven model input assembly. Exported models decide which subset
-  // they actually consume at inference time.
   float spectral_flux_midhf          = 0.0f;
   float residual_crest_factor        = 0.0f;
   float edge_spike_ratio             = 0.0f;
@@ -156,7 +119,6 @@ struct FeatureFrame {
   float low_current_ratio            = 0.0f;
   float max_low_current_run_ms       = 0.0f;
 
-  // Lightweight temporal / context signals.
   float fs_err_hz = 0.0f;
   float suspicious_run_energy = 0.0f;
   float delta_irms_abs = 0.0f;
@@ -194,7 +156,7 @@ struct FeatureFrame {
 };
 
 
-// Context timing / confidence tuning
+// Context timing
 static constexpr float CONTEXT_MIN_IRMS_A = 0.09f;
 static constexpr float CONTEXT_UNLATCH_ZERO_IRMS_A = 0.020f;
 static constexpr uint32_t CONTEXT_ACQUIRE_WINDOW_MS = 5000UL;
@@ -204,9 +166,7 @@ static constexpr uint32_t CONTEXT_PROVISIONAL_MIN_MS = 300UL;
 static constexpr float CONTEXT_MIN_CONFIDENCE = 0.45f;
 static constexpr uint32_t CONTEXT_RESET_NO_MAINS_MS = 1200UL;
 
-// =========================
 // Relay / buzzer hardware
-// =========================
 static constexpr bool BUZZER_PASSIVE_PWM    = true;
 static constexpr uint8_t BUZZER_PWM_BITS    = 8;
 static constexpr uint8_t BUZZER_PWM_DUTY    = 128;
@@ -218,11 +178,7 @@ static constexpr float    BUZZER_ARTIFACT_MAX_A = 0.35f;
 static constexpr uint16_t BUZZER_STATUS_MAX_HZ = 820;
 static constexpr uint8_t  BUZZER_STATUS_MAX_DUTY = 26;
 
-// =========================
 // Sampling and FFT
-// =========================
-// The ADC is tuned for a truthful operating cadence near 27 kHz. Runtime must keep
-// the *measured* sampling rate truthful and must not snap or canonicalize it.
 static constexpr float    FS_INTENDED_HZ = 27000.0f;
 static constexpr float    FS_TARGET_HZ = FS_INTENDED_HZ;
 static constexpr uint16_t ARC_RUNTIME_LEGACY_FFT_SAMPLES = 1024;
@@ -237,7 +193,7 @@ static constexpr uint8_t  ARC_RUNTIME_FRAME_HOP_COUNT    = (ARC_RUNTIME_FRAME_SA
 static constexpr uint16_t N_SAMP       = ARC_RUNTIME_MAX_FFT_SAMPLES;
 static constexpr float    MAINS_F0_HZ  = 60.0f;
 
-// Pace feature generation to a stable latest-frame cadence instead of free-running.
+// Feature Pacing
 static constexpr float    FEATURE_TARGET_CADENCE_HZ = FS_TARGET_HZ / float(ARC_RUNTIME_HOP_SAMPLES * ARC_RUNTIME_EMIT_EVERY_HOPS);
 static constexpr uint32_t FEATURE_FRAME_PERIOD_US = (uint32_t)(1000000.0f / FEATURE_TARGET_CADENCE_HZ + 0.5f);
 static constexpr float    FEATURE_FRAME_PERIOD_MS = 1000.0f / FEATURE_TARGET_CADENCE_HZ;
@@ -247,17 +203,14 @@ static constexpr float    CSV_LOG_TARGET_CADENCE_HZ = 30.0f;
 static constexpr float    CSV_LOG_TARGET_INTERVAL_MS = 1000.0f / CSV_LOG_TARGET_CADENCE_HZ;
 static constexpr uint32_t CSV_LOG_MIN_INTERVAL_MS = (uint32_t)(1000.0f / CSV_LOG_TARGET_CADENCE_HZ + 0.5f);
 
-// The analog AAF is already around 10 kHz / Q≈0.73. Keep a conservative cascaded
-// digital LPF as a second anti-alias / de-ringing stage before feature extraction.
+// Digital AAF
 static constexpr bool     CURRENT_SOFT_AAF_ENABLE = true;
 static constexpr uint8_t  CURRENT_SOFT_AAF_STAGES = 3;
 static constexpr float    CURRENT_SOFT_AAF_CUTOFF_HZ = 8700.0f;
 static constexpr float    CURRENT_SOFT_AAF_Q = 0.73f;
 static constexpr float    CURRENT_SOFT_AAF_MAX_FRAC_NYQUIST = 0.92f;
 
-// =========================
-// Wi-Fi startup / portal
-// =========================
+// WiFi Management
 static constexpr uint32_t WIFI_BOOT_CONNECT_MS      = 15000UL;
 static constexpr uint32_t WIFI_CONNECT_TIMEOUT_MS   = 15000UL;
 static constexpr uint32_t WIFI_PORTAL_TIMEOUT_MS    = 45000UL;
@@ -269,9 +222,7 @@ static constexpr uint32_t WIFI_MANUAL_PORTAL_TIMEOUT_MS = 240000UL;
 static constexpr uint32_t WIFI_PORTAL_AP_GRACE_MS   = 1500UL;
 static constexpr const char* WIFI_PORTAL_SSID       = "TinyML-Smart-Plug";
 
-// =========================
 // Protection thresholds
-// =========================
 static constexpr float VOLT_NORMAL_MIN_V = 200.0f;
 static constexpr float VOLT_NORMAL_MAX_V = 250.0f;
 static constexpr float VOLT_UV_INSTANT_V = 170.0f;
@@ -307,18 +258,7 @@ static constexpr float TEMP_TRIP_C          = 40.0f;
 static constexpr float TEMP_DATA_WARN_C     = 39.0f;
 static constexpr float TEMP_DATA_HARD_C     = 40.0f;
 
-// =========================
-// Socket temperature estimation
-// =========================
-// The NTC still measures the device-body / thermistor temperature.
-// We keep two thermal views:
-//   1) temp_c  -> estimated socket hotspot temperature used by protection/UI
-//   2) expected-normal curve -> what a healthy socket would be expected to do
-//
-// The difference between them is useful for field detection of sockets that
-// heat faster than expected for the same current and elapsed heating time.
-// This does NOT hard-classify "normal" vs "corroded"; it only exposes when
-// the measured thermal behavior runs hotter than the healthy reference curve.
+// Socket Temperature Estimation
 static constexpr float TEMP_NTC_BETA                     = 4050.0f;
 static constexpr float TEMP_SOCKET_EST_MIN_C             = -20.0f;
 static constexpr float TEMP_SOCKET_EST_MAX_C             = 125.0f;
@@ -343,9 +283,7 @@ static constexpr uint32_t UNPLUGGED_STATE_DELAY_MS = 5000UL;
 static constexpr float VOLTAGE_SNAP_ZERO_V = 50.0f;
 static constexpr float VOLTAGE_SNAP_RESTORE_V = 200.0f;
 
-// =========================
-// Leaky integrator / fault display hold
-// =========================
+// Leaky Integrator
 static constexpr int ARC_CNT_INC  = 2;
 static constexpr int ARC_CNT_DEC  = 6;
 static constexpr int ARC_CNT_TRIP = 8;
@@ -360,7 +298,7 @@ static constexpr uint32_t FAULT_NET_QUIET_MS = 2350UL;
 static constexpr uint32_t OLED_RENDER_INTERVAL_MS = 100UL;
 static constexpr uint32_t OLED_I2C_CLOCK_HZ = 400000UL;
 
-// Sensing pipeline / timing quality
+// Sensing and Timing
 static constexpr uint8_t  FEATURE_FRAME_QUEUE_LEN        = 48;
 static constexpr uint8_t  FEATURE_RAW_FRAME_QUEUE_LEN    = 6;
 static constexpr uint8_t  FEATURE_CONSUMER_LATEST_CATCHUP_DEPTH = 2;
@@ -386,25 +324,25 @@ static constexpr float DB_HF_DELTA_CLIP_MAX         = 18.0f;
 static constexpr float HF_DELTA_MIN_BASELINE_SHARE  = 0.010f;
 static constexpr float FEATURE_PERCENT_SCALE        = 100.0f;
 
-static constexpr float ARC_SIG_SPECTRAL_FLUX       = 8.50f;     // percent
-static constexpr float ARC_SIG_RESIDUAL_CF         = 12.568f;   // 20*log10(4.25)
-static constexpr float ARC_SIG_EDGE_SPIKE_RATIO    = -14.894f;  // 20*log10(0.180)
-static constexpr float ARC_SIG_MIDBAND_RATIO       = -21.412f;  // 20*log10(0.085)
-static constexpr float ARC_SIG_CYCLE_NMSE          = 9.00f;     // percent
-static constexpr float ARC_SIG_PEAK_FLUCT          = 1.20f;     // percent
-static constexpr float ARC_SIG_THD_I               = 22.0f;     // percent THD
-static constexpr float ARC_SIG_HF_ENERGY_DELTA     = 1.500f;    // 10*log10(power ratio), ~1.4x HF rise
+static constexpr float ARC_SIG_SPECTRAL_FLUX       = 8.50f;     
+static constexpr float ARC_SIG_RESIDUAL_CF         = 12.568f;   
+static constexpr float ARC_SIG_EDGE_SPIKE_RATIO    = -14.894f;  
+static constexpr float ARC_SIG_MIDBAND_RATIO       = -21.412f;  
+static constexpr float ARC_SIG_CYCLE_NMSE          = 9.00f;     
+static constexpr float ARC_SIG_PEAK_FLUCT          = 1.20f;     
+static constexpr float ARC_SIG_THD_I               = 22.0f;     
+static constexpr float ARC_SIG_HF_ENERGY_DELTA     = 1.500f;    
 static constexpr float ARC_SIG_ZCV                 = 0.200f;
 static constexpr float ARC_SIG_IRMS_ZSCORE         = 2.35f;
 static constexpr float ARC_SIG_PULSE_COUNT_PER_CYCLE = 0.35f;
 static constexpr float ARC_SIG_ZERO_DWELL_RATIO      = 18.0f;
 static constexpr float ARC_SIG_LOW_CURRENT_RATIO     = 10.0f;
 static constexpr float ARC_SIG_MAX_LOW_CURRENT_RUN_MS = 1.10f;
-static constexpr int   ARC_LEAKY_SCORE_STEP        = 7;         // +7 per suspicious 100 ms frame
-static constexpr int   ARC_LEAKY_SCORE_DECAY       = 1;         // -1 per quiet frame
-static constexpr int   ARC_LEAKY_SCORE_FIRE        = 10;        // 2 back-to-back suspicious frames arm the gate
-static constexpr int   ARC_LEAKY_SCORE_STRONG      = 14;        // stronger gate for temporal-only kicks
-static constexpr int   ARC_LEAKY_SCORE_MAX         = 35;        // short memory without long sticky tails
+static constexpr int   ARC_LEAKY_SCORE_STEP        = 7;        
+static constexpr int   ARC_LEAKY_SCORE_DECAY       = 1;        
+static constexpr int   ARC_LEAKY_SCORE_FIRE        = 10;        
+static constexpr int   ARC_LEAKY_SCORE_STRONG      = 14;        
+static constexpr int   ARC_LEAKY_SCORE_MAX         = 35;        
 static constexpr float ARC_SOFT_MIN_IRMS_A         = 0.08f;
 static constexpr float ARC_RESTRIKE_GAP_CURRENT_MAX_A = 0.06f;
 static constexpr float ARC_NEIGHBOR_GAP_CURRENT_MAX_A = 0.08f;
@@ -412,15 +350,13 @@ static constexpr uint32_t ARC_RESTRIKE_VALID_WINDOW_MS = 300UL;
 static constexpr uint32_t ARC_DETACH_NEIGHBOR_WINDOW_MS = 250UL;
 static constexpr uint32_t ARC_RECONTACT_NEIGHBOR_WINDOW_MS = 300UL;
 
-static constexpr float BASELINE_STABLE_RESIDUAL_CF_DB    = 9.542f;   // 20*log10(3.0)
-static constexpr float BASELINE_STABLE_EDGE_SPIKE_DB     = -20.000f; // 20*log10(0.10)
-static constexpr float BASELINE_STABLE_MIDBAND_RATIO_DB  = -24.437f; // 20*log10(0.06)
+static constexpr float BASELINE_STABLE_RESIDUAL_CF_DB    = 9.542f;   
+static constexpr float BASELINE_STABLE_EDGE_SPIKE_DB     = -20.000f; 
+static constexpr float BASELINE_STABLE_MIDBAND_RATIO_DB  = -24.437f; 
 static constexpr float BASELINE_STABLE_HF_DELTA_DB       = 0.80f;
 
 
-// =========================
-// Pins (XIAO ESP32S3)
-// =========================
+// Pin Configuration
 static constexpr int PIN_VOLT_ADC    = D0;
 static constexpr int PIN_TEMP_ADC    = D1;
 static constexpr int PIN_LATCH_ON    = D6;
@@ -431,16 +367,12 @@ static constexpr int PIN_ADC_SCK     = D8;
 static constexpr int PIN_ADC_MISO    = D9;
 static constexpr int PIN_ADC_MOSI    = D10;
 
-// =========================
-// Hardware latch pulse control
-// =========================
+// Hardware Latch Timing
 static constexpr uint32_t LATCH_ON_PULSE_MS  = 120UL;
 static constexpr uint32_t LATCH_OFF_PULSE_MS = 120UL;
 static constexpr uint32_t LATCH_PULSE_GAP_MS = 250UL;
 
-// =========================
-// Load state / button override sync
-// =========================
+// Load Detection and Relay Artifact Handling
 static constexpr float LOAD_ON_DETECT_A   = 0.12f;
 static constexpr float LOAD_OFF_DETECT_A  = 0.03f;
 static constexpr uint32_t LOAD_ON_DETECT_MS  = 350UL;
@@ -450,12 +382,7 @@ static constexpr float    RELAY_ARTIFACT_FORCE_ZERO_A = 0.75f;
 static constexpr uint32_t RELAY_ARTIFACT_SELF_HEAL_MS = 1200UL;
 static constexpr float    RELAY_OFF_HOLD_GHOST_MAX_A = 0.090f;
 
-// Local assist when the user manually energizes a load while the MCU still thinks the relay is OFF.
-// The assist should latch quickly for small loads, survive brief charger/SMPS dropouts, and only
-// roll back during the provisional confirmation window if current disappears for long enough.
-// Arc model load-window latch: once a real load has been present long enough,
-// keep arc inference alive through brief 0 A restrike / detach gaps, but
-// release the window again after sustained off / idle time.
+// Arc Model Latching and Manual Relay Rearm
 static constexpr float    ARC_MODEL_LATCH_MIN_A        = 0.10f;
 static constexpr float    ARC_MODEL_LATCH_RELEASE_A    = 0.03f;
 static constexpr uint32_t ARC_MODEL_LATCH_ON_MS        = 2000UL;
@@ -470,7 +397,7 @@ static constexpr uint32_t MANUAL_RELAY_REARM_COOLDOWN_MS = 2500UL;
 static constexpr uint32_t MANUAL_RELAY_WEB_HOLDOFF_MS = 2200UL;
 static constexpr uint32_t MANUAL_RELAY_REARM_BLANK_MS = 1400UL;
 
-// Guard against isolated low-current NMSE blowups that can hit exactly 100% without any other arc-like evidence.
+// Guardbands
 static constexpr float    CYCLE_NMSE_SOLO_ARTIFACT_MIN_PCT = 99.0f;
 static constexpr float    CYCLE_NMSE_SOLO_ARTIFACT_MAX_IRMS_A = 0.35f;
 static constexpr float    CYCLE_NMSE_SOLO_ARTIFACT_MAX_FLUX_PCT = 5.0f;
@@ -481,9 +408,7 @@ static constexpr float    CYCLE_NMSE_SOLO_ARTIFACT_MAX_PEAK_CV_PCT = 1.2f;
 static constexpr float    CYCLE_NMSE_SOLO_ARTIFACT_MAX_HF_DELTA_DB = 0.9f;
 static constexpr float    CYCLE_NMSE_SOLO_ARTIFACT_REPLACEMENT_PCT = 4.0f;
 
-// =========================
-// Logger / control polling
-// =========================
+// =Logging and Feature Validity
 static constexpr float    ARC_TURNON_LOW_A               = 0.20f;
 static constexpr float    ARC_TURNON_ACTIVE_A            = 1.00f;
 static constexpr uint32_t ARC_TURNON_LOW_MS              = 220UL;
@@ -523,9 +448,7 @@ static constexpr uint32_t CLOUD_LIVE_FAULT_INTERVAL_MS   = 5000UL;
 static constexpr uint32_t CLOUD_REFRESH_KEEPALIVE_MS    = 1800UL;
 static constexpr uint32_t CLOUD_WIFI_WARMUP_MS          = 2500UL;
 
-// =========================
-// Current backend (MCP3204 only)
-// =========================
+// Backend
 static constexpr uint8_t  MCP3204_CHANNEL        = 0;
 static constexpr uint32_t MCP3204_SPI_HZ         = 1200000UL;
 static constexpr uint8_t  MCP3204_OVERSAMPLE     = 1;
@@ -598,6 +521,7 @@ static constexpr float BASELINE_STEP_FREEZE_FRAC       = 0.22f;
 static constexpr uint32_t BASELINE_FREEZE_MS           = 900UL;
 static constexpr uint32_t BASELINE_RESET_IDLE_MS       = 1800UL;
 
+// Current Calibration
 static constexpr float CURRENT_CAL_C3 =  0.000556854f;
 static constexpr float CURRENT_CAL_C2 = -0.00298472f;
 static constexpr float CURRENT_CAL_C1 =  1.25081f;
@@ -643,10 +567,7 @@ static inline float db_to_thd_percent(float thd_db) {
   return 100.0f * db20_to_ratio(thd_db);
 }
 
-// =========================
-// Voltage calibration and display cleanup
-// =========================
-
+// Voltage Calibration
 static constexpr float VOLTAGE_CAL_C3 = 0.00000122081f;
 static constexpr float VOLTAGE_CAL_C2 = -0.000503178f;
 static constexpr float VOLTAGE_CAL_C1 = 1.05726f;
