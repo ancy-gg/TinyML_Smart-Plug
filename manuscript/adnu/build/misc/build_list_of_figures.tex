@@ -4,5 +4,7 @@
 \begin{document}
 \pagenumbering{roman}
 \chapter*{LIST OF FIGURES}
+\makeatletter
 \IfFileExists{logs/main.lof}{\input{logs/main.lof}}{Run the full main.tex build once to generate logs/main.lof.}
+\makeatother
 \end{document}

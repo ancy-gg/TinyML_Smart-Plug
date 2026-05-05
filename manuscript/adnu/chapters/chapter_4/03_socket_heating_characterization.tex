@@ -1,16 +1,18 @@
-\section{Socket-Heating Characterization}
+﻿\section{Socket-Heating Characterization}
 \label{sec:ch4-socket-heating-characterization}
 
 The socket-heating characterization compared a normal socket with a degraded
 socket under similar current levels. The purpose was to verify the Chapter 3
 assumption that socket temperature is not determined by current alone; contact
 condition changes the rate and final magnitude of heating.
+The plotted trends in this section were generated from the full
+characterization records in Appendix~\ref{app:c}.
 
 The water-heater-only characterization trend is shown in
 Figure~\ref{fig:ch4-char-water-heater}.
 \begin{figure}[H]
   \centering
-  \includegraphics[width=0.90\textwidth]{ch4/figure_4.1.png}
+  \socketCharPlot{1}{240}
   \caption{Water heater temperature trend during socket-heating characterization.}
   \label{fig:ch4-char-water-heater}
 \end{figure}
@@ -24,7 +26,7 @@ The water heater plus one halogen lamp trend is shown in
 Figure~\ref{fig:ch4-char-one-lamp}.
 \begin{figure}[H]
   \centering
-  \includegraphics[width=0.90\textwidth]{ch4/figure_4.2.png}
+  \socketCharPlot{2}{240}
   \caption{Water heater plus one halogen lamp temperature trend during characterization.}
   \label{fig:ch4-char-one-lamp}
 \end{figure}
@@ -37,7 +39,7 @@ The water heater plus two halogen lamps trend is shown in
 Figure~\ref{fig:ch4-char-two-lamps}.
 \begin{figure}[H]
   \centering
-  \includegraphics[width=0.90\textwidth]{ch4/figure_4.3.png}
+  \socketCharPlot{3}{240}
   \caption{Water heater plus two halogen lamps temperature trend during characterization.}
   \label{fig:ch4-char-two-lamps}
 \end{figure}
@@ -51,7 +53,7 @@ The water heater plus three halogen lamps trend is shown in
 Figure~\ref{fig:ch4-char-three-lamps}.
 \begin{figure}[H]
   \centering
-  \includegraphics[width=0.90\textwidth]{ch4/figure_4.4.png}
+  \socketCharPlot{4}{240}
   \caption{Water heater plus three halogen lamps temperature trend during characterization.}
   \label{fig:ch4-char-three-lamps}
 \end{figure}
@@ -65,7 +67,7 @@ The water heater plus four halogen lamps trend is shown in
 Figure~\ref{fig:ch4-char-four-lamps}.
 \begin{figure}[H]
   \centering
-  \includegraphics[width=0.90\textwidth]{ch4/figure_4.5.png}
+  \socketCharPlot{5}{195}
   \caption{Water heater plus four halogen lamps temperature trend during characterization.}
   \label{fig:ch4-char-four-lamps}
 \end{figure}
@@ -82,9 +84,10 @@ data used to interpret these trends.
   \caption{Summary of socket-heating characterization data}
   \label{tab:ch4-heating-characterization}
   \small
-  \begin{tabular}{p{0.22\textwidth}p{0.10\textwidth}p{0.12\textwidth}p{0.08\textwidth}p{0.10\textwidth}p{0.12\textwidth}p{0.08\textwidth}}
+  \setlength{\tabcolsep}{2pt}
+  \begin{tabular*}{\textwidth}{@{\extracolsep{\fill}}p{0.22\textwidth}p{0.105\textwidth}p{0.13\textwidth}p{0.08\textwidth}p{0.11\textwidth}p{0.135\textwidth}p{0.09\textwidth}@{}}
     \toprule
-    Load case & Socket & Time to 38.2°C & Mean A & Final NTC & Final terminal & Window \\
+    Load case & Socket & Time to 38.2°C & Mean A & Final NTC & Final terminal & Window (min) \\
     \midrule
     Water heater & Normal & -- & 5.18 & 33.9 & 31.5 & 240 \\
     Water heater & Corroded & -- & 5.16 & 35.6 & 37.4 & 240 \\
@@ -97,7 +100,7 @@ data used to interpret these trends.
     Water heater + 4 lamps & Normal & 44 & 13.00 & 43.4 & 46.4 & 195 \\
     Water heater + 4 lamps & Corroded & -- & 13.10 & 36.9 & 45.8 & 4 \\
     \bottomrule
-  \end{tabular}
+  \end{tabular*}
 \end{table}
 
 Table~\ref{tab:ch4-heating-characterization} confirms that degraded contact
@@ -106,3 +109,4 @@ socket reached 38.2°C in 48min compared with 105min for the normal
 socket. At about 11A, the corroded socket reached the same point in 7min
 compared with 52min for the normal socket. These results support the need for
 the compensated thermal model described in Section~\ref{sec:ch3-socket-heating-models}.
+

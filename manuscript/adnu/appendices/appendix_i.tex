@@ -1,122 +1,59 @@
 \chapter{Cost Breakdown}\label{app:i}
-Cost Breakdown of Prototype
 
-{\def\LTcaptype{none} % do not increment counter
-\begin{longtable}[]{@{}
-  >{\raggedright\arraybackslash}p{(\linewidth - 8\tabcolsep) * \real{0.1384}}
-  >{\raggedright\arraybackslash}p{(\linewidth - 8\tabcolsep) * \real{0.4748}}
-  >{\raggedright\arraybackslash}p{(\linewidth - 8\tabcolsep) * \real{0.0821}}
-  >{\raggedright\arraybackslash}p{(\linewidth - 8\tabcolsep) * \real{0.1320}}
-  >{\raggedright\arraybackslash}p{(\linewidth - 8\tabcolsep) * \real{0.1384}}@{}}
-\toprule\noalign{}
-\begin{minipage}[b]{\linewidth}\centering
-\textbf{Store}
-\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
-\textbf{Item}
-\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
-\textbf{Qty}
-\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
-\textbf{Unit Price}
-\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
-\textbf{Total}
-\end{minipage} \\
-\begin{minipage}[b]{\linewidth}\raggedright
-Electronics Workshop
-\end{minipage} & \begin{minipage}[b]{\linewidth}\raggedright
-3D Printed Enclosure
-\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
-1
-\end{minipage} & \begin{minipage}[b]{\linewidth}\raggedleft
-1,009.00
-\end{minipage} & \begin{minipage}[b]{\linewidth}\raggedleft
-1,009.00
-\end{minipage} \\
-\begin{minipage}[b]{\linewidth}\raggedright
-\end{minipage} & \begin{minipage}[b]{\linewidth}\raggedright
-ZMPT101B Voltage Sensor Module
-\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
-1
-\end{minipage} & \begin{minipage}[b]{\linewidth}\raggedleft
-156.00
-\end{minipage} & \begin{minipage}[b]{\linewidth}\raggedleft
-156.00
-\end{minipage} \\
-\begin{minipage}[b]{\linewidth}\raggedright
-Digikey
-\end{minipage} & \begin{minipage}[b]{\linewidth}\raggedright
-MCP3204 12-bit ADC module
-\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
-1
-\end{minipage} & \begin{minipage}[b]{\linewidth}\raggedleft
-250.00
-\end{minipage} & \begin{minipage}[b]{\linewidth}\raggedleft
-250.00
-\end{minipage} \\
-\begin{minipage}[b]{\linewidth}\raggedright
-\end{minipage} & \begin{minipage}[b]{\linewidth}\raggedright
-Seedstudio XIAO ESP32S3
-\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
-1
-\end{minipage} & \begin{minipage}[b]{\linewidth}\raggedleft
-250.00
-\end{minipage} & \begin{minipage}[b]{\linewidth}\raggedleft
-250.00
-\end{minipage} \\
-\begin{minipage}[b]{\linewidth}\raggedright
-\end{minipage} & \begin{minipage}[b]{\linewidth}\raggedright
-ACS37035
-\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
-1
-\end{minipage} & \begin{minipage}[b]{\linewidth}\raggedleft
-173.00
-\end{minipage} & \begin{minipage}[b]{\linewidth}\raggedleft
-173.00
-\end{minipage} \\
-\begin{minipage}[b]{\linewidth}\raggedright
-\end{minipage} & \begin{minipage}[b]{\linewidth}\raggedright
-\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
-\end{minipage} & \begin{minipage}[b]{\linewidth}\raggedleft
-\end{minipage} & \begin{minipage}[b]{\linewidth}\raggedleft
-\end{minipage} \\
-\begin{minipage}[b]{\linewidth}\raggedright
-Shopee
-\end{minipage} & \begin{minipage}[b]{\linewidth}\raggedright
-PCB Fabrication Service (Device modules)
-\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
-\end{minipage} & \begin{minipage}[b]{\linewidth}\raggedleft
-950.00
-\end{minipage} & \begin{minipage}[b]{\linewidth}\raggedleft
-950.00
-\end{minipage} \\
-\begin{minipage}[b]{\linewidth}\raggedright
-\end{minipage} & \begin{minipage}[b]{\linewidth}\raggedright
-PCB Fabrication Service (ACS37035)
-\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
-1
-\end{minipage} & \begin{minipage}[b]{\linewidth}\raggedleft
-300.00
-\end{minipage} & \begin{minipage}[b]{\linewidth}\raggedleft
-300.00
-\end{minipage} \\
-\begin{minipage}[b]{\linewidth}\raggedright
-\end{minipage} & \begin{minipage}[b]{\linewidth}\raggedright
-PCB Fabrication Service (ADC module)
-\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
-1
-\end{minipage} & \begin{minipage}[b]{\linewidth}\raggedleft
-350.00
-\end{minipage} & \begin{minipage}[b]{\linewidth}\raggedleft
-350.00
-\end{minipage} \\
-\multicolumn{4}{@{}>{\raggedleft\arraybackslash}p{(\linewidth - 8\tabcolsep) * \real{0.8273} + 6\tabcolsep}}{%
-\begin{minipage}[b]{\linewidth}\raggedleft
-Total
-\end{minipage}} & \begin{minipage}[b]{\linewidth}\raggedleft
-3,438.00
-\end{minipage} \\
-\midrule\noalign{}
+This appendix lists the prototype-level hardware cost basis. The values combine
+the original cost breakdown with additional component allowances for materials
+used in the sensing, filtering, power, enclosure, wiring, and user-interface
+subsystems. Online-listing prices should be rechecked before final submission
+because supplier prices change.
+
+\begingroup
+\small
+\setlength{\tabcolsep}{2pt}
+\begin{longtable}{@{}p{0.05\textwidth}p{0.19\textwidth}p{0.285\textwidth}p{0.055\textwidth}p{0.21\textwidth}>{\raggedleft\arraybackslash}p{0.11\textwidth}@{}}
+\caption{Prototype hardware cost breakdown}\label{tab:app-i-cost-breakdown}\\
+\toprule
+Item & Component or material & Function in the prototype & Qty. & Source basis & Cost (PHP) \\
+\midrule
+\endfirsthead
+\caption[]{Prototype hardware cost breakdown (continued)}\\
+\toprule
+Item & Component or material & Function in the prototype & Qty. & Source basis & Cost (PHP) \\
+\midrule
 \endhead
-\bottomrule\noalign{}
+\midrule
+\multicolumn{6}{r}{Continued on next page}\\
+\endfoot
+\bottomrule
 \endlastfoot
+1 & Seeed Studio XIAO ESP32S3 & Main ESP32-S3 controller for sensing, computation, TinyML inference, Wi-Fi, Firebase, and PWA communication & 1 & Original cost record / DigiKey PH listing basis & 250.00 \\
+2 & ACS37035\allowbreak{}KLACTR-\allowbreak020B5 Hall current sensor & Current measurement for RMS current, overload detection, socket-heating estimation, and waveform-feature extraction & 1 & Original cost record / DigiKey PH listing basis & 173.00 \\
+3 & MCP3204-CI/P 12-bit ADC & External ADC for digitizing the current-sensor signal & 1 & Original cost record / RS listing basis & 250.00 \\
+4 & MCP6024 op-amp & Anti-aliasing filter stage before ADC sampling & 1 & RS listing basis & 145.06 \\
+5 & ZMPT101B AC voltage sensor module & 220V AC line-voltage monitoring and protection input & 1 & Original cost record / Shopee PH listing basis & 156.00 \\
+6 & 10k$\Omega$ NTC thermistor & Socket-interface temperature sensing for heating protection & 1 & Shopee PH listing basis & 6.00 \\
+7 & SSR-40DA 40A solid-state relay & Load-disconnection actuator in the protection module & 1 & Shopee PH listing basis & 128.00 \\
+8 & 74HC74 D-latch IC & Hardware latch for stable trip-control behavior & 1 & RS listing basis & 18.01 \\
+9 & Hi-Link HLK-PM01 220V AC to 5V supply & Isolated 5V supply for control electronics & 1 & Shopee PH listing basis & 179.00 \\
+10 & TPS63020 buck-boost converter module & Low-voltage power-path regulation for battery-backed operation & 1 & Shopee PH listing basis & 219.00 \\
+11 & AMS1117 3.3V regulator module & 3.3V rail for the ESP32-S3 and low-voltage logic & 1 & Shopee PH listing basis & 40.00 \\
+12 & 3.7V 600mAh lithium-polymer battery & Backup supply for uninterrupted powered section & 1 & Shopee PH listing basis & 210.00 \\
+13 & 0.96in SSD1306 OLED display & Local display for readings, relay status, and fault messages & 1 & Shopee PH listing basis & 149.00 \\
+14 & 5V passive buzzer module & Local audible alert for detected fault conditions & 1 & Shopee PH listing basis & 49.00 \\
+15 & 220V female socket/outlet & Protected load-side outlet for appliance connection & 1 & Shopee PH listing basis & 86.00 \\
+16 & 220V male plug & Line-side input plug for the prototype & 1 & Shopee PH listing basis & 20.00 \\
+17 & Universal PCB/prototyping board & Mounting support for sensing, filtering, latch, and support circuitry & 1 & Shopee PH listing basis & 120.00 \\
+18 & Terminal blocks, crimp terminals, headers, and wiring allowance & Internal AC/DC wiring and detachable interconnections & 1 lot & Shopee PH listing basis & 194.00 \\
+19 & 40mm cooling fan & Internal cooling support for enclosed operation & 1 & Shopee PH listing basis & 79.00 \\
+20 & SMD ceramic capacitors, SMD resistors, and small passives & Anti-aliasing, pull-up, divider, decoupling, and support networks & 1 lot & SMD component allowance & 180.00 \\
+21 & 3D printed enclosure & Protective housing for the assembled smart-plug electronics & 1 & Original cost record & 1,009.00 \\
+22 & PCB fabrication service for device modules & Fabrication of main device module boards & 1 & Original cost record & 950.00 \\
+23 & PCB fabrication service for ACS37035 module & Fabrication of current-sensor carrier board & 1 & Original cost record & 300.00 \\
+24 & PCB fabrication service for ADC module & Fabrication of ADC module board & 1 & Original cost record & 350.00 \\
+\midrule
+\multicolumn{5}{r}{Total estimated prototype hardware cost} & 5,260.07 \\
 \end{longtable}
-}
+\endgroup
+
+The total represents a prototype estimate, not a manufacturing bill of
+materials. It includes one-off fabrication and retail/listing prices, so the
+amount is expected to differ from a batch-produced design.

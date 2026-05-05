@@ -15,11 +15,20 @@ $commonArgs = @(
   "-outdir=pdf"
 )
 
+function Invoke-ThesisLatexmk {
+  param([string]$File)
+  latexmk @commonArgs $File
+  if ($LASTEXITCODE -ne 0) {
+    throw "latexmk failed for $File"
+  }
+}
+
 $sectionBuilds = @(
   "build/misc/build_title.tex",
   "build/misc/build_approval_form.tex",
   "build/misc/build_abstract.tex",
   "build/misc/build_acknowledgement.tex",
+  "build/misc/build_frontmatter.tex",
   "build/misc/build_table_of_contents.tex",
   "build/misc/build_list_of_tables.tex",
   "build/misc/build_list_of_figures.tex",
@@ -57,11 +66,11 @@ $sectionBuilds = @(
 )
 
 # Build the full manuscript first so standalone wrappers can import current labels and lists.
-latexmk @commonArgs "main.tex"
+Invoke-ThesisLatexmk "main.tex"
 
 foreach ($file in $sectionBuilds) {
-  latexmk @commonArgs $file
+  Invoke-ThesisLatexmk $file
 }
 
 # Rebuild the full manuscript last after all section checks.
-latexmk @commonArgs "main.tex"
+Invoke-ThesisLatexmk "main.tex"

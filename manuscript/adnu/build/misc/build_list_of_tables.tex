@@ -4,5 +4,7 @@
 \begin{document}
 \pagenumbering{roman}
 \chapter*{LIST OF TABLES}
+\makeatletter
 \IfFileExists{logs/main.lot}{\input{logs/main.lot}}{Run the full main.tex build once to generate logs/main.lot.}
+\makeatother
 \end{document}

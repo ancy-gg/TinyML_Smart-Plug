@@ -1,11 +1,11 @@
-% !TEX program = xelatex
+﻿% !TEX program = xelatex
 % Fast build: front matter only.
 \input{style/thesis_preamble.tex}
 \begin{document}
 \inputmainrefs
 \pagenumbering{roman}
 \input{misc/title.tex}
-\clearpage
+\setcounter{page}{2}
 \input{misc/approval_form.tex}
 \clearpage
 \begin{singlespace}
@@ -14,7 +14,22 @@
 \clearpage
 \input{misc/acknowledgement.tex}
 \clearpage
-\input{misc/table_of_contents.tex}
-\input{misc/list_tables.tex}
-\input{misc/list_figures.tex}
+\renewcommand{\contentsname}{Table of Contents}
+\chapter*{\contentsname}
+\makeatletter
+\IfFileExists{logs/main.toc}{\input{logs/main.toc}}{Run the full main.tex build once to generate logs/main.toc.}
+\makeatother
+\clearpage
+\chapter*{LIST OF TABLES}
+\makeatletter
+\IfFileExists{logs/main.lot}{\input{logs/main.lot}}{Run the full main.tex build once to generate logs/main.lot.}
+\makeatother
+\clearpage
+\begin{spacing}{1.15}
+\chapter*{LIST OF FIGURES}
+\makeatletter
+\IfFileExists{logs/main.lof}{\input{logs/main.lof}}{Run the full main.tex build once to generate logs/main.lof.}
+\makeatother
+\end{spacing}
 \end{document}
+
