@@ -16,7 +16,7 @@ Figure~\ref{fig:ch3-data-labeling-deploy} shows the data-logging, labeling,
 training, and deployment path used by the project.
 \begin{figure}[H]
   \centering
-  \resizebox{\textwidth}{!}{%
+  \resizebox{0.92\textwidth}{!}{%
   \begin{tikzpicture}[node distance=0.30in and 0.42in]
     \node[thesis process,text width=1.38in] (bench) {Bench tests\\normal, start, arc};
     \node[thesis process,text width=1.38in,right=of bench] (log) {Firmware CSV\\feature logs};
@@ -45,17 +45,19 @@ training, and deployment path used by the project.
 
 Figure~\ref{fig:ch3-data-labeling-deploy} shows that the training workflow was
 not performed directly on the microcontroller. The firmware generated CSV
-records, the data were cleaned and labeled in Python, the models were trained
-and evaluated locally, and the final headers were exported back into the
-firmware project for embedded inference. This follows the usual TinyML pattern
-of offline training followed by resource-constrained on-device execution [43],
-[73].
+records from bench tests, the records were reviewed and labeled, and Python
+scripts then cleaned the rows, formed training and test splits, trained the
+context and arc models, computed confusion reports, and exported C headers.
+The final embedded test was therefore a deployment check of the exported
+headers inside the firmware, not a new training step on the ESP32-S3. This
+follows the usual TinyML pattern of offline training followed by
+resource-constrained on-device execution [43], [73].
 
 The deployed model sequence is summarized in
 Figure~\ref{fig:ch3-tinyml-sequence}.
 \begin{figure}[H]
   \centering
-  \resizebox{0.88\textwidth}{!}{%
+  \resizebox{0.65\textwidth}{!}{%
   \begin{tikzpicture}[node distance=0.24in and 0.60in]
     \node[thesis process,text width=1.75in] (frame) {Current waveform\\512-sample frame};
     \node[thesis process,text width=1.75in,below=of frame] (features) {Computed/logged\\20 waveform fields};
@@ -85,15 +87,19 @@ Figure~\ref{fig:ch3-tinyml-sequence}.
 Figure~\ref{fig:ch3-tinyml-sequence} shows that the firmware computes feature
 fields first, then updates context, then evaluates the arc classifier. This
 order is important because the deployed arc header includes both waveform
-features and context fields. The live PWA dashboard displays only 10 feature
-cards; a broader 14-feature order remains in the PWA metadata and session
-viewer for historical review and CSV inspection.
+features and context fields. The load-family result is therefore not only a
+display label; when confidence is sufficient, it becomes part of the input
+context supplied to the arc model. The flowchart also separates three feature
+sets: the candidate fields computed and logged by the firmware, the six base
+waveform features selected for the deployed arc model, and the 10 live
+feature cards shown by the PWA. A broader 14-feature order remains in the PWA
+metadata and session viewer for historical review and CSV inspection.
 
 Arc labels were assigned from logged waveform sessions. The labeling interface
 is shown in Figure~\ref{fig:ch3-arc-labeling}.
 \begin{figure}[H]
   \centering
-  \includegraphics[width=0.88\textwidth]{ch3/figure_3.28.png}
+  \includegraphics[width=0.80\textwidth]{ch3/figure_3.28.png}
   \caption{Arc labeling using logged waveform data.}
   \label{fig:ch3-arc-labeling}
 \end{figure}
@@ -108,7 +114,7 @@ The local Python trainer used for model development is shown in
 Figure~\ref{fig:ch3-python-trainer}.
 \begin{figure}[H]
   \centering
-  \includegraphics[width=0.88\textwidth]{ch3/figure_3.29.png}
+  \includegraphics[width=0.80\textwidth]{ch3/figure_3.29.png}
   \caption{Local Python TinyML trainer.}
   \label{fig:ch3-python-trainer}
 \end{figure}
@@ -203,7 +209,7 @@ persistence before relay disconnection.
 
 The exported firmware header is the source of truth for the deployed feature
 selection. It defines 13 arc-model inputs: six waveform features and seven
-context fields. Therefore, the manuscript treats the context one-hot fields
+context fields. Therefore, this paper treats the context one-hot fields
 and context confidence as model inputs, but not as additional waveform
 features. The selected waveform features are maximum low-current run,
 zero-dwell ratio, low-current ratio, absolute RMS-current z-score relative to

@@ -24,15 +24,15 @@
       },
       legend cell align={left}
     ]
-      \addplot[black,thick] table[x=time,y=ntc] {figures/ch4/data/char_#1_normal.dat};
+      \addplot[blue!70!black,very thick] table[x=time,y=ntc] {figures/ch4/data/char_#1_normal.dat};
       \addlegendentry{Normal device temperature measurement}
-      \addplot[black,thick,dashed] table[x=time,y=terminal] {figures/ch4/data/char_#1_normal.dat};
+      \addplot[blue!70!black,semithick,dashed] table[x=time,y=terminal] {figures/ch4/data/char_#1_normal.dat};
       \addlegendentry{Normal Infrared Thermometer}
-      \addplot[gray!70!black,thick] table[x=time,y=ntc] {figures/ch4/data/char_#1_corroded.dat};
+      \addplot[red!70!black,very thick] table[x=time,y=ntc] {figures/ch4/data/char_#1_corroded.dat};
       \addlegendentry{Degraded device temperature measurement}
-      \addplot[gray!70!black,thick,dashed] table[x=time,y=terminal] {figures/ch4/data/char_#1_corroded.dat};
+      \addplot[red!70!black,semithick,dashed] table[x=time,y=terminal] {figures/ch4/data/char_#1_corroded.dat};
       \addlegendentry{Degraded Infrared Thermometer}
-      \addplot[black,densely dotted,thick] coordinates {(0,38.2) (#2,38.2)};
+      \addplot[black,densely dotted,ultra thick] coordinates {(0,38.2) (#2,38.2)};
       \addlegendentry{38.2\degreeC comparison}
       \addplot[black!65,thin,dashdotted] coordinates {(#2,26) (#2,58)};
       \node[font=\scriptsize,anchor=north east,rotate=90] at (axis cs:#2,57.3) {trial end};
@@ -66,19 +66,19 @@
       },
       legend cell align={left}
     ]
-      \addplot[black,thin,densely dotted] table[x=time,y=ntc] {figures/ch4/data/protect_#1_normal.dat};
+      \addplot[blue!70!black,semithick,densely dotted] table[x=time,y=ntc] {figures/ch4/data/protect_#1_normal.dat};
       \addlegendentry{Normal device temperature measurement}
-      \addplot[black,thick] table[x=time,y=estimated] {figures/ch4/data/protect_#1_normal.dat};
+      \addplot[blue!70!black,very thick] table[x=time,y=estimated] {figures/ch4/data/protect_#1_normal.dat};
       \addlegendentry{Normal Estimated Socket Temperature}
-      \addplot[black,thick,dashed] table[x=time,y=terminal] {figures/ch4/data/protect_#1_normal.dat};
+      \addplot[blue!70!black,semithick,dashed] table[x=time,y=terminal] {figures/ch4/data/protect_#1_normal.dat};
       \addlegendentry{Normal Infrared Thermometer}
-      \addplot[gray!70!black,thin,densely dotted] table[x=time,y=ntc] {figures/ch4/data/protect_#1_corroded.dat};
+      \addplot[red!70!black,semithick,densely dotted] table[x=time,y=ntc] {figures/ch4/data/protect_#1_corroded.dat};
       \addlegendentry{Degraded device temperature measurement}
-      \addplot[gray!70!black,thick] table[x=time,y=estimated] {figures/ch4/data/protect_#1_corroded.dat};
+      \addplot[red!70!black,very thick] table[x=time,y=estimated] {figures/ch4/data/protect_#1_corroded.dat};
       \addlegendentry{Degraded Estimated Socket Temperature}
-      \addplot[gray!70!black,thick,dashed] table[x=time,y=terminal] {figures/ch4/data/protect_#1_corroded.dat};
+      \addplot[red!70!black,semithick,dashed] table[x=time,y=terminal] {figures/ch4/data/protect_#1_corroded.dat};
       \addlegendentry{Degraded Infrared Thermometer}
-      \addplot[black,densely dashdotted,thick] coordinates {(0,40) (#2,40)};
+      \addplot[black,densely dashdotted,ultra thick] coordinates {(0,40) (#2,40)};
       \addlegendentry{40\degreeC trip}
       \addplot[black!65,thin,dashdotted] coordinates {(#2,26) (#2,58)};
       \node[font=\scriptsize,anchor=north east,rotate=90] at (axis cs:#2,57.3) {trial end};

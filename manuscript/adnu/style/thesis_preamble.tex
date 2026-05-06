@@ -58,6 +58,7 @@
 \usepackage{pdflscape}
 \usepackage{float}
 \usepackage{booktabs}
+\usepackage{needspace}
 \setlength{\heavyrulewidth}{1.5pt}
 \setlength{\lightrulewidth}{1pt}
 \setlength{\cmidrulewidth}{1pt}
@@ -115,6 +116,7 @@
 \newcommand{\degreeC}{\ensuremath{^\circ\mathrm{C}}}
 \newcommand{\feature}[1]{\texttt{\detokenize{#1}}}
 \newcommand{\manualappendixtable}[2]{%
+  \Needspace{8\baselineskip}%
   \refstepcounter{table}%
   \addcontentsline{lot}{table}{\protect\numberline{\thetable}{#1}}%
   \par\noindent\textbf{Table \thetable. #1}\label{#2}\par\nopagebreak[4]%

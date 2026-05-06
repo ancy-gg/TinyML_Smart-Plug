@@ -20,7 +20,7 @@ The voltage calibration setup is shown in
 Figure~\ref{fig:ch3-voltage-cal-setup}.
 \begin{figure}[H]
   \centering
-  \includegraphics[width=0.90\textwidth]{ch3/figure_3.17.png}
+  \includegraphics[width=0.8\textwidth]{ch3/figure_3.17.png}
   \caption{Data-collection setup for voltage calibration.}
   \label{fig:ch3-voltage-cal-setup}
 \end{figure}
@@ -36,8 +36,8 @@ Figure~\ref{fig:ch3-voltage-regression}.
   \centering
   \begin{tikzpicture}
     \begin{axis}[
-      width=0.82\textwidth,
-      height=2.9in,
+      width=0.9\textwidth,
+      height=4in,
       xlabel={Uncalibrated ZMPT101B RMS voltage (V)},
       ylabel={Reference RMS voltage (V)},
       xmin=25,
@@ -96,14 +96,14 @@ Figures~\ref{fig:ch3-current-cal-setup} and~\ref{fig:ch3-current-cal-loads}.
 
 \begin{figure}[H]
   \centering
-  \includegraphics[width=0.90\textwidth]{ch3/figure_3.19.png}
+  \includegraphics[width=0.75\textwidth]{ch3/figure_3.19.png}
   \caption{Data-collection setup for current calibration.}
   \label{fig:ch3-current-cal-setup}
 \end{figure}
 
 \begin{figure}[H]
   \centering
-  \includegraphics[width=0.90\textwidth]{ch3/figure_3.20.png}
+  \includegraphics[width=0.75\textwidth]{ch3/figure_3.20.png}
   \caption{Load setups used for current calibration.}
   \label{fig:ch3-current-cal-loads}
 \end{figure}
@@ -120,8 +120,8 @@ Figure~\ref{fig:ch3-current-regression}.
   \centering
   \begin{tikzpicture}
     \begin{axis}[
-      width=0.82\textwidth,
-      height=2.9in,
+      width=0.9\textwidth,
+      height=4in,
       xlabel={Uncalibrated ACS37035 RMS current (A)},
       ylabel={Reference RMS current (A)},
       xmin=0,
@@ -184,7 +184,9 @@ Figure~\ref{fig:ch3-ntc-cal-setup}.
 
 \begin{figure}[H]
   \centering
-  \includegraphics[width=0.85\textwidth]{ch3/figure_3.22.jpg}
+  \rotatebox{-90}{%
+    \includegraphics[height=0.6\textheight]{ch3/figure_3.22.jpg}%
+  }
   \caption{Data-collection setup for device temperature measurement calibration.}
   \label{fig:ch3-ntc-cal-setup}
 \end{figure}

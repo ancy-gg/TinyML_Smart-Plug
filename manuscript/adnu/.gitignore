@@ -1,5 +1,6 @@
 /logs/
 /pdf/
+/build/visual_audit/
 *.aux
 *.log
 *.out

@@ -11,13 +11,7 @@ than as isolated measurement exercises.
 \label{sec:ch4-voltage-validation}
 
 The voltage sensor was compared with a Fluke 115 True RMS multimeter at ten
-test points. The corrected prototype readings produced an MAE of 3.910V, MSE
-of 15.539V$^2$, and RMSE of 3.94V. These errors are small relative to the
-firmware voltage bands in Table~\ref{tab:ch3-voltage-thresholds}; therefore,
-the calibrated voltage channel is adequate for distinguishing normal operation
-from the undervoltage and overvoltage regions used in this prototype.
-
-Table~\ref{tab:ch4-voltage-validation} lists the voltage validation points.
+test points.
 \begin{table}[H]
   \centering
   \caption{Validation results for the voltage sensor}
@@ -40,23 +34,20 @@ Table~\ref{tab:ch4-voltage-validation} lists the voltage validation points.
   \end{tabular}
 \end{table}
 
-Table~\ref{tab:ch4-voltage-validation} shows that the voltage error remained
-within approximately 5V across the tested range. The result supports voltage
+Table~\ref{tab:ch4-voltage-validation} shows the validation results for the voltage sensor. 
+The corrected prototype readings produced an MAE of 3.910V, MSE
+of 15.539V$^2$, and RMSE of 3.94V. These errors are small relative to the
+firmware voltage bands in Table~\ref{tab:ch3-voltage-thresholds}; therefore,
+the calibrated voltage channel is adequate for distinguishing normal operation
+from the undervoltage and overvoltage regions used in this prototype.
+The result supports voltage
 state discrimination, but it does not by itself certify the device for
 utility-grade metering.
 
 \subsection{Current Sensor Validation}
 \label{sec:ch4-current-validation}
 
-The current sensor was compared with an Ingco clamp meter. The current channel
-produced an MAE of 0.178A, MSE of 0.04076A$^2$, and RMSE of 0.202A. This
-level of error is acceptable for the implemented warning and sustained-trip
-thresholds because the warning threshold is 10.0A and the sustained-overload
-threshold is 14.5A. The same current channel is also used by the socket
-thermal model and the TinyML feature extractor, so a low RMS-current error
-improves both threshold and feature reliability.
-
-Table~\ref{tab:ch4-current-validation} presents the current validation points.
+The current sensor was compared with an Ingco clamp meter.
 \begin{table}[H]
   \centering
   \caption{Validation results for the current sensor}
@@ -81,22 +72,22 @@ Table~\ref{tab:ch4-current-validation} presents the current validation points.
 
 Table~\ref{tab:ch4-current-validation} shows that error increased slightly at
 higher currents but remained much smaller than the distance between the warning
-and sustained-trip thresholds. This supports the overload results discussed in
+and sustained-trip thresholds.
+The current channel
+produced an MAE of 0.178A, MSE of 0.04076A$^2$, and RMSE of 0.202A. This
+level of error is acceptable for the implemented warning and sustained-trip
+thresholds because the warning threshold is 10.0A and the sustained-overload
+threshold is 14.5A. The same current channel is also used by the socket
+thermal model and the TinyML feature extractor, so a low RMS-current error
+improves both threshold and feature reliability.
+This supports the overload results discussed in
 Section~\ref{sec:ch4-overload-protection}.
 
 \subsection{Device Temperature Measurement Validation}
 \label{sec:ch4-temperature-validation}
 
 The TTC05103JSY 10k$\Omega$ thermistor was compared with a reference infrared
-thermometer at the sensor measurement point. The device temperature measurement channel produced an MAE
-of 1.02°C, MSE of 1.142°C$^2$, and RMSE of 1.07°C. This
-validates the thermistor channel itself, but it must not be interpreted as a
-direct validation of internal contact temperature. The heating tests later
-show that the socket terminal can be much hotter than the external thermistor reading
-or compensated estimate.
-
-Table~\ref{tab:ch4-temperature-validation} presents the thermistor validation
-points.
+thermometer at the sensor measurement point.
 \begin{table}[H]
   \centering
   \caption{Validation results for the device temperature measurement thermistor channel}
@@ -120,7 +111,13 @@ points.
 \end{table}
 
 Table~\ref{tab:ch4-temperature-validation} supports the use of the thermistor channel as a
-stable observable input for the thermal estimator. It also reinforces the
+stable observable input for the thermal estimator. The device temperature measurement channel produced an MAE
+of 1.02°C, MSE of 1.142°C$^2$, and RMSE of 1.07°C. This
+validates the thermistor channel itself, but it must not be interpreted as a
+direct validation of internal contact temperature. 
+Hence, it reinforces the
 methodological need for the compensated socket-temperature model because the
 sensor is external to the highest-temperature contact interface.
-
+The heating tests later
+show that the socket terminal can be much hotter than the external thermistor reading
+or compensated estimate. 

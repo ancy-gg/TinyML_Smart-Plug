@@ -10,7 +10,6 @@ placed in Appendices~\ref{app:c} and~\ref{app:d}; arc-fault testing and data
 collection logs are placed in Appendices~\ref{app:e} and~\ref{app:f}. The
 letters, safety proposal, project schedule, and cost documentation are placed
 in Appendices~\ref{app:g},~\ref{app:h}, and~\ref{app:i}.
-
 \subsection{Sensor-Validation Metrics}
 \label{sec:ch3-sensor-metrics}
 
@@ -55,7 +54,7 @@ sustained-overload condition persisted. The block diagram of the overload test
 is shown in Figure~\ref{fig:ch3-overload-block}.
 \begin{figure}[H]
   \centering
-  \resizebox{0.96\textwidth}{!}{%
+  \resizebox{0.7\textwidth}{!}{%
   \begin{tikzpicture}[node distance=0.34in and 0.36in]
     \node[thesis process,text width=1.35in] (supply) {230V AC supply\\with breaker access};
     \node[thesis process,text width=1.35in,right=of supply] (plug) {TinyML Smart Plug\\under test};
@@ -77,7 +76,11 @@ through its relay. This matches the current path used in normal operation.
 The actual overload test setup is shown in Figure~\ref{fig:ch3-overload-actual}.
 \begin{figure}[H]
   \centering
-  \includegraphics[width=0.88\textwidth]{ch3/figure_3.31.png}
+  \includegraphics[
+    width=0.55\textwidth,
+    trim=1cm 1cm 1cm 1cm,
+    clip
+  ]{ch3/figure_3.31.png}
   \caption{Actual test setup for overload evaluation.}
   \label{fig:ch3-overload-actual}
 \end{figure}
@@ -100,7 +103,7 @@ Figure~\ref{fig:ch3-heating-block} shows the socket-heating test block
 diagram.
 \begin{figure}[H]
   \centering
-  \resizebox{0.96\textwidth}{!}{%
+  \resizebox{0.8\textwidth}{!}{%
   \begin{tikzpicture}[node distance=0.34in and 0.34in]
     \node[thesis process,text width=1.35in] (supply) {230V AC supply\\with breaker access};
     \node[thesis process,text width=1.35in,right=of supply] (plug) {Prototype\\thermistor channel};
@@ -119,8 +122,8 @@ diagram.
   \label{fig:ch3-heating-block}
 \end{figure}
 
-Figure~\ref{fig:ch3-heating-block} shows that both the prototype Device
-Measurement and a reference socket or terminal temperature measurement were
+Figure~\ref{fig:ch3-heating-block} shows that both the prototype device
+temperature measurement and a reference socket or terminal temperature measurement were
 observed during testing. This made it possible to distinguish device temperature measurement,
 estimated socket temperature, and reference terminal temperature in the
 results.
@@ -128,7 +131,11 @@ results.
 The degraded socket contacts are shown in Figure~\ref{fig:ch3-corroded-contacts}.
 \begin{figure}[H]
   \centering
-  \includegraphics[width=0.80\textwidth]{ch3/figure_3.33.png}
+  \includegraphics[
+    width=0.5\textwidth,
+    trim=1cm 1cm 1cm 1cm,
+    clip
+  ]{ch3/figure_3.33.png}
   \caption{Corroded socket contacts used for degraded-contact testing.}
   \label{fig:ch3-corroded-contacts}
 \end{figure}
@@ -141,7 +148,11 @@ The actual socket-heating test setup is shown in
 Figure~\ref{fig:ch3-heating-actual}.
 \begin{figure}[H]
   \centering
-  \includegraphics[width=0.88\textwidth]{ch3/figure_3.34.png}
+  \includegraphics[
+    width=0.65\textwidth,
+    trim=1cm 1cm 1cm 1cm,
+    clip
+  ]{ch3/figure_3.34.png}
   \caption{Actual test setup for socket-heating evaluation.}
   \label{fig:ch3-heating-actual}
 \end{figure}
@@ -164,7 +175,7 @@ in Appendix~\ref{app:g}. The arc platform is shown in
 Figure~\ref{fig:ch3-arc-platform}.
 \begin{figure}[H]
   \centering
-  \includegraphics[width=0.92\textwidth]{ch3/figure_3.35.png}
+  \includegraphics[width=0.82\textwidth]{ch3/figure_3.35.png}
   \caption{Series arc-fault test platform.}
   \figsource{Qi et al., 2025 [48]}
   \label{fig:ch3-arc-platform}
@@ -182,7 +193,7 @@ The block diagram of the series arc-fault test is shown in
 Figure~\ref{fig:ch3-arc-block}.
 \begin{figure}[H]
   \centering
-  \resizebox{0.96\textwidth}{!}{%
+  \resizebox{0.8\textwidth}{!}{%
   \begin{tikzpicture}[node distance=0.34in and 0.34in]
     \node[thesis process,text width=1.25in] (supply) {230V AC supply\\with breaker access};
     \node[thesis process,text width=1.28in,right=of supply] (arc) {Series arc\\generator};
@@ -208,7 +219,7 @@ The actual series arc-fault test setup is shown in
 Figure~\ref{fig:ch3-arc-actual}.
 \begin{figure}[H]
   \centering
-  \includegraphics[width=0.90\textwidth]{ch3/figure_3.37.png}
+  \includegraphics[width=0.82\textwidth]{ch3/figure_3.37.png}
   \caption{Actual test setup for series arc-fault evaluation.}
   \label{fig:ch3-arc-actual}
 \end{figure}

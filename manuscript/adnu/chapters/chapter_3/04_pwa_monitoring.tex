@@ -11,7 +11,10 @@ network loss while still supporting data collection and analysis.
 Figure~\ref{fig:ch3-pwa-block} shows the PWA and Firebase data path.
 \begin{figure}[H]
   \centering
-  \includegraphics[width=0.96\textwidth]{ch3/figure_3.12.png}
+  \begin{tikzpicture}
+    \node[anchor=south west,inner sep=0] (img) at (0,0)
+      {\includegraphics[width=0.88\textwidth]{ch3/figure_3.12.png}};
+  \end{tikzpicture}
   \caption{PWA block diagram and Firebase data path.}
   \label{fig:ch3-pwa-block}
 \end{figure}
@@ -30,31 +33,39 @@ The live dashboard used during testing is shown in
 Figure~\ref{fig:ch3-pwa-dashboard}.
 \begin{figure}[H]
   \centering
-  \includegraphics[width=0.92\textwidth]{ch3/figure_3.13.png}
+  \begin{tikzpicture}
+    \node[anchor=south west,inner sep=0] (img) at (0,0)
+      {\includegraphics[width=0.84\textwidth]{ch3/figure_3.13.png}};
+    \begin{scope}[x={(img.south east)},y={(img.north west)}]
+    \end{scope}
+  \end{tikzpicture}
   \caption{Actual PWA live dashboard.}
   \label{fig:ch3-pwa-dashboard}
 \end{figure}
 
-Figure~\ref{fig:ch3-pwa-dashboard} displays voltage, current, device
-temperature measurement, estimated socket temperature, THD, spectral features,
-conduction-intermittence features, protection state, and relay state. The
-dashboard intentionally distinguishes the device temperature measurement from
-estimated socket temperature because the relay-facing thermal decision uses the
-compensated estimate, not the raw thermistor reading alone.
+Figure~\ref{fig:ch3-pwa-dashboard} displays the status and protection state,
+the main measurements, displays waveform-disturbance features, and displays conduction-intermittence
+features. The dashboard intentionally distinguishes the device temperature
+measurement from estimated socket temperature because the relay-facing thermal
+decision uses the compensated estimate, not the raw thermistor reading alone.
 
 The event-history page is shown in Figure~\ref{fig:ch3-pwa-history}.
 \begin{figure}[H]
   \centering
-  \includegraphics[width=0.92\textwidth]{ch3/figure_3.14.png}
+  \begin{tikzpicture}
+    \node[anchor=south west,inner sep=0] (img) at (0,0)
+      {\includegraphics[width=0.86\textwidth]{ch3/figure_3.14.png}};
+    \begin{scope}[x={(img.south east)},y={(img.north west)}]
+    \end{scope}
+  \end{tikzpicture}
   \caption{Actual PWA history-log view.}
   \label{fig:ch3-pwa-history}
 \end{figure}
 
-Figure~\ref{fig:ch3-pwa-history} documents the stored-event interface used to
-review warnings, trips, and data records after tests. The history function was
-also useful for checking whether the firmware sequence matched the expected
-warning, persistence, and latching behavior during overload, heating, and
-arc-fault trials.
+Figure~\ref{fig:ch3-pwa-history} documents the alert and event list. The history
+function was useful for checking whether the firmware sequence matched the
+expected warning, persistence, and latching behavior during overload, heating,
+and arc-fault trials.
 
 \subsubsection{Telemetry Fields}
 \label{sec:ch3-telemetry-fields}

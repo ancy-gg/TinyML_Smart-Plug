@@ -522,14 +522,12 @@ the study's low-current runtime and low-current ratio features: both are
 intended to quantify how much of the observation window is spent in weak
 or interrupted conduction {[}34{]}.
 
-The same physical logic supports dispersion-based zero-cross metrics. In
-a healthy waveform, zero-cross intervals remain relatively regular,
-whereas in an arc state, they become more erratic because extinction and
-restrike disturb the timing of conduction around the zero region.
-{[}36{]} relies directly on zero-crossing period analysis, and {[}34{]}
-likewise centers its method on zero-current behavior. Hence, the study
-used the term zero-cross variance, which is derived from the dispersion
-of zero-cross intervals as outlined by studies {[}34{]} and {[}36{]}.
+The same physical logic supports zero-dwell behavior around the zero-current
+region. In a healthy waveform, the near-zero portion of the cycle is
+relatively regular, whereas in an arc state, extinction and restrike can
+increase or destabilize the time spent near zero current. {[}36{]} relies
+directly on zero-crossing period analysis, and {[}34{]} likewise centers its
+method on zero-current behavior.
 
 Changes in RMS from one analysis interval to the next also belong to the
 conduction-intermittence family when they are interpreted as evidence of
@@ -705,7 +703,7 @@ inference with threshold-based protection logic.
     \textbf{Feature family} & \textbf{Representative quantities} & \textbf{Literature connection} \\
     \midrule
     Waveform disturbance & Midband residual ratio; mid/high-frequency spectral flux; half-cycle asymmetry; current THD; high-frequency energy delta & Arc studies report random harmonic and high-frequency disturbance, while NILM studies show that healthy loads also have family-specific spectral signatures {[}34{]}--{[}39{]}, {[}41{]}, {[}42{]}, {[}49{]}--{[}53{]}. \\
-    Conduction intermittence & Low-current run time; low-current ratio; zero-cross variance; absolute RMS-current delta; baseline z-deviation & These quantities represent restrikes, current interruption, partial conduction, and unstable cycle timing, which are physically consistent with series arcs and weak-contact behavior {[}34{]}, {[}36{]}, {[}37{]}, {[}52{]}, {[}54{]}. \\
+    Conduction intermittence & Low-current run time; low-current ratio; zero-dwell ratio; absolute RMS-current delta; baseline z-deviation & These quantities represent restrikes, current interruption, partial conduction, and unstable near-zero conduction timing, which are physically consistent with series arcs and weak-contact behavior {[}34{]}, {[}36{]}, {[}37{]}, {[}52{]}, {[}54{]}. \\
     Deterministic stress variables & RMS current; estimated socket temperature; voltage sag or abnormal supply condition & These variables encode thermal or electrical stress and remain essential even when machine learning is added. They improve interpretability and provide hard safety overrides for overload and heating events {[}3{]}, {[}27{]}--{[}29{]}, {[}44{]}, {[}45{]}. \\
     \bottomrule
   \end{tabular}
