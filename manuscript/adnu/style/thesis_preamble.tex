@@ -74,7 +74,9 @@
 \hypersetup{hidelinks,pdfborder={0 0 0}}
 \usepackage{cite}
 \usepackage{etoolbox}
-\input{figures/ch4/socket_plots.tex}
+\InputIfFileExists{figures/ch4/socket_plots.tex}{}{%
+  \InputIfFileExists{../figures/ch4/socket_plots.tex}{}{}%
+}
 
 % Page numbers: major title pages use bottom center; ordinary pages use upper right.
 \pagestyle{fancy}
@@ -89,8 +91,12 @@
 \setlength{\headheight}{14.5pt}
 
 % Tables are single-spaced by default, including long tables.
+\BeforeBeginEnvironment{table}{\par\doublespacing}
+\BeforeBeginEnvironment{longtable}{\par\doublespacing}
 \AtBeginEnvironment{table}{\singlespacing}
 \AtBeginEnvironment{longtable}{\singlespacing}
+\AfterEndEnvironment{table}{\par\doublespacing}
+\AfterEndEnvironment{longtable}{\par\doublespacing}
 \captionsetup{
   labelfont=bf,
   textfont=normalfont,
@@ -152,7 +158,10 @@
   {\par\end{spacing}}
 
 \makeatletter
-\def\inputrefs@provide#1{%
+\def\inputrefs@provide{%
+  \@ifstar{\inputrefs@provide@cmd}{\inputrefs@provide@cmd}%
+}
+\def\inputrefs@provide@cmd#1{%
   \@ifnextchar[{\inputrefs@provide@opt}{\inputrefs@provide@noopt}%
 }
 \def\inputrefs@provide@opt[#1]#2{}
@@ -167,7 +176,7 @@
   \let\@setckpt\@gobbletwo
   \let\HyPL@Entry\@gobble
   \let\hyper@newdestlabel\@gobbletwo
-  \def\providecommand{\@ifstar{\inputrefs@provide}{\inputrefs@provide}}%
+  \let\providecommand\inputrefs@provide
   \IfFileExists{logs/chapters/chapter_1/main.aux}{\@input{logs/chapters/chapter_1/main.aux}}{}%
   \IfFileExists{logs/chapters/chapter_2/main.aux}{\@input{logs/chapters/chapter_2/main.aux}}{}%
   \IfFileExists{logs/chapters/chapter_3/main.aux}{\@input{logs/chapters/chapter_3/main.aux}}{}%

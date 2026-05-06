@@ -16,21 +16,29 @@ Figure~\ref{fig:ch3-data-labeling-deploy} shows the data-logging, labeling,
 training, and deployment path used by the project.
 \begin{figure}[H]
   \centering
-  \begin{tikzpicture}[node distance=0.26in and 0.28in]
-    \node[thesis process,text width=1.28in] (log) {Firmware CSV\\logging};
-    \node[thesis process,text width=1.28in,right=of log] (label) {Manual review\\and labeling};
-    \node[thesis process,text width=1.28in,right=of label] (clean) {Python cleaning\\and splits};
-    \node[thesis process,text width=1.28in,below=0.30in of clean] (train) {Context and arc\\model training};
-    \node[thesis process,text width=1.28in,left=of train] (report) {Metrics and\\confusion reports};
-    \node[thesis process,text width=1.28in,left=of report] (export) {C headers\\exported};
-    \node[thesis process,text width=1.28in,below=0.30in of export] (deploy) {Embedded\\deployment};
+  \resizebox{\textwidth}{!}{%
+  \begin{tikzpicture}[node distance=0.30in and 0.42in]
+    \node[thesis process,text width=1.38in] (bench) {Bench tests\\normal, start, arc};
+    \node[thesis process,text width=1.38in,right=of bench] (log) {Firmware CSV\\feature logs};
+    \node[thesis process,text width=1.38in,right=of log] (label) {Manual review\\labels and notes};
+
+    \node[thesis process,text width=1.38in,below=0.36in of label] (prepare) {Python data\\cleaning and splits};
+    \node[thesis process,text width=1.38in,left=of prepare] (context) {Context model\\training};
+    \node[thesis process,text width=1.38in,left=of context] (arc) {Random Forest\\arc training};
+
+    \node[thesis process,text width=1.38in,below=0.36in of arc] (metrics) {Metrics\\confusion reports};
+    \node[thesis process,text width=1.38in,right=of metrics] (export) {Exported C\\model headers};
+    \node[thesis process,text width=1.38in,right=of export] (deploy) {Firmware\\integration and tests};
+
+    \draw[thesis arrow] (bench) -- (log);
     \draw[thesis arrow] (log) -- (label);
-    \draw[thesis arrow] (label) -- (clean);
-    \draw[thesis arrow] (clean) -- (train);
-    \draw[thesis arrow] (train) -- (report);
-    \draw[thesis arrow] (report) -- (export);
+    \draw[thesis arrow] (label) -- (prepare);
+    \draw[thesis arrow] (prepare) -- (context);
+    \draw[thesis arrow] (context) -- (arc);
+    \draw[thesis arrow] (arc) -- (metrics);
+    \draw[thesis arrow] (metrics) -- (export);
     \draw[thesis arrow] (export) -- (deploy);
-  \end{tikzpicture}
+  \end{tikzpicture}}
   \caption{Data logging, labeling, and TinyML deployment workflow.}
   \label{fig:ch3-data-labeling-deploy}
 \end{figure}
@@ -47,17 +55,29 @@ The deployed model sequence is summarized in
 Figure~\ref{fig:ch3-tinyml-sequence}.
 \begin{figure}[H]
   \centering
-  \begin{tikzpicture}[node distance=0.24in and 0.32in]
-    \node[thesis process,text width=1.45in] (features) {20 firmware export\\feature fields};
-    \node[thesis process,text width=1.45in,right=of features] (context) {Context model\\6 waveform inputs};
-    \node[thesis process,text width=1.45in,right=of context] (arc) {Arc model\\6 waveform inputs + 7 context fields};
-    \node[thesis process,text width=1.45in,below=0.32in of arc] (protect) {Persistence counter\\and relay logic};
-    \node[thesis process,text width=1.45in,left=of protect] (pwa) {Live PWA\\10 feature cards};
+  \resizebox{0.88\textwidth}{!}{%
+  \begin{tikzpicture}[node distance=0.24in and 0.60in]
+    \node[thesis process,text width=1.75in] (frame) {Current waveform\\512-sample frame};
+    \node[thesis process,text width=1.75in,below=of frame] (features) {Computed/logged\\20 waveform fields};
+    \node[thesis process,text width=1.75in,below=of features] (context) {Context model\\6 selected inputs};
+    \node[thesis process,text width=1.75in,right=of context] (family) {Load-family\\code and confidence};
+    \node[thesis process,text width=1.75in,below=of context] (arcvec) {Arc input vector\\6 waveform + 7 context};
+    \node[thesis process,text width=1.75in,below=of arcvec] (rf) {Random Forest\\arc probability};
+    \node[thesis process,text width=1.75in,below=of rf] (persist) {Persistence\\counter and latch};
+    \node[thesis process,text width=1.75in,below=of persist] (relay) {Local relay,\\alerts, and logs};
+
+    \node[thesis process,text width=1.75in,right=of features] (pwa) {Firebase/PWA\\10 live feature cards\\logging and control};
+
+    \draw[thesis arrow] (frame) -- (features);
     \draw[thesis arrow] (features) -- (context);
-    \draw[thesis arrow] (context) -- (arc);
-    \draw[thesis arrow] (arc) -- (protect);
-    \draw[thesis arrow] (features.south) |- (pwa.west);
-  \end{tikzpicture}
+    \draw[thesis arrow] (context) -- (arcvec);
+    \draw[thesis arrow] (context) -- (family);
+    \draw[thesis arrow] (family) |- (arcvec);
+    \draw[thesis arrow] (arcvec) -- (rf);
+    \draw[thesis arrow] (rf) -- (persist);
+    \draw[thesis arrow] (persist) -- (relay);
+    \draw[thesis arrow] (features) -- (pwa);
+  \end{tikzpicture}}
   \caption{TinyML processing sequence from feature logging to embedded inference.}
   \label{fig:ch3-tinyml-sequence}
 \end{figure}

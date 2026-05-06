@@ -1,6 +1,11 @@
 \section{Program and Firmware Flow}
 \label{sec:ch3-program-flow}
 
+This section introduces the firmware flow that connects the measured hardware
+signals to the protection and reporting behavior. The discussion follows the
+same order used by the embedded program: initialization, repeated sampling and
+feature computation, state evaluation, relay actuation, and cloud/PWA updates.
+
 \subsection{Initialization and Sampling}
 \label{sec:ch3-initialization-sampling}
 
@@ -21,6 +26,18 @@ the firmware.
   \label{fig:ch3-program-flow}
 \end{figure}
 
+The flowchart separates slow supervision from waveform-based inference. RMS
+voltage, RMS current, and thermistor temperature are updated for ordinary
+monitoring and deterministic protection. In parallel, the current waveform is
+sampled at the higher ADC rate, conditioned, framed, and converted into
+candidate waveform features. Usable feature frames update the load-context
+classifier first; the accepted load-family code and confidence are then
+appended to the arc-model input vector before Random Forest inference. The
+result is not used as a single-frame trip command. It is passed to the
+protection manager, where persistence counters, blanking intervals, and fault
+latches determine whether the relay should remain energized, warn the user, or
+disconnect the load.
+
 \subsection{Protection-State Evaluation}
 \label{sec:ch3-protection-state-evaluation}
 
@@ -33,32 +50,46 @@ condition remains active and trips when the score reaches 6, equivalent to
 approximately 60s of sustained overload. This makes the overload behavior
 closer to inverse-time protection logic than to an instantaneous cutoff [22].
 
-The firmware also latches fault states. After relay disconnection, the event is
-recorded locally and uploaded when the network is available. The plug remains
-in the fault state until the user clears the fault through the device or
-application workflow. This prevents a hazardous load from being automatically
-re-energized after a transient communication or reset event.
+The socket-heating path compares the estimated socket temperature with thermal
+warning and trip thresholds. The voltage path provides abnormal-supply
+supervision and relay response where implemented, but it is not presented as a
+replacement for a surge protective device, AVR, GFCI, AFCI, branch-circuit
+breaker, or certified wiring protection. The firmware also latches fault
+states. After relay disconnection, the event is recorded locally and uploaded
+when the network is available. The plug remains in the fault state until the
+user clears the fault through the device or application workflow. This
+prevents a hazardous load from being automatically re-energized after a
+transient communication or reset event.
 
 \subsection{Timing Constants}
 \label{sec:ch3-timing-constants}
 
-The sampling and timing constants used by the firmware are listed in
-Table~\ref{tab:ch3-firmware-constants}. These values were taken from the
-firmware configuration and the current-sensing implementation.
+The sampling, protection, and reporting constants used by the firmware are
+listed in Table~\ref{tab:ch3-firmware-constants}. These values were taken from
+\texttt{MainConfiguration.h} and the current-feature implementation, so they
+describe the deployed firmware behavior rather than nominal design wishes.
 \begin{table}[H]
   \centering
   \caption{Selected firmware timing and sampling constants}
   \label{tab:ch3-firmware-constants}
-  \begin{tabular}{p{0.38\textwidth}p{0.22\textwidth}p{0.30\textwidth}}
+  \begin{tabular}{p{0.34\textwidth}p{0.20\textwidth}p{0.36\textwidth}}
     \toprule
     \textbf{Constant} & \textbf{Value} & \textbf{Role} \\
     \midrule
     Target current sampling rate & 27,000Hz & Current waveform acquisition for feature extraction \\
-    Arc runtime frame length & 512 samples & FFT and time-domain feature window \\
-    Arc runtime hop length & 256 samples & Overlap between consecutive feature frames \\
-    Feature emission cadence & Every 3 hops & Approximate 35.16Hz feature output rate \\
+    Arc runtime frame length & 512 samples & FFT and time-domain feature window, approximately 18.96ms at the target sampling rate \\
+    Arc runtime hop length & 256 samples & Overlap between consecutive feature frames, approximately 9.48ms per hop \\
+    Feature emission cadence & Every 3 hops & Approximate 35.16Hz feature output rate for logging and inference \\
     MCP3204 SPI clock & 1.2MHz & 12-bit current ADC transfer clock \\
-    Voltage sampling interval & 250 $\mu$s & Firmware voltage-window acquisition interval \\
+    Voltage sampling interval & 250$\mu$s & Firmware voltage-window acquisition interval \\
+    Load-context acquisition window & 5s & Time allowed for stable load-family estimation before latching context \\
+    Overload warning threshold & 10.0A & Local warning level before sustained overload trip scoring \\
+    Sustained overload trip threshold & 14.5A & Current level used by the relay-trip persistence score \\
+    Sustained overload score timing & 6 steps at 10s & Approximately 60s of sustained overload before relay trip \\
+    Socket-temperature trip threshold & 40\degreeC & Estimated socket-temperature threshold used by thermal protection \\
+    Arc persistence counter & +2, -6, trip at 8 & Leaky counter that requires repeated arc-positive frames before relay action \\
+    Arc hold interval & 800ms & Short hold after arc indication to stabilize the protection state \\
+    Cloud live update interval & 10s normal, 5s fault & Firebase/PWA telemetry cadence, slower than local protection evaluation \\
     \bottomrule
   \end{tabular}
 \end{table}
@@ -66,4 +97,7 @@ firmware configuration and the current-sensing implementation.
 Table~\ref{tab:ch3-firmware-constants} explains why the current path is
 handled separately from slow telemetry. Arc-fault detection requires waveform
 frames with millisecond-scale timing, while Firebase updates and PWA displays
-operate at a slower human-monitoring cadence.
+operate at a slower human-monitoring cadence. Consequently, relay protection
+does not wait for Firebase or the PWA; the remote interface records,
+visualizes, and sends basic control fields, while the local firmware evaluates
+the safety states on the device.

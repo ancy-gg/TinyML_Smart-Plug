@@ -1,6 +1,12 @@
 \section{System Model}
 \label{sec:ch3-system-model}
 
+This section defines the prototype as a research system before the firmware,
+hardware, and test procedures are discussed in detail. It connects the
+measured inputs, embedded computations, cloud interface, and protection
+outputs so that the later methodology can be traced back to the same system
+boundaries.
+
 \subsection{Conceptual Framework}
 \label{sec:ch3-conceptual-framework}
 
@@ -14,18 +20,7 @@ records, and relay disconnection when a protection condition was latched.
 Figure~\ref{fig:ch3-conceptual-framework} summarizes this research model.
 \begin{figure}[H]
   \centering
-  \begin{tikzpicture}[node distance=0.32in and 0.30in]
-    \node[thesis process,text width=1.50in] (inputs) {Inputs\\voltage, current, device temperature, network state};
-    \node[thesis process,text width=1.65in,right=of inputs] (processing) {Embedded processing\\calibration, thermal model, waveform features, TinyML inference};
-    \node[thesis process,text width=1.50in,right=of processing] (outputs) {Outputs\\warnings, relay action, logs, PWA display/control};
-    \node[thesis process,text width=1.45in,below=0.34in of processing] (validation) {Controlled validation\\sensor, overload, socket heating, series arc};
-    \node[thesis process,text width=1.45in,below=0.34in of validation] (interpretation) {Interpretation\\complementary protection under tested conditions};
-    \draw[thesis arrow] (inputs) -- (processing);
-    \draw[thesis arrow] (processing) -- (outputs);
-    \draw[thesis arrow] (validation) -- (processing);
-    \draw[thesis arrow] (processing) -- (interpretation);
-    \draw[thesis arrow] (outputs.south) |- (interpretation.east);
-  \end{tikzpicture}
+  \includegraphics[width=0.98\textwidth]{ch3/figure_3.1.png}
   \caption{Conceptual framework of the TinyML Smart Plug.}
   \label{fig:ch3-conceptual-framework}
 \end{figure}
@@ -38,56 +33,10 @@ important because the prototype was intended as complementary protection, not
 as a replacement for branch-circuit breakers, AFCIs, GFCIs, wiring inspection,
 or certified protective equipment.
 
-\subsection{System Architecture}
-\label{sec:ch3-system-architecture-discussion}
-
-The same behavior can be described as a layered embedded system. The sensing
-layer captures voltage, current, and socket temperature; the firmware layer
-computes calibrated variables and protection states; the TinyML layer provides
-context-aware series-arc inference; and the PWA layer displays live and
-historical data using Firebase services [55], [56].
-
-Figure~\ref{fig:ch3-system-architecture} presents the system architecture used
-to connect these layers.
-\begin{figure}[H]
-  \centering
-  \begin{tikzpicture}[node distance=0.24in and 0.27in]
-    \node[thesis process,text width=1.20in] (sensors) {Sensors\\voltage, current, temperature};
-    \node[thesis process,text width=1.55in,right=of sensors] (esp) {TinyML Smart Plug\\ESP32-S3 local protection};
-    \node[thesis process,text width=1.28in,right=of esp] (relay) {Relay and\\protected outlet};
-    \node[thesis process,text width=1.28in,above=0.30in of relay] (local) {OLED, buzzer,\\local indicators};
-    \node[thesis process,text width=1.38in,below=0.32in of esp] (firebase) {Firebase\\Realtime Database};
-    \node[thesis process,text width=1.42in,right=of firebase] (pwa) {PWA\\visualization, logs, basic control};
-    \draw[thesis arrow] (sensors) -- (esp);
-    \draw[thesis arrow] (esp) -- node[above,font=\scriptsize]{local trip} (relay);
-    \draw[thesis arrow] (esp) -- (local);
-    \draw[thesis arrow] (esp) -- node[left,font=\scriptsize]{telemetry} (firebase);
-    \draw[thesis arrow] (firebase) -- node[above,font=\scriptsize]{live data} (pwa);
-    \draw[thesis arrow] (pwa.south west) -- node[below,font=\scriptsize]{clear/relay commands} (firebase.south east);
-    \draw[thesis arrow] (firebase.north) -- node[left,font=\scriptsize]{control fields} (esp.south);
-  \end{tikzpicture}
-  \caption{System architecture of the TinyML Smart Plug.}
-  \label{fig:ch3-system-architecture}
-\end{figure}
-
-Figure~\ref{fig:ch3-system-architecture} places the ESP32-S3 at the center of
-the design. The microcontroller receives conditioned analog signals, runs the
-protection and TinyML routines locally, drives the relay and indicators, and
-uploads selected telemetry. Firebase and the PWA also carry basic remote
-control fields, such as fault clearing and relay-control commands, but these
-commands do not replace the local protection logic. Keeping the protection
-decision on the
-microcontroller prevents the relay action from depending on internet
-availability, while the cloud and PWA remain useful for visualization,
-logging, labeling, review, and operator interaction.
-
-\subsection{Input, Processing, and Output Summary}
-\label{sec:ch3-system-ipo}
-
 The design variables used by the system are summarized in
-Table~\ref{tab:ch3-system-variables}. The table separates direct measurements
-from computed variables so that later equations can be traced to the firmware
-implementation.
+Table~\ref{tab:ch3-system-variables}. The table separates direct
+measurements from computed variables so that later equations can be traced to
+the firmware implementation.
 \begin{table}[H]
   \centering
   \caption{Main firmware variables used by the prototype}
@@ -110,3 +59,33 @@ subsystems: it supports ordinary overload detection, thermal compensation, and
 the TinyML feature vector. Therefore, the current channel was treated as a
 shared measurement path whose calibration and sampling behavior must remain
 consistent across protection functions.
+
+\subsection{System Architecture}
+\label{sec:ch3-system-architecture-discussion}
+
+The same behavior can be described as a layered embedded system. The sensing
+layer captures voltage, current, and socket temperature; the firmware layer
+computes calibrated variables and protection states; the TinyML layer provides
+context-aware series-arc inference; and the PWA layer displays live and
+historical data using Firebase services [55], [56].
+
+Figure~\ref{fig:ch3-system-architecture} presents the system architecture used
+to connect these layers.
+\begin{figure}[H]
+  \centering
+  \includegraphics[width=0.98\textwidth]{ch3/figure_3.2.png}
+  \caption{System architecture of the TinyML Smart Plug.}
+  \label{fig:ch3-system-architecture}
+\end{figure}
+
+Figure~\ref{fig:ch3-system-architecture} places the ESP32-S3 at the center of
+the design. The microcontroller receives conditioned analog signals, runs the
+protection and TinyML routines locally, drives the relay and indicators, and
+uploads selected telemetry. Firebase and the PWA also carry basic remote
+control fields, such as fault clearing and relay-control commands, but these
+commands do not replace the local protection logic. Keeping the protection
+decision on the
+microcontroller prevents the relay action from depending on internet
+availability, while the cloud and PWA remain useful for visualization,
+logging, labeling, review, and operator interaction.
+

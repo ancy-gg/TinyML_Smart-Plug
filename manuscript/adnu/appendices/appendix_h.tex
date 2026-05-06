@@ -1,11 +1,10 @@
-\begin{landscape}
 \chapter{Gantt Chart}\label{app:h}
 
 \begin{figure}[H]
   \centering
-  \begin{tikzpicture}[x=0.72cm,y=0.58cm]
+  \rotatebox{90}{%
+  \begin{tikzpicture}[x=0.70cm,y=1.14cm]
     \def\chartwidth{19}
-    \def\rowheight{1}
     \foreach \x/\m in {0/Jan,4/Feb,8/Mar,12/Apr,16/May} {
       \draw[black!45] (\x,0.1) -- (\x,-10.3);
       \node[font=\small\bfseries,anchor=south] at (\x+2,0.35) {\m\ 2026};
@@ -14,11 +13,11 @@
       \draw[black!12] (\x,0.1) -- (\x,-10.3);
     }
     \draw[black,line width=0.8pt] (0,0.1) -- (\chartwidth,0.1);
-    \node[font=\small\bfseries,anchor=east] at (-0.25,0.1) {Task};
+    \node[font=\small\bfseries,anchor=east] at (-0.35,0.1) {Task};
 
     \newcommand{\ganttbar}[5]{%
-      \node[font=\scriptsize,anchor=east,text width=4.4cm,align=right] at (-0.25,#1) {#2};
-      \draw[fill=#5,draw=black,line width=0.4pt] (#3,#1-0.24) rectangle (#4,#1+0.24);
+      \node[font=\scriptsize,anchor=east,text width=3.8cm,align=right] at (-0.35,#1) {#2};
+      \draw[fill=#5,draw=black,line width=0.4pt] (#3,#1-0.16) rectangle (#4,#1+0.16);
     }
 
     \ganttbar{-0.8}{Literature review and scope}{0.0}{3.8}{gray!25}
@@ -33,8 +32,7 @@
     \ganttbar{-9.8}{Manuscript and defense preparation}{14.0}{19.0}{gray!25}
 
     \node[font=\scriptsize,anchor=west] at (0,-11.0) {Bars are approximate and follow the January--May 2026 project schedule used for planning and PPA coordination.};
-  \end{tikzpicture}
+  \end{tikzpicture}}
   \caption{Gantt chart of project activities.}
   \label{fig:app-h-gantt-chart}
 \end{figure}
-\end{landscape}

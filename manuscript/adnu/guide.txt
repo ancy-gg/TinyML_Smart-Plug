@@ -1,0 +1,547 @@
+TinyML Smart Plug Manuscript LaTeX Guide
+========================================
+
+For normal thesis editing, edit the plain source files:
+
+  misc/*.tex
+  chapters/chapter_*/main.tex
+  chapters/chapter_*/*.tex
+  appendices/*.tex
+  style/thesis_preamble.tex
+  figures/ch3, figures/ch4, figures/apx
+
+Do not normally edit the files inside build/. The build files are wrapper files
+used only to compile one chapter, one section, one appendix, or one front-matter
+part quickly.
+
+Edit build/*.tex only when you add, remove, or rename a real chapter/section
+source file and you also want a matching standalone PDF build for it.
+
+
+Repository map
+--------------
+
+Main manuscript:
+
+  main.tex
+
+This controls the full thesis order:
+
+  title
+  approval form
+  abstract
+  acknowledgements
+  table of contents
+  list of tables
+  list of figures
+  chapters 1-5
+  references
+  appendices A-I
+
+Global formatting:
+
+  style/thesis_preamble.tex
+
+This controls margins, font, spacing, paragraph indentation, heading format,
+page numbering style, table rules, captions, TikZ/PGFPlots support, and helper
+macros.
+
+Front matter:
+
+  misc/title.tex
+  misc/approval_form.tex
+  misc/abstract.tex
+  misc/acknowledgement.tex
+  misc/table_of_contents.tex
+  misc/list_tables.tex
+  misc/list_figures.tex
+  misc/references.tex
+
+Chapters:
+
+  chapters/chapter_1/main.tex
+  chapters/chapter_2/main.tex
+  chapters/chapter_3/main.tex
+  chapters/chapter_4/main.tex
+  chapters/chapter_5/main.tex
+
+Chapter 3 section files:
+
+  chapters/chapter_3/01_system_model.tex
+  chapters/chapter_3/02_program_flow.tex
+  chapters/chapter_3/03_physical_setup.tex
+  chapters/chapter_3/04_pwa_monitoring.tex
+  chapters/chapter_3/05_tinyml_workflow.tex
+  chapters/chapter_3/06_sensor_calibration_computations.tex
+  chapters/chapter_3/07_waveform_features.tex
+  chapters/chapter_3/08_fault_detection_protection.tex
+  chapters/chapter_3/09_test_evaluation.tex
+
+Chapter 4 section files:
+
+  chapters/chapter_4/01_sensor_validation.tex
+  chapters/chapter_4/02_overload_protection.tex
+  chapters/chapter_4/03_socket_heating_characterization.tex
+  chapters/chapter_4/04_socket_heating_protection.tex
+  chapters/chapter_4/05_series_arc_fault_detection.tex
+  chapters/chapter_4/06_tinyml_model_performance.tex
+  chapters/chapter_4/07_overall_feasibility.tex
+
+Appendices:
+
+  appendices/appendix_a.tex
+  appendices/appendix_b.tex
+  appendices/appendix_c.tex
+  appendices/appendix_d.tex
+  appendices/appendix_e.tex
+  appendices/appendix_f.tex
+  appendices/appendix_g.tex
+  appendices/appendix_h.tex
+  appendices/appendix_i.tex
+
+Images:
+
+  figures/ch3/
+  figures/ch4/
+  figures/apx/
+
+Socket-heating plots:
+
+  figures/ch4/socket_plots.tex
+  figures/ch4/data/*.dat
+
+Build wrappers:
+
+  build/misc/*.tex
+  build/chapters/*.tex
+  build/chapters/chapter_3/*.tex
+  build/chapters/chapter_4/*.tex
+  build/appendices/*.tex
+
+Again: these build wrappers are not where the thesis content lives. They only
+make smaller PDFs for checking.
+
+
+Build commands
+--------------
+
+Open PowerShell and go to:
+
+  cd "C:\Disk\Ancy\Platform IO\TinyML_Smart-Plug\manuscript\adnu"
+
+Before building, make sure Strawberry Perl is in PATH:
+
+  $env:Path = "C:\Strawberry\perl\bin;C:\Strawberry\c\bin;$env:Path"
+
+Build the full manuscript:
+
+  latexmk -xelatex -interaction=nonstopmode -halt-on-error -auxdir=logs -outdir=pdf main.tex
+
+Output:
+
+  pdf/main.pdf
+
+The repo also keeps a convenience copy at:
+
+  main.pdf
+
+If needed, copy the generated PDF manually:
+
+  Copy-Item -LiteralPath "pdf\main.pdf" -Destination "main.pdf" -Force
+
+Build everything supported by the repo:
+
+  powershell -ExecutionPolicy Bypass -File "build\build_all_pdfs.ps1"
+
+This builds the full manuscript, front matter, chapters, appendices, and
+supported section PDFs.
+
+Build one chapter:
+
+  latexmk -xelatex -interaction=nonstopmode -halt-on-error -auxdir=logs -outdir=pdf "build\chapters\build_chapter_3.tex"
+
+Build one Chapter 3 section:
+
+  latexmk -xelatex -interaction=nonstopmode -halt-on-error -auxdir=logs -outdir=pdf "build\chapters\chapter_3\build_ch3_05_tinyml_workflow.tex"
+
+Build one Chapter 4 section:
+
+  latexmk -xelatex -interaction=nonstopmode -halt-on-error -auxdir=logs -outdir=pdf "build\chapters\chapter_4\build_ch4_06_tinyml_metrics.tex"
+
+Build one appendix:
+
+  latexmk -xelatex -interaction=nonstopmode -halt-on-error -auxdir=logs -outdir=pdf "build\appendices\build_appendix_h.tex"
+
+
+When to edit main.tex
+---------------------
+
+Edit main.tex when you need to:
+
+  - change the order of chapters
+  - add/remove an appendix
+  - add/remove major front-matter pieces
+  - change the starting page number
+  - add a new included chapter file
+
+Example:
+
+  \pagenumbering{arabic}
+  \setcounter{page}{17}
+  \include{chapters/chapter_1/main}
+
+Do not put normal thesis paragraphs in main.tex. Put them in the chapter,
+section, appendix, or misc file where they belong.
+
+
+When to edit chapter main files
+-------------------------------
+
+Edit:
+
+  chapters/chapter_3/main.tex
+  chapters/chapter_4/main.tex
+
+when you need to change section order or add/remove a section file.
+
+Example:
+
+  \input{chapters/chapter_3/01_system_model}
+  \input{chapters/chapter_3/02_program_flow}
+  \input{chapters/chapter_3/03_physical_setup}
+
+If you only want to change the text inside Section 3.2, edit:
+
+  chapters/chapter_3/02_program_flow.tex
+
+not chapter_3/main.tex.
+
+
+When to edit build files
+------------------------
+
+Usually, do not edit build files.
+
+Edit build files only when you add, remove, or rename a real source file and
+want the standalone section/chapter build to keep working.
+
+Example:
+
+If you add:
+
+  chapters/chapter_3/10_new_section.tex
+
+then you may also add a matching wrapper:
+
+  build/chapters/chapter_3/build_ch3_10_new_section.tex
+
+and add it to:
+
+  build/build_all_pdfs.ps1
+
+If you are only fixing wording, tables, figures, equations, captions, or
+spacing, do not edit build files.
+
+
+Basic text editing
+------------------
+
+Write normal paragraphs as plain text. Separate paragraphs with one blank line.
+
+Example:
+
+  This paragraph explains the purpose of the section. It should be direct and
+  connected to the next table or figure.
+
+  This is the next paragraph. It continues the discussion without changing the
+  global formatting.
+
+Use section commands:
+
+  \section{Program and Firmware Flow}
+  \subsection{Timing Constants}
+  \subsubsection{Arc Counter Persistence}
+
+Use labels if you need to reference the section later:
+
+  \section{TinyML Development and Deployment Workflow}
+  \label{sec:ch3-tinyml-workflow}
+
+Reference it like this:
+
+  Section~\ref{sec:ch3-tinyml-workflow}
+
+
+Tables
+------
+
+Use booktabs style. Captions go above tables.
+
+Good table pattern:
+
+  \begin{table}[H]
+    \centering
+    \caption{Trial-level arc-fault performance metrics}
+    \label{tab:ch4-trial-metrics}
+    \begin{tabular}{lcccc}
+      \toprule
+      \textbf{Load group} & \textbf{Accuracy} & \textbf{Precision} & \textbf{Recall} & \textbf{F1-score} \\
+      \midrule
+      Recognized loads & 99.00\% & 100.00\% & 98.00\% & 98.99\% \\
+      Unrecognized loads & 96.00\% & 97.92\% & 94.00\% & 95.92\% \\
+      \bottomrule
+    \end{tabular}
+  \end{table}
+
+Rules:
+
+  - Use \toprule, \midrule, and \bottomrule.
+  - Make header cells bold with \textbf{}.
+  - Do not use vertical lines like |c|c|c|.
+  - Keep captions above tables.
+  - Put labels right after captions.
+  - Use Table~\ref{...} in text.
+
+For long text columns:
+
+  \begin{tabular}{p{0.25\textwidth}p{0.30\textwidth}p{0.35\textwidth}}
+
+If a table is too wide:
+
+  - shorten column headings
+  - use p{...} columns
+  - reduce text slightly only if necessary
+  - do not let it exceed the page margins
+
+
+Figures and images
+------------------
+
+Captions go below figures.
+
+Basic figure:
+
+  \begin{figure}[H]
+    \centering
+    \includegraphics[width=0.92\textwidth]{ch3/figure_3.8.png}
+    \caption{Full schematic of the TinyML Smart Plug prototype.}
+    \label{fig:ch3-full-schematic}
+  \end{figure}
+
+Rules:
+
+  - Put the image file in figures/ch3, figures/ch4, or figures/apx.
+  - Use width=0.80\textwidth to width=\textwidth.
+  - Use height=0.80\textheight for tall figures.
+  - Keep figures inside margins.
+  - Put labels after captions.
+  - Use Figure~\ref{...} in text.
+
+Multi-image figure:
+
+  \begin{figure}[H]
+    \centering
+    \begin{minipage}{0.48\textwidth}
+      \centering
+      \includegraphics[width=\linewidth]{ch3/figure_3.14_a.png}
+      {\small (a) Plug side}
+    \end{minipage}\hfill
+    \begin{minipage}{0.48\textwidth}
+      \centering
+      \includegraphics[width=\linewidth]{ch3/figure_3.14_b.png}
+      {\small (b) Outlet side}
+    \end{minipage}
+    \caption{Actual prototype with the case installed.}
+    \label{fig:ch3-prototype-case}
+  \end{figure}
+
+
+Equations
+---------
+
+Use equation for numbered equations:
+
+  \begin{equation}
+    f_c = \frac{1}{2\pi RC}
+    \label{eq:rc-cutoff}
+  \end{equation}
+
+Reference it like this:
+
+  Equation~\ref{eq:rc-cutoff}
+
+For inline units, follow the manuscript style:
+
+  230V
+  60Hz
+  10A
+  40\degreeC
+  1.2MHz
+
+
+Citations and references
+------------------------
+
+Keep IEEE bracket citations:
+
+  Prior studies showed similar behavior [34], [35].
+
+References are manually listed in:
+
+  misc/references.tex
+
+If you add a new source, add it there and cite the new number in the text.
+Be careful not to renumber carelessly unless you check all citations.
+
+
+Spacing and formatting
+----------------------
+
+Most global formatting lives in:
+
+  style/thesis_preamble.tex
+
+Important settings:
+
+  \usepackage[top=1in,bottom=1in,left=1.25in,right=1in]{geometry}
+  \doublespacing
+  \setlength{\parindent}{1.5cm}
+  \setlength{\parskip}{0pt}
+
+Chapter title spacing:
+
+  \titlespacing*{\chapter}{0pt}{-24pt}{0.75\baselineskip}
+
+Do not add random \vspace* or \vfill unless you are very sure. These are the
+usual cause of headings being pushed too far down.
+
+Tables are intentionally single-spaced. Body text should return to
+double-spacing after tables.
+
+Avoid wrapping ordinary body text in:
+
+  \begin{singlespace}
+  ...
+  \end{singlespace}
+
+unless the school format specifically requires it for that part.
+
+
+Appendices
+----------
+
+Appendix files are:
+
+  appendices/appendix_a.tex
+  ...
+  appendices/appendix_i.tex
+
+Appendix letters are controlled by the order in main.tex:
+
+  \appendix
+  \include{appendices/appendix_a}
+  \include{appendices/appendix_b}
+  ...
+
+To add a new appendix:
+
+  1. Create appendices/appendix_j.tex.
+  2. Add \include{appendices/appendix_j} in main.tex after appendix_i.
+  3. Optionally add build/appendices/build_appendix_j.tex.
+  4. Optionally add it to build/build_all_pdfs.ps1.
+
+
+Troubleshooting
+---------------
+
+If the PDF does not update:
+
+  1. Save the file.
+  2. Run latexmk again.
+  3. Open pdf/main.pdf, not an old PDF from another folder.
+
+If references show as ??:
+
+  Run the build again. LaTeX often needs two passes.
+
+If a table is ugly:
+
+  - check that header row uses \textbf{}
+  - use booktabs rules
+  - use p{...} columns
+  - shorten text
+  - move raw detailed data to an appendix if it is too large
+
+If a figure is too small:
+
+  increase width, for example:
+
+    width=0.92\textwidth
+    width=0.98\textwidth
+
+If a figure is too large:
+
+  reduce width:
+
+    width=0.80\textwidth
+
+If a heading has too much blank space above it:
+
+  Check for nearby:
+
+    \vspace*
+    \vfill
+    \clearpage
+    \newpage
+    \null
+    landscape environments
+
+If the IDE marks style/thesis_preamble.tex red but the PDF builds:
+
+  It may be a parser warning, not a LaTeX failure. Trust the build log first.
+  Real compile errors appear in logs/main.log and stop latexmk.
+
+Useful checks:
+
+  rg -n "Overfull|LaTeX Warning|Undefined|Citation.*undefined|Reference.*undefined" logs/main.log
+
+Convert one PDF page to PNG for inspection:
+
+  pdftoppm -f 72 -l 72 -png -r 120 "pdf\main.pdf" "build\visual_audit\page"
+
+Extract text from one page:
+
+  pdftotext -f 17 -l 17 -layout "pdf\main.pdf" -
+
+
+Recommended workflow
+--------------------
+
+For a small edit:
+
+  1. Edit the real source file, not build/.
+  2. Build only that section or chapter.
+  3. If it looks good, build main.tex.
+  4. Check pdf/main.pdf.
+
+For a formatting edit:
+
+  1. Edit style/thesis_preamble.tex carefully.
+  2. Build main.tex.
+  3. Check several affected pages visually.
+
+For a figure edit:
+
+  1. Replace or add the image under figures/ch3, figures/ch4, or figures/apx.
+  2. Edit the figure block in the chapter/appendix source.
+  3. Build that section/chapter.
+  4. Build main.tex.
+
+For a table edit:
+
+  1. Edit the table in the real chapter/appendix source.
+  2. Keep the caption above.
+  3. Make header cells bold.
+  4. Use booktabs rules.
+  5. Build and check List of Tables in the full manuscript.
+

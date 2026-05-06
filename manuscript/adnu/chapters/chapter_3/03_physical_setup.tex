@@ -1,6 +1,11 @@
 \section{Physical Setup and Hardware Implementation}
 \label{sec:ch3-physical-setup}
 
+The physical setup translates the system model into the actual prototype used
+for testing. This section introduces the hardware blocks, full schematic,
+signal-conditioning path, enclosure arrangement, and component roles before
+the calibration and protection computations are presented.
+
 \subsection{Sensing Subsystems and Hardware Blocks}
 \label{sec:ch3-sensing-subsystems}
 
@@ -32,7 +37,7 @@ The full circuit schematic is shown in Figure~\ref{fig:ch3-full-schematic}.
 \clearpage
 \begin{figure}[p]
   \centering
-  \includegraphics[angle=90,width=0.96\textheight,height=0.96\textwidth,keepaspectratio,trim=0.20in 0.55in 0.20in 0.25in,clip]{ch3/full_schematic.pdf}
+  \includegraphics[angle=90,width=0.98\textheight,height=0.98\textwidth,keepaspectratio,trim=0.15in 0.50in 0.15in 0.20in,clip]{ch3/full_schematic.pdf}
   \caption{Full schematic of the TinyML Smart Plug prototype.}
   \label{fig:ch3-full-schematic}
 \end{figure}
@@ -88,11 +93,53 @@ implemented firmware also applies a digital soft anti-aliasing filter in the
 current-feature path, so the analog and digital filters work together rather
 than as isolated design elements [57].
 
+The frequency-setting values shown in Figure~\ref{fig:ch3-aaf-circuit} were
+checked against the standard second-order low-pass relationship
+\begin{equation}
+  f_0 =
+  \frac{1}{2\pi\sqrt{R_1R_2C_1C_2}} .
+  \label{eq:ch3-aaf-cutoff}
+\end{equation}
+Using the schematic values $R_1=200\mathrm{k}\Omega$,
+$R_2=33\mathrm{k}\Omega$, $C_1=470\mathrm{pF}$, and
+$C_2=82\mathrm{pF}$ gives
+\begin{equation}
+  f_0 =
+  \frac{1}{2\pi\sqrt{(200\mathrm{k}\Omega)(33\mathrm{k}\Omega)
+  (470\mathrm{pF})(82\mathrm{pF})}}
+  \approx 9.98\mathrm{kHz}.
+  \label{eq:ch3-aaf-cutoff-result}
+\end{equation}
+This agrees with the plotted cutoff region in Figure~\ref{fig:ch3-aaf-bode},
+where the simulated response is approximately -3dB near 10kHz. Since a
+second-order Butterworth response has $Q\approx0.707$ and reaches the -3dB
+point at its natural frequency, the plotted response was treated as a
+near-Butterworth anti-aliasing stage rather than a high-Q peaking filter. The
+firmware's additional digital filter uses a similar low-peaking setting
+($Q=0.73$) before feature extraction.
+
+The op amp for this stage must support single-supply operation at the
+available logic rail, input and output swing around the mid-supply bias,
+unity-gain-stable active-filter operation, and enough bandwidth and slew-rate
+margin for a 10kHz cutoff [57]. For a conservative 3.3V peak-to-peak signal,
+the minimum sinusoidal slew rate is
+\begin{equation}
+  SR_{\min}=2\pi fV_p
+  =2\pi(10\mathrm{kHz})(1.65\mathrm{V})
+  \approx 0.104\mathrm{V/\mu s}.
+  \label{eq:ch3-aaf-slew}
+\end{equation}
+The MCP6024-class device indicated in the schematic satisfies this application
+class because it is a rail-to-rail input/output, unity-gain-stable, 10MHz
+single-supply op amp family [76]. These checks support waveform acquisition
+for the prototype tests, but they do not replace full analog compliance
+testing of the assembled board.
+
 The internal arrangement was first modeled before assembly. Figure~\ref{fig:ch3-model-no-case}
 shows the prototype layout without the case.
 \begin{figure}[H]
   \centering
-  \includegraphics[width=0.85\textwidth]{ch3/figure_3.8.png}
+  \includegraphics[width=0.92\textwidth]{ch3/figure_3.8.png}
   \caption{Three-dimensional model of the prototype without the case.}
   \label{fig:ch3-model-no-case}
 \end{figure}
