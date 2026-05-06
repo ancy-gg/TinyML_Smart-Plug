@@ -11,7 +11,7 @@ collection logs are placed in Appendices~\ref{app:e} and~\ref{app:f}. The
 letters, safety proposal, project schedule, and cost documentation are placed
 in Appendices~\ref{app:g},~\ref{app:h}, and~\ref{app:i}.
 
-\section{Sensor-Validation Metrics}
+\subsection{Sensor-Validation Metrics}
 \label{sec:ch3-sensor-metrics}
 
 Sensor validation compared prototype readings against reference instruments.
@@ -46,7 +46,7 @@ test points. MAE gives the average magnitude of error, MSE and RMSE penalize
 larger errors more strongly, and MAPE expresses the error relative to the
 reference value [72].
 
-\section{Overload Test Procedure}
+\subsection{Overload Test Procedure}
 \label{sec:ch3-overload-test-procedure}
 
 Overload testing used high-power load combinations to determine whether the
@@ -55,7 +55,17 @@ sustained-overload condition persisted. The block diagram of the overload test
 is shown in Figure~\ref{fig:ch3-overload-block}.
 \begin{figure}[H]
   \centering
-  \includegraphics[width=0.82\textwidth]{ch3/figure_3.30.png}
+  \resizebox{0.96\textwidth}{!}{%
+  \begin{tikzpicture}[node distance=0.34in and 0.36in]
+    \node[thesis process,text width=1.35in] (supply) {230V AC supply\\with breaker access};
+    \node[thesis process,text width=1.35in,right=of supply] (plug) {TinyML Smart Plug\\under test};
+    \node[thesis process,text width=1.35in,right=of plug] (load) {High-power\\load bank};
+    \node[thesis process,text width=1.55in,below=of plug] (log) {PWA logs\\current, warning, relay, latency};
+    \draw[thesis arrow] (supply) -- (plug);
+    \draw[thesis arrow] (plug) -- (load);
+    \draw[thesis arrow] (plug) -- (log);
+  \end{tikzpicture}%
+  }
   \caption{Testing setup block diagram for overload evaluation.}
   \label{fig:ch3-overload-block}
 \end{figure}
@@ -77,27 +87,41 @@ used to create warning and sustained-overload conditions. During each trial,
 mean voltage, mean current, peak current, warning state, relay state, and trip
 latency were recorded.
 
-\section{Socket-Heating Test Procedure}
+\subsection{Socket-Heating Test Procedure}
 \label{sec:ch3-heating-test-procedure}
 
 Socket-heating tests compared normal and intentionally degraded socket
 contacts under similar load levels. The objective was to determine whether
 degraded contacts produced faster and higher temperature rise, and whether the
-external NTC and compensated estimator could provide useful warning before
+external device temperature measurement and compensated estimator could provide useful warning before
 dangerous contact heating progressed.
 
 Figure~\ref{fig:ch3-heating-block} shows the socket-heating test block
 diagram.
 \begin{figure}[H]
   \centering
-  \includegraphics[width=0.82\textwidth]{ch3/figure_3.32.png}
+  \resizebox{0.96\textwidth}{!}{%
+  \begin{tikzpicture}[node distance=0.34in and 0.34in]
+    \node[thesis process,text width=1.35in] (supply) {230V AC supply\\with breaker access};
+    \node[thesis process,text width=1.35in,right=of supply] (plug) {Prototype\\thermistor channel};
+    \node[thesis process,text width=1.35in,right=of plug] (socket) {Normal or degraded\\socket contact};
+    \node[thesis process,text width=1.35in,right=of socket] (load) {Matched\\load case};
+    \node[thesis process,text width=1.55in,below=of socket] (reference) {Infrared thermometer\\terminal/contact reading};
+    \node[thesis process,text width=1.55in,below=of plug] (log) {Logs: device temperature measurement, estimate, terminal, relay};
+    \draw[thesis arrow] (supply) -- (plug);
+    \draw[thesis arrow] (plug) -- (socket);
+    \draw[thesis arrow] (socket) -- (load);
+    \draw[thesis arrow] (reference) -- (log);
+    \draw[thesis arrow] (plug) -- (log);
+  \end{tikzpicture}%
+  }
   \caption{Testing setup block diagram for socket-heating evaluation.}
   \label{fig:ch3-heating-block}
 \end{figure}
 
-Figure~\ref{fig:ch3-heating-block} shows that both the prototype NTC and a
-reference socket or terminal temperature measurement were observed during
-testing. This made it possible to distinguish direct NTC temperature,
+Figure~\ref{fig:ch3-heating-block} shows that both the prototype Device
+Measurement and a reference socket or terminal temperature measurement were
+observed during testing. This made it possible to distinguish device temperature measurement,
 estimated socket temperature, and reference terminal temperature in the
 results.
 
@@ -123,13 +147,13 @@ Figure~\ref{fig:ch3-heating-actual}.
 \end{figure}
 
 Figure~\ref{fig:ch3-heating-actual} shows the bench configuration used to
-record time, current, direct NTC temperature, estimated socket temperature,
+record time, current, device temperature measurement, estimated socket temperature,
 reference terminal temperature, and relay behavior. The characterization data
 in Appendix~\ref{app:c} were used to support the thermal model, while the
 protection validation data in Appendix~\ref{app:d} were used to evaluate
 relay response.
 
-\section{Series Arc-Fault Test Procedure}
+\subsection{Series Arc-Fault Test Procedure}
 \label{sec:ch3-arc-test-procedure}
 
 Series arc-fault testing used a controlled arc platform and appliance loads.
@@ -142,20 +166,35 @@ Figure~\ref{fig:ch3-arc-platform}.
   \centering
   \includegraphics[width=0.92\textwidth]{ch3/figure_3.35.png}
   \caption{Series arc-fault test platform.}
+  \figsource{Qi et al., 2025 [48]}
   \label{fig:ch3-arc-platform}
 \end{figure}
 
 Figure~\ref{fig:ch3-arc-platform} shows the principle of the series arc test:
 the current path is interrupted by an adjustable contact gap, allowing a
-controlled arc disturbance to appear in series with the load. The platform
-provided a repeatable way to create low-current gaps and restrike spikes
-without depending on accidental wiring faults.
+controlled arc disturbance to appear in series with the load. The adapted
+source describes a 220V/50Hz platform using a fixed electrode and a moving
+electrode controlled by a stepper motor [48]. The prototype testing used the
+same series-interruption principle as a guide, while the actual bench setup
+used in this study is documented in Figure~\ref{fig:ch3-arc-actual}.
 
 The block diagram of the series arc-fault test is shown in
 Figure~\ref{fig:ch3-arc-block}.
 \begin{figure}[H]
   \centering
-  \includegraphics[width=0.82\textwidth]{ch3/figure_3.36.png}
+  \resizebox{0.96\textwidth}{!}{%
+  \begin{tikzpicture}[node distance=0.34in and 0.34in]
+    \node[thesis process,text width=1.25in] (supply) {230V AC supply\\with breaker access};
+    \node[thesis process,text width=1.28in,right=of supply] (arc) {Series arc\\generator};
+    \node[thesis process,text width=1.28in,right=of arc] (plug) {TinyML Smart Plug\\waveform logging};
+    \node[thesis process,text width=1.28in,right=of plug] (load) {Appliance\\load};
+    \node[thesis process,text width=1.55in,below=of plug] (label) {PWA/Python logs\\features, labels, relay};
+    \draw[thesis arrow] (supply) -- (arc);
+    \draw[thesis arrow] (arc) -- (plug);
+    \draw[thesis arrow] (plug) -- (load);
+    \draw[thesis arrow] (plug) -- (label);
+  \end{tikzpicture}%
+  }
   \caption{Testing setup block diagram for series arc-fault evaluation.}
   \label{fig:ch3-arc-block}
 \end{figure}
@@ -178,7 +217,7 @@ Figure~\ref{fig:ch3-arc-actual} documents the laboratory arrangement used to
 collect arc and normal trials. Complete arc-fault test records are referenced
 in Appendices~\ref{app:e} and~\ref{app:f}.
 
-\section{Classification Metrics}
+\subsection{Classification Metrics}
 \label{sec:ch3-classification-metrics}
 
 For arc-fault evaluation, the positive class was the arc-fault condition and

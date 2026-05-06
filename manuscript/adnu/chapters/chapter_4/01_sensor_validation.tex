@@ -1,10 +1,10 @@
-﻿\section{Sensor Validation}
+\section{Sensor Validation}
 \label{sec:ch4-sensor-validation}
 
 The sensor-validation results determine whether the calibrated measurements
 were reliable enough for the protection decisions described in
-Chapter~\ref{chap:methodology}. In this section, the voltage, current, and NTC
-temperature channels are interpreted in terms of decision reliability rather
+Chapter~\ref{chap:methodology}. In this section, the voltage, current, and
+device-temperature channels are interpreted in terms of decision reliability rather
 than as isolated measurement exercises.
 
 \subsection{Voltage Sensor Validation}
@@ -24,7 +24,7 @@ Table~\ref{tab:ch4-voltage-validation} lists the voltage validation points.
   \label{tab:ch4-voltage-validation}
   \begin{tabular}{ccccc}
     \toprule
-    Test & Device (V) & Fluke (V) & Abs. error (V) & Squared error (V$^2$) \\
+    \textbf{Test} & \textbf{Device (V)} & \textbf{Fluke (V)} & \textbf{Abs. error (V)} & \textbf{Squared error (V$^2$)} \\
     \midrule
     1 & 181.0 & 184.7 & 3.7 & 13.69 \\
     2 & 196.1 & 192.8 & 3.3 & 10.89 \\
@@ -63,7 +63,7 @@ Table~\ref{tab:ch4-current-validation} presents the current validation points.
   \label{tab:ch4-current-validation}
   \begin{tabular}{ccccc}
     \toprule
-    Test & Device (A) & Clamp meter (A) & Abs. error (A) & Squared error (A$^2$) \\
+    \textbf{Test} & \textbf{Device (A)} & \textbf{Clamp meter (A)} & \textbf{Abs. error (A)} & \textbf{Squared error (A$^2$)} \\
     \midrule
     1 & 0.66 & 0.68 & 0.02 & 0.0004 \\
     2 & 1.98 & 1.94 & 0.04 & 0.0016 \\
@@ -84,26 +84,26 @@ higher currents but remained much smaller than the distance between the warning
 and sustained-trip thresholds. This supports the overload results discussed in
 Section~\ref{sec:ch4-overload-protection}.
 
-\subsection{NTC Temperature Sensor Validation}
+\subsection{Device Temperature Measurement Validation}
 \label{sec:ch4-temperature-validation}
 
-The TTC05103JSY 10 k$\Omega$ thermistor was compared with a reference infrared
-thermometer at the sensor measurement point. The NTC channel produced an MAE
+The TTC05103JSY 10k$\Omega$ thermistor was compared with a reference infrared
+thermometer at the sensor measurement point. The device temperature measurement channel produced an MAE
 of 1.02°C, MSE of 1.142°C$^2$, and RMSE of 1.07°C. This
 validates the thermistor channel itself, but it must not be interpreted as a
 direct validation of internal contact temperature. The heating tests later
-show that the socket terminal can be much hotter than the external NTC reading
+show that the socket terminal can be much hotter than the external thermistor reading
 or compensated estimate.
 
 Table~\ref{tab:ch4-temperature-validation} presents the thermistor validation
 points.
 \begin{table}[H]
   \centering
-  \caption{Validation results for the NTC temperature sensor}
+  \caption{Validation results for the device temperature measurement thermistor channel}
   \label{tab:ch4-temperature-validation}
   \begin{tabular}{ccccc}
     \toprule
-    Test & Device ($^\circ$C) & IR thermometer ($^\circ$C) & Abs. error ($^\circ$C) & Squared error ($^\circ$C$^2$) \\
+    \textbf{Test} & \textbf{Device ($^\circ$C)} & \textbf{IR thermometer ($^\circ$C)} & \textbf{Abs. error ($^\circ$C)} & \textbf{Squared error ($^\circ$C$^2$)} \\
     \midrule
     1 & 27.9 & 27.4 & 0.5 & 0.25 \\
     2 & 31.1 & 31.8 & 0.7 & 0.49 \\
@@ -119,7 +119,7 @@ points.
   \end{tabular}
 \end{table}
 
-Table~\ref{tab:ch4-temperature-validation} supports the use of the NTC as a
+Table~\ref{tab:ch4-temperature-validation} supports the use of the thermistor channel as a
 stable observable input for the thermal estimator. It also reinforces the
 methodological need for the compensated socket-temperature model because the
 sensor is external to the highest-temperature contact interface.

@@ -1,4 +1,4 @@
-﻿\chapter{REVIEW OF RELATED LITERATURE}\label{chap:review-of-related-literature}
+\chapter{REVIEW OF RELATED LITERATURE}\label{chap:review-of-related-literature}
 
 This chapter reviews the literature that supports the development of the
 proposed TinyML Smart Plug as a socket-level protection device for
@@ -292,99 +292,24 @@ identifies the primary hazard associated with each fault, whether
 conventional protection generally handles it, and how each fault class
 relates to the proposed smart plug.
 
-\subparagraph{\texorpdfstring{\textbf{Table 2.1.} Summary of Electrical
-Faults}{Table 2.1. Summary of Electrical Faults}}\label{table-2.1.-summary-of-electrical-faults}
-
-{\def\LTcaptype{none} % do not increment counter
-\begin{longtable}[]{@{}
-  >{\raggedright\arraybackslash}p{(\linewidth - 6\tabcolsep) * \real{0.1994}}
-  >{\raggedright\arraybackslash}p{(\linewidth - 6\tabcolsep) * \real{0.2685}}
-  >{\raggedright\arraybackslash}p{(\linewidth - 6\tabcolsep) * \real{0.1849}}
-  >{\raggedright\arraybackslash}p{(\linewidth - 6\tabcolsep) * \real{0.2781}}@{}}
-\toprule\noalign{}
-\begin{minipage}[b]{\linewidth}\raggedright
-\textbf{Fault class}
-\end{minipage} & \begin{minipage}[b]{\linewidth}\raggedright
-\textbf{Primary hazard}
-\end{minipage} & \begin{minipage}[b]{\linewidth}\raggedright
-\textbf{Handled by Conventional Protection}
-\end{minipage} & \begin{minipage}[b]{\linewidth}\raggedright
-\textbf{Relevance}
-\end{minipage} \\
-\begin{minipage}[b]{\linewidth}\raggedright
-Overload
-\end{minipage} & \begin{minipage}[b]{\linewidth}\raggedright
-Thermal stress, insulation degradation, fire risk
-\end{minipage} & \begin{minipage}[b]{\linewidth}\raggedright
-Partially
-\end{minipage} & \begin{minipage}[b]{\linewidth}\raggedright
-A central target because branch breakers protect wiring, not necessarily
-the plug-socket interface.
-\end{minipage} \\
-\begin{minipage}[b]{\linewidth}\raggedright
-Short circuit
-\end{minipage} & \begin{minipage}[b]{\linewidth}\raggedright
-Immediate high-current damage and fire
-\end{minipage} & \begin{minipage}[b]{\linewidth}\raggedright
-Yes
-\end{minipage} & \begin{minipage}[b]{\linewidth}\raggedright
-Reviewed for scope delimitation; not the main target of the smart plug.
-\end{minipage} \\
-\begin{minipage}[b]{\linewidth}\raggedright
-Ground fault
-\end{minipage} & \begin{minipage}[b]{\linewidth}\raggedright
-Shock and leakage hazard
-\end{minipage} & \begin{minipage}[b]{\linewidth}\raggedright
-Yes
-\end{minipage} & \begin{minipage}[b]{\linewidth}\raggedright
-Reviewed to distinguish personnel-protection devices from the proposed
-socket-level fire-prevention focus.
-\end{minipage} \\
-\begin{minipage}[b]{\linewidth}\raggedright
-Series arc fault
-\end{minipage} & \begin{minipage}[b]{\linewidth}\raggedright
-Ignition-capable arcing below ordinary breaker trip levels
-\end{minipage} & \begin{minipage}[b]{\linewidth}\raggedright
-Not always
-\end{minipage} & \begin{minipage}[b]{\linewidth}\raggedright
-A central target because its current is load-limited and often
-waveform-dependent.
-\end{minipage} \\
-\begin{minipage}[b]{\linewidth}\raggedright
-High-resistance Connection
-\end{minipage} & \begin{minipage}[b]{\linewidth}\raggedright
-Localized contact heating, glowing, melting, ignition
-\end{minipage} & \begin{minipage}[b]{\linewidth}\raggedright
-No
-\end{minipage} & \begin{minipage}[b]{\linewidth}\raggedright
-A central target because the contact can overheat without causing a
-classical overcurrent event.
-\end{minipage} \\
-\begin{minipage}[b]{\linewidth}\raggedright
-Overvoltage
-\end{minipage} & \begin{minipage}[b]{\linewidth}\raggedright
-Equipment damage and stress
-\end{minipage} & \begin{minipage}[b]{\linewidth}\raggedright
-Partially
-\end{minipage} & \begin{minipage}[b]{\linewidth}\raggedright
-Included because voltage supervision improves protection and event
-interpretation.
-\end{minipage} \\
-\begin{minipage}[b]{\linewidth}\raggedright
-Undervoltage
-\end{minipage} & \begin{minipage}[b]{\linewidth}\raggedright
-Equipment stress, motor overheating, unreliable operation
-\end{minipage} & \begin{minipage}[b]{\linewidth}\raggedright
-Partially
-\end{minipage} & \begin{minipage}[b]{\linewidth}\raggedright
-Included as a supporting protection and measurement-quality condition.
-\end{minipage} \\
-\midrule\noalign{}
-\endhead
-\bottomrule\noalign{}
-\endlastfoot
-\end{longtable}
-}
+\begin{table}[H]
+  \centering
+  \caption{Summary of electrical faults}
+  \label{tab:ch2-fault-summary}
+  \begin{tabular}{@{}p{0.18\textwidth}p{0.27\textwidth}p{0.17\textwidth}p{0.28\textwidth}@{}}
+    \toprule
+    \textbf{Fault class} & \textbf{Primary hazard} & \textbf{Conventional protection} & \textbf{Relevance} \\
+    \midrule
+    Overload & Thermal stress, insulation degradation, fire risk & Partial & Central target because branch breakers protect wiring, not necessarily the plug-socket interface. \\
+    Short circuit & Immediate high-current damage and fire & Yes & Reviewed for scope delimitation; not the main target of the smart plug. \\
+    Ground fault & Shock and leakage hazard & Yes & Reviewed to distinguish personnel-protection devices from the proposed socket-level fire-prevention focus. \\
+    Series arc fault & Ignition-capable arcing below ordinary breaker trip levels & Not always & Central target because its current is load-limited and often waveform-dependent. \\
+    High-resistance connection & Localized contact heating, glowing, melting, ignition & No & Central target because the contact can overheat without causing a classical overcurrent event. \\
+    Overvoltage & Equipment damage and stress & Partial & Included as voltage supervision for supply-state interpretation. \\
+    Undervoltage & Equipment stress, motor overheating, unreliable operation & Partial & Included as a supporting measurement-quality and supply-state condition. \\
+    \bottomrule
+  \end{tabular}
+\end{table}
 
 Table 2.1 shows that the proposed smart plug is not intended to replace
 breakers, GFCIs, AFCIs, or surge protective devices. Instead, it is
@@ -679,7 +604,7 @@ a large difference between overheated contact-spot temperature and
 external surface temperature. {[}31{]} again demonstrated that external
 package temperature can under-read internal contact temperature. This is
 the strongest scientific support for an early trip threshold such as
-40°C at an external NTC sensor. The argument is not that all outlets
+40°C at an external thermistor sensor. The argument is not that all outlets
 melt at 40°C, but that a 40°C external reading can already correspond to
 a hidden contact region operating far above that value. Considering the
 literature on standards, degradation, thermal lag, and indirect sensing,
@@ -771,74 +696,20 @@ waveform disturbance, conduction intermittence, and deterministic stress
 variables to clarify why the prototype combines feature-based TinyML
 inference with threshold-based protection logic.
 
-\subparagraph{\texorpdfstring{\textbf{Table 2.2.} Feature Families
-Relevant in the
-Study}{Table 2.2. Feature Families Relevant in the Study}}\label{table-2.2.-feature-families-relevant-in-the-study}
-
-{\def\LTcaptype{none} % do not increment counter
-\begin{longtable}[]{@{}
-  >{\raggedright\arraybackslash}p{(\linewidth - 4\tabcolsep) * \real{0.2024}}
-  >{\raggedright\arraybackslash}p{(\linewidth - 4\tabcolsep) * \real{0.3228}}
-  >{\raggedright\arraybackslash}p{(\linewidth - 4\tabcolsep) * \real{0.4015}}@{}}
-\toprule\noalign{}
-\begin{minipage}[b]{\linewidth}\centering
-\textbf{Feature Family}
-\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
-\textbf{Representative Quantities}
-\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
-\textbf{Literature}
-\end{minipage} \\
-\begin{minipage}[b]{\linewidth}\raggedright
-Waveform disturbance
-\end{minipage} & \begin{minipage}[b]{\linewidth}\raggedright
-Midband Residual Ratio;
-
-Spectral Flux at Mid to High Frequency;
-
-Halfcycle Assymetry;
-
-Current Total Harmonic Distortion;
-
-High Frequency Energy-Change
-\end{minipage} & \begin{minipage}[b]{\linewidth}\raggedright
-Arc studies repeatedly report that series arcs inject random harmonic
-and high-frequency disturbance, while NILM studies show that healthy
-loads also have family-specific spectral signatures, making these
-features informative but context-dependent {[}34{]}-{[}39{]}, {[}41{]},
-{[}42{]}, {[}49{]}-{[}53{]}.
-\end{minipage} \\
-\begin{minipage}[b]{\linewidth}\raggedright
-Conduction intermittence
-\end{minipage} & \begin{minipage}[b]{\linewidth}\raggedright
-Low-Current Runtime and Low Current Ratio;
-
-Zero-Cross Variance;
-
-Absolute Delta of Current RMS;
-
-Absolute Z-Deviation from Baseline
-\end{minipage} & \begin{minipage}[b]{\linewidth}\raggedright
-These quantities represent restrikes, current interruption, partial
-conduction, and unstable cycle timing, which are physically consistent
-with series arcs and weak-contact behavior {[}34{]}, {[}36{]}, {[}37{]},
-{[}52{]}, {[}54{]}.
-\end{minipage} \\
-\begin{minipage}[b]{\linewidth}\raggedright
-Deterministic stress variables
-\end{minipage} & \begin{minipage}[b]{\linewidth}\raggedright
-Irms; temperature estimate; voltage sag or abnormal supply condition
-\end{minipage} & \begin{minipage}[b]{\linewidth}\raggedright
-These variables directly encode thermal or electrical stress and
-therefore remain essential even when machine learning is added. They
-improve interpretability and provide hard safety overrides for overload
-and heating events {[}3{]}, {[}27{]}-{[}29{]}, {[}44{]}, {[}45{]}.
-\end{minipage} \\
-\midrule\noalign{}
-\endhead
-\bottomrule\noalign{}
-\endlastfoot
-\end{longtable}
-}
+\begin{table}[H]
+  \centering
+  \caption{Feature families relevant in the study}
+  \label{tab:ch2-feature-families}
+  \begin{tabular}{p{0.20\textwidth}p{0.30\textwidth}p{0.40\textwidth}}
+    \toprule
+    \textbf{Feature family} & \textbf{Representative quantities} & \textbf{Literature connection} \\
+    \midrule
+    Waveform disturbance & Midband residual ratio; mid/high-frequency spectral flux; half-cycle asymmetry; current THD; high-frequency energy delta & Arc studies report random harmonic and high-frequency disturbance, while NILM studies show that healthy loads also have family-specific spectral signatures {[}34{]}--{[}39{]}, {[}41{]}, {[}42{]}, {[}49{]}--{[}53{]}. \\
+    Conduction intermittence & Low-current run time; low-current ratio; zero-cross variance; absolute RMS-current delta; baseline z-deviation & These quantities represent restrikes, current interruption, partial conduction, and unstable cycle timing, which are physically consistent with series arcs and weak-contact behavior {[}34{]}, {[}36{]}, {[}37{]}, {[}52{]}, {[}54{]}. \\
+    Deterministic stress variables & RMS current; estimated socket temperature; voltage sag or abnormal supply condition & These variables encode thermal or electrical stress and remain essential even when machine learning is added. They improve interpretability and provide hard safety overrides for overload and heating events {[}3{]}, {[}27{]}--{[}29{]}, {[}44{]}, {[}45{]}. \\
+    \bottomrule
+  \end{tabular}
+\end{table}
 
 Table 2.2 shows that the proposed feature set is not arbitrary. The
 waveform-disturbance features represent spectral and harmonic effects of

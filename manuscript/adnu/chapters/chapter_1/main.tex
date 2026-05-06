@@ -294,7 +294,7 @@ threshold-based protection logic, relay actuation, local notification,
 cloud logging, and remote data visualization. The final system
 architecture used a ZMPT101B-based voltage sensor, an ACS37035 current
 sensor digitized through an MCP3204 external SAR ADC, and a TTC05103JSY
-10kÎ© NTC thermistor for temperature measurements. Current analysis was
+10k$\Omega$ thermistor for temperature measurements. Current analysis was
 executed on the ESP32-S3 Xiao using embedded sampling, windowed feature
 computation, and on-device inference for real-time protection decisions.
 
@@ -355,7 +355,7 @@ conditions and load classes represented in the collected dataset.
 \subsection{Technical Limitations}\label{technical-limitations}
 
 The contact-heating function was constrained by the non-intrusive
-thermal architecture of the prototype. The NTC thermistor did not
+thermal architecture of the prototype. The thermistor channel did not
 directly measure the true internal contact-spot temperature inside the
 socket interface. Instead, it measured a delayed external thermal
 response that the firmware interpreted as an estimated

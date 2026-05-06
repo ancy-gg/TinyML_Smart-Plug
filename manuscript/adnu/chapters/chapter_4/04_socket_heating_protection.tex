@@ -1,13 +1,17 @@
-﻿\section{Socket-Heating Protection Validation}
+\section{Socket-Heating Protection Validation}
 \label{sec:ch4-socket-heating-protection}
 
 Socket-heating protection validation evaluated the relay-facing estimated
-socket temperature. The important distinction is between four temperatures:
-the direct NTC temperature, the expected normal socket temperature, the
-estimated socket temperature used by protection, and the reference terminal
-temperature. The trip threshold applies to the estimated socket temperature,
-while the reference terminal temperature shows how hot the socket contact area
-became during the same trial.
+socket temperature. The important distinction is between three plotted
+temperatures and one internal model state. Device temperature measurement is
+the temperature measured or processed by the prototype's thermistor channel.
+The infrared thermometer reading is the reference terminal or contact-region
+reading. Estimated socket temperature is the compensated protection-facing
+estimate derived from the characterization model. The expected normal socket
+temperature is an internal comparator used by the estimator. The trip
+threshold applies to the estimated socket temperature, while the infrared
+thermometer reading shows how hot the socket contact area became during the
+same trial.
 The plotted trends in this section were generated from the full protection
 validation records in Appendix~\ref{app:d}.
 
@@ -91,7 +95,7 @@ results.
   \setlength{\tabcolsep}{3pt}
   \begin{tabular}{@{}p{0.20\textwidth}p{0.10\textwidth}p{0.07\textwidth}p{0.09\textwidth}p{0.08\textwidth}p{0.10\textwidth}p{0.10\textwidth}p{0.07\textwidth}@{}}
     \toprule
-    Load case & Socket & Mean A & NTC 38.2 & Est. 40 & Est. temp & Terminal & Relay \\
+    \textbf{Load case} & \textbf{Socket} & \textbf{Mean A} & \textbf{Device 38.2} & \textbf{Est. 40} & \textbf{Est. temp} & \textbf{IR temp} & \textbf{Relay} \\
     \midrule
     Water heater & Normal & 5.17 & -- & -- & 32.7 & 33.8 & No \\
     Water heater & Corroded & 4.85 & -- & -- & 36.7 & 38.5 & No \\
@@ -111,7 +115,7 @@ Table~\ref{tab:ch4-heating-protection} shows that degraded and higher-current
 conditions tripped earlier than low-current or healthy-socket conditions. The
 result supports the protection objective because the relay response followed
 the compensated estimated socket temperature, not merely current magnitude. A
-limitation remains: the external NTC and compensation model still
+limitation remains: the external thermistor channel and compensation model still
 underestimated the hottest terminal temperature in severe degraded-contact
 cases. The prototype therefore demonstrates useful complementary protection,
 but a final certified design would need a validated thermal model across more

@@ -1,6 +1,9 @@
 \section{Program and Firmware Flow}
 \label{sec:ch3-program-flow}
 
+\subsection{Initialization and Sampling}
+\label{sec:ch3-initialization-sampling}
+
 The firmware follows a repeated acquisition, computation, inference, and
 protection cycle. On startup, the ESP32-S3 initializes the sensors, relay
 driver, OLED display, buzzer, Wi-Fi, Firebase interface, and local protection
@@ -13,10 +16,13 @@ Figure~\ref{fig:ch3-program-flow} shows the operating sequence implemented by
 the firmware.
 \begin{figure}[H]
   \centering
-  \includegraphics[width=\textwidth]{ch3/figure_3.3.png}
+  \includegraphics[width=0.96\textwidth]{ch3/figure_3.3.png}
   \caption{Program flowchart of the TinyML Smart Plug firmware.}
   \label{fig:ch3-program-flow}
 \end{figure}
+
+\subsection{Protection-State Evaluation}
+\label{sec:ch3-protection-state-evaluation}
 
 Figure~\ref{fig:ch3-program-flow} shows that a relay trip can be caused by a
 sustained overload, an estimated socket over-temperature, or an arc-fault
@@ -33,6 +39,9 @@ in the fault state until the user clears the fault through the device or
 application workflow. This prevents a hazardous load from being automatically
 re-energized after a transient communication or reset event.
 
+\subsection{Timing Constants}
+\label{sec:ch3-timing-constants}
+
 The sampling and timing constants used by the firmware are listed in
 Table~\ref{tab:ch3-firmware-constants}. These values were taken from the
 firmware configuration and the current-sensing implementation.
@@ -42,7 +51,7 @@ firmware configuration and the current-sensing implementation.
   \label{tab:ch3-firmware-constants}
   \begin{tabular}{p{0.38\textwidth}p{0.22\textwidth}p{0.30\textwidth}}
     \toprule
-    Constant & Value & Role \\
+    \textbf{Constant} & \textbf{Value} & \textbf{Role} \\
     \midrule
     Target current sampling rate & 27,000Hz & Current waveform acquisition for feature extraction \\
     Arc runtime frame length & 512 samples & FFT and time-domain feature window \\

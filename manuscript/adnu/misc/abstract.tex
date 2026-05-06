@@ -2,29 +2,29 @@
 \addcontentsline{toc}{chapter}{ABSTRACT}
 This study developed a TinyML Smart Plug for complementary socket-level
 protection against progressive fire-inducing electrical faults in 230V
-residential circuits. The device was designed to address fault
-conditions that may remain hazardous before conventional breaker
-operation, specifically sustained overload, degraded socket-contact
-heating, and load-limited series arc faults. The prototype integrated
+residential circuits. The prototype targeted sustained overload,
+degraded socket-contact heating, and load-limited series arc faults,
+which may remain hazardous before conventional breaker operation. It
+integrated
 voltage, current, and temperature sensing with an ESP32-S3 controller,
 relay-based load isolation, local audio-visual alerts, Firebase logging,
-and a Progressive Web App for monitoring. The system was tested through
-sensor calibration and revalidation, controlled overload evaluation,
-degraded-socket heating characterization, induced series-arc data
-collection, waveform-feature extraction, manual labeling, and embedded
-Random Forest TinyML deployment. Revalidation showed mean absolute
-errors of 3.910V, 0.178A, and 1.02°C for the voltage, current, and
-temperature channels, respectively. Overload testing confirmed
-sustained-trip behavior, with the highest-stress case reaching 17.30A
-mean current, 19.73A peak current, and relay disconnection after
-61.382s. Heating tests showed faster temperature rise in the degraded
+and a Progressive Web App for monitoring and basic control. The system
+was evaluated through sensor calibration and revalidation, controlled
+overload tests, socket-heating characterization and protection tests,
+induced series-arc data collection, waveform-feature extraction, manual
+labeling, and embedded Random Forest deployment. Revalidation produced
+mean absolute errors of 3.910V, 0.178A, and 1.02°C for the voltage,
+current, and temperature channels, respectively. The highest-stress
+overload case reached 17.30A mean current and 19.73A peak current before
+relay disconnection after 61.382s. Heating tests showed faster
+temperature rise in the degraded
 socket than in the normal socket under comparable loading. For series
 arc detection, the embedded model achieved 97.50\% accuracy, 98.97\%
 precision, 96.00\% recall, and 97.46\% F1-score across tested loads.
-Overall, the study demonstrated the feasibility of combining calibrated
-sensing, threshold-based protection, and on-device TinyML inference in a
-single smart plug intended to complement, not replace, existing
-residential electrical protection.
+The results demonstrate controlled laboratory feasibility for combining
+calibrated sensing, deterministic threshold protection, and on-device
+TinyML inference in a smart plug that complements, but does not replace,
+code-required residential electrical protection.
 
 \textbf{Keywords:} TinyML, Smart Plug, Series Arc Fault Detection,
 Socket Heating, Overload Protection

@@ -1,4 +1,4 @@
-﻿\section{Socket-Heating Characterization}
+\section{Socket-Heating Characterization}
 \label{sec:ch4-socket-heating-characterization}
 
 The socket-heating characterization compared a normal socket with a degraded
@@ -46,8 +46,9 @@ Figure~\ref{fig:ch4-char-two-lamps}.
 
 Figure~\ref{fig:ch4-char-two-lamps} shows that the degraded socket reached the
 comparison temperature much earlier than the normal socket. The terminal
-temperature also rose above the NTC temperature, supporting the need to treat
-the external NTC as an under-reading proxy rather than the actual hotspot.
+temperature also rose above the device temperature measurement, supporting the
+need to treat the external thermistor channel as an under-reading proxy rather
+than the actual hotspot.
 
 The water heater plus three halogen lamps trend is shown in
 Figure~\ref{fig:ch4-char-three-lamps}.
@@ -75,7 +76,7 @@ Figure~\ref{fig:ch4-char-four-lamps}.
 Figure~\ref{fig:ch4-char-four-lamps} shows that the high-current degraded
 trial developed rapidly and was stopped after a short observation window. The
 terminal temperature reached 45.8°C within 4min even though the final
-NTC reading was only 36.9°C.
+device temperature measurement was only 36.9°C.
 
 Table~\ref{tab:ch4-heating-characterization} summarizes the characterization
 data used to interpret these trends.
@@ -83,11 +84,11 @@ data used to interpret these trends.
   \centering
   \caption{Summary of socket-heating characterization data}
   \label{tab:ch4-heating-characterization}
-  \small
+  \scriptsize
   \setlength{\tabcolsep}{2pt}
   \begin{tabular*}{\textwidth}{@{\extracolsep{\fill}}p{0.22\textwidth}p{0.105\textwidth}p{0.13\textwidth}p{0.08\textwidth}p{0.11\textwidth}p{0.135\textwidth}p{0.09\textwidth}@{}}
     \toprule
-    Load case & Socket & Time to 38.2°C & Mean A & Final NTC & Final terminal & Window (min) \\
+    \textbf{Load case} & \textbf{Socket} & \textbf{\shortstack{Time to\\38.2°C}} & \textbf{\shortstack{Mean\\A}} & \textbf{\shortstack{Final Device\\Temperature}} & \textbf{\shortstack{Final Infrared\\Thermometer}} & \textbf{\shortstack{Window\\(min)}} \\
     \midrule
     Water heater & Normal & -- & 5.18 & 33.9 & 31.5 & 240 \\
     Water heater & Corroded & -- & 5.16 & 35.6 & 37.4 & 240 \\
@@ -109,4 +110,22 @@ socket reached 38.2°C in 48min compared with 105min for the normal
 socket. At about 11A, the corroded socket reached the same point in 7min
 compared with 52min for the normal socket. These results support the need for
 the compensated thermal model described in Section~\ref{sec:ch3-socket-heating-models}.
+
+The characterization records also show how the firmware constants are used in
+the socket-temperature estimate. For example, the corroded water-heater plus
+two-lamp characterization case in Table~\ref{tab:ch4-heating-characterization}
+had a mean current of about 9.05A. Using the firmware current-shape term in
+(\ref{eq:thermal-current-shape}),
+\[
+  s_I=\left(\frac{9.05}{12.0}\right)^2=0.569 .
+\]
+The expected-normal target rise from (\ref{eq:normal-target-rise}) is then
+$0.20+12.0(0.569)=7.03\degreeC$, while the direct measured-temperature
+compensation from (\ref{eq:measured-compensation}) is
+$0.30+1.20(0.569)=0.98\degreeC$. These calculations do not re-fit the
+constants; they demonstrate how the firmware-verified constants are applied to
+the measured current and device temperature. The original fitting worksheet
+used to choose the constants was not present in the repository, so the
+constants should be treated as firmware-verified design values and not as a
+new independent regression result from the summarized table alone.
 

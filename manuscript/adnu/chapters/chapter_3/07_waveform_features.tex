@@ -1,4 +1,4 @@
-\section{Waveform Feature Computation}
+\section{Waveform Feature Computation and Selection}
 \label{sec:ch3-waveform-features}
 
 The arc-detection firmware computes waveform features from current samples
@@ -9,6 +9,86 @@ behavior, and mid/high-frequency energy [34], [35], [53], [54]. The firmware
 uses a 512-sample frame at a 27kHz target sampling rate, with a 256-sample
 hop. A Hann window is applied before the FFT to reduce spectral leakage, which
 is standard practice in discrete Fourier analysis [70], [75].
+For consistency with the feature grouping used in
+Chapter~\ref{chap:review-of-related-literature},
+the computed features are interpreted as either waveform-disturbance
+indicators or conduction-intermittence indicators. Waveform-disturbance
+features describe spectral, harmonic, residual, and cycle-shape changes, while
+conduction-intermittence features describe low-current dwell, interruption,
+and restrike-related behavior.
+
+\subsection{Feature-Set Contract Between Firmware, Trainer, and PWA}
+\label{sec:ch3-feature-contract}
+
+The firmware, trainer, exported model headers, and PWA do not use one single
+feature list for every purpose. In the inspected firmware revision, the runtime
+feature-layout header defines 20 waveform-related fields for export and
+logging. The deployed Random Forest arc model uses only six of those waveform
+features, then appends six context one-hot fields and one context confidence
+value for a 13-input model vector. The current live PWA dashboard renders only
+10 waveform-feature cards, while the PWA metadata and session viewer retain a
+broader 14-feature order for review and CSV inspection.
+
+Table~\ref{tab:ch3-feature-contract} gives the source-of-truth contract used
+in the manuscript. A ``Yes'' in the arc-model column means that the feature is
+one of the six waveform inputs in the deployed Random Forest header. Context
+features used by the load-context model are noted separately because they
+support the context fields later appended to the arc vector, but they are not
+direct arc-model base inputs unless explicitly marked.
+
+\begingroup
+\scriptsize
+\setlength{\tabcolsep}{2pt}
+\begin{longtable}{@{}p{0.31\textwidth}p{0.06\textwidth}p{0.11\textwidth}p{0.10\textwidth}p{0.30\textwidth}@{}}
+\caption{Collected waveform features and deployed model feature selection}
+\label{tab:ch3-feature-contract}\\
+\toprule
+\textbf{Feature name} & \textbf{Logged} & \textbf{Used by arc model} & \textbf{PWA card} & \textbf{Physical interpretation} \\
+\midrule
+\endfirsthead
+\caption[]{Collected waveform features and deployed model feature selection (continued)}\\
+\toprule
+\textbf{Feature name} & \textbf{Logged} & \textbf{Used by arc model} & \textbf{PWA card} & \textbf{Physical interpretation} \\
+\midrule
+\endhead
+\midrule
+\multicolumn{5}{r}{Continued on next page}\\
+\endfoot
+\bottomrule
+\endlastfoot
+\feature{abs_irms_zscore_vs_baseline} & Yes & Yes & Live/CSV & Current magnitude departure from the adaptive healthy baseline. \\
+\feature{delta_irms_abs} & Yes & Context input & Live/CSV & Frame-to-frame absolute RMS-current step. \\
+\feature{halfcycle_asymmetry} & Yes & Context input & Live/CSV & Difference between positive and negative half-cycle RMS values. \\
+\feature{suspicious_run_energy} & Yes & No & CSV only & Leaky internal score combining arc-like indications. \\
+\feature{delta_hf_energy} & Yes & No & CSV only & Frame-to-frame change in high-frequency energy. \\
+\feature{delta_flux} & Yes & No & CSV only & Frame-to-frame change in spectral flux. \\
+\feature{midband_residual_ratio} & Yes & Yes; also context input & Live/CSV & Non-harmonic midband disturbance relative to baseline current. \\
+\feature{zcv} & Yes & No & Session/CSV & Zero-crossing interval variation or fallback residual-spike timing. \\
+\feature{spectral_flux_midhf} & Yes & Yes; also context input & Live/CSV & Abrupt mid/high-frequency spectral change between frames. \\
+\feature{peak_fluct_cv} & Yes & No & Session/CSV & Cycle-peak coefficient of variation. \\
+\feature{residual_crest_factor} & Yes & No & Session/CSV & Peak-to-RMS ratio of the residual disturbance. \\
+\feature{thd_i} & Yes & Context input & Live/CSV & Current total harmonic distortion from the fundamental and harmonics. \\
+\feature{hf_energy_delta} & Yes & Context input & Live/CSV & High-frequency energy share relative to the learned baseline. \\
+\feature{edge_spike_ratio} & Yes & No & Session/CSV & Edge or restrike spike strength relative to baseline current. \\
+\feature{v_sag_pct} & Yes & No & CSV only & Voltage sag relative to the healthy RMS-voltage baseline. \\
+\feature{cycle_nmse} & Yes & No & CSV only & Cycle-to-cycle normalized waveform mismatch. \\
+\feature{pulse_count_per_cycle} & Yes & No & Session/CSV & Residual pulse count normalized per mains cycle. \\
+\feature{zero_dwell_ratio} & Yes & Yes & Live/CSV & Portion of near-zero samples around zero crossings. \\
+\feature{low_current_ratio} & Yes & Yes & Live/CSV & Portion of the frame below the low-current threshold. \\
+\feature{max_low_current_run_ms} & Yes & Yes & Live/CSV & Longest low-current run expressed in milliseconds. \\
+\end{longtable}
+\endgroup
+
+Table~\ref{tab:ch3-feature-contract} corrects the feature-count ambiguity in
+the earlier draft. The prototype does not compute only the 10 features shown
+on the live dashboard. It exports 20 candidate waveform-related feature
+fields, deploys six as base waveform inputs to the arc model, uses six
+context-model features to produce the context fields, displays 10 live
+feature cards in the current PWA dashboard, and keeps a broader metadata order
+for session review.
+
+\subsection{Collected Candidate Features}
+\label{sec:ch3-collected-candidate-features}
 
 The current RMS value used in the feature frame is computed as
 \begin{equation}
@@ -18,21 +98,105 @@ The current RMS value used in the feature frame is computed as
 \end{equation}
 In (\ref{eq:feature-rms}), $i[n]$ is the calibrated current sample after the
 firmware's current conversion path and $N$ is the number of samples in the
-frame. RMS current represents the effective load current and is used both as a
-protection variable and as a baseline reference for several arc features.
+frame. RMS current is not counted as one of the 20 exported feature IDs, but
+it is the physical reference used by overload logic and by several arc
+features.
 
-The firmware also computes current THD from the fundamental and harmonic tone
-powers:
+\subsubsection{Current-Magnitude and Baseline Features}
+\label{sec:ch3-current-baseline-features}
+
+The RMS-current baseline z-score is
 \begin{equation}
-  \mathrm{THD}_I =
-  100\sqrt{\frac{\sum_{h=2}^{10}P_h}{P_1}} .
-  \label{eq:feature-thd}
+  Z_I =
+  \frac{|I_{\mathrm{rms}}-\mu_I|}{\sigma_I+10^{-6}} .
+  \label{eq:feature-irms-zscore}
 \end{equation}
-In (\ref{eq:feature-thd}), $P_1$ is the tracked fundamental tone power and
-$P_h$ is the tone power of harmonic $h$. The firmware limits the harmonic sum
-to available harmonics below Nyquist. THD is useful because arcing and
-nonlinear loads can distort the current waveform, although THD alone is not
-sufficient for reliable arc detection [35].
+In (\ref{eq:feature-irms-zscore}), $\mu_I$ and $\sigma_I$ are the adaptive
+baseline mean and standard deviation maintained by the firmware. The feature
+\feature{abs_irms_zscore_vs_baseline} is dimensionless, clipped by firmware,
+used by the deployed arc model, and shown in the PWA. It helps detect current
+magnitude departures that can accompany interruption and restrike.
+
+The absolute RMS-current step is
+\begin{equation}
+  \Delta I_{\mathrm{rms}} =
+  |I_{\mathrm{rms}}[k]-I_{\mathrm{rms}}[k-1]|.
+  \label{eq:feature-delta-irms}
+\end{equation}
+The feature \feature{delta_irms_abs} is expressed in amperes, supports the
+context model, and is shown in the PWA. It helps distinguish load turn-on,
+load-family changes, and abrupt waveform events from steady operation.
+
+The voltage-sag feature is computed from the healthy voltage baseline:
+\begin{equation}
+  V_{\mathrm{sag}} =
+  100\max\left(0,\frac{B_V-V_{\mathrm{rms}}}{B_V}\right).
+  \label{eq:feature-v-sag}
+\end{equation}
+In (\ref{eq:feature-v-sag}), $B_V$ is the voltage baseline and
+$V_{\mathrm{rms}}$ is the calibrated RMS voltage. The firmware logs
+\feature{v_sag_pct} for event interpretation, but the deployed arc model does
+not use it as a base feature.
+
+\subsubsection{Conduction-Gap and Pulse Features}
+\label{sec:ch3-gap-pulse-features}
+
+The low-current ratio measures the portion of the frame close to zero current:
+\begin{equation}
+  L_{\mathrm{ratio}} =
+  \frac{100}{N}\sum_{n=0}^{N-1}
+  \mathbf{1}
+  \left(
+  |i_c[n]| \leq
+  \max(0.035,\,0.06\max(I_{\mathrm{rms}},0.10))
+  \right).
+  \label{eq:feature-low-current-ratio}
+\end{equation}
+In (\ref{eq:feature-low-current-ratio}), $i_c[n]$ is the cleaned current
+sample and $\mathbf{1}(\cdot)$ is an indicator function. The result is a
+percentage. The feature \feature{low_current_ratio} is used by the deployed
+arc model and shown in the PWA because a high value can indicate current
+interruption during a series arc.
+
+The maximum low-current run is computed as
+\begin{equation}
+  t_{\mathrm{low,max}} =
+  \frac{1000\,N_{\mathrm{run,max}}}{f_s}.
+  \label{eq:feature-low-current-run}
+\end{equation}
+In (\ref{eq:feature-low-current-run}), $N_{\mathrm{run,max}}$ is the longest
+consecutive low-current run and $f_s$ is the sampling rate. The output is in
+milliseconds. The feature \feature{max_low_current_run_ms} is used by the
+deployed arc model and shown in the PWA because series arcs can create
+observable extinction gaps.
+
+The zero-dwell ratio measures near-zero dwelling around zero crossings. The
+firmware uses zero-crossing windows when crossings are stable and falls back
+to the low-current ratio when a robust dwell estimate is unavailable:
+\begin{equation}
+  D_0 =
+  100\frac{N_{\mathrm{near\ zero}}}{N_{\mathrm{zc\ window}}}.
+  \label{eq:feature-zero-dwell}
+\end{equation}
+The feature \feature{zero_dwell_ratio} is a deployed arc-model input and is
+logged to CSV. In the current live PWA, it is the value shown in the
+zero-crossing card.
+
+The residual pulse count per cycle is
+\begin{equation}
+  P_{\mathrm{cycle}} =
+  \frac{N_{\mathrm{pulses}}}{N/f_{\mathrm{s}}\cdot f_0}.
+  \label{eq:feature-pulse-count}
+\end{equation}
+In (\ref{eq:feature-pulse-count}), $N_{\mathrm{pulses}}$ is the detected
+residual-pulse count, $f_s$ is the sampling rate, and $f_0$ is the mains
+frequency. The feature \feature{pulse_count_per_cycle} is retained in the PWA
+session metadata and logged because short residual pulses are physically
+consistent with arc restrike, although the deployed arc model does not use
+this feature directly.
+
+\subsubsection{Spectral and Residual Features}
+\label{sec:ch3-spectral-residual-features}
 
 The mid/high-frequency spectral flux feature compares the normalized magnitude
 spectrum of the present frame with the previous frame:
@@ -46,11 +210,10 @@ spectrum of the present frame with the previous frame:
   \right|.
   \label{eq:feature-spectral-flux}
 \end{equation}
-In (\ref{eq:feature-spectral-flux}), $M_k$ is the FFT magnitude in the 900Hz
-to 9000Hz flux band after skipping bins around mains harmonics. The factor 50
-comes from the firmware expression $0.5 \times 100$. This feature increases
-when the mid/high-frequency spectrum changes abruptly from one frame to the
-next, which is consistent with intermittent arc restrike behavior.
+In (\ref{eq:feature-spectral-flux}), $M_k$ is the FFT magnitude in the
+900Hz to 9000Hz flux band after skipping bins around mains harmonics. The
+feature \feature{spectral_flux_midhf} is dimensionless, used by both the
+context model and deployed arc model, and shown in the PWA.
 
 The high-frequency energy delta compares the high-frequency energy share with
 its baseline:
@@ -66,8 +229,10 @@ its baseline:
 In (\ref{eq:feature-hf-delta}), $E_{\mathrm{HF}}$ is the 4500--9000Hz band
 energy, $E_{\mathrm{UM}}$ is the 900--4500Hz upper-midband energy,
 $B_{\mathrm{HF}}$ is the baseline high-frequency share, and $\epsilon$ is a
-small numerical offset. This feature detects a rise in high-frequency content
-relative to recent non-arcing operation.
+small numerical offset. The result is in decibels, supports the context model,
+and is shown in the PWA as \feature{hf_energy_delta}. The separate
+\feature{delta_hf_energy} is the frame-to-frame absolute change of this
+high-frequency measure and is logged for analysis.
 
 The midband residual ratio is computed from FFT energy in the 220--3200Hz
 midband after excluding harmonic bins:
@@ -81,72 +246,120 @@ midband after excluding harmonic bins:
   \label{eq:feature-midband-ratio}
 \end{equation}
 In (\ref{eq:feature-midband-ratio}), $E_{\mathrm{mid,res}}$ is the residual
-midband energy, $N$ is the frame length, and $B_I$ is the baseline RMS current.
-The firmware uses a 0.10A floor to prevent division by a near-zero baseline.
-This feature emphasizes non-harmonic disturbance relative to the normal current
-level.
+midband energy, $N$ is the frame length, and $B_I$ is the baseline RMS
+current. The output is in decibels and is used by both the context model and
+the deployed arc model.
 
-The low-current ratio measures the portion of the frame close to zero current:
+The residual crest factor is
 \begin{equation}
-  L_{\mathrm{ratio}} =
-  \frac{100}{N}\sum_{n=0}^{N-1}
-  \mathbf{1}
+  C_{\mathrm{res}} =
+  20\log_{10}
   \left(
-  |i_c[n]| \leq
-  \max(0.035,\,0.06\max(I_{\mathrm{rms}},0.10))
-  \right).
-  \label{eq:feature-low-current-ratio}
+  \frac{\max_n |r[n]|}{\sqrt{\frac{1}{N}\sum_{n=0}^{N-1}r[n]^2}}
+  \right),
+  \label{eq:feature-residual-crest}
 \end{equation}
-In (\ref{eq:feature-low-current-ratio}), $i_c[n]$ is the cleaned current
-sample and $\mathbf{1}(\cdot)$ is an indicator function. The 0.035A floor and
-0.06 current fraction were verified from the firmware configuration. A high
-low-current ratio can indicate current interruption or gap behavior during a
-series arc.
+where $r[n]$ is the residual waveform after low-frequency content is removed.
+The feature \feature{residual_crest_factor} is retained in the PWA session
+metadata and logged to describe spike-like residual behavior.
 
-The maximum low-current run is computed as
+The edge-spike ratio is
 \begin{equation}
-  t_{\mathrm{low,max}} =
-  \frac{1000\,N_{\mathrm{run,max}}}{f_s}.
-  \label{eq:feature-low-current-run}
+  S_{\mathrm{edge}} =
+  20\log_{10}
+  \left(
+  \frac{A_{\mathrm{edge}}}{\max(B_I,\,0.10)}
+  \right),
+  \label{eq:feature-edge-spike}
 \end{equation}
-In (\ref{eq:feature-low-current-run}), $N_{\mathrm{run,max}}$ is the longest
-consecutive run of samples satisfying the low-current condition in
-(\ref{eq:feature-low-current-ratio}) and $f_s$ is the sampling rate in hertz.
-The result is expressed in milliseconds and is one of the six deployed
-base features in the final arc model.
+where $A_{\mathrm{edge}}$ is the firmware's edge-burst amplitude estimate.
+The feature \feature{edge_spike_ratio} is retained in the PWA session metadata
+and helps identify restrike-like edges, but it is not a deployed arc-model
+base input.
 
-The RMS-current baseline z-score is
+The firmware also logs \feature{delta_flux}, the frame-to-frame change in
+spectral flux, and \feature{suspicious_run_energy}, a leaky internal score
+that increases when several arc-like cues occur together. These features
+support logging and future refinement; they are not used directly by the
+deployed Random Forest base vector.
+
+\subsubsection{Waveform Shape and Harmonic Features}
+\label{sec:ch3-shape-harmonic-features}
+
+The firmware computes current THD from the fundamental and harmonic tone
+powers:
 \begin{equation}
-  Z_I =
-  \frac{|I_{\mathrm{rms}}-\mu_I|}{\sigma_I+10^{-6}} .
-  \label{eq:feature-irms-zscore}
+  \mathrm{THD}_I =
+  100\sqrt{\frac{\sum_{h=2}^{10}P_h}{P_1}} .
+  \label{eq:feature-thd}
 \end{equation}
-In (\ref{eq:feature-irms-zscore}), $\mu_I$ and $\sigma_I$ are the adaptive
-baseline mean and standard deviation maintained by the firmware. The baseline
-is frozen when arc-like features or large current steps are detected, which
-prevents the baseline from immediately absorbing a fault signature.
+In (\ref{eq:feature-thd}), $P_1$ is the tracked fundamental tone power and
+$P_h$ is the tone power of harmonic $h$. The feature \feature{thd_i} is a
+percentage, supports the context model, and is shown in the PWA.
 
-The feature groups used by the firmware are summarized in
-Table~\ref{tab:ch3-feature-groups}.
-\begin{table}[H]
-  \centering
-  \caption{Waveform features and physical interpretation}
-  \label{tab:ch3-feature-groups}
-  \begin{tabular}{p{0.26\textwidth}p{0.34\textwidth}p{0.30\textwidth}}
-    \toprule
-    Feature group & Computation basis & Physical meaning \\
-    \midrule
-    RMS and z-score & Frame RMS and adaptive baseline & Load magnitude and unusual current change \\
-    Low-current gap features & Low-current ratio, zero dwell, maximum low-current run & Current interruption and restrike gap behavior \\
-    Spectral features & FFT bands, spectral flux, high-frequency energy delta & Broadband and frame-to-frame disturbance \\
-    Residual features & Cleaned waveform minus low-frequency baseline & Non-harmonic spikes and midband disturbance \\
-    Shape features & Cycle NMSE, peak fluctuation, half-cycle asymmetry & Irregular cycle shape and asymmetry \\
-    Pulse features & Residual pulse count per cycle & Short spikes consistent with arc restrike \\
-    \bottomrule
-  \end{tabular}
-\end{table}
+The half-cycle asymmetry is
+\begin{equation}
+  A_{\mathrm{half}} =
+  100\frac{|I_{\mathrm{pos}}-I_{\mathrm{neg}}|}
+  {0.5(I_{\mathrm{pos}}+I_{\mathrm{neg}})}.
+  \label{eq:feature-halfcycle-asymmetry}
+\end{equation}
+In (\ref{eq:feature-halfcycle-asymmetry}), $I_{\mathrm{pos}}$ and
+$I_{\mathrm{neg}}$ are the positive and negative half-cycle RMS values. The
+feature \feature{halfcycle_asymmetry} is dimensionless in percent, supports
+the context model, and is shown in the PWA.
 
-Table~\ref{tab:ch3-feature-groups} shows why the final classifier used a
-combination of features. No single feature is expected to identify all arc
-faults across appliance families; the classifier instead combines gap,
-spectral, residual, and context information.
+The peak-fluctuation coefficient of variation is
+\begin{equation}
+  C_{V,\mathrm{peak}} =
+  100\frac{\sigma(A_{\mathrm{pk}})}{\mu(A_{\mathrm{pk}})} ,
+  \label{eq:feature-peak-fluctuation}
+\end{equation}
+where $A_{\mathrm{pk}}$ is the set of cycle peak magnitudes in the frame. The
+feature \feature{peak_fluct_cv} is retained in the PWA session metadata and
+describes irregular cycle peaks.
+
+The cycle normalized mean-squared error is represented as
+\begin{equation}
+  E_{\mathrm{cycle}} =
+  100\,\mathrm{median}
+  \left(
+  \frac{\sum_m (c_j[m]-c_{j-1}[m])^2}
+       {\sum_m c_{j-1}[m]^2+\epsilon}
+  \right),
+  \label{eq:feature-cycle-nmse}
+\end{equation}
+where $c_j[m]$ and $c_{j-1}[m]$ are adjacent cycle segments aligned by the
+firmware. The feature \feature{cycle_nmse} is logged for waveform comparison
+but is not a deployed arc-model base input.
+
+\subsection{Selected Features Used by the Deployed Arc Model}
+\label{sec:ch3-selected-arc-features}
+
+The deployed arc model uses
+\feature{max_low_current_run_ms}, \feature{zero_dwell_ratio},
+\feature{low_current_ratio}, \feature{abs_irms_zscore_vs_baseline},
+\feature{midband_residual_ratio}, and \feature{spectral_flux_midhf}. These
+six waveform features cover conduction gaps, current-magnitude departure, and
+mid/high-frequency disturbance. The model then appends six context-family
+one-hot inputs and one context-confidence input. The context inputs improve
+interpretation across appliance families, but they are not additional
+waveform features.
+
+\subsection{Features Shown in the PWA}
+\label{sec:ch3-pwa-feature-display}
+
+\begin{sloppypar}
+The current live PWA dashboard contains 10 waveform feature cards:
+\feature{abs_irms_zscore_vs_baseline}, \feature{delta_irms_abs},
+\feature{halfcycle_asymmetry},
+\feature{max_low_current_run_ms}, \feature{low_current_ratio},
+\feature{zero_dwell_ratio}, \feature{midband_residual_ratio},
+\feature{spectral_flux_midhf}, \feature{thd_i}, and
+\feature{hf_energy_delta}. The PWA metadata and session viewer still list 14
+review features for CSV inspection, so the manuscript distinguishes the live
+dashboard display from the broader logging and review interface. This display
+set is broader than the deployed arc-model base vector so that the researchers
+can inspect useful diagnostic signals without implying that every displayed
+feature contributes directly to the Random Forest decision.
+\end{sloppypar}

@@ -1,11 +1,13 @@
-\section{TinyML Development and Deployment}
+\section{TinyML Development and Deployment Workflow}
 \label{sec:ch3-tinyml-workflow}
 
 The TinyML workflow used logged current-waveform features to train two embedded
 models: a load-context model and a series arc-fault model. The context model
 estimated the appliance family during the early stable portion of a load run.
-The arc model then combined selected arc-sensitive features with the context
-output to classify whether a frame was consistent with a series arc fault.
+Its load-family output was then used as an input to the arc model, where it was
+encoded as context fields. The arc model combined selected arc-sensitive
+features with that context output to classify whether a frame was consistent
+with a series arc fault.
 Random Forest classification was selected because it can model nonlinear
 feature interactions while remaining exportable as a compact tree ensemble for
 microcontroller execution [68], [69].
@@ -14,7 +16,21 @@ Figure~\ref{fig:ch3-data-labeling-deploy} shows the data-logging, labeling,
 training, and deployment path used by the project.
 \begin{figure}[H]
   \centering
-  \includegraphics[width=0.88\textwidth]{ch3/figure_3.15.png}
+  \begin{tikzpicture}[node distance=0.26in and 0.28in]
+    \node[thesis process,text width=1.28in] (log) {Firmware CSV\\logging};
+    \node[thesis process,text width=1.28in,right=of log] (label) {Manual review\\and labeling};
+    \node[thesis process,text width=1.28in,right=of label] (clean) {Python cleaning\\and splits};
+    \node[thesis process,text width=1.28in,below=0.30in of clean] (train) {Context and arc\\model training};
+    \node[thesis process,text width=1.28in,left=of train] (report) {Metrics and\\confusion reports};
+    \node[thesis process,text width=1.28in,left=of report] (export) {C headers\\exported};
+    \node[thesis process,text width=1.28in,below=0.30in of export] (deploy) {Embedded\\deployment};
+    \draw[thesis arrow] (log) -- (label);
+    \draw[thesis arrow] (label) -- (clean);
+    \draw[thesis arrow] (clean) -- (train);
+    \draw[thesis arrow] (train) -- (report);
+    \draw[thesis arrow] (report) -- (export);
+    \draw[thesis arrow] (export) -- (deploy);
+  \end{tikzpicture}
   \caption{Data logging, labeling, and TinyML deployment workflow.}
   \label{fig:ch3-data-labeling-deploy}
 \end{figure}
@@ -31,15 +47,27 @@ The deployed model sequence is summarized in
 Figure~\ref{fig:ch3-tinyml-sequence}.
 \begin{figure}[H]
   \centering
-  \includegraphics[width=0.88\textwidth]{ch3/figure_3.16.png}
+  \begin{tikzpicture}[node distance=0.24in and 0.32in]
+    \node[thesis process,text width=1.45in] (features) {20 firmware export\\feature fields};
+    \node[thesis process,text width=1.45in,right=of features] (context) {Context model\\6 waveform inputs};
+    \node[thesis process,text width=1.45in,right=of context] (arc) {Arc model\\6 waveform inputs + 7 context fields};
+    \node[thesis process,text width=1.45in,below=0.32in of arc] (protect) {Persistence counter\\and relay logic};
+    \node[thesis process,text width=1.45in,left=of protect] (pwa) {Live PWA\\10 feature cards};
+    \draw[thesis arrow] (features) -- (context);
+    \draw[thesis arrow] (context) -- (arc);
+    \draw[thesis arrow] (arc) -- (protect);
+    \draw[thesis arrow] (features.south) |- (pwa.west);
+  \end{tikzpicture}
   \caption{TinyML processing sequence from feature logging to embedded inference.}
   \label{fig:ch3-tinyml-sequence}
 \end{figure}
 
-Figure~\ref{fig:ch3-tinyml-sequence} shows that the firmware computes features
-first, then updates context, then evaluates the arc classifier. This order is
-important because the deployed arc header includes both waveform features and
-context fields.
+Figure~\ref{fig:ch3-tinyml-sequence} shows that the firmware computes feature
+fields first, then updates context, then evaluates the arc classifier. This
+order is important because the deployed arc header includes both waveform
+features and context fields. The live PWA dashboard displays only 10 feature
+cards; a broader 14-feature order remains in the PWA metadata and session
+viewer for historical review and CSV inspection.
 
 Arc labels were assigned from logged waveform sessions. The labeling interface
 is shown in Figure~\ref{fig:ch3-arc-labeling}.
@@ -74,7 +102,7 @@ and embedded export. The dataset-preparation, training-report, and exported
 embedded-model summaries are provided in
 Appendix~\ref{app:f-tinyml-training-summary}.
 
-\section{Context Model}
+\subsection{Context Model}
 \label{sec:ch3-context-model}
 
 The deployed context model is a centroid or prototype classifier, not a
@@ -109,7 +137,7 @@ configured 5s acquisition window when confidence is sufficient. This prevents
 brief startup artifacts from immediately forcing a load family into the arc
 classifier.
 
-\section{Arc Model}
+\subsection{Arc Model}
 \label{sec:ch3-arc-model}
 
 The deployed series-arc classifier is the Random Forest used by the embedded
@@ -130,7 +158,7 @@ Table~\ref{tab:ch3-arc-model-export}.
   \label{tab:ch3-arc-model-export}
   \begin{tabular}{p{0.36\textwidth}p{0.22\textwidth}p{0.32\textwidth}}
     \toprule
-    Item & Deployed value & Source or role \\
+    \textbf{Item} & \textbf{Deployed value} & \textbf{Source or role} \\
     \midrule
     Model type & Random Forest & Exported tree ensemble from the local training workflow \\
     Input dimension & 13 & Six waveform features plus seven context fields \\
@@ -150,7 +178,20 @@ family could not be established confidently. The firmware then passed the arc
 classification to the protection manager, where a leaky counter required
 persistence before relay disconnection.
 
-\section{Training Split and Model Evaluation}
+\subsection{Feature Selection for the Deployed Arc Model}
+\label{sec:ch3-arc-feature-selection}
+
+The exported firmware header is the source of truth for the deployed feature
+selection. It defines 13 arc-model inputs: six waveform features and seven
+context fields. Therefore, the manuscript treats the context one-hot fields
+and context confidence as model inputs, but not as additional waveform
+features. The selected waveform features are maximum low-current run,
+zero-dwell ratio, low-current ratio, absolute RMS-current z-score relative to
+baseline, midband residual ratio, and mid/high-frequency spectral flux. The
+full computed/logged feature contract is given in
+Section~\ref{sec:ch3-waveform-features}.
+
+\subsection{Training Split and Model Evaluation}
 \label{sec:ch3-training-split}
 
 The Random Forest report shows that the final arc dataset was split into

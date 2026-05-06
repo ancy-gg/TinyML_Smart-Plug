@@ -16,7 +16,7 @@ recognized loads, unrecognized loads, and all loads combined.
   \label{tab:ch4-trial-metrics}
   \begin{tabular}{lcccc}
     \toprule
-    Load group & Accuracy & Precision & Recall & F1-score \\
+    \textbf{Load group} & \textbf{Accuracy} & \textbf{Precision} & \textbf{Recall} & \textbf{F1-score} \\
     \midrule
     Recognized loads & 99.00\% & 100.00\% & 98.00\% & 98.99\% \\
     Unrecognized loads & 96.00\% & 97.92\% & 94.00\% & 95.92\% \\
@@ -32,6 +32,13 @@ trial set. Recall is related to safety sensitivity: the 96.00\% overall recall
 means that four arc trials were missed. The F1-score of 97.46\% summarizes the
 balance between nuisance-trip avoidance and arc-fault sensitivity.
 
+The trial-level classifier and persistence logic produced balanced
+performance: precision remained high for nuisance-trip reduction, while recall
+remained high enough to detect most arc trials. These results apply to the
+deployed feature contract described in Section~\ref{sec:ch3-feature-contract}:
+six selected waveform features were used by the arc model, with context fields
+appended to the model vector.
+
 The per-load trial metrics are shown in Table~\ref{tab:ch4-per-load-metrics}.
 \begin{table}[H]
   \centering
@@ -39,7 +46,7 @@ The per-load trial metrics are shown in Table~\ref{tab:ch4-per-load-metrics}.
   \label{tab:ch4-per-load-metrics}
   \begin{tabular}{p{0.32\textwidth}cccc}
     \toprule
-    Device & Accuracy & Precision & Recall & F1-score \\
+    \textbf{Device} & \textbf{Accuracy} & \textbf{Precision} & \textbf{Recall} & \textbf{F1-score} \\
     \midrule
     Water heater & 100\% & 100\% & 100\% & 100\% \\
     Halogen lamp & 100\% & 100\% & 100\% & 100\% \\

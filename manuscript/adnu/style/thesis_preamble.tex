@@ -1,5 +1,5 @@
 \documentclass[12pt,oneside]{report}
-\usepackage[top=1in,bottom=1in,left=1.5in,right=1in]{geometry}
+\usepackage[top=1in,bottom=1in,left=1.25in,right=1in]{geometry}
 \usepackage{iftex}
 \ifPDFTeX
   \usepackage[T1]{fontenc}
@@ -18,13 +18,13 @@
 \emergencystretch=3em
 
 \usepackage{titlesec}
-\titleformat{\chapter}[display]
-  {\normalfont\bfseries\centering\fontsize{13}{15.6}\selectfont}
-  {\chaptertitlename\ \thechapter}
-  {0.25\baselineskip}
-  {\MakeUppercase}
-\titleformat{name=\chapter,numberless}[display]
-  {\normalfont\bfseries\centering\fontsize{13}{15.6}\selectfont}
+\titleformat{\chapter}[block]
+  {\normalfont\bfseries\centering\singlespacing\fontsize{13}{15.6}\selectfont}
+  {}
+  {0pt}
+  {\chaptertitlename\ \thechapter\\[0.25\baselineskip]\MakeUppercase}
+\titleformat{name=\chapter,numberless}[block]
+  {\normalfont\bfseries\centering\singlespacing\fontsize{13}{15.6}\selectfont}
   {}
   {0pt}
   {\MakeUppercase}
@@ -40,7 +40,7 @@
 \titleformat{\paragraph}[runin]
   {\normalfont\itshape\fontsize{12}{14.4}\selectfont}
   {\theparagraph}{1em}{}
-\titlespacing*{\chapter}{0pt}{0pt}{0.75\baselineskip}
+\titlespacing*{\chapter}{0pt}{-24pt}{0.75\baselineskip}
 \titlespacing*{\section}{0pt}{18pt}{0.25\baselineskip}
 \titlespacing*{\subsection}{0pt}{12pt}{0.25\baselineskip}
 \titlespacing*{\subsubsection}{0pt}{12pt}{0.25\baselineskip}
@@ -51,10 +51,16 @@
 % Tables, figures, math, and references.
 \usepackage{graphicx}
 \graphicspath{{figures/}{figures/ch3/}{figures/ch4/}{figures/apx/}}
+\usepackage{tikz}
+\usetikzlibrary{arrows.meta,calc,fit,positioning,shapes.geometric}
 \usepackage{pgfplots}
 \pgfplotsset{compat=1.18}
+\usepackage{pdflscape}
 \usepackage{float}
 \usepackage{booktabs}
+\setlength{\heavyrulewidth}{1.5pt}
+\setlength{\lightrulewidth}{1pt}
+\setlength{\cmidrulewidth}{1pt}
 \usepackage{longtable}
 \usepackage{multirow}
 \usepackage{array}
@@ -101,7 +107,45 @@
 \providecommand{\tightlist}{\setlength{\itemsep}{0pt}\setlength{\parskip}{0pt}}
 \providecommand{\real}[1]{#1}
 \newcommand{\degreeC}{\ensuremath{^\circ\mathrm{C}}}
+\newcommand{\feature}[1]{\texttt{\detokenize{#1}}}
+\newcommand{\manualappendixtable}[2]{%
+  \refstepcounter{table}%
+  \addcontentsline{lot}{table}{\protect\numberline{\thetable}{#1}}%
+  \par\noindent\textbf{Table \thetable. #1}\label{#2}\par\nopagebreak[4]%
+}
 \newcounter{none}
+\newcommand{\figsource}[1]{\par\vspace{2pt}{\footnotesize Source: #1\par}}
+
+\tikzset{
+  thesis box/.style={
+    draw,
+    rounded corners=1pt,
+    align=center,
+    inner sep=4pt,
+    minimum height=0.36in,
+    font=\small
+  },
+  thesis process/.style={
+    thesis box,
+    fill=gray!8
+  },
+  thesis decision/.style={
+    diamond,
+    draw,
+    aspect=2,
+    align=center,
+    inner sep=2pt,
+    font=\small,
+    fill=gray!8
+  },
+  thesis arrow/.style={
+    -{Latex[length=2.2mm]},
+    line width=0.65pt
+  },
+  thesis bus/.style={
+    line width=0.8pt
+  }
+}
 
 \newenvironment{thesisreferences}
   {\begin{spacing}{1.5}\setlength{\parindent}{-0.5in}\setlength{\leftskip}{0.5in}\setlength{\parskip}{0pt}\sloppy}

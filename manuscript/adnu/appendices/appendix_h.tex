@@ -1,8 +1,40 @@
+\begin{landscape}
 \chapter{Gantt Chart}\label{app:h}
 
 \begin{figure}[H]
   \centering
-  \includegraphics[width=\textwidth,height=0.72\textheight,keepaspectratio]{figures/apx/image38.png}
+  \begin{tikzpicture}[x=0.72cm,y=0.58cm]
+    \def\chartwidth{19}
+    \def\rowheight{1}
+    \foreach \x/\m in {0/Jan,4/Feb,8/Mar,12/Apr,16/May} {
+      \draw[black!45] (\x,0.1) -- (\x,-10.3);
+      \node[font=\small\bfseries,anchor=south] at (\x+2,0.35) {\m\ 2026};
+    }
+    \foreach \x in {1,2,...,19} {
+      \draw[black!12] (\x,0.1) -- (\x,-10.3);
+    }
+    \draw[black,line width=0.8pt] (0,0.1) -- (\chartwidth,0.1);
+    \node[font=\small\bfseries,anchor=east] at (-0.25,0.1) {Task};
+
+    \newcommand{\ganttbar}[5]{%
+      \node[font=\scriptsize,anchor=east,text width=4.4cm,align=right] at (-0.25,#1) {#2};
+      \draw[fill=#5,draw=black,line width=0.4pt] (#3,#1-0.24) rectangle (#4,#1+0.24);
+    }
+
+    \ganttbar{-0.8}{Literature review and scope}{0.0}{3.8}{gray!25}
+    \ganttbar{-1.8}{Hardware design and procurement}{1.4}{6.2}{gray!35}
+    \ganttbar{-2.8}{Prototype assembly and firmware}{3.0}{8.0}{gray!45}
+    \ganttbar{-3.8}{Safety review and setup check}{6.9}{7.3}{gray!60}
+    \ganttbar{-4.8}{Overload data collection}{8.0}{8.8}{gray!60}
+    \ganttbar{-5.8}{Socket-heating data collection}{9.0}{9.8}{gray!60}
+    \ganttbar{-6.8}{Series arc-fault data collection}{10.0}{12.2}{gray!60}
+    \ganttbar{-7.8}{TinyML training and export}{10.8}{13.8}{gray!45}
+    \ganttbar{-8.8}{Model and device testing}{12.8}{15.0}{gray!35}
+    \ganttbar{-9.8}{Manuscript and defense preparation}{14.0}{19.0}{gray!25}
+
+    \node[font=\scriptsize,anchor=west] at (0,-11.0) {Bars are approximate and follow the January--May 2026 project schedule used for planning and PPA coordination.};
+  \end{tikzpicture}
   \caption{Gantt chart of project activities.}
   \label{fig:app-h-gantt-chart}
 \end{figure}
+\end{landscape}

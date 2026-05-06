@@ -1,6 +1,9 @@
 \section{Physical Setup and Hardware Implementation}
 \label{sec:ch3-physical-setup}
 
+\subsection{Sensing Subsystems and Hardware Blocks}
+\label{sec:ch3-sensing-subsystems}
+
 The physical implementation combined a line-side plug, protected outlet,
 solid-state relay module, ESP32-S3 controller, voltage sensor, current sensor,
 NTC thermistor, anti-aliasing circuit, backup supply, OLED display, buzzer,
@@ -12,7 +15,7 @@ Figure~\ref{fig:ch3-block-diagram} gives the hardware block-level view before
 the detailed schematic is introduced.
 \begin{figure}[H]
   \centering
-  \includegraphics[width=0.95\textwidth]{ch3/figure_3.4.png}
+  \includegraphics[width=0.98\textwidth]{ch3/figure_3.4.png}
   \caption{Block diagram of the prototype hardware.}
   \label{fig:ch3-block-diagram}
 \end{figure}
@@ -22,21 +25,45 @@ final protective actuator, while the voltage, current, and temperature sensors
 serve as inputs to the ESP32-S3. This placement allows the firmware to remove
 power from the protected outlet after a protection condition is confirmed.
 
+\subsection{Full Schematic Discussion}
+\label{sec:ch3-full-schematic-discussion}
+
 The full circuit schematic is shown in Figure~\ref{fig:ch3-full-schematic}.
-\begin{figure}[H]
+\clearpage
+\begin{figure}[p]
   \centering
-  \includegraphics[width=\textwidth]{ch3/figure_3.5.png}
+  \includegraphics[angle=90,width=0.96\textheight,height=0.96\textwidth,keepaspectratio,trim=0.20in 0.55in 0.20in 0.25in,clip]{ch3/full_schematic.pdf}
   \caption{Full schematic of the TinyML Smart Plug prototype.}
   \label{fig:ch3-full-schematic}
 \end{figure}
+\clearpage
 
-Figure~\ref{fig:ch3-full-schematic} identifies the current-sensing path, NTC
-temperature path, voltage-sensing path, MCP3204 ADC, relay-latching circuit,
-and auxiliary supply. The schematic also shows the current-channel
-anti-aliasing stage used before waveform sampling. This stage is necessary
-because FFT-based and band-energy features are sensitive to out-of-band signal
-content folded into the sampled spectrum [70]. The board-layout views that
-support this schematic are provided in Appendix~\ref{app:b}.
+Figure~\ref{fig:ch3-full-schematic} shows the prototype as several functional
+sections rather than as one undifferentiated circuit. The AC input enters the
+line-side plug and passes toward the protected outlet through the relay or
+load-isolation path, so the relay is the firmware-controlled actuator that
+disconnects the load after a latched trip. The voltage-sensing path is taken
+from the AC input through the ZMPT101B module and is used only as a monitored
+signal for RMS voltage and mains-present logic. The current-sensing path
+places the ACS37035 in the load path, routes the conditioned output through
+the anti-aliasing and signal-conditioning stage, and digitizes the result with
+the MCP3204 ADC for both RMS current and waveform-feature extraction.
+
+The ESP32-S3 section receives the ADC, voltage, and thermistor signals, then
+drives the relay-latching circuit, OLED, buzzer, and local indicators. Wi-Fi
+communication is handled by the ESP32-S3 and links the local firmware to the
+Firebase/PWA monitoring path; the relay decision itself remains local. The
+power-supply section separates the low-voltage control electronics from the AC
+input through the module supply and local regulators, while signal returns for
+the low-voltage circuits are kept within the control side of the prototype.
+The schematic supports bench validation of the prototype architecture, but it
+does not by itself certify creepage, clearance, enclosure safety, regulatory
+compliance, or suitability as a replacement for listed protective devices.
+The board-layout views that support this schematic are provided in
+Appendix~\ref{app:b}.
+
+\subsection{Signal Conditioning and Enclosure Implementation}
+\label{sec:ch3-signal-conditioning-enclosure}
 
 The anti-aliasing circuit and its frequency response are shown in
 Figures~\ref{fig:ch3-aaf-circuit} and~\ref{fig:ch3-aaf-bode}.
@@ -121,12 +148,12 @@ The major hardware elements are summarized in Table~\ref{tab:ch3-hardware}.
   \label{tab:ch3-hardware}
   \begin{tabular}{p{0.30\textwidth}p{0.25\textwidth}p{0.35\textwidth}}
     \toprule
-    Subsystem & Component used & Purpose \\
+    \textbf{Subsystem} & \textbf{Components} & \textbf{Application} \\
     \midrule
     Microcontroller & ESP32-S3 & Local computation, Wi-Fi communication, TinyML inference, relay control \\
     Voltage sensing & ZMPT101B module & RMS voltage measurement and voltage protection input \\
     Current sensing & ACS37035 with MCP3204 ADC & RMS current measurement and waveform-feature source \\
-    Temperature sensing & 10 k$\Omega$ NTC thermistor & External socket-temperature measurement for thermal estimation \\
+    Temperature sensing & 10k$\Omega$ thermistor & Device temperature measurement for thermal estimation \\
     Protection actuator & Solid-state relay module & Load disconnection after latched protection condition \\
     User interface & OLED, buzzer, LEDs, PWA & Local and remote warning and monitoring \\
     \bottomrule

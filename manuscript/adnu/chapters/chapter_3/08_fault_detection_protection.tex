@@ -1,4 +1,4 @@
-﻿\section{Fault Detection and Protection Logic}
+\section{Fault Detection and Protection Logic}
 \label{sec:ch3-protection-logic}
 
 The protection manager receives calibrated voltage, calibrated RMS current,
@@ -7,15 +7,20 @@ and trip states according to thresholds and persistence rules in the firmware.
 The relay is opened only after a trip condition is accepted by the protection
 logic; warnings alone do not disconnect the load.
 
-\section{Voltage Protection}
+\subsection{Voltage Supervision}
 \label{sec:ch3-voltage-protection}
 
-Voltage protection uses calibrated RMS voltage and mains-present state. The
+Voltage supervision uses calibrated RMS voltage and mains-present state. The
 firmware defines the normal operating band as 200--250V. Instantaneous
 undervoltage protection is set at 170V, delayed undervoltage is set below
 200V for 7s, delayed overvoltage is set above 250V for 7s, and
 instantaneous overvoltage is set at 260V. Recovery requires the voltage to
 return to 212--250V and remain stable for 5min.
+
+These thresholds were verified from the firmware and are treated as design
+choices for supply-state supervision. The manuscript does not claim validated
+voltage-protection performance because Chapter~\ref{chap:results} does not
+include a separate voltage-abnormality test set.
 
 These values are summarized in Table~\ref{tab:ch3-voltage-thresholds}.
 \begin{table}[H]
@@ -24,7 +29,7 @@ These values are summarized in Table~\ref{tab:ch3-voltage-thresholds}.
   \label{tab:ch3-voltage-thresholds}
   \begin{tabular}{p{0.36\textwidth}p{0.20\textwidth}p{0.34\textwidth}}
     \toprule
-    Condition & Firmware value & Interpretation \\
+    \textbf{Condition} & \textbf{Firmware value} & \textbf{Interpretation} \\
     \midrule
     Normal lower limit & 200V & Lower edge of normal operation \\
     Normal upper limit & 250V & Upper edge of normal operation \\
@@ -42,7 +47,7 @@ both instantaneous and delayed decisions. This avoids treating every brief
 voltage excursion as a latched trip while still allowing severe voltage
 conditions to disconnect promptly.
 
-\section{Overload Protection}
+\subsection{Overload Protection}
 \label{sec:ch3-overload-protection}
 
 The overload logic separates warning from relay trip. A warning begins when
@@ -73,7 +78,7 @@ can produce warnings without disconnection. Persistence-based behavior is
 consistent with the principle that overcurrent protection should distinguish
 brief transients from sustained thermal stress [22].
 
-\section{Socket-Heating Protection}
+\subsection{Socket-Heating Protection}
 \label{sec:ch3-heating-protection}
 
 Socket-heating protection uses the estimated socket temperature
@@ -94,10 +99,10 @@ The trip rule is
 \end{equation}
 In (\ref{eq:heating-trip-rule}), $H$ is the heating-trip state. This trip
 criterion is intentionally based on the compensated socket estimate rather
-than the direct NTC temperature because the external NTC can under-read the
+than the direct device temperature measurement because the external thermistor can under-read the
 contact hotspot during degraded-contact heating [30], [46], [47].
 
-\section{Series Arc-Fault Protection}
+\subsection{Series Arc-Fault Protection}
 \label{sec:ch3-arc-protection}
 
 The Random Forest arc model produces a frame-level arc class. The protection
@@ -128,7 +133,7 @@ system waits up to 200ms to verify whether current returns before treating the
 event as an arc trip. This guards against disconnecting on a simple load turn
 off while still allowing fast response to arc-like interruption and restrike.
 
-\section{Protection Priority and Latching}
+\subsection{Protection Priority and Latching}
 \label{sec:ch3-priority-latching}
 
 When multiple protection conditions are present, the firmware assigns
@@ -146,9 +151,9 @@ The principal thresholds are summarized in Table~\ref{tab:ch3-protection-summary
   \label{tab:ch3-protection-summary}
   \begin{tabular}{p{0.26\textwidth}p{0.30\textwidth}p{0.34\textwidth}}
     \toprule
-    Protection function & Warning or model threshold & Relay-trip condition \\
+    \textbf{Protection function} & \textbf{Warning or model threshold} & \textbf{Relay-trip condition} \\
     \midrule
-    Voltage & Outside 200--250V band & Instant 170/260V or delayed 7s low/high voltage \\
+    Voltage supervision & Outside 200--250V band & Instant 170/260V or delayed 7s low/high voltage \\
     Overload & Warning above 10.0A; clear below 9.6A & 1s current average at or above 14.5A for about 60s \\
     Socket heating & Warning at 39.0°C; clear at 38.6°C & Estimated socket temperature at or above 40.0°C \\
     Series arc fault & RF probability threshold depends on context & Arc counter reaches 8 from repeated arc-positive frames \\
