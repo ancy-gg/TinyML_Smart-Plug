@@ -61,11 +61,11 @@
 \RequirePackage{mathpazo} % Use the Pazo Math family in equations
 \RequirePackage[T1]{fontenc}
 \RequirePackage{url} % For urls
-\RequirePackage{hyperxmp} % Enable extra PDF metadata options
 \RequirePackage{base/xurl} % Load xurl package (not currently installed on Overleaf) to break urls at the end of lines
 \RequirePackage[pdfusetitle,%
 				colorlinks=true,%
 				allcolors=royalviolet]{hyperref} % For links; includes colours of links
+\RequirePackage{hyperxmp} % Enable extra PDF metadata options
 	\hypersetup{%
 		pdfcopyright={Copyright © \the\year{} THE AUTHORS. Published under a Creative Commons Attribution-ShareAlike 4.0 International license.}, % Copyright
 		pdflicenseurl={https://creativecommons.org/licenses/by-sa/4.0/} % Link to license

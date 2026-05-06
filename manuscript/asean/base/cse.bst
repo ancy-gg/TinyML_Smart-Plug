@@ -132,6 +132,10 @@ FUNCTION {fin.entry}
   newline$
 }
 
+FUNCTION {add.blank}
+{  " " * before.all 'output.state :=
+}
+
 FUNCTION {add.colon} % this function was created to add colon after school address of thesis
 { duplicate$ empty$
  'skip$
@@ -169,10 +173,6 @@ FUNCTION {new.sentence}
     }
   if$
 }
-FUNCTION {add.blank}
-{  " " * before.all 'output.state :=
-}
-
 FUNCTION {date.block}
 {
   new.block
@@ -990,7 +990,7 @@ FUNCTION {article}
       journal
       "journal" bibinfo.check
       "journal" output.check
-      add.block
+      new.block
       format.vol.num.pages output
     }
     { format.article.crossref output.nonnull
@@ -1190,7 +1190,7 @@ FUNCTION {mastersthesis}
   add.blank
   bbl.mthesis format.thesis.type output.nonnull
   type.paren
-  add.period
+  add.period$
   new.block
   address "address" bibinfo.check output
   address.paren
@@ -1583,7 +1583,7 @@ FUNCTION {begin.bib}
     { preamble$ write$ newline$ }
   if$
   "\begin{thebibliography}{" number.label int.to.str$ * "}" *
-  write$ newline$testing
+  write$ newline$
   "\providecommand{\natexlab}[1]{#1}"
   write$ newline$
   "\providecommand{\url}[1]{#1}"
