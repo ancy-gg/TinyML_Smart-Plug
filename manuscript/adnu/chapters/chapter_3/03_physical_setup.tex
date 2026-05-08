@@ -25,10 +25,18 @@ the detailed schematic is introduced.
   \label{fig:ch3-block-diagram}
 \end{figure}
 
-Figure~\ref{fig:ch3-block-diagram} shows that the relay is positioned as the
-final protective actuator, while the voltage, current, and temperature sensors
-serve as inputs to the ESP32-S3. This placement allows the firmware to remove
-power from the protected outlet after a protection condition is confirmed.
+Figure~\ref{fig:ch3-block-diagram} shows the main hardware path of the 
+prototype before the detailed schematic is introduced. The \(220\mathrm{V}_{\mathrm{AC}}\) input 
+enters through the male plug and is routed to the protected female socket 
+through the 40A solid-state relay, which serves as the final protective 
+actuator before the load. The voltage, current, and temperature sensors 
+monitor the socket condition, while the anti-aliasing filter and MCP3204 
+SAR ADC prepare the current waveform for processing by the ESP32-S3. 
+The isolated power supply provides the required 5V, 3.3V, and backup 
+battery rails for the sensing, processing, relay, and alert modules. 
+This arrangement allows the firmware and hardware latch to remove power 
+from the protected outlet and activate the buzzer and OLED notification 
+once a protection condition is confirmed.
 
 \subsection{Full Schematic Discussion}
 \label{sec:ch3-full-schematic-discussion}
@@ -36,7 +44,7 @@ power from the protected outlet after a protection condition is confirmed.
 The full circuit schematic is shown in Figure~\ref{fig:ch3-full-schematic}.
 \begin{figure}[H]
   \centering
-  \includegraphics[angle=90,width=1.44\textheight,height=1.36\textwidth,keepaspectratio,trim=0.15in 0.50in 0.15in 0.20in,clip]{ch3/full_schematic.pdf}
+  \includegraphics[angle=90,width=1.584\textheight,height=1.496\textwidth,keepaspectratio,trim=0.15in 0.50in 0.15in 0.20in,clip]{ch3/full_schematic.pdf}
   \caption{Full schematic of the TinyML Smart Plug prototype.}
   \label{fig:ch3-full-schematic}
 \end{figure}
@@ -195,12 +203,9 @@ class because it is a rail-to-rail input/output, unity-gain-stable, 10MHz
 single-supply op amp family [76]. These checks support waveform acquisition
 for the prototype tests, but they do not replace full analog compliance
 testing of the assembled board.
-
-The internal arrangement was first modeled before assembly. Figure~\ref{fig:ch3-model-no-case}
-shows the prototype layout without the case.
 \begin{figure}[H]
   \centering
-  \includegraphics[width=0.82\textwidth]{ch3/figure_3.8.png}
+  \includegraphics[width=0.6\textwidth]{ch3/figure_3.8.png}
   \caption{Three-dimensional model of the prototype without the case.}
   \label{fig:ch3-model-no-case}
 \end{figure}
@@ -209,12 +214,9 @@ Figure~\ref{fig:ch3-model-no-case} was used to check the relative placement of
 the PCB, outlet, relay, fan, and front-panel controls before final enclosure
 assembly. This reduced the chance that the enclosure would interfere with
 airflow, wiring, or user access.
-
-The corresponding assembled device without the outer case is shown in
-Figure~\ref{fig:ch3-actual-no-case}.
 \begin{figure}[H]
   \centering
-  \includegraphics[width=0.85\textwidth]{ch3/figure_3.9.png}
+  \includegraphics[width=0.6\textwidth]{ch3/figure_3.9.png}
   \caption{Actual prototype assembly without the case.}
   \label{fig:ch3-actual-no-case}
 \end{figure}
@@ -231,7 +233,7 @@ operator-interface purpose.
 
 \begin{figure}[H]
   \centering
-  \includegraphics[height=0.47\textheight,keepaspectratio]{ch3/figure_3.10.png}
+  \includegraphics[height=0.28\textheight,keepaspectratio]{ch3/figure_3.10.png}
   \caption{Three-dimensional model of the prototype with the case.}
   \label{fig:ch3-model-with-case}
 \end{figure}
@@ -240,12 +242,12 @@ operator-interface purpose.
   \centering
   \begin{minipage}{0.43\textwidth}
     \centering
-    \includegraphics[height=0.37\textheight,keepaspectratio]{ch3/figure_3.11_a.png}\\[-2pt]
+    \includegraphics[height=0.28\textheight,keepaspectratio]{ch3/figure_3.11_a.png}\\[-2pt]
     {\small (a) Plug side}
   \end{minipage}\hspace{0.05\textwidth}
   \begin{minipage}{0.43\textwidth}
     \centering
-    \includegraphics[height=0.37\textheight,keepaspectratio]{ch3/figure_3.11_b.png}\\[-2pt]
+    \includegraphics[height=0.28\textheight,keepaspectratio]{ch3/figure_3.11_b.png}\\[-2pt]
     {\small (b) Outlet and control side}
   \end{minipage}
   \caption{Actual prototype with the case installed.}

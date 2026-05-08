@@ -21,7 +21,7 @@ Figure~\ref{fig:ch3-program-flow} shows the operating sequence implemented by
 the firmware.
 \begin{figure}[H]
   \centering
-  \includegraphics[width=0.96\textwidth]{ch3/figure_3.3.png}
+  \includegraphics[width=0.9\textwidth]{ch3/figure_3.3.png}
   \caption{Program flowchart of the TinyML Smart Plug firmware.}
   \label{fig:ch3-program-flow}
 \end{figure}
@@ -36,7 +36,16 @@ appended to the arc-model input vector before Random Forest inference. The
 result is not used as a single-frame trip command. It is passed to the
 protection manager, where persistence counters, blanking intervals, and fault
 latches determine whether the relay should remain energized, warn the user, or
-disconnect the load.
+disconnect the load. Another is that since the system targets fire-inducing 
+faults, thermistor temperature is 
+treated with the highest priority because it is the most direct indicator 
+of socket heating. Arc-fault inference is evaluated next because waveform 
+discontinuities and intermittent conduction can produce localized heating 
+even before a sustained current burden is established. Overload protection 
+is handled after these conditions because excessive current is treated as a 
+time-dependent stress that requires persistence before relay action. Thus, 
+the protection manager resolves the fault sequence by prioritizing 
+temperature, then arc fault, and then overload.
 
 \subsection{Protection-State Evaluation}
 \label{sec:ch3-protection-state-evaluation}

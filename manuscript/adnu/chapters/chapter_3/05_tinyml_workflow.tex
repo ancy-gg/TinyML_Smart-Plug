@@ -16,7 +16,7 @@ Figure~\ref{fig:ch3-data-labeling-deploy} shows the data-logging, labeling,
 training, and deployment path used by the project.
 \begin{figure}[H]
   \centering
-  \resizebox{0.92\textwidth}{!}{%
+  \resizebox{0.75\textwidth}{!}{%
   \begin{tikzpicture}[node distance=0.30in and 0.42in]
     \node[thesis process,text width=1.38in] (bench) {Bench tests\\normal, start, arc};
     \node[thesis process,text width=1.38in,right=of bench] (log) {Firmware CSV\\feature logs};
@@ -52,12 +52,9 @@ The final embedded test was therefore a deployment check of the exported
 headers inside the firmware, not a new training step on the ESP32-S3. This
 follows the usual TinyML pattern of offline training followed by
 resource-constrained on-device execution [43], [73].
-
-The deployed model sequence is summarized in
-Figure~\ref{fig:ch3-tinyml-sequence}.
 \begin{figure}[H]
   \centering
-  \resizebox{0.65\textwidth}{!}{%
+  \resizebox{0.58\textwidth}{!}{%
   \begin{tikzpicture}[node distance=0.24in and 0.60in]
     \node[thesis process,text width=1.75in] (frame) {Current waveform\\512-sample frame};
     \node[thesis process,text width=1.75in,below=of frame] (features) {Computed/logged\\20 waveform fields};

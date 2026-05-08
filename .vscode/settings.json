@@ -1,7 +1,31 @@
 {
-    "idf.currentSetup": "C:\\Users\\annam\\esp\\v5.5.2\\esp-idf",
-    "python-envs.defaultEnvManager": "ms-python.python:system",
-    "files.exclude": {
-        "arcstep/": true
+  "idf.currentSetup": "C:\\Users\\annam\\esp\\v5.5.2\\esp-idf",
+  "python-envs.defaultEnvManager": "ms-python.python:system",
+
+  "files.exclude": {
+    "arcstep/": true
+  },
+
+  "latex-workshop.latex.recipe.default": "latexmk (xelatex)",
+  "latex-workshop.latex.autoBuild.run": "never",
+  "latex-workshop.latex.recipes": [
+    {
+      "name": "latexmk (xelatex)",
+      "tools": ["latexmk-xelatex"]
     }
+  ],
+
+  "latex-workshop.latex.tools": [
+    {
+      "name": "latexmk-xelatex",
+      "command": "latexmk",
+      "args": [
+        "-xelatex",
+        "-synctex=1",
+        "-interaction=nonstopmode",
+        "-file-line-error",
+        "%DOC%"
+      ]
+    }
+  ]
 }

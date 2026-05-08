@@ -25,13 +25,27 @@ Figure~\ref{fig:ch3-conceptual-framework} summarizes this research model.
   \label{fig:ch3-conceptual-framework}
 \end{figure}
 
-Figure~\ref{fig:ch3-conceptual-framework} shows that the study did not treat
-the smart plug as a measurement-only device. The sensing inputs are converted
-into protection variables and waveform features, then used to support user
-notification, fault logging, and local relay action. This distinction is
-important because the prototype was intended as complementary protection, not
-as a replacement for branch-circuit breakers, AFCIs, GFCIs, wiring inspection,
-or certified protective equipment.
+Figure~\ref{fig:ch3-conceptual-framework} presents the conceptual framework 
+of the TinyML Smart Plug using an input-process-output structure. The input 
+stage consists of the sensing and communication components used by the 
+prototype, including the voltage sensor, current sensor, temperature probe, 
+and Wi-Fi module. These inputs allow the system to acquire electrical and 
+thermal conditions from the socket and load during operation. In the process 
+stage, the acquired signals are integrated into the system program, 
+converted into protection variables and waveform features, and used for 
+machine-learning-based fault evaluation. This stage also includes prototype 
+assembly, case assembly, cloud platform setup, firmware and model training, 
+and testing and data gathering, which together support the development and 
+validation of the smart plug. The output stage represents the expected 
+functions and deliverables of the system, including real-time fault 
+detection and monitoring, sound and light notification, relay-based 
+circuit isolation, device accuracy data, data visualization, platform 
+development, fault-signature dataset generation, and system documentation. 
+The framework shows that the prototype was designed not only as a 
+monitoring device, but as a complementary protection system capable of 
+sensing abnormal socket conditions, processing them locally, notifying 
+the user, logging relevant data, and opening the relay when a confirmed 
+critical fault is detected.
 
 The design variables used by the system are summarized in
 Table~\ref{tab:ch3-system-variables}. The table separates direct
