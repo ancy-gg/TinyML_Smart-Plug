@@ -15,11 +15,12 @@ against the corresponding reference readings used during calibration.
   \setlength{\tabcolsep}{10pt}
   \renewcommand{\arraystretch}{0.95}
   \begin{tabular}{rrrr}
+    \toprule
     \textbf{\shortstack{ZMPT101B\\(V)}} &
     \textbf{\shortstack{Fluke\\Multimeter (V)}} &
     \textbf{\shortstack{ZMPT101B\\(V)}} &
     \textbf{\shortstack{Fluke\\Multimeter (V)}} \\
-    \hline
+    \midrule
     34.1  & 35.2  & 179.1 & 180.5 \\
     43.9  & 44.79 & 189.0 & 190.0 \\
     58.6  & 60.1  & 199.2 & 200.4 \\
@@ -32,6 +33,7 @@ against the corresponding reference readings used during calibration.
     149.0 & 150.0 & 235.3 & 235.1 \\
     159.1 & 160.0 & 238.8 & 240.7 \\
     169.2 & 169.9 & 242.9 & 244.6 \\
+    \bottomrule
   \end{tabular}
 \end{table}
 
@@ -47,11 +49,12 @@ used to generate the voltage correction equation applied in the firmware.
   \setlength{\tabcolsep}{9pt}
   \renewcommand{\arraystretch}{0.92}
   \begin{tabular}{rrrr}
+    \toprule
     \textbf{\shortstack{ACS37035\\(A)}} &
     \textbf{\shortstack{Ingco Clamp\\Meter (A)}} &
     \textbf{\shortstack{ACS37035\\(A)}} &
     \textbf{\shortstack{Ingco Clamp\\Meter (A)}} \\
-    \hline
+    \midrule
     0.08 & 0.08 & 3.28 & 4.09 \\
     0.15 & 0.15 & 3.31 & 4.15 \\
     0.17 & 0.18 & 3.86 & 4.70 \\
@@ -75,6 +78,7 @@ used to generate the voltage correction equation applied in the firmware.
     2.20 & 2.77 & 9.40 & 12.20 \\
     3.12 & 3.82 & 10.30 & 13.30 \\
     3.11 & 3.87 & 12.40 & 16.00 \\
+    \bottomrule
   \end{tabular}
 \end{table}
 
@@ -91,14 +95,16 @@ pipeline.
   \setlength{\tabcolsep}{8pt}
   \renewcommand{\arraystretch}{0.95}
   \begin{tabular}{rrrr}
+    \toprule
     \textbf{\shortstack{Reference\\Reading (\degreeC)}} &
     \textbf{\shortstack{Absolute\\Temperature (K)}} &
     \textbf{\shortstack{Measured Thermistor\\Resistance ($\Omega$)}} &
     \textbf{ln(R)} \\
-    \hline
+    \midrule
     38  & 311.15 K & 5.8k & 8.66072 \\
     50  & 323.15 K & 3.6k & 8.18869 \\
     100 & 373.15 K & 0.7k & 6.55108 \\
+    \bottomrule
   \end{tabular}
 \end{table}
 
