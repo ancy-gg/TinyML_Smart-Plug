@@ -16,7 +16,7 @@ and enclosure. The hardware was organized so that mains conductors, sensing
 circuits, low-voltage logic, and user-interface wiring could be traced
 separately during testing.
 
-Figure~\ref{fig:ch3-block-diagram} gives the hardware block-level view before
+\textit{Figure~\ref{fig:ch3-block-diagram}} gives the hardware block-level view before
 the detailed schematic is introduced.
 \begin{figure}[H]
   \centering
@@ -25,7 +25,7 @@ the detailed schematic is introduced.
   \label{fig:ch3-block-diagram}
 \end{figure}
 
-Figure~\ref{fig:ch3-block-diagram} shows the main hardware path of the 
+\textit{Figure~\ref{fig:ch3-block-diagram}} shows the main hardware path of the 
 prototype before the detailed schematic is introduced. The \(220\mathrm{V}_{\mathrm{AC}}\) input 
 enters through the male plug and is routed to the protected female socket 
 through the 40A solid-state relay, which serves as the final protective 
@@ -41,7 +41,7 @@ once a protection condition is confirmed.
 \subsection{Full Schematic Discussion}
 \label{sec:ch3-full-schematic-discussion}
 
-The full circuit schematic is shown in Figure~\ref{fig:ch3-full-schematic}.
+\textit{Figure~\ref{fig:ch3-full-schematic}} shows the full circuit schematic.
 \begin{figure}[H]
   \centering
   \includegraphics[angle=90,width=1.584\textheight,height=1.496\textwidth,keepaspectratio,trim=0.15in 0.50in 0.15in 0.20in,clip]{ch3/full_schematic.pdf}
@@ -49,12 +49,12 @@ The full circuit schematic is shown in Figure~\ref{fig:ch3-full-schematic}.
   \label{fig:ch3-full-schematic}
 \end{figure}
 
-Figure~\ref{fig:ch3-full-schematic} presents the complete hardware
+\textit{Figure~\ref{fig:ch3-full-schematic}} presents the complete hardware
 implementation of the TinyML smart plug prototype. The schematic is discussed
 according to the circuit flow: AC input protection, low-voltage power
 conversion, voltage, current, and temperature sensing, signal conditioning,
 analog-to-digital conversion, ESP32-S3 processing, relay fault latching, and
-user notification. Appendix B provides the detailed board-layout views, while
+user notification. \textit{Appendix B} provides the detailed board-layout views, while
 this section explains how each block contributes to sensing, protection, and
 prototype operation.
 
@@ -94,7 +94,7 @@ signal-conditioning stage before digitization. This stage limits unwanted
 high-frequency components and prepares the waveform level for the ADC input.
 The conditioned signals are digitized by the MCP3204 analog-to-digital
 converter and transferred to the ESP32-S3 through the SPI interface lines
-\texttt{SDI-MOSI}, \texttt{SDO-MISO}, \texttt{SPI\_CLK}, and \texttt{CS\_ADC}.
+\texttt{SDI-MOSI}, \texttt{SDO-MISO}, \texttt{SPI-CLK}, and \texttt{CS-ADC}.
 This bridges the analog sensing circuits and the digital protection firmware.
 
 The ESP32-S3 XIAO is the central processing section of the prototype. It
@@ -103,9 +103,9 @@ reads the temperature input, executes the local protection logic, controls the
 relay command, drives the OLED display, activates the buzzer, and handles
 wireless monitoring and logging. The thermistor is installed near the plug-side
 wire-contact region to observe localized socket heating. During installation,
-the sensing point was insulated with Kapton tape, coupled using thermal paste,
-secured with another Kapton layer, and covered with electrical tape to reduce
-ambient-air influence on the reading.
+the sensing point was insulated with Kapton tape, coupled with the thermistor 
+using thermal paste, secured with another Kapton tape layer, and covered 
+with electrical tape to reduce ambient-air influence on the reading.
 
 The relay circuit acts as the output actuator that connects or disconnects the
 protected socket from the input line. It is not driven directly as a simple
@@ -130,48 +130,50 @@ single fixed warning tone. Several delicate low-voltage nodes also include
 BAT54S clamp-diode protection to limit abnormal voltage excursions before they
 reach the microcontroller, ADC, or sensing interfaces.
 
-The schematic and Appendix B board-layout figures should be interpreted as
+The schematic in \textit{Figure~\ref{fig:ch3-full-schematic}} and the board layout in \textit{Appendix B} should be interpreted as
 prototype-development documents for bench validation. They do not by themselves
 certify creepage distance, clearance distance, enclosure safety, thermal safety,
 regulatory compliance, or suitability as a replacement for listed protective
-devices.
+devices in the reviewed literature.
 
 \subsection{Signal Conditioning and Enclosure Implementation}
 \label{sec:ch3-signal-conditioning-enclosure}
 
 The anti-aliasing circuit and its frequency response are shown in
-Figures~\ref{fig:ch3-aaf-circuit} and~\ref{fig:ch3-aaf-bode}.
+\textit{Figures~\ref{fig:ch3-aaf-circuit} and~\ref{fig:ch3-aaf-bode}}.
 \begin{figure}[H]
   \centering
-  \includegraphics[width=0.70\textwidth]{ch3/figure_3.6.png}
+  \includegraphics[width=0.6\textwidth]{ch3/figure_3.6.png}
   \caption{Second-order multiple-feedback low-pass anti-aliasing circuit.}
   \label{fig:ch3-aaf-circuit}
 \end{figure}
 
 \begin{figure}[H]
   \centering
-  \includegraphics[width=0.70\textwidth]{ch3/figure_3.7.png}
+  \includegraphics[width=0.6\textwidth]{ch3/figure_3.7.png}
   \caption{Bode response of the anti-aliasing filter.}
   \label{fig:ch3-aaf-bode}
 \end{figure}
 
-Figure~\ref{fig:ch3-aaf-circuit} shows the analog low-pass filter placed
-between the current sensor and the ADC. Figure~\ref{fig:ch3-aaf-bode} verifies
+\textit{Figure~\ref{fig:ch3-aaf-circuit}} shows the analog low-pass filter placed
+between the current sensor and the ADC. \textit{Figure~\ref{fig:ch3-aaf-bode}} verifies
 that the filter attenuates higher-frequency content before sampling. The
 implemented firmware also applies a digital soft anti-aliasing filter in the
 current-feature path, so the analog and digital filters work together rather
 than as isolated design elements [57].
 
-The frequency-setting values shown in Figure~\ref{fig:ch3-aaf-circuit} were
-checked against the standard second-order low-pass relationship
+The frequency-setting values shown in \textit{Figure~\ref{fig:ch3-aaf-circuit}}
+were checked using the standard second-order low-pass relationship in
+\eqref{eq:ch3-aaf-cutoff}:
 \begin{equation}
   f_0 =
   \frac{1}{2\pi\sqrt{R_1R_2C_1C_2}} .
   \label{eq:ch3-aaf-cutoff}
 \end{equation}
-Using the schematic values $R_1=200\mathrm{k}\Omega$,
+
+Substituting the schematic values $R_1=200\mathrm{k}\Omega$,
 $R_2=33\mathrm{k}\Omega$, $C_1=470\mathrm{pF}$, and
-$C_2=82\mathrm{pF}$ gives
+$C_2=82\mathrm{pF}$ into \eqref{eq:ch3-aaf-cutoff} gives
 \begin{equation}
   f_0 =
   \frac{1}{2\pi\sqrt{(200\mathrm{k}\Omega)(33\mathrm{k}\Omega)
@@ -179,30 +181,37 @@ $C_2=82\mathrm{pF}$ gives
   \approx 9.98\mathrm{kHz}.
   \label{eq:ch3-aaf-cutoff-result}
 \end{equation}
-This agrees with the plotted cutoff region in Figure~\ref{fig:ch3-aaf-bode},
-where the simulated response is approximately -3dB near 10kHz. Since a
-second-order Butterworth response has $Q\approx0.707$ and reaches the -3dB
-point at its natural frequency, the plotted response was treated as a
-near-Butterworth anti-aliasing stage rather than a high-Q peaking filter. The
-firmware's additional digital filter uses a similar low-peaking setting
-($Q=0.73$) before feature extraction.
 
-The op amp for this stage must support single-supply operation at the
-available logic rail, input and output swing around the mid-supply bias,
-unity-gain-stable active-filter operation, and enough bandwidth and slew-rate
-margin for a 10kHz cutoff [57]. For a conservative 3.3V peak-to-peak signal,
-the minimum sinusoidal slew rate is
+The computed result in \eqref{eq:ch3-aaf-cutoff-result} agrees with the
+plotted cutoff region in \textit{Figure~\ref{fig:ch3-aaf-bode}}, where the
+simulated response is approximately -3dB near 10kHz. Since a second-order
+Butterworth response has $Q\approx0.707$ and reaches the -3dB point at its
+natural frequency, the plotted response was treated as a near-Butterworth
+anti-aliasing stage rather than a high-Q peaking filter. The firmware's
+additional digital filter uses a similar low-peaking setting ($Q=0.73$)
+before feature extraction.
+
+The op amp for this stage must support 3.3V single-supply operation, 
+input and output swing around the mid-supply bias, unity-gain-stable 
+active-filter operation, and enough bandwidth and slew-rate margin for 
+the 10kHz cutoff [57]. For a conservative 3.3V peak-to-peak signal, 
+the maximum amplitude about the mid-supply bias is 1.65V. Since the 
+steepest part of a sinusoid occurs at the zero crossing, the required 
+minimum slew rate is
 \begin{equation}
   SR_{\min}=2\pi fV_p
   =2\pi(10\mathrm{kHz})(1.65\mathrm{V})
   \approx 0.104\mathrm{V/\mu s}.
   \label{eq:ch3-aaf-slew}
 \end{equation}
-The MCP6024-class device indicated in the schematic satisfies this application
-class because it is a rail-to-rail input/output, unity-gain-stable, 10MHz
-single-supply op amp family [76]. These checks support waveform acquisition
-for the prototype tests, but they do not replace full analog compliance
-testing of the assembled board.
+The MCP6024-class device indicated in the schematic satisfies this 
+requirement because its datasheet specifies a typical slew rate of 
+7.0V/\(\mu\text{s}\), which is about 67 times higher than the computed 
+minimum [76]. This margin allows the op amp to reproduce a 10kHz waveform 
+without slew-rate limiting, avoiding slope-limited or triangular distortion. 
+The device is also a rail-to-rail input/output, unity-gain-stable, 
+10MHz single-supply op amp family, making it suitable for the 3.3V 
+active-filter stage used in the prototype [76].
 \begin{figure}[H]
   \centering
   \includegraphics[width=0.6\textwidth]{ch3/figure_3.8.png}
@@ -210,22 +219,21 @@ testing of the assembled board.
   \label{fig:ch3-model-no-case}
 \end{figure}
 
-Figure~\ref{fig:ch3-model-no-case} was used to check the relative placement of
+\textit{Figure~\ref{fig:ch3-model-no-case}} presents the relative placement of
 the PCB, outlet, relay, fan, and front-panel controls before final enclosure
-assembly. This reduced the chance that the enclosure would interfere with
-airflow, wiring, or user access.
+assembly.
 \begin{figure}[H]
   \centering
-  \includegraphics[width=0.6\textwidth]{ch3/figure_3.9.png}
+  \includegraphics[angle=90,height=0.35\textheight]{ch3/figure_3.9.png}
   \caption{Actual prototype assembly without the case.}
   \label{fig:ch3-actual-no-case}
 \end{figure}
 
-Figure~\ref{fig:ch3-actual-no-case} confirms that the physical wiring followed
+\textit{Figure~\ref{fig:ch3-actual-no-case}} confirms that the physical wiring followed
 the planned internal organization. The exposed view was used during bench
 testing to probe the sensing, supply, relay, and communication subsystems.
 
-The enclosure model is shown in Figure~\ref{fig:ch3-model-with-case}. 
+The enclosure model is shown in \textit{Figure~\ref{fig:ch3-model-with-case}}. 
 It shows the intended user-facing
 arrangement: outlet access, front controls, ventilation, and rear plug
 connection. The enclosure therefore served both a mechanical and an
@@ -240,28 +248,25 @@ operator-interface purpose.
 
 \begin{figure}[H]
   \centering
-  \begin{minipage}{0.43\textwidth}
+  \begin{minipage}{0.36\textwidth}
     \centering
-    \includegraphics[height=0.28\textheight,keepaspectratio]{ch3/figure_3.11_a.png}\\[-2pt]
+    \includegraphics[height=0.24\textheight,keepaspectratio]{ch3/figure_3.11_a.png}\\[-2pt]
     {\small (a) Plug side}
-  \end{minipage}\hspace{0.05\textwidth}
-  \begin{minipage}{0.43\textwidth}
+  \end{minipage}
+  \hspace{0.03\textwidth}
+  \begin{minipage}{0.36\textwidth}
     \centering
-    \includegraphics[height=0.28\textheight,keepaspectratio]{ch3/figure_3.11_b.png}\\[-2pt]
+    \includegraphics[height=0.24\textheight,keepaspectratio]{ch3/figure_3.11_b.png}\\[-2pt]
     {\small (b) Outlet and control side}
   \end{minipage}
   \caption{Actual prototype with the case installed.}
   \label{fig:ch3-actual-with-case}
 \end{figure}
 
-The completed enclosed prototype is shown in Figure~\ref{fig:ch3-actual-with-case}.
-Figure~\ref{fig:ch3-actual-with-case}(a) shows the plug side of the completed
-device, while Figure~\ref{fig:ch3-actual-with-case}(b) shows the outlet,
-fan vents, and front-panel controls. This view documents the final physical
-form used for the overload, socket-heating, and series arc-fault tests
-described later in this chapter.
-
-The major hardware elements are summarized in Table~\ref{tab:ch3-hardware}.
+\textit{Figure~\ref{fig:ch3-actual-with-case}} shows the completed enclosed prototype.
+\textit{Figure~\ref{fig:ch3-actual-with-case}(a)} shows the plug side of the completed
+device, while \textit{Figure~\ref{fig:ch3-actual-with-case}(b)} shows the outlet,
+fan vents, and front-panel controls. This documents the final form of the prototype used for testing.
 \begin{table}[H]
   \centering
   \caption{Major hardware elements of the prototype}
@@ -280,7 +285,13 @@ The major hardware elements are summarized in Table~\ref{tab:ch3-hardware}.
   \end{tabular}
 \end{table}
 
-Table~\ref{tab:ch3-hardware} shows that the prototype combines conventional
-sensing and switching hardware with local embedded inference. The hardware
-alone does not determine the protection behavior; the firmware computations in
-the following sections define how the raw signals are interpreted.
+\textit{Table~\ref{tab:ch3-hardware}} summarizes the main hardware elements
+used in the prototype and their corresponding roles in the system. The ESP32-S3
+serves as the local controller, while the voltage, current, and temperature
+sensing circuits provide the measured inputs needed for protection and feature
+extraction. The relay module acts as the protection actuator, and the OLED,
+buzzer, LEDs, and PWA provide local and remote user feedback. These elements 
+show that the prototype combines sensing and switching hardware
+with local embedded inference. However, the final protection behavior is
+defined by the firmware processes and computations discussed in the following
+sections.

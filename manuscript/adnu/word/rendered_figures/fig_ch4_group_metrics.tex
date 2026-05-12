@@ -1,0 +1,78 @@
+﻿\documentclass[border=6pt]{standalone}
+\usepackage{fontspec}
+\setmainfont{Times New Roman}
+\usepackage{graphicx}
+\usepackage{tikz}
+\usetikzlibrary{arrows.meta,calc,fit,positioning,shapes.geometric}
+\usepackage{pgfplots}
+\pgfplotsset{compat=1.18}
+\usepackage{amsmath,amssymb}
+\usepackage{array}
+\usepackage{booktabs}
+\usepackage{xcolor}
+\graphicspath{{figures/}{figures/ch3/}{figures/ch4/}{figures/apx/}}
+\newcommand{\degreeC}{\ensuremath{^\circ\mathrm{C}}}
+\newcommand{\figsource}[1]{}
+\tikzset{
+  thesis box/.style={
+    draw,
+    rounded corners=1pt,
+    align=center,
+    inner sep=4pt,
+    minimum height=0.36in,
+    font=\small
+  },
+  thesis process/.style={
+    thesis box,
+    fill=gray!8
+  },
+  thesis decision/.style={
+    diamond,
+    draw,
+    aspect=2,
+    align=center,
+    inner sep=2pt,
+    font=\small,
+    fill=gray!8
+  },
+  thesis arrow/.style={
+    -{Latex[length=2.2mm]},
+    line width=0.65pt
+  },
+  thesis bus/.style={
+    line width=0.8pt
+  }
+}
+\input{figures/ch4/socket_plots.tex}
+\begin{document}
+
+  \centering
+  \begin{tikzpicture}
+    \begin{axis}[
+      ybar,
+      width=0.95\textwidth,
+      height=4in,
+      ymin=0,
+      ymax=105,
+      ylabel={Metric value (\%)},
+      symbolic x coords={Recognized,Unrecognized,All},
+      xtick=data,
+      x tick label style={font=\small},
+      ymajorgrids=true,
+      grid style={black!12},
+      bar width=7pt,
+      enlarge x limits=0.23,
+      legend style={font=\scriptsize,at={(0.5,1.04)},anchor=south,legend columns=4,draw=none},
+      legend cell align={left}
+    ]
+      \addplot[fill=blue!60,draw=blue!70!black] coordinates {(Recognized,99.00) (Unrecognized,96.00) (All,97.50)};
+      \addplot[fill=green!55!black,draw=green!35!black] coordinates {(Recognized,100.00) (Unrecognized,97.92) (All,98.97)};
+      \addplot[fill=orange!75,draw=orange!85!black] coordinates {(Recognized,98.00) (Unrecognized,94.00) (All,96.00)};
+      \addplot[fill=violet!55,draw=violet!80!black] coordinates {(Recognized,98.99) (Unrecognized,95.92) (All,97.46)};
+      \legend{Accuracy,Precision,Recall,F1-score}
+    \end{axis}
+  \end{tikzpicture}
+  
+  
+
+\end{document}

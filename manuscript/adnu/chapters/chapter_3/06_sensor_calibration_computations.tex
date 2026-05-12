@@ -8,36 +8,36 @@ perfectly proportional to the reference instruments over the tested range.
 Ordinary least-squares regression estimates coefficients by minimizing the sum
 of squared residuals between the measured and fitted values [71]. The
 calibration coefficients below were verified from the firmware configuration.
-The raw calibration records are retained in Appendix~\ref{app:a},
+The raw calibration records are retained in \textit{Appendix~\ref{app:a},
 specifically Tables~\ref{tab:app-a-voltage-calibration},
 \ref{tab:app-a-current-calibration}, and
-\ref{tab:app-a-temperature-calibration}.
+\ref{tab:app-a-temperature-calibration}}.
 
 \subsection{Voltage Calibration}
 \label{sec:ch3-voltage-calibration}
 
 The voltage calibration setup is shown in
-Figure~\ref{fig:ch3-voltage-cal-setup}.
+\textit{Figure~\ref{fig:ch3-voltage-cal-setup}}.
 \begin{figure}[H]
   \centering
-  \includegraphics[width=0.8\textwidth]{ch3/figure_3.17.png}
+  \includegraphics[width=0.65\textwidth]{ch3/figure_3.17.png}
   \caption{Data-collection setup for voltage calibration.}
   \label{fig:ch3-voltage-cal-setup}
 \end{figure}
 
-Figure~\ref{fig:ch3-voltage-cal-setup} shows the prototype voltage channel
+\textit{Figure~\ref{fig:ch3-voltage-cal-setup}} shows the prototype voltage channel
 being compared with reference multimeters while the applied voltage was varied.
 The calibration target was the reference RMS voltage, not the uncorrected
 sensor output.
 
 The fitted voltage regression is shown in
-Figure~\ref{fig:ch3-voltage-regression}.
+\textit{Figure~\ref{fig:ch3-voltage-regression}}.
 \begin{figure}[H]
   \centering
   \begin{tikzpicture}
     \begin{axis}[
       width=0.9\textwidth,
-      height=4in,
+      height=3in,
       xlabel={Uncalibrated ZMPT101B RMS voltage (V)},
       ylabel={Reference RMS voltage (V)},
       xmin=25,
@@ -72,7 +72,7 @@ Figure~\ref{fig:ch3-voltage-regression}.
   \label{fig:ch3-voltage-regression}
 \end{figure}
 
-Figure~\ref{fig:ch3-voltage-regression} supports the cubic correction used by
+\textit{Figure~\ref{fig:ch3-voltage-regression}} supports the cubic correction used by
 the firmware. The implemented voltage calibration is
 \begin{equation}
   V_{\mathrm{cal}} =
@@ -92,36 +92,36 @@ mains-present detection depend on the calibrated value.
 \label{sec:ch3-current-calibration}
 
 The current calibration setup and load combinations are shown in
-Figures~\ref{fig:ch3-current-cal-setup} and~\ref{fig:ch3-current-cal-loads}.
+\textit{Figures~\ref{fig:ch3-current-cal-setup} and~\ref{fig:ch3-current-cal-loads}}.
 
 \begin{figure}[H]
   \centering
-  \includegraphics[width=0.75\textwidth]{ch3/figure_3.19.png}
+  \includegraphics[width=0.7\textwidth]{ch3/figure_3.19.png}
   \caption{Data-collection setup for current calibration.}
   \label{fig:ch3-current-cal-setup}
 \end{figure}
 
 \begin{figure}[H]
   \centering
-  \includegraphics[width=0.75\textwidth]{ch3/figure_3.20.png}
+  \includegraphics[width=0.7\textwidth]{ch3/figure_3.20.png}
   \caption{Load setups used for current calibration.}
   \label{fig:ch3-current-cal-loads}
 \end{figure}
 
-Figure~\ref{fig:ch3-current-cal-setup} shows the comparison between the
+\textit{Figure~\ref{fig:ch3-current-cal-setup}} shows the comparison between the
 prototype current channel and a reference instrument.
-Figure~\ref{fig:ch3-current-cal-loads} shows the different resistive and
+\textit{Figure~\ref{fig:ch3-current-cal-loads}} shows the different resistive and
 appliance loads used to span the current range needed for overload and
 arc-feature testing.
 
 The fitted current regression is shown in
-Figure~\ref{fig:ch3-current-regression}.
+\textit{Figure~\ref{fig:ch3-current-regression}}.
 \begin{figure}[H]
   \centering
   \begin{tikzpicture}
     \begin{axis}[
       width=0.9\textwidth,
-      height=4in,
+      height=3in,
       xlabel={Uncalibrated ACS37035 RMS current (A)},
       ylabel={Reference RMS current (A)},
       xmin=0,
@@ -176,27 +176,24 @@ the cubic correction and $I_{\mathrm{cal}}$ is the calibrated RMS current used
 by the overload logic, socket-temperature model, and waveform-feature
 extractor. Negative fitted values are clamped to zero in firmware.
 
-The device temperature measurement calibration setup is shown in
-Figure~\ref{fig:ch3-ntc-cal-setup}.
-
 \subsection{Device Temperature Measurement Calibration}
 \label{sec:ch3-device-temperature-calibration}
 
 \begin{figure}[H]
   \centering
   \rotatebox{-90}{%
-    \includegraphics[height=0.6\textheight]{ch3/figure_3.22.jpg}%
+    \includegraphics[height=0.35\textheight]{ch3/figure_3.22.jpg}%
   }
   \caption{Data-collection setup for device temperature measurement calibration.}
   \label{fig:ch3-ntc-cal-setup}
 \end{figure}
 
-Figure~\ref{fig:ch3-ntc-cal-setup} shows the external thermistor measurement
+\textit{Figure~\ref{fig:ch3-ntc-cal-setup}} shows the external thermistor measurement
 being compared with a reference temperature measurement. Thermistor placement
 is important because an external sensor can lag or under-read the hottest
 contact point inside a degraded socket [27], [29], [30]. The acquired
 temperature-resistance calibration points are listed in
-Table~\ref{tab:app-a-temperature-calibration}.
+\textit{Table~\ref{tab:app-a-temperature-calibration}}.
 
 The firmware computes the NTC resistance from the voltage-divider output:
 \begin{equation}
@@ -232,6 +229,18 @@ temperature, which is the protection-facing compensated value intended to
 respond to degraded-contact heating and external device temperature under-reading. This
 separation is necessary because a raw external thermistor does not directly
 measure the internal contact hotspot [30], [46], [47].
+
+The expected normal model serves as the reference condition, while the
+estimated socket temperature serves as the value used for protection. This
+follows the reviewed literature, which shows that poor plug-socket contact can
+produce localized heating and ignition risk even when the current path still
+continues to operate [17], [24], [46], [47]. The model also accounts for the
+reviewed limitation that an external NTC thermistor does not directly measure
+the hottest internal contact point and may respond with thermal lag [27]-[31].
+For this reason, the firmware does not rely on the raw NTC reading alone.
+Instead, it combines current-dependent heating behavior, ambient tracking, and
+direct thermistor compensation before the protection manager evaluates the
+thermal state.
 
 \subsection{Expected Normal Temperature Model}
 \label{sec:ch3-expected-normal-temperature}
@@ -284,11 +293,11 @@ The target normal rise is
   \end{cases}
   \label{eq:normal-target-rise}
 \end{equation}
-In (\ref{eq:normal-target-rise}), $0.20\degreeC$ is the normal base rise and
-$12.0\degreeC$ is the normal current-rise gain. The fitted-gain source file
-was not present in the codebase; the least-squares derivation should therefore
-be checked against Appendix~\ref{app:c} or the original characterization
-worksheet.
+In \eqref{eq:normal-target-rise}, $0.20\degreeC$ is the normal base rise and
+$12.0\degreeC$ is the normal current-rise gain. These constants define the
+expected socket-temperature rise for a healthy contact at the measured load
+current. This keeps the normal reference dependent on load current while still
+separating expected heating from abnormal degraded-contact heating.
 
 The firmware filters this target with separate heating and cooling time
 constants:
@@ -336,10 +345,7 @@ The measured device temperature value is compensated directly:
 \end{equation}
 In (\ref{eq:measured-compensation}), $T_{\mathrm{comp}}$ is the compensated
 thermistor-based estimate, $0.30\degreeC$ is the measured base delta, and
-$1.20\degreeC$ is the measured current gain. These constants were verified
-from the firmware configuration; their original least-squares fitting
-worksheet must be verified manually if the derivation is required in the final
-defense copy.
+$1.20\degreeC$ is the measured current gain.
 
 Finally, the protection-facing socket estimate is
 \begin{equation}
@@ -359,7 +365,8 @@ device temperature estimate to fall below the expected normal socket estimate wh
 current indicates that some heating should be present.
 
 The verified thermal constants are summarized in
-Table~\ref{tab:ch3-thermal-constants}.
+\textit{Table~\ref{tab:ch3-thermal-constants}}.
+
 \begin{table}[H]
   \centering
   \caption{Socket-heating constants verified from firmware}
@@ -385,7 +392,7 @@ Table~\ref{tab:ch3-thermal-constants}.
   \end{tabular}
 \end{table}
 
-Table~\ref{tab:ch3-thermal-constants} distinguishes the thermal estimator from
+\textit{Table~\ref{tab:ch3-thermal-constants}} distinguishes the thermal estimator from
 the warning and trip thresholds. The estimator produces
 $T_{\mathrm{socket,est}}$, while the protection manager decides warning and
 relay action from that estimate.
@@ -393,9 +400,17 @@ relay action from that estimate.
 \subsection{Least-Squares Gain and Regression Derivation}
 \label{sec:ch3-thermal-least-squares}
 
-The intended calibration path for the socket-heating constants is to compare
-the device temperature measurement and reference terminal readings against ambient, then
-fit the compensation terms from the characterization records. For a gain-only
+The calibration path for the socket-heating constants compares the device
+temperature measurement and reference terminal readings against ambient, then
+fits the compensation terms from the characterization records. 
+
+This was used because the external thermistor follows the general heating of
+the socket body, but it does not directly represent the hottest internal
+contact point. The reference terminal reading therefore serves as the target
+temperature rise, while the device temperature measurement represents the
+embedded measurement available to the firmware.
+
+For a gain-only
 rise model, the least-squares gain is
 \begin{equation}
   k =
@@ -404,7 +419,13 @@ rise model, the least-squares gain is
 \end{equation}
 where $x_i$ is the predictor rise above ambient, such as device temperature measurement
 rise or current-shaped rise, and $y_i$ is the reference terminal rise above
-ambient. When an offset is required, the corresponding linear model is
+ambient. 
+
+This gain-only form is appropriate when the rise is assumed to approach zero
+at ambient condition. In this case, the model only adjusts the scale of the
+measured or predicted temperature rise.
+
+When an offset is required, the corresponding linear model is
 \begin{equation}
   \Delta T_{\mathrm{ref}} =
   a\Delta T_{\mathrm{device}} + b .
@@ -412,12 +433,19 @@ ambient. When an offset is required, the corresponding linear model is
 \end{equation}
 In (\ref{eq:thermal-linear-fit}), $\Delta T_{\mathrm{ref}}$ is the infrared
 thermometer or terminal-contact rise and $\Delta T_{\mathrm{device}}$ is the
-external thermistor rise. If time lag is evident, the time series should be
-aligned before fitting. The source worksheet used to choose the firmware
-constants was not present in the repository, so the constants in
-Table~\ref{tab:ch3-thermal-constants} are reported as verified firmware
-constants and should be recomputed from Appendix~\ref{app:c} or the original
-worksheet before final defense submission.
+external thermistor rise. 
+The coefficient $a$ scales the external thermistor rise, while $b$ accounts
+for a fixed difference between the measured device temperature and the
+reference terminal temperature. This is useful when the external thermistor
+consistently under-reads the terminal region due to placement and thermal
+separation.
+
+When time lag is observed, the time series is aligned before fitting so that
+the compared points represent the same stage of the heating process. This
+prevents sensor delay from being treated as a permanent temperature error. The
+resulting fitted constants were then used as the basis for the thermal
+compensation values summarized in
+\textit{Table~\ref{tab:ch3-thermal-constants}}.
 
 \subsection{Firmware Implementation of Constants}
 \label{sec:ch3-thermal-firmware-constants}
@@ -431,9 +459,20 @@ The direct thermistor-compensation rise in
 (\ref{eq:measured-compensation}) is therefore
 $0.30+1.20(0.568)=0.982\degreeC$. If the device temperature measurement for that
 frame is $38.2\degreeC$, the direct compensated estimate is
-$T_{\mathrm{comp}}=39.18\degreeC$ before the final maximum operation. For the
-same current, the normal target rise in (\ref{eq:normal-target-rise}) is
-$0.20+12.0(0.568)=7.02\degreeC$. The final protection-facing estimate still
-depends on the filtered normal-rise state and inferred ambient term, which is
-why the method evaluates a thermal history rather than only a single
-instantaneous current and device temperature reading.
+$T_{\mathrm{comp}}=39.18\degreeC$ before the final maximum operation. 
+For the same current, the normal target rise in
+(\ref{eq:normal-target-rise}) is
+$0.20+12.0(0.568)=7.02\degreeC$. This value does not mean that
+$7.02\degreeC$ is added directly to the measured device temperature of
+$38.2\degreeC$. Instead, it represents the expected steady rise above the
+inferred ambient or baseline temperature for a healthy socket contact carrying
+the same current. The firmware approaches this value gradually through the
+normal-rise filter in (\ref{eq:normal-rise-filter}), so it is reached only
+after the load has remained active long enough for the socket thermal state to
+settle. For example, if the inferred ambient temperature were $30.0\degreeC$,
+then the expected normal socket temperature would approach
+$30.0+7.02=37.02\degreeC$ after sufficient heating time, not immediately at
+the first frame. The final protection-facing estimate therefore depends on
+both the direct compensated thermistor value and the filtered normal thermal
+history, which prevents the method from relying only on a single instantaneous
+current and device temperature reading.

@@ -1,443 +1,108 @@
 ﻿\chapter{Sensor Calibration}\label{app:a}
-This appendix contains the calibration datasets used to derive the
+
+This appendix presents the raw calibration datasets used to derive the
 correction equations for the voltage, current, and temperature sensing
-channels. These tables support the sensor-calibration procedures
-described in Chapter 3 and the validation results discussed in Chapter
-4.
+channels. The data support the calibration procedures discussed in
+\textit{Chapter~3} and the validation results presented in \textit{Chapter~4}.
+The tables are retained in the appendix to show the measured sensor values
+against the corresponding reference readings used during calibration.
 
-\manualappendixtable{Voltage Sensor Calibration Data}{tab:app-a-voltage-calibration}
+\begin{table}[H]
+  \centering
+  \caption{Voltage Sensor Calibration Data}
+  \label{tab:app-a-voltage-calibration}
+  \footnotesize
+  \setlength{\tabcolsep}{10pt}
+  \renewcommand{\arraystretch}{0.95}
+  \begin{tabular}{rrrr}
+    \textbf{\shortstack{ZMPT101B\\(V)}} &
+    \textbf{\shortstack{Fluke\\Multimeter (V)}} &
+    \textbf{\shortstack{ZMPT101B\\(V)}} &
+    \textbf{\shortstack{Fluke\\Multimeter (V)}} \\
+    \hline
+    34.1  & 35.2  & 179.1 & 180.5 \\
+    43.9  & 44.79 & 189.0 & 190.0 \\
+    58.6  & 60.1  & 199.2 & 200.4 \\
+    73.0  & 74.5  & 204.7 & 205.3 \\
+    83.3  & 85.0  & 210.7 & 210.0 \\
+    99.3  & 100.2 & 214.2 & 214.8 \\
+    113.6 & 115.1 & 220.0 & 220.2 \\
+    129.0 & 130.0 & 225.3 & 225.1 \\
+    139.6 & 140.3 & 228.4 & 230.8 \\
+    149.0 & 150.0 & 235.3 & 235.1 \\
+    159.1 & 160.0 & 238.8 & 240.7 \\
+    169.2 & 169.9 & 242.9 & 244.6 \\
+  \end{tabular}
+\end{table}
 
-{\def\LTcaptype{none} % do not increment counter
-\begin{longtable}[]{@{}
-  >{\raggedright\arraybackslash}p{(\linewidth - 6\tabcolsep) * \real{0.2138}}
-  >{\raggedright\arraybackslash}p{(\linewidth - 6\tabcolsep) * \real{0.2540}}
-  >{\raggedright\arraybackslash}p{(\linewidth - 6\tabcolsep) * \real{0.2203}}
-  >{\raggedright\arraybackslash}p{(\linewidth - 6\tabcolsep) * \real{0.2331}}@{}}
-\toprule\noalign{}
-\begin{minipage}[b]{\linewidth}\centering
-\textbf{ZMPT101B}
+The voltage calibration data show the uncorrected ZMPT101B readings and the
+corresponding reference readings from the Fluke multimeter. These values were
+used to generate the voltage correction equation applied in the firmware.
 
-\textbf{(V)}
-\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
-\textbf{Fluke}
+\begin{table}[H]
+  \centering
+  \caption{Current Sensor Calibration Data}
+  \label{tab:app-a-current-calibration}
+  \footnotesize
+  \setlength{\tabcolsep}{9pt}
+  \renewcommand{\arraystretch}{0.92}
+  \begin{tabular}{rrrr}
+    \textbf{\shortstack{ACS37035\\(A)}} &
+    \textbf{\shortstack{Ingco Clamp\\Meter (A)}} &
+    \textbf{\shortstack{ACS37035\\(A)}} &
+    \textbf{\shortstack{Ingco Clamp\\Meter (A)}} \\
+    \hline
+    0.08 & 0.08 & 3.28 & 4.09 \\
+    0.15 & 0.15 & 3.31 & 4.15 \\
+    0.17 & 0.18 & 3.86 & 4.70 \\
+    0.19 & 0.20 & 3.97 & 4.90 \\
+    0.21 & 0.22 & 5.89 & 7.27 \\
+    0.53 & 0.64 & 4.62 & 5.72 \\
+    0.56 & 0.66 & 4.84 & 6.11 \\
+    0.58 & 0.69 & 4.95 & 6.22 \\
+    0.63 & 0.77 & 5.04 & 6.33 \\
+    0.73 & 0.86 & 5.11 & 6.46 \\
+    0.76 & 0.88 & 5.33 & 6.60 \\
+    0.70 & 0.89 & 5.36 & 6.76 \\
+    0.76 & 1.02 & 5.41 & 6.88 \\
+    1.55 & 1.90 & 6.51 & 8.12 \\
+    1.58 & 1.91 & 6.79 & 8.35 \\
+    1.57 & 1.94 & 6.85 & 8.48 \\
+    1.76 & 2.18 & 7.07 & 8.80 \\
+    1.77 & 2.18 & 8.24 & 10.32 \\
+    1.96 & 2.32 & 8.35 & 10.46 \\
+    2.02 & 2.47 & 8.41 & 10.47 \\
+    2.20 & 2.77 & 9.40 & 12.20 \\
+    3.12 & 3.82 & 10.30 & 13.30 \\
+    3.11 & 3.87 & 12.40 & 16.00 \\
+  \end{tabular}
+\end{table}
 
-\textbf{Multimeter (V)}
-\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
-\textbf{ZMPT101B}
+The current calibration data compare the ACS37035-derived current values with the
+reference clamp-meter readings. These points were used to fit the current correction
+equation used by the overload logic, socket-heating estimator, and waveform-feature
+pipeline.
 
-\textbf{(V)}
-\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
-\textbf{Fluke}
+\begin{table}[H]
+  \centering
+  \caption{Reference Temperature and Thermistor Resistance Calibration Data}
+  \label{tab:app-a-temperature-calibration}
+  \footnotesize
+  \setlength{\tabcolsep}{8pt}
+  \renewcommand{\arraystretch}{0.95}
+  \begin{tabular}{rrrr}
+    \textbf{\shortstack{Reference\\Reading (\degreeC)}} &
+    \textbf{\shortstack{Absolute\\Temperature (K)}} &
+    \textbf{\shortstack{Measured Thermistor\\Resistance ($\Omega$)}} &
+    \textbf{ln(R)} \\
+    \hline
+    38  & 311.15 K & 5.8k & 8.66072 \\
+    50  & 323.15 K & 3.6k & 8.18869 \\
+    100 & 373.15 K & 0.7k & 6.55108 \\
+  \end{tabular}
+\end{table}
 
-\textbf{Multimeter (V)}
-\end{minipage} \\
-\begin{minipage}[b]{\linewidth}\centering
-34.1
-\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
-35.2
-\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
-179.1
-\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
-180.5
-\end{minipage} \\
-\begin{minipage}[b]{\linewidth}\centering
-43.9
-\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
-44.79
-\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
-189
-\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
-190
-\end{minipage} \\
-\begin{minipage}[b]{\linewidth}\centering
-58.6
-\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
-60.1
-\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
-199.2
-\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
-200.4
-\end{minipage} \\
-\begin{minipage}[b]{\linewidth}\centering
-73
-\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
-74.5
-\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
-204.7
-\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
-205.3
-\end{minipage} \\
-\begin{minipage}[b]{\linewidth}\centering
-83.3
-\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
-85
-\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
-210.7
-\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
-210
-\end{minipage} \\
-\begin{minipage}[b]{\linewidth}\centering
-99.3
-\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
-100.2
-\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
-214.2
-\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
-214.8
-\end{minipage} \\
-\begin{minipage}[b]{\linewidth}\centering
-113.6
-\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
-115.1
-\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
-220
-\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
-220.2
-\end{minipage} \\
-\begin{minipage}[b]{\linewidth}\centering
-129
-\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
-130
-\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
-225.3
-\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
-225.1
-\end{minipage} \\
-\begin{minipage}[b]{\linewidth}\centering
-139.6
-\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
-140.3
-\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
-228.4
-\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
-230.8
-\end{minipage} \\
-\begin{minipage}[b]{\linewidth}\centering
-149
-\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
-150
-\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
-235.3
-\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
-235.1
-\end{minipage} \\
-\begin{minipage}[b]{\linewidth}\centering
-159.1
-\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
-160
-\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
-238.8
-\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
-240.7
-\end{minipage} \\
-\begin{minipage}[b]{\linewidth}\centering
-169.2
-\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
-169.9
-\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
-242.9
-\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
-244.6
-\end{minipage} \\
-\midrule\noalign{}
-\endhead
-\bottomrule\noalign{}
-\endlastfoot
-\end{longtable}
-}
-
-\clearpage
-\manualappendixtable{Current Sensor Calibration Data}{tab:app-a-current-calibration}
-
-{\def\LTcaptype{none} % do not increment counter
-\begin{longtable}[]{@{}
-  >{\raggedright\arraybackslash}p{(\linewidth - 6\tabcolsep) * \real{0.2074}}
-  >{\raggedright\arraybackslash}p{(\linewidth - 6\tabcolsep) * \real{0.2637}}
-  >{\raggedright\arraybackslash}p{(\linewidth - 6\tabcolsep) * \real{0.2042}}
-  >{\raggedright\arraybackslash}p{(\linewidth - 6\tabcolsep) * \real{0.2460}}@{}}
-\toprule\noalign{}
-\begin{minipage}[b]{\linewidth}\centering
-\textbf{ACS37035}
-
-\textbf{(A)}
-\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
-\textbf{Ingco Clamp}
-
-\textbf{Meter (A)}
-\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
-\textbf{ACS37035}
-
-\textbf{(A)}
-\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
-\textbf{Ingco Clamp}
-
-\textbf{Meter (A)}
-\end{minipage} \\
-\begin{minipage}[b]{\linewidth}\centering
-0.08
-\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
-0.08
-\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
-3.28
-\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
-4.09
-\end{minipage} \\
-\begin{minipage}[b]{\linewidth}\centering
-0.15
-\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
-0.15
-\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
-3.31
-\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
-4.15
-\end{minipage} \\
-\begin{minipage}[b]{\linewidth}\centering
-0.17
-\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
-0.18
-\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
-3.86
-\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
-4.7
-\end{minipage} \\
-\begin{minipage}[b]{\linewidth}\centering
-0.19
-\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
-0.2
-\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
-3.97
-\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
-4.9
-\end{minipage} \\
-\begin{minipage}[b]{\linewidth}\centering
-0.21
-\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
-0.22
-\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
-5.89
-\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
-7.27
-\end{minipage} \\
-\begin{minipage}[b]{\linewidth}\centering
-0.53
-\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
-0.64
-\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
-4.62
-\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
-5.72
-\end{minipage} \\
-\begin{minipage}[b]{\linewidth}\centering
-0.56
-\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
-0.66
-\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
-4.84
-\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
-6.11
-\end{minipage} \\
-\begin{minipage}[b]{\linewidth}\centering
-0.58
-\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
-0.69
-\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
-4.95
-\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
-6.22
-\end{minipage} \\
-\begin{minipage}[b]{\linewidth}\centering
-0.63
-\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
-0.77
-\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
-5.04
-\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
-6.33
-\end{minipage} \\
-\begin{minipage}[b]{\linewidth}\centering
-0.73
-\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
-0.86
-\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
-5.11
-\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
-6.46
-\end{minipage} \\
-\begin{minipage}[b]{\linewidth}\centering
-0.76
-\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
-0.88
-\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
-5.33
-\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
-6.6
-\end{minipage} \\
-\begin{minipage}[b]{\linewidth}\centering
-0.7
-\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
-0.89
-\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
-5.36
-\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
-6.76
-\end{minipage} \\
-\begin{minipage}[b]{\linewidth}\centering
-0.76
-\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
-1.02
-\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
-5.41
-\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
-6.88
-\end{minipage} \\
-\begin{minipage}[b]{\linewidth}\centering
-1.55
-\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
-1.9
-\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
-6.51
-\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
-8.12
-\end{minipage} \\
-\begin{minipage}[b]{\linewidth}\centering
-1.58
-\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
-1.91
-\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
-6.79
-\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
-8.35
-\end{minipage} \\
-\begin{minipage}[b]{\linewidth}\centering
-1.57
-\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
-1.94
-\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
-6.85
-\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
-8.48
-\end{minipage} \\
-\begin{minipage}[b]{\linewidth}\centering
-1.76
-\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
-2.18
-\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
-7.07
-\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
-8.8
-\end{minipage} \\
-\begin{minipage}[b]{\linewidth}\centering
-1.77
-\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
-2.18
-\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
-8.24
-\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
-10.32
-\end{minipage} \\
-\begin{minipage}[b]{\linewidth}\centering
-1.96
-\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
-2.32
-\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
-8.35
-\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
-10.46
-\end{minipage} \\
-\begin{minipage}[b]{\linewidth}\centering
-2.02
-\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
-2.47
-\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
-8.41
-\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
-10.47
-\end{minipage} \\
-\begin{minipage}[b]{\linewidth}\centering
-2.2
-\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
-2.77
-\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
-9.4
-\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
-12.2
-\end{minipage} \\
-\begin{minipage}[b]{\linewidth}\centering
-3.12
-\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
-3.82
-\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
-10.3
-\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
-13.3
-\end{minipage} \\
-\begin{minipage}[b]{\linewidth}\centering
-3.11
-\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
-3.87
-\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
-12.4
-\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
-16
-\end{minipage} \\
-\midrule\noalign{}
-\endhead
-\bottomrule\noalign{}
-\endlastfoot
-\end{longtable}
-}
-
-\manualappendixtable{Reference Temperature and Thermistor Resistance Calibration Data}{tab:app-a-temperature-calibration}
-
-{\def\LTcaptype{none} % do not increment counter
-\begin{longtable}[]{@{}
-  >{\raggedright\arraybackslash}p{(\linewidth - 6\tabcolsep) * \real{0.2203}}
-  >{\raggedright\arraybackslash}p{(\linewidth - 6\tabcolsep) * \real{0.2846}}
-  >{\raggedright\arraybackslash}p{(\linewidth - 6\tabcolsep) * \real{0.2749}}
-  >{\raggedright\arraybackslash}p{(\linewidth - 6\tabcolsep) * \real{0.1479}}@{}}
-\toprule\noalign{}
-\begin{minipage}[b]{\linewidth}\centering
-\textbf{Reference Reading (°C)}
-\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
-\textbf{Absolute Temperature}
-
-\textbf{(K)}
-\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
-\textbf{Measured Thermistor Resistance ($\Omega$)}
-\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
-\textbf{ln(R)}
-\end{minipage} \\
-\begin{minipage}[b]{\linewidth}\centering
-38
-\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
-311.15 K
-\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
-5.8k
-\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
-8.66072
-\end{minipage} \\
-\begin{minipage}[b]{\linewidth}\centering
-50
-\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
-323.15 K
-\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
-3.6k
-\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
-8.18869
-\end{minipage} \\
-\begin{minipage}[b]{\linewidth}\centering
-100
-\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
-373.15 K
-\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
-0.7k
-\end{minipage} & \begin{minipage}[b]{\linewidth}\centering
-6.55108
-\end{minipage} \\
-\midrule\noalign{}
-\endhead
-\bottomrule\noalign{}
-\endlastfoot
-\end{longtable}
-}
-
+The temperature calibration data were used to support the thermistor conversion
+discussed in \textit{Chapter~3}. Since the thermistor measures the temperature at its
+own placement point, these calibration values validate the sensor channel and do not
+directly represent the hidden contact-spot temperature inside the socket interface.

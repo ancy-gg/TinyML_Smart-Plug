@@ -3,50 +3,65 @@
 
 The arc-detection firmware computes waveform features from current samples
 rather than from RMS current alone. This is necessary because a series arc can
-leave the load current below a conventional breaker trip level while still
-introducing low-current gaps, restrike pulses, irregular zero-crossing
-behavior, and mid/high-frequency energy [34], [35], [53], [54]. The firmware
-uses a 512-sample frame at a 27kHz target sampling rate, with a 256-sample
-hop. A Hann window is applied before the FFT to reduce spectral leakage, which
-is standard practice in discrete Fourier analysis [70], [75].
-For consistency with the feature grouping used in
-Chapter~\ref{chap:review-of-related-literature},
-the computed features are interpreted as either waveform-disturbance
-indicators or conduction-intermittence indicators. Waveform-disturbance
-features describe spectral, harmonic, residual, and cycle-shape changes, while
-conduction-intermittence features describe low-current dwell, interruption,
-and restrike-related behavior.
-The equation subsections below are implementation-level groups used to keep
-related computations together. Current-magnitude and conduction-gap features
-primarily support the conduction-intermittence family, while spectral,
-residual, waveform-shape, and harmonic features primarily support the
-waveform-disturbance family. Some features, such as RMS-current departure,
-can support both interpretations depending on whether the change is caused by
-load transition or arc-related interruption.
+remain below a conventional breaker trip level while still producing
+low-current gaps, restrike pulses, irregular zero-crossing behavior, and
+mid/high-frequency energy [34], [35], [53], [54]. The reviewed literature also
+shows that series arcs are load-dependent and stochastic, so the detector must
+use multiple waveform indicators rather than a single current-magnitude
+threshold [33]-[39].
 
-\subsection{Feature-Set Contract Between Firmware, Trainer, and PWA}
+The firmware uses a 512-sample frame at a 27kHz target sampling rate, with a
+256-sample hop. A Hann window is applied before the FFT to reduce spectral
+leakage, which is standard practice in discrete Fourier analysis [70], [75].
+The resulting features are interpreted using the two feature families
+established in the reviewed literature: waveform-disturbance indicators and
+conduction-intermittence indicators [34]-[39], [49]-[54].
+Waveform-disturbance features include \feature{midband_residual_ratio},
+\feature{spectral_flux_midhf}, \feature{thd_i}, \feature{hf_energy_delta},
+\feature{halfcycle_asymmetry}, and other quantities that describe spectral,
+harmonic, residual, or cycle-shape changes. Conduction-intermittence features
+include \feature{low_current_ratio}, \feature{max_low_current_run_ms},
+\feature{zero_dwell_ratio}, \feature{delta_irms_abs}, and
+\feature{abs_irms_zscore_vs_baseline}, which describe weak conduction,
+interruption, RMS-current change, and deviation from the recent current
+baseline.
+
+The equation subsections below group the computations according to their main
+physical meaning. Current-magnitude and conduction-gap features mainly support
+the conduction-intermittence family, while spectral, residual, waveform-shape,
+and harmonic features mainly support the waveform-disturbance family. The
+feature \feature{abs_irms_zscore_vs_baseline} can also support both
+interpretations because it measures how far the present RMS current deviates
+from the adaptive baseline, whether the deviation is caused by a normal load
+transition or by arc-related interruption.
+
+\subsection{Feature Set Used Across Firmware, Trainer, and PWA}
 \label{sec:ch3-feature-contract}
 
-The firmware, trainer, exported model headers, and PWA do not use one single
-feature list for every purpose. In the inspected firmware revision, the runtime
-feature-layout header defines 20 waveform-related fields for export and
-logging. The deployed Random Forest arc model uses only six of those waveform
-features, then appends six context one-hot fields and one context confidence
-value for a 13-input model vector. The current live PWA dashboard renders only
-10 waveform-feature cards, while the PWA metadata and session viewer retain a
-broader 14-feature order for review and CSV inspection.
+The firmware, trainer, exported model headers, and PWA use related but not
+identical feature lists because each part of the system has a different role.
+The firmware computes and logs the complete waveform-feature set used for
+inference, session review, CSV inspection, and training analysis. The deployed
+Random Forest arc model uses only the selected waveform inputs required by the
+exported model, then appends the context-family fields and context confidence
+to form the final input vector. The PWA displays the main monitoring features,
+while the session viewer retains additional feature columns for review and
+labeling.
 
-Table~\ref{tab:ch3-feature-contract} gives the source-of-truth contract used
-in this paper. A ``Yes'' in the arc-model column means that the feature is
-one of the six waveform inputs in the deployed Random Forest header. Context
-features used by the load-context model are noted separately because they
-support the context fields later appended to the arc vector, but they are not
-direct arc-model base inputs unless explicitly marked.
+\textit{Table~\ref{tab:ch3-feature-contract}} summarizes the feature set used in
+this study. A \textit{Yes} in the arc-model column means that the feature is one of
+the waveform inputs used by the deployed Random Forest arc model. Context
+features are listed separately because they support the load-context model and
+the context fields appended to the arc-model vector, but they are not direct
+arc-model base inputs unless explicitly marked.
 
+\vspace{0.5\baselineskip}
 \begingroup
 \scriptsize
 \setlength{\tabcolsep}{2pt}
-\begin{longtable}{@{}p{0.31\textwidth}p{0.06\textwidth}p{0.11\textwidth}p{0.10\textwidth}p{0.30\textwidth}@{}}
+\setlength{\LTleft}{0pt}
+\setlength{\LTright}{0pt}
+\begin{longtable}{@{}p{0.34\textwidth}p{0.07\textwidth}p{0.12\textwidth}p{0.11\textwidth}p{0.31\textwidth}@{}}
 \caption{Collected waveform features and deployed model feature selection}
 \label{tab:ch3-feature-contract}\\
 \toprule
@@ -70,7 +85,7 @@ direct arc-model base inputs unless explicitly marked.
 \feature{delta_hf_energy} & Yes & No & CSV only & Frame-to-frame change in high-frequency energy. \\
 \feature{delta_flux} & Yes & No & CSV only & Frame-to-frame change in spectral flux. \\
 \feature{midband_residual_ratio} & Yes & Yes; also context input & Live/CSV & Non-harmonic midband disturbance relative to baseline current. \\
-\feature{zcv} & Yes & No & Session/CSV & Legacy dashboard/export label associated with zero-dwell or zero-region timing review. \\
+\feature{zcv} & Yes & No & Session/CSV & Zero-crossing interval variation used for zero-region timing review. \\
 \feature{spectral_flux_midhf} & Yes & Yes; also context input & Live/CSV & Abrupt mid/high-frequency spectral change between frames. \\
 \feature{peak_fluct_cv} & Yes & No & Session/CSV & Cycle-peak coefficient of variation. \\
 \feature{residual_crest_factor} & Yes & No & Session/CSV & Peak-to-RMS ratio of the residual disturbance. \\
@@ -86,15 +101,15 @@ direct arc-model base inputs unless explicitly marked.
 \end{longtable}
 \endgroup
 
-Table~\ref{tab:ch3-feature-contract} shows that the prototype does not compute only the 10 features shown
-on the live dashboard. It exports 20 candidate waveform-related feature
-fields, deploys six as base waveform inputs to the arc model, uses six
-context-model features to produce the context fields, displays 10 live
-feature cards in the current PWA dashboard, and keeps a broader metadata order
-for session review. This is for flexibility in future model refinement and to 
-support the interpretability and review of a wider range of features during 
-testing and analysis. The next sections describe the physical meaning 
-and firmware computation of these features.
+\textit{Table~\ref{tab:ch3-feature-contract}} shows that the prototype does not
+compute only the 10 features shown on the PWA dashboard. It exports 20
+candidate waveform-related feature fields, deploys six as base waveform inputs
+to the arc model, uses six context-model features to produce the context
+fields, displays 10 monitoring feature cards, and keeps additional feature
+columns for session review. This separation allows the deployed model to remain
+compact while still preserving the feature values needed for interpretation,
+label review, and training analysis. The next sections describe the physical
+meaning and firmware computation of these features.
 
 \subsection{Collected Candidate Features}
 \label{sec:ch3-collected-candidate-features}
@@ -187,10 +202,9 @@ to the low-current ratio when a robust dwell estimate is unavailable:
   100\frac{N_{\mathrm{near\ zero}}}{N_{\mathrm{zc\ window}}}.
   \label{eq:feature-zero-dwell}
 \end{equation}
-The feature \feature{zero_dwell_ratio} is a deployed arc-model input and is
-logged to CSV. In the current live PWA, the card label may appear as
-zero-cross variance or ZCV, but the quantity discussed in this paper is the
-zero-dwell or near-zero conduction behavior used by the arc model.
+In this paper, \feature{zero_dwell_ratio} refers to the near-zero conduction
+behavior used by the arc model, while \feature{zcv} is treated separately as
+zero-crossing interval variation.
 
 The residual pulse count per cycle is
 \begin{equation}
@@ -236,15 +250,15 @@ its baseline:
   \right).
   \label{eq:feature-hf-delta}
 \end{equation}
-In (\ref{eq:feature-hf-delta}), $E_{\mathrm{HF}}$ is the 4500--9000Hz band
-energy, $E_{\mathrm{UM}}$ is the 900--4500Hz upper-midband energy,
+In (\ref{eq:feature-hf-delta}), $E_{\mathrm{HF}}$ is the 4500-9000Hz band
+energy, $E_{\mathrm{UM}}$ is the 900-4500Hz upper-midband energy,
 $B_{\mathrm{HF}}$ is the baseline high-frequency share, and $\epsilon$ is a
 small numerical offset. The result is in decibels, supports the context model,
 and is shown in the PWA as \feature{hf_energy_delta}. The separate
 \feature{delta_hf_energy} is the frame-to-frame absolute change of this
 high-frequency measure and is logged for analysis.
 
-The midband residual ratio is computed from FFT energy in the 220--3200Hz
+The midband residual ratio is computed from FFT energy in the 220-3200Hz
 midband after excluding harmonic bins:
 \begin{equation}
   R_{\mathrm{mid}} =
@@ -290,8 +304,8 @@ base input.
 The firmware also logs \feature{delta_flux}, the frame-to-frame change in
 spectral flux, and \feature{suspicious_run_energy}, a leaky internal score
 that increases when several arc-like cues occur together. These features
-support logging and future refinement; they are not used directly by the
-deployed Random Forest base vector.
+support logging, interpretation, and training analysis; they are not used
+directly by the deployed Random Forest base vector.
 
 \subsubsection{Waveform Shape and Harmonic Features}
 \label{sec:ch3-shape-harmonic-features}
@@ -360,7 +374,7 @@ waveform features.
 \label{sec:ch3-pwa-feature-display}
 
 \begin{sloppypar}
-The current live PWA dashboard contains 10 waveform feature cards:
+The PWA dashboard contains 10 waveform feature cards:
 \feature{abs_irms_zscore_vs_baseline}, \feature{delta_irms_abs},
 \feature{halfcycle_asymmetry},
 \feature{max_low_current_run_ms}, \feature{low_current_ratio},
@@ -368,7 +382,7 @@ The current live PWA dashboard contains 10 waveform feature cards:
 \feature{spectral_flux_midhf}, \feature{thd_i}, and
 \feature{hf_energy_delta}. The PWA metadata and session viewer still list 14
 review features for CSV inspection, so this paper distinguishes the live
-dashboard display from the broader logging and review interface. This display
+dashboard display from the full logging and review interface. This display
 set is broader than the deployed arc-model base vector so that the researchers
 can inspect useful diagnostic signals without implying that every displayed
 feature contributes directly to the Random Forest decision.

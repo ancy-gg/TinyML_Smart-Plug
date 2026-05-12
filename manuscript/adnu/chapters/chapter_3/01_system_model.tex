@@ -17,7 +17,7 @@ estimation, waveform-feature extraction, TinyML inference, relay control, and
 cloud logging; and its outputs were warnings, PWA monitoring, stored event
 records, and relay disconnection when a protection condition was latched.
 
-Figure~\ref{fig:ch3-conceptual-framework} summarizes this research model.
+\textit{Figure~\ref{fig:ch3-conceptual-framework}} summarizes this research model.
 \begin{figure}[H]
   \centering
   \includegraphics[width=0.98\textwidth]{ch3/figure_3.1.png}
@@ -25,7 +25,7 @@ Figure~\ref{fig:ch3-conceptual-framework} summarizes this research model.
   \label{fig:ch3-conceptual-framework}
 \end{figure}
 
-Figure~\ref{fig:ch3-conceptual-framework} presents the conceptual framework 
+\textit{Figure~\ref{fig:ch3-conceptual-framework}} presents the conceptual framework 
 of the TinyML Smart Plug using an input-process-output structure. The input 
 stage consists of the sensing and communication components used by the 
 prototype, including the voltage sensor, current sensor, temperature probe, 
@@ -48,7 +48,7 @@ the user, logging relevant data, and opening the relay when a confirmed
 critical fault is detected.
 
 The design variables used by the system are summarized in
-Table~\ref{tab:ch3-system-variables}. The table separates direct
+\textit{Table~\ref{tab:ch3-system-variables}}. The table separates direct
 measurements from computed variables so that later equations can be traced to
 the firmware implementation.
 \begin{table}[H]
@@ -68,7 +68,7 @@ the firmware implementation.
   \end{tabular}
 \end{table}
 
-Table~\ref{tab:ch3-system-variables} shows that current is used by several
+\textit{Table~\ref{tab:ch3-system-variables}} shows that current is used by several
 subsystems: it supports ordinary overload detection, thermal compensation, and
 the TinyML feature vector. Therefore, the current channel was treated as a
 shared measurement path whose calibration and sampling behavior must remain
@@ -83,7 +83,7 @@ computes calibrated variables and protection states; the TinyML layer provides
 context-aware series-arc inference; and the PWA layer displays live and
 historical data using Firebase services [55], [56].
 
-Figure~\ref{fig:ch3-system-architecture} presents the system architecture used
+\textit{Figure~\ref{fig:ch3-system-architecture}} presents the system architecture used
 to connect these layers.
 \begin{figure}[H]
   \centering
@@ -92,7 +92,7 @@ to connect these layers.
   \label{fig:ch3-system-architecture}
 \end{figure}
 
-Figure~\ref{fig:ch3-system-architecture} places the ESP32-S3 at the center of
+\textit{Figure~\ref{fig:ch3-system-architecture}} places the ESP32-S3 at the center of
 the design. The microcontroller receives conditioned analog signals, runs the
 protection and TinyML routines locally, drives the relay and indicators, and
 uploads selected telemetry. Firebase and the PWA also carry basic remote

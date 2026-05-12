@@ -2,10 +2,15 @@
 \label{sec:ch4-overload-protection}
 
 Five overload-related trials were conducted using high-power load combinations.
-All trials entered the overload-warning region, but only the most severe case
-remained above the sustained-overload criterion long enough to trip the relay.
-This matches the firmware method in Section~\ref{sec:ch3-overload-protection},
-where warning and sustained trip are intentionally separated.
+All trials exceeded the overload-warning threshold, but only the most severe
+case remained above the sustained-overload criterion long enough to trip the
+relay. This follows the firmware method in
+\textit{Section~\ref{sec:ch3-overload-protection}}, where warning and sustained relay
+trip are intentionally separated to distinguish short current excursions from
+persistent thermal stress. This behavior is consistent with the reviewed
+literature, which treats overload protection as a time-dependent overcurrent
+condition rather than a purely instantaneous cutoff [22], [44], [45].
+
 \begin{table}[H]
   \centering
   \caption{Overload evaluation results}
@@ -25,16 +30,19 @@ where warning and sustained trip are intentionally separated.
   \end{tabular}
 \end{table}
 
-Table~\ref{tab:ch4-overload-evaluation} shows that warning occurred in all
-heavy-load cases, while relay disconnection occurred only in Trial 4. The mean
-current of Trial 4 was 17.30A, clearly above the 14.5A sustained-overload
-threshold, and the 61.3s trip latency agrees with the intended 60s
-persistence behavior. Trials 1, 3, and 5 reached peak values near or above the
-sustained threshold, but they did not remain in the sustained-overload state
-long enough for the score to reach the trip value.
+\textit{Table~\ref{tab:ch4-overload-evaluation}} shows that the prototype
+issued overload warnings in all heavy-load trials, while relay disconnection
+occurred only in Trial 4. Trial 4 had a mean current of 17.30A, which was
+clearly above the 14.5A sustained-overload threshold. Its trip latency of 61.3s
+also agrees with the intended approximately 60s persistence behavior of the
+overload score. Trials 1, 3, and 5 reached peak currents near or above the
+sustained-overload threshold, but their current levels did not remain above the
+criterion long enough for the persistence score to reach the relay-trip value.
 
-This result supports the overload objective because the prototype behaved as a
-warning-and-persistence device rather than an instantaneous current cutoff. The
-main limitation is that the tests were conducted with selected laboratory load
-combinations; broader appliance combinations and longer-duration thermal tests
-would be needed before choosing final consumer-product trip curves.
+These results support the overload-protection objective because the prototype
+operated as a warning-and-persistence device rather than as an instantaneous
+current cutoff. The warning response gave early indication of heavy loading,
+while the delayed relay trip was reserved for a sustained overcurrent condition.
+Within the tested laboratory load combinations, this behavior reduced the chance
+of tripping on short-duration peaks while still disconnecting the load when the
+overload condition persisted.

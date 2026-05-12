@@ -1,0 +1,93 @@
+﻿\documentclass[border=6pt]{standalone}
+\usepackage{fontspec}
+\setmainfont{Times New Roman}
+\usepackage{graphicx}
+\usepackage{tikz}
+\usetikzlibrary{arrows.meta,calc,fit,positioning,shapes.geometric}
+\usepackage{pgfplots}
+\pgfplotsset{compat=1.18}
+\usepackage{amsmath,amssymb}
+\usepackage{array}
+\usepackage{booktabs}
+\usepackage{xcolor}
+\graphicspath{{figures/}{figures/ch3/}{figures/ch4/}{figures/apx/}}
+\newcommand{\degreeC}{\ensuremath{^\circ\mathrm{C}}}
+\newcommand{\figsource}[1]{}
+\tikzset{
+  thesis box/.style={
+    draw,
+    rounded corners=1pt,
+    align=center,
+    inner sep=4pt,
+    minimum height=0.36in,
+    font=\small
+  },
+  thesis process/.style={
+    thesis box,
+    fill=gray!8
+  },
+  thesis decision/.style={
+    diamond,
+    draw,
+    aspect=2,
+    align=center,
+    inner sep=2pt,
+    font=\small,
+    fill=gray!8
+  },
+  thesis arrow/.style={
+    -{Latex[length=2.2mm]},
+    line width=0.65pt
+  },
+  thesis bus/.style={
+    line width=0.8pt
+  }
+}
+\input{figures/ch4/socket_plots.tex}
+\begin{document}
+
+  \centering
+  \begin{tikzpicture}
+    \begin{axis}[
+      width=0.9\textwidth,
+      height=4in,
+      xlabel={Uncalibrated ACS37035 RMS current (A)},
+      ylabel={Reference RMS current (A)},
+      xmin=0,
+      xmax=12.8,
+      ymin=0,
+      ymax=16.5,
+      grid=major,
+      major grid style={line width=0.2pt,draw=gray!35},
+      tick label style={font=\scriptsize},
+      label style={font=\small},
+      legend style={font=\scriptsize,draw=none,at={(0.03,0.97)},anchor=north west},
+      legend cell align={left}
+    ]
+      \addplot[only marks,mark=*,mark size=1.45pt,black] coordinates {
+        (0.08,0.08) (0.15,0.15) (0.17,0.18) (0.19,0.2)
+        (0.21,0.22) (0.53,0.64) (0.56,0.66) (0.58,0.69)
+        (0.63,0.77) (0.73,0.86) (0.76,0.88) (0.7,0.89)
+        (0.76,1.02) (1.55,1.9) (1.58,1.91) (1.57,1.94)
+        (1.76,2.18) (1.77,2.18) (1.96,2.32) (2.02,2.47)
+        (2.2,2.77) (3.12,3.82) (3.11,3.87) (3.28,4.09)
+        (3.31,4.15) (3.86,4.7) (3.97,4.9) (5.89,7.27)
+        (4.62,5.72) (4.84,6.11) (4.95,6.22) (5.04,6.33)
+        (5.11,6.46) (5.33,6.6) (5.36,6.76) (5.41,6.88)
+        (6.51,8.12) (6.79,8.35) (6.85,8.48) (7.07,8.8)
+        (8.24,10.32) (8.35,10.46) (8.41,10.47) (9.4,12.2)
+        (10.3,13.3) (12.4,16)
+      };
+      \addlegendentry{Calibration points}
+      \addplot[black,thick,domain=0:12.5,samples=160]
+        {5.56854e-4*x^3 - 2.98472e-3*x^2 + 1.25081*x - 0.0275572};
+      \addlegendentry{Firmware cubic fit}
+      \node[anchor=south east,font=\scriptsize,align=right] at (axis cs:12.4,1.0)
+        {$I_{\mathrm{cal}}=5.56854{\times}10^{-4}I_m^3$\\
+         $-2.98472{\times}10^{-3}I_m^2+1.25081I_m-0.0275572$};
+    \end{axis}
+  \end{tikzpicture}
+  
+  
+
+\end{document}

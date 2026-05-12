@@ -2,14 +2,26 @@
 \label{sec:ch4-socket-heating-characterization}
 
 The socket-heating characterization compared a normal socket with a degraded
-socket under similar current levels. The purpose was to verify the Chapter 3
-assumption that socket temperature is not determined by current alone; contact
-condition changes the rate and final magnitude of heating.
-The plotted trends in this section were generated from the full
-characterization records in Appendix~\ref{app:c}.
+socket under similar current levels. This section presents only the flat NTC
+temperature measurements obtained after resistance-to-temperature conversion
+using the Steinhart-Hart/Beta equation described in
+\textit{Section~\ref{sec:ch3-device-temperature-calibration}}; the thermal
+constants, expected normal socket temperature, and estimated socket temperature
+were not yet applied to the plotted data.
 
-The water-heater-only characterization trend is shown in
-Figure~\ref{fig:ch4-char-water-heater}.
+The characterization was performed to verify that socket heating is affected not
+only by current, but also by contact condition. This follows the reviewed
+literature showing that poor plug-socket contact can produce localized heating
+while the current path remains functional [17], [24], [46], [47], and that an
+external temperature measurement may lag or under-read the internal hotspot
+because the hottest region is usually inside the contact interface [27]-[31].
+The graphs presented in this section are derived from the characterization
+records in \textit{Appendix~\ref{app:c}}.
+
+The 38.2{\degreeC} comparison point was used only as a common reference marker
+for comparing how quickly each socket condition approached the same measured
+thermistor temperature level.
+
 \begin{figure}[H]
   \centering
   \socketCharPlot{1}{240}
@@ -17,13 +29,13 @@ Figure~\ref{fig:ch4-char-water-heater}.
   \label{fig:ch4-char-water-heater}
 \end{figure}
 
-Figure~\ref{fig:ch4-char-water-heater} shows that at about 5.2A, both socket
-conditions stayed below the 38.2°C comparison point within the 240min
-window. The corroded socket still ended hotter than the normal socket, showing
-the beginning of contact-condition influence even at the lowest tested load.
+\textit{Figure~\ref{fig:ch4-char-water-heater}} shows that at about 5.2A, both
+socket conditions stayed below the 38.2{\degreeC} comparison point within the
+240-minute window. However, the corroded socket still ended hotter than the
+normal socket in both the device temperature measurement and the infrared
+terminal reading. This indicates that the contact-condition effect was already
+present at the lowest tested load.
 
-The water heater plus one halogen lamp trend is shown in
-Figure~\ref{fig:ch4-char-one-lamp}.
 \begin{figure}[H]
   \centering
   \socketCharPlot{2}{240}
@@ -31,12 +43,11 @@ Figure~\ref{fig:ch4-char-one-lamp}.
   \label{fig:ch4-char-one-lamp}
 \end{figure}
 
-Figure~\ref{fig:ch4-char-one-lamp} shows clearer separation between normal and
-corroded behavior. The corroded socket reached the 38.2°C comparison
-point, while the normal socket did not reach that point within the same window.
+\textit{Figure~\ref{fig:ch4-char-one-lamp}} shows clearer separation between
+normal and corroded behavior. The corroded socket reached the 38.2{\degreeC}
+comparison point, while the normal socket did not reach that point within the
+same window.
 
-The water heater plus two halogen lamps trend is shown in
-Figure~\ref{fig:ch4-char-two-lamps}.
 \begin{figure}[H]
   \centering
   \socketCharPlot{3}{240}
@@ -44,14 +55,13 @@ Figure~\ref{fig:ch4-char-two-lamps}.
   \label{fig:ch4-char-two-lamps}
 \end{figure}
 
-Figure~\ref{fig:ch4-char-two-lamps} shows that the degraded socket reached the
-comparison temperature much earlier than the normal socket. The terminal
-temperature also rose above the device temperature measurement, supporting the
-need to treat the external thermistor channel as an under-reading proxy rather
-than the actual hotspot.
+\textit{Figure~\ref{fig:ch4-char-two-lamps}} shows that the degraded socket
+reached the comparison temperature much earlier than the normal socket. The
+infrared terminal temperature also rose above the device
+measurement, especially in the corroded case. This supports treating 
+the external thermistor as an indirect reading rather
+than the actual hotspot temperature [27]-[31].
 
-The water heater plus three halogen lamps trend is shown in
-Figure~\ref{fig:ch4-char-three-lamps}.
 \begin{figure}[H]
   \centering
   \socketCharPlot{4}{240}
@@ -59,13 +69,13 @@ Figure~\ref{fig:ch4-char-three-lamps}.
   \label{fig:ch4-char-three-lamps}
 \end{figure}
 
-Figure~\ref{fig:ch4-char-three-lamps} shows the strongest time-to-threshold
-contrast in the characterization set: the corroded socket reached the
-comparison point after only 7min, while the normal socket reached it after
-52min.
+\textit{Figure~\ref{fig:ch4-char-three-lamps}} shows the strongest
+time-to-threshold contrast in the characterization set. The corroded socket
+reached the comparison point after 7 minutes, while the normal socket reached it
+after 52 minutes. Since the current levels were similar, this difference is
+attributed mainly to degraded contact condition, supporting the reviewed finding
+that poor contact can accelerate localized heating [17], [24], [46], [47].
 
-The water heater plus four halogen lamps trend is shown in
-Figure~\ref{fig:ch4-char-four-lamps}.
 \begin{figure}[H]
   \centering
   \socketCharPlot{5}{195}
@@ -73,13 +83,17 @@ Figure~\ref{fig:ch4-char-four-lamps}.
   \label{fig:ch4-char-four-lamps}
 \end{figure}
 
-Figure~\ref{fig:ch4-char-four-lamps} shows that the high-current degraded
-trial developed rapidly and was stopped after a short observation window. The
-terminal temperature reached 45.8°C within 4min even though the final
-device temperature measurement was only 36.9°C.
+\textit{Figure~\ref{fig:ch4-char-four-lamps}} shows that the high-current
+degraded trial developed rapidly and was stopped after a short observation
+window. The terminal temperature reached 45.8{\degreeC} within 4 minutes even
+though the final device temperature measurement was only 36.9{\degreeC}. This
+difference shows that the NTC thermistor, as placed in the prototype, could
+under-read the contact-region temperature during severe degraded-contact
+heating.
 
-Table~\ref{tab:ch4-heating-characterization} summarizes the characterization
-data used to interpret these trends.
+\textit{Table~\ref{tab:ch4-heating-characterization}} summarizes the
+characterization data used to interpret these trends.
+
 \begin{table}[H]
   \centering
   \caption{Summary of socket-heating characterization data}
@@ -88,7 +102,7 @@ data used to interpret these trends.
   \setlength{\tabcolsep}{0pt}
   \begin{tabular*}{\textwidth}{@{\extracolsep{\fill}}p{0.22\textwidth}p{0.105\textwidth}p{0.13\textwidth}p{0.08\textwidth}p{0.11\textwidth}p{0.135\textwidth}p{0.09\textwidth}@{}}
     \toprule
-    \textbf{Load case} & \textbf{Socket} & \textbf{\shortstack{Time to\\38.2°C}} & \textbf{\shortstack{Mean\\A}} & \textbf{\shortstack{Final device\\temp.}} & \textbf{\shortstack{Final IR\\temp.}} & \textbf{\shortstack{Window\\(min)}} \\
+    \textbf{Load case} & \textbf{Socket} & \textbf{\shortstack{Time to\\38.2{\degreeC}}} & \textbf{\shortstack{Mean\\A}} & \textbf{\shortstack{Final device\\temp.}} & \textbf{\shortstack{Final IR\\temp.}} & \textbf{\shortstack{Window\\(min)}} \\
     \midrule
     Water heater & Normal & -- & 5.18 & 33.9 & 31.5 & 240 \\
     Water heater & Corroded & -- & 5.16 & 35.6 & 37.4 & 240 \\
@@ -104,28 +118,33 @@ data used to interpret these trends.
   \end{tabular*}
 \end{table}
 
-Table~\ref{tab:ch4-heating-characterization} confirms that degraded contact
-changed both heating speed and hotspot severity. At about 9A, the corroded
-socket reached 38.2°C in 48min compared with 105min for the normal
-socket. At about 11A, the corroded socket reached the same point in 7min
-compared with 52min for the normal socket. These results support the need for
-the compensated thermal model described in Section~\ref{sec:ch3-socket-heating-models}.
+\textit{Table~\ref{tab:ch4-heating-characterization}} confirms that degraded
+contact changed both heating speed and hotspot severity. At about 9A, the
+corroded socket reached 38.2{\degreeC} in 48 minutes compared with 105 minutes
+for the normal socket. At about 11A, the corroded socket reached the same point
+in 7 minutes compared with 52 minutes for the normal socket. These differences
+show that similar current levels did not produce identical thermal behavior when
+the socket condition changed. This supports the reviewed finding that poor
+contact condition increases localized heating risk through contact resistance
+and thermal concentration [17], [24], [46], [47].
 
-The characterization records also show how the firmware constants are used in
-the socket-temperature estimate. For example, the corroded water-heater plus
-two-lamp characterization case in Table~\ref{tab:ch4-heating-characterization}
-had a mean current of about 9.05A. Using the firmware current-shape term in
-(\ref{eq:thermal-current-shape}),
-\[
-  s_I=\left(\frac{9.05}{12.0}\right)^2=0.569 .
-\]
-The expected-normal target rise from (\ref{eq:normal-target-rise}) is then
-$0.20+12.0(0.569)=7.03\degreeC$, while the direct measured-temperature
-compensation from (\ref{eq:measured-compensation}) is
-$0.30+1.20(0.569)=0.98\degreeC$. These calculations do not re-fit the
-constants; they demonstrate how the firmware-verified constants are applied to
-the measured current and device temperature. The original fitting worksheet
-used to choose the constants was not present in the repository, so the
-constants should be treated as firmware-verified design values and not as a
-new independent regression result from the summarized table alone.
+The table also shows why the compensated thermal model was needed after
+characterization. In the higher-temperature and degraded-contact cases, the
+infrared terminal reading was consistently higher than the device temperature
+measurement. For example, in the water heater plus three-lamp corroded case, the
+device temperature measurement was 38.8{\degreeC}, while the infrared terminal
+reading reached 53.0{\degreeC}. In the water heater plus four-lamp corroded
+case, the device temperature measurement was 36.9{\degreeC}, while the infrared
+terminal reading reached 45.8{\degreeC}. These observations demonstrate that
+the flat NTC thermistor measurement alone did not fully represent the hotter
+contact region. This is consistent with the reviewed literature explaining that
+external temperature sensing can under-read an internal hotspot because of
+thermal separation, sensor placement, and response delay [27]-[31].
 
+These characterization findings verify why socket-level thermal monitoring was included in the
+prototype. The flat NTC measurements were able to show the heating trend of each
+socket, but they did not fully represent the hotter contact-region temperature.
+This supports the use of a compensated protection-facing temperature estimate,
+since localized socket heating may develop in a region that conventional
+current-based protection and external temperature measurement do not directly
+observe.

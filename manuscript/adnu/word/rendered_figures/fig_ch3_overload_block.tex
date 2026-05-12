@@ -1,0 +1,64 @@
+﻿\documentclass[border=6pt]{standalone}
+\usepackage{fontspec}
+\setmainfont{Times New Roman}
+\usepackage{graphicx}
+\usepackage{tikz}
+\usetikzlibrary{arrows.meta,calc,fit,positioning,shapes.geometric}
+\usepackage{pgfplots}
+\pgfplotsset{compat=1.18}
+\usepackage{amsmath,amssymb}
+\usepackage{array}
+\usepackage{booktabs}
+\usepackage{xcolor}
+\graphicspath{{figures/}{figures/ch3/}{figures/ch4/}{figures/apx/}}
+\newcommand{\degreeC}{\ensuremath{^\circ\mathrm{C}}}
+\newcommand{\figsource}[1]{}
+\tikzset{
+  thesis box/.style={
+    draw,
+    rounded corners=1pt,
+    align=center,
+    inner sep=4pt,
+    minimum height=0.36in,
+    font=\small
+  },
+  thesis process/.style={
+    thesis box,
+    fill=gray!8
+  },
+  thesis decision/.style={
+    diamond,
+    draw,
+    aspect=2,
+    align=center,
+    inner sep=2pt,
+    font=\small,
+    fill=gray!8
+  },
+  thesis arrow/.style={
+    -{Latex[length=2.2mm]},
+    line width=0.65pt
+  },
+  thesis bus/.style={
+    line width=0.8pt
+  }
+}
+\input{figures/ch4/socket_plots.tex}
+\begin{document}
+
+  \centering
+  \resizebox{0.7\textwidth}{!}{%
+  \begin{tikzpicture}[node distance=0.34in and 0.36in]
+    \node[thesis process,text width=1.35in] (supply) {230V AC supply\\with breaker access};
+    \node[thesis process,text width=1.35in,right=of supply] (plug) {TinyML Smart Plug\\under test};
+    \node[thesis process,text width=1.35in,right=of plug] (load) {High-power\\load bank};
+    \node[thesis process,text width=1.55in,below=of plug] (log) {PWA logs\\current, warning, relay, latency};
+    \draw[thesis arrow] (supply) -- (plug);
+    \draw[thesis arrow] (plug) -- (load);
+    \draw[thesis arrow] (plug) -- (log);
+  \end{tikzpicture}%
+  }
+  
+  
+
+\end{document}

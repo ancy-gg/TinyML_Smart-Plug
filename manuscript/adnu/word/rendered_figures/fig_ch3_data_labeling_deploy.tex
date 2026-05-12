@@ -1,0 +1,76 @@
+﻿\documentclass[border=6pt]{standalone}
+\usepackage{fontspec}
+\setmainfont{Times New Roman}
+\usepackage{graphicx}
+\usepackage{tikz}
+\usetikzlibrary{arrows.meta,calc,fit,positioning,shapes.geometric}
+\usepackage{pgfplots}
+\pgfplotsset{compat=1.18}
+\usepackage{amsmath,amssymb}
+\usepackage{array}
+\usepackage{booktabs}
+\usepackage{xcolor}
+\graphicspath{{figures/}{figures/ch3/}{figures/ch4/}{figures/apx/}}
+\newcommand{\degreeC}{\ensuremath{^\circ\mathrm{C}}}
+\newcommand{\figsource}[1]{}
+\tikzset{
+  thesis box/.style={
+    draw,
+    rounded corners=1pt,
+    align=center,
+    inner sep=4pt,
+    minimum height=0.36in,
+    font=\small
+  },
+  thesis process/.style={
+    thesis box,
+    fill=gray!8
+  },
+  thesis decision/.style={
+    diamond,
+    draw,
+    aspect=2,
+    align=center,
+    inner sep=2pt,
+    font=\small,
+    fill=gray!8
+  },
+  thesis arrow/.style={
+    -{Latex[length=2.2mm]},
+    line width=0.65pt
+  },
+  thesis bus/.style={
+    line width=0.8pt
+  }
+}
+\input{figures/ch4/socket_plots.tex}
+\begin{document}
+
+  \centering
+  \resizebox{0.75\textwidth}{!}{%
+  \begin{tikzpicture}[node distance=0.30in and 0.42in]
+    \node[thesis process,text width=1.38in] (bench) {Bench tests\\normal, start, arc};
+    \node[thesis process,text width=1.38in,right=of bench] (log) {Firmware CSV\\feature logs};
+    \node[thesis process,text width=1.38in,right=of log] (label) {Manual review\\labels and notes};
+
+    \node[thesis process,text width=1.38in,below=0.36in of label] (prepare) {Python data\\cleaning and splits};
+    \node[thesis process,text width=1.38in,left=of prepare] (context) {Context model\\training};
+    \node[thesis process,text width=1.38in,left=of context] (arc) {Random Forest\\arc training};
+
+    \node[thesis process,text width=1.38in,below=0.36in of arc] (metrics) {Metrics\\confusion reports};
+    \node[thesis process,text width=1.38in,right=of metrics] (export) {Exported C\\model headers};
+    \node[thesis process,text width=1.38in,right=of export] (deploy) {Firmware\\integration and tests};
+
+    \draw[thesis arrow] (bench) -- (log);
+    \draw[thesis arrow] (log) -- (label);
+    \draw[thesis arrow] (label) -- (prepare);
+    \draw[thesis arrow] (prepare) -- (context);
+    \draw[thesis arrow] (context) -- (arc);
+    \draw[thesis arrow] (arc) -- (metrics);
+    \draw[thesis arrow] (metrics) -- (export);
+    \draw[thesis arrow] (export) -- (deploy);
+  \end{tikzpicture}}
+  
+  
+
+\end{document}

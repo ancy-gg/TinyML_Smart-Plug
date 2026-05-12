@@ -2,21 +2,30 @@
 \label{sec:ch4-socket-heating-protection}
 
 Socket-heating protection validation evaluated the relay-facing estimated
-socket temperature. The important distinction is between three plotted
-temperatures and one internal model state. Device temperature measurement is
-the temperature measured or processed by the prototype's thermistor channel.
-The infrared thermometer reading is the reference terminal or contact-region
-reading. Estimated socket temperature is the compensated protection-facing
-estimate derived from the characterization model. The expected normal socket
-temperature is an internal comparator used by the estimator. The trip
-threshold applies to the estimated socket temperature, while the infrared
-thermometer reading shows how hot the socket contact area became during the
-same trial.
-The plotted trends in this section were generated from the full protection
-validation records in Appendix~\ref{app:d}.
+socket temperature under the same general load progression used during
+characterization. This validation was necessary because the socket-heating
+function does not trip from the raw thermistor value alone; instead, the
+firmware uses the compensated estimated socket temperature described in
+\textit{Section~\ref{sec:ch3-socket-heating-models}} and evaluated by the
+protection logic in \textit{Section~\ref{sec:ch3-protection-logic}}. The
+methodology compared the device temperature measurement, infrared thermometer
+reading, estimated socket temperature, and expected normal socket temperature:
+the thermistor channel provided the device temperature, the infrared thermometer
+served as the contact-region reference, the estimated socket temperature served
+as the protection-facing value, and the expected normal socket temperature
+served as the estimator's internal comparator.
 
-The water-heater-only protection trend is shown in
-Figure~\ref{fig:ch4-protect-water-heater}.
+This distinction is important because poor plug-socket contact can create
+localized heating even when total current does not necessarily force
+conventional protection to operate [17], [24], [46], [47]. It is also consistent
+with the reviewed literature showing that an external temperature sensor can lag
+or under-read the true internal hotspot because the hottest point is usually
+inside the contact interface [27]-[31]. For this reason, the trip threshold was
+applied to the estimated socket temperature, while the infrared thermometer
+reading was used to interpret the contact-region temperature during the same
+trial. The plotted trends in this section were generated from the full
+protection validation records in \textit{Appendix~\ref{app:d}}.
+
 \begin{figure}[H]
   \centering
   \socketProtectionPlot{1}{240}
@@ -24,13 +33,11 @@ Figure~\ref{fig:ch4-protect-water-heater}.
   \label{fig:ch4-protect-water-heater}
 \end{figure}
 
-Figure~\ref{fig:ch4-protect-water-heater} shows that the low-current case did
-not trip for either socket condition within the observation window. The
-corroded terminal still ended hotter than the normal terminal, but the
-estimated socket temperature stayed below the 40°C trip threshold.
+\textit{Figure~\ref{fig:ch4-protect-water-heater}} shows that the low-current
+case did not trip for either socket condition within the observation window.
+Although the corroded terminal ended hotter than the normal terminal, the
+estimated socket temperature remained below the 40{\degreeC} trip threshold.
 
-The water heater plus one halogen lamp protection trend is shown in
-Figure~\ref{fig:ch4-protect-one-lamp}.
 \begin{figure}[H]
   \centering
   \socketProtectionPlot{2}{240}
@@ -38,13 +45,11 @@ Figure~\ref{fig:ch4-protect-one-lamp}.
   \label{fig:ch4-protect-one-lamp}
 \end{figure}
 
-Figure~\ref{fig:ch4-protect-one-lamp} shows that the normal socket did not
-trip, while the corroded socket reached a protection-relevant state after a
-longer heating period. This supports the estimator's role in distinguishing
-slow thermal buildup from immediate current overload.
+\textit{Figure~\ref{fig:ch4-protect-one-lamp}} shows that the normal socket did
+not trip, while the corroded socket tripped after reaching the estimated
+40{\degreeC} threshold. This indicates that the relay response followed the
+compensated thermal estimate rather than current magnitude alone.
 
-The water heater plus two halogen lamps protection trend is shown in
-Figure~\ref{fig:ch4-protect-two-lamps}.
 \begin{figure}[H]
   \centering
   \socketProtectionPlot{3}{120}
@@ -52,14 +57,12 @@ Figure~\ref{fig:ch4-protect-two-lamps}.
   \label{fig:ch4-protect-two-lamps}
 \end{figure}
 
-Figure~\ref{fig:ch4-protect-two-lamps} shows that the corroded socket tripped
-much earlier than the normal socket at approximately the same current. The
-reference terminal temperature was already above the estimated value at trip,
-which confirms that the estimator acts as an early proxy for a hotter internal
-condition.
+\textit{Figure~\ref{fig:ch4-protect-two-lamps}} shows that higher current
+increased socket heating for both socket conditions, but the corroded socket
+tripped earlier because the degraded contact produced additional localized
+heating beyond the current effect. This supports the interpretation that contact
+condition influenced the trip time, not current magnitude alone.
 
-The water heater plus three halogen lamps protection trend is shown in
-Figure~\ref{fig:ch4-protect-three-lamps}.
 \begin{figure}[H]
   \centering
   \socketProtectionPlot{4}{58}
@@ -67,12 +70,16 @@ Figure~\ref{fig:ch4-protect-three-lamps}.
   \label{fig:ch4-protect-three-lamps}
 \end{figure}
 
-Figure~\ref{fig:ch4-protect-three-lamps} shows fast thermal development in
-the corroded case. The relay acted within the short test window, while the
-reference terminal temperature reached 55.0°C.
+\textit{Figure~\ref{fig:ch4-protect-three-lamps}} shows fast thermal
+development in the corroded case. At this load level, the degraded socket
+reached a hazardous contact-region temperature within a short observation
+window, with the reference terminal temperature reaching 55.0{\degreeC}. This
+result shows that the poor contact condition accelerated the thermal rise beyond
+what would be expected from current level alone. It also supports the use of the
+estimated socket temperature as a conservative relay-facing value, since the
+external measurement path may still represent a lower and delayed view of the
+actual contact-region heating [27]-[31].
 
-The water heater plus four halogen lamps protection trend is shown in
-Figure~\ref{fig:ch4-protect-four-lamps}.
 \begin{figure}[H]
   \centering
   \socketProtectionPlot{5}{46}
@@ -80,13 +87,20 @@ Figure~\ref{fig:ch4-protect-four-lamps}.
   \label{fig:ch4-protect-four-lamps}
 \end{figure}
 
-Figure~\ref{fig:ch4-protect-four-lamps} shows the most severe heating case.
-The corroded socket tripped after 5min when the estimated socket temperature
-reached 40.0°C, while the reference terminal temperature had already
-reached 56.0°C.
+\textit{Figure~\ref{fig:ch4-protect-four-lamps}} shows the most severe heating
+case in the protection validation set. The corroded socket tripped after 5min
+when the estimated socket temperature reached 40.0{\degreeC}, while the
+reference terminal temperature had already reached 56.0{\degreeC}. Compared
+with the lower-current trials, this case shows that high current increased the
+thermal stress, but the degraded contact made the heating rise much faster. This
+is consistent with the reviewed literature showing that poor plug-socket contact
+can create localized heating that is not fully represented by external
+temperature measurement or current magnitude alone [17], [24], [27]-[31],
+[46], [47].
 
-Table~\ref{tab:ch4-heating-protection} summarizes the protection validation
-results.
+\textit{Table~\ref{tab:ch4-heating-protection}} summarizes the protection
+validation results.
+
 \begin{table}[H]
   \centering
   \caption{Socket-heating protection validation results}
@@ -111,13 +125,30 @@ results.
   \end{tabular}
 \end{table}
 
-Table~\ref{tab:ch4-heating-protection} shows that degraded and higher-current
-conditions tripped earlier than low-current or healthy-socket conditions. The
-result supports the protection objective because the relay response followed
-the compensated estimated socket temperature, not merely current magnitude. A
-limitation remains: the external thermistor channel and compensation model still
-underestimated the hottest terminal temperature in severe degraded-contact
-cases. The prototype therefore demonstrates useful complementary protection,
-but a final certified design would need a validated thermal model across more
-socket types, contact materials, enclosure conditions, and ambient conditions.
+\textit{Table~\ref{tab:ch4-heating-protection}} summarizes how the relay
+response changed with socket condition and load level. At low current, the
+corroded socket did not trip because the estimated socket temperature remained
+below the 40{\degreeC} threshold. As the load current increased, the corroded
+socket tripped earlier than the normal socket because degraded contact added
+localized heating at the plug-socket interface. This is consistent with the
+reviewed literature showing that poor contact pressure, oxidation, and degraded
+contact condition can increase local thermal stress without requiring a
+classical overcurrent event [17], [24], [46], [47].
 
+The table also shows why the relay-facing estimate must be interpreted as an
+indirect protection value. In the severe degraded-contact cases, the reference
+terminal temperature was higher than both the device temperature measurement and
+the estimated socket temperature. This follows the reviewed literature showing
+that external temperature sensing can under-read a hidden contact hotspot due to
+sensor placement, thermal separation, and response delay [27]-[31]. Thus, the
+40{\degreeC} estimated-temperature threshold served as a conservative
+socket-heating trip point for the prototype, not as the actual internal contact
+temperature.
+
+These results support the study's objective of detecting contact heating at the
+plug-socket interface through complementary socket-level protection. The relay
+action was not based on RMS current alone, and the results show that similar
+current levels can lead to different thermal behavior when the socket condition
+changes. This confirms the need for local thermal supervision, since localized
+contact heating may develop before conventional current-based protection can
+directly observe the fault.

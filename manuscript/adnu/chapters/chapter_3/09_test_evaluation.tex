@@ -5,11 +5,11 @@ The evaluation followed the same order as the implementation: sensor
 validation, overload testing, socket-heating characterization,
 socket-heating protection validation, series arc-fault testing, and TinyML
 model evaluation. Full calibration records are placed in
-Appendix~\ref{app:a}; socket-heating characterization and protection data are
-placed in Appendices~\ref{app:c} and~\ref{app:d}; arc-fault testing and data
-collection logs are placed in Appendices~\ref{app:e} and~\ref{app:f}. The
+\textit{Appendix~\ref{app:a}}; socket-heating characterization and protection data are
+placed in \textit{Appendices~\ref{app:c} and~\ref{app:d}}; arc-fault testing and data
+collection logs are placed in \textit{Appendices~\ref{app:e} and~\ref{app:f}}. The
 letters, safety proposal, project schedule, and cost documentation are placed
-in Appendices~\ref{app:g},~\ref{app:h}, and~\ref{app:i}.
+in \textit{Appendices~\ref{app:g},~\ref{app:h}, and~\ref{app:i}}.
 \subsection{Sensor-Validation Metrics}
 \label{sec:ch3-sensor-metrics}
 
@@ -39,7 +39,7 @@ The mean absolute percentage error was computed as
   \left|\frac{y_i-\hat{y}_i}{y_i}\right|.
   \label{eq:metric-mape}
 \end{equation}
-In (\ref{eq:metric-mae})--(\ref{eq:metric-mape}), $y_i$ is the reference
+In (\ref{eq:metric-mae})-(\ref{eq:metric-mape}), $y_i$ is the reference
 measurement, $\hat{y}_i$ is the prototype measurement, and $n$ is the number of
 test points. MAE gives the average magnitude of error, MSE and RMSE penalize
 larger errors more strongly, and MAPE expresses the error relative to the
@@ -51,10 +51,10 @@ reference value [72].
 Overload testing used high-power load combinations to determine whether the
 prototype warned above the warning threshold and tripped only when the
 sustained-overload condition persisted. The block diagram of the overload test
-is shown in Figure~\ref{fig:ch3-overload-block}.
+is shown in \textit{Figure~\ref{fig:ch3-overload-block}}.
 \begin{figure}[H]
   \centering
-  \resizebox{0.7\textwidth}{!}{%
+  \resizebox{0.8\textwidth}{!}{%
   \begin{tikzpicture}[node distance=0.34in and 0.36in]
     \node[thesis process,text width=1.35in] (supply) {230V AC supply\\with breaker access};
     \node[thesis process,text width=1.35in,right=of supply] (plug) {TinyML Smart Plug\\under test};
@@ -69,15 +69,15 @@ is shown in Figure~\ref{fig:ch3-overload-block}.
   \label{fig:ch3-overload-block}
 \end{figure}
 
-Figure~\ref{fig:ch3-overload-block} shows the prototype placed between the
+\textit{Figure~\ref{fig:ch3-overload-block}} shows the prototype placed between the
 supply and load bank so that it could measure current and disconnect the load
 through its relay. This matches the current path used in normal operation.
 
-The actual overload test setup is shown in Figure~\ref{fig:ch3-overload-actual}.
+The actual overload test setup is shown in \textit{Figure~\ref{fig:ch3-overload-actual}}.
 \begin{figure}[H]
   \centering
   \includegraphics[
-    width=0.55\textwidth,
+    width=0.75\textwidth,
     trim=1cm 1cm 1cm 1cm,
     clip
   ]{ch3/figure_3.31.png}
@@ -85,7 +85,7 @@ The actual overload test setup is shown in Figure~\ref{fig:ch3-overload-actual}.
   \label{fig:ch3-overload-actual}
 \end{figure}
 
-Figure~\ref{fig:ch3-overload-actual} documents the physical load arrangement
+\textit{Figure~\ref{fig:ch3-overload-actual}} documents the physical load arrangement
 used to create warning and sustained-overload conditions. During each trial,
 mean voltage, mean current, peak current, warning state, relay state, and trip
 latency were recorded.
@@ -99,11 +99,11 @@ degraded contacts produced faster and higher temperature rise, and whether the
 external device temperature measurement and compensated estimator could provide useful warning before
 dangerous contact heating progressed.
 
-Figure~\ref{fig:ch3-heating-block} shows the socket-heating test block
+\textit{Figure~\ref{fig:ch3-heating-block}} shows the socket-heating test block
 diagram.
 \begin{figure}[H]
   \centering
-  \resizebox{0.8\textwidth}{!}{%
+  \resizebox{0.9\textwidth}{!}{%
   \begin{tikzpicture}[node distance=0.34in and 0.34in]
     \node[thesis process,text width=1.35in] (supply) {230V AC supply\\with breaker access};
     \node[thesis process,text width=1.35in,right=of supply] (plug) {Prototype\\thermistor channel};
@@ -122,17 +122,17 @@ diagram.
   \label{fig:ch3-heating-block}
 \end{figure}
 
-Figure~\ref{fig:ch3-heating-block} shows that both the prototype device
+\textit{Figure~\ref{fig:ch3-heating-block}} shows that both the prototype device
 temperature measurement and a reference socket or terminal temperature measurement were
 observed during testing. This made it possible to distinguish device temperature measurement,
 estimated socket temperature, and reference terminal temperature in the
 results.
 
-The degraded socket contacts are shown in Figure~\ref{fig:ch3-corroded-contacts}.
+The degraded socket contacts are shown in \textit{Figure~\ref{fig:ch3-corroded-contacts}}.
 \begin{figure}[H]
   \centering
   \includegraphics[
-    width=0.5\textwidth,
+    width=0.75\textwidth,
     trim=1cm 1cm 1cm 1cm,
     clip
   ]{ch3/figure_3.33.png}
@@ -140,28 +140,28 @@ The degraded socket contacts are shown in Figure~\ref{fig:ch3-corroded-contacts}
   \label{fig:ch3-corroded-contacts}
 \end{figure}
 
-Figure~\ref{fig:ch3-corroded-contacts} documents the degraded-contact
+\textit{Figure~\ref{fig:ch3-corroded-contacts}} documents the degraded-contact
 condition used to accelerate contact heating. The degraded socket was compared
 against a normal socket under matched load combinations.
 
 The actual socket-heating test setup is shown in
-Figure~\ref{fig:ch3-heating-actual}.
+\textit{Figure~\ref{fig:ch3-heating-actual}}.
 \begin{figure}[H]
   \centering
   \includegraphics[
-    width=0.65\textwidth,
-    trim=1cm 1cm 1cm 1cm,
+    width=0.75\textwidth,
+    trim=1cm 1cm 3.2cm 10cm,
     clip
   ]{ch3/figure_3.34.png}
   \caption{Actual test setup for socket-heating evaluation.}
   \label{fig:ch3-heating-actual}
 \end{figure}
 
-Figure~\ref{fig:ch3-heating-actual} shows the bench configuration used to
+\textit{Figure~\ref{fig:ch3-heating-actual}} shows the bench configuration used to
 record time, current, device temperature measurement, estimated socket temperature,
 reference terminal temperature, and relay behavior. The characterization data
-in Appendix~\ref{app:c} were used to support the thermal model, while the
-protection validation data in Appendix~\ref{app:d} were used to evaluate
+in \textit{Appendix~\ref{app:c}} were used to support the thermal model, while the
+protection validation data in \textit{Appendix~\ref{app:d}} were used to evaluate
 relay response.
 
 \subsection{Series Arc-Fault Test Procedure}
@@ -171,29 +171,28 @@ Series arc-fault testing used a controlled arc platform and appliance loads.
 The goal was to create repeatable waveform disturbances while recording
 current features, model outputs, relay behavior, and event labels. The
 assistance letter and safety proposal for this testing activity are included
-in Appendix~\ref{app:g}. The arc platform is shown in
-Figure~\ref{fig:ch3-arc-platform}.
+in \textit{Appendix~\ref{app:g}}. The arc platform is shown in
+\textit{Figure~\ref{fig:ch3-arc-platform}}.
 \begin{figure}[H]
   \centering
-  \includegraphics[width=0.82\textwidth]{ch3/figure_3.35.png}
-  \caption{Series arc-fault test platform.}
-  \figsource{Qi et al., 2025 [48]}
+  \includegraphics[width=0.95\textwidth]{ch3/figure_3.35.png}
+  \caption{Series arc-fault test platform [48].}
   \label{fig:ch3-arc-platform}
 \end{figure}
 
-Figure~\ref{fig:ch3-arc-platform} shows the principle of the series arc test:
+\textit{Figure~\ref{fig:ch3-arc-platform}} shows the principle of the series arc test:
 the current path is interrupted by an adjustable contact gap, allowing a
 controlled arc disturbance to appear in series with the load. The adapted
 source describes a 220V/50Hz platform using a fixed electrode and a moving
 electrode controlled by a stepper motor [48]. The prototype testing used the
 same series-interruption principle as a guide, while the actual bench setup
-used in this study is documented in Figure~\ref{fig:ch3-arc-actual}.
+used in this study is documented in \textit{Figure~\ref{fig:ch3-arc-actual}}.
 
 The block diagram of the series arc-fault test is shown in
-Figure~\ref{fig:ch3-arc-block}.
+\textit{Figure~\ref{fig:ch3-arc-block}}.
 \begin{figure}[H]
   \centering
-  \resizebox{0.8\textwidth}{!}{%
+  \resizebox{0.85\textwidth}{!}{%
   \begin{tikzpicture}[node distance=0.34in and 0.34in]
     \node[thesis process,text width=1.25in] (supply) {230V AC supply\\with breaker access};
     \node[thesis process,text width=1.28in,right=of supply] (arc) {Series arc\\generator};
@@ -210,56 +209,107 @@ Figure~\ref{fig:ch3-arc-block}.
   \label{fig:ch3-arc-block}
 \end{figure}
 
-Figure~\ref{fig:ch3-arc-block} shows the smart plug measuring the load current
-while the arc generator is placed in series with the appliance. This setup is
-consistent with the feature definitions in Section~\ref{sec:ch3-waveform-features},
-which depend on current waveform disturbance.
+\textit{Figure~\ref{fig:ch3-arc-block}} shows the smart plug measuring the load current
+while the arc generator is placed in series with the appliance.
 
 The actual series arc-fault test setup is shown in
-Figure~\ref{fig:ch3-arc-actual}.
+\textit{Figure~\ref{fig:ch3-arc-actual}}.
 \begin{figure}[H]
   \centering
-  \includegraphics[width=0.82\textwidth]{ch3/figure_3.37.png}
+  \includegraphics[width=0.85\textwidth]{ch3/figure_3.37.png}
   \caption{Actual test setup for series arc-fault evaluation.}
   \label{fig:ch3-arc-actual}
 \end{figure}
 
-Figure~\ref{fig:ch3-arc-actual} documents the laboratory arrangement used to
+\textit{Figure~\ref{fig:ch3-arc-actual}} documents the laboratory arrangement used to
 collect arc and normal trials. Complete arc-fault test records are referenced
-in Appendices~\ref{app:e} and~\ref{app:f}.
+in \textit{Appendices~\ref{app:e} and~\ref{app:f}}.
 
-\subsection{Classification Metrics}
+\subsection{Confusion Matrix and Classification Metrics}
 \label{sec:ch3-classification-metrics}
 
 For arc-fault evaluation, the positive class was the arc-fault condition and
-the negative class was normal operation. Accuracy, precision, recall, and
-F1-score were computed from true positives (TP), false positives (FP), true
-negatives (TN), and false negatives (FN):
+the negative class was normal operation. The model output was assessed according
+to whether each evaluated frame was correctly or incorrectly assigned to these
+two classes. The four possible outcomes are represented through a confusion
+matrix, as shown in \textit{Table~\ref{tab:ch3-confusion-matrix}}.
+
+\begin{table}[H]
+  \centering
+  \caption{Confusion matrix for arc-fault classification}
+  \label{tab:ch3-confusion-matrix}
+  \begin{tabular}{@{}p{0.25\textwidth}p{0.31\textwidth}p{0.31\textwidth}@{}}
+    \toprule
+    \textbf{Actual class} & \textbf{Predicted arc fault} & \textbf{Predicted normal} \\
+    \midrule
+    Arc fault &
+    True positive (TP)&
+    False negative (FN)\\
+    Normal operation &
+    False positive (FP)&
+    True negative (TN)\\
+    \bottomrule
+  \end{tabular}
+\end{table}
+
+As shown in \textit{Table~\ref{tab:ch3-confusion-matrix}}, the confusion matrix
+defines the four possible classification outcomes used in the evaluation. A true
+positive (TP) represents an arc-fault frame correctly detected as an arc fault,
+while a true negative (TN) represents a normal frame correctly identified as
+normal. A false positive (FP) represents a normal frame incorrectly classified
+as an arc fault, which corresponds to a false-trip tendency. A false negative
+(FN) represents an arc-fault frame incorrectly classified as normal, which
+corresponds to a missed-fault tendency.
+
+The raw data collection produced an imbalanced distribution of normal and
+arc-fault trials, as shown in \textit{Appendix~\ref{app:f}}. Because of this,
+the classification evaluation in \textit{Appendix~\ref{app:e}} used balanced
+normal and arc-fault trials so that accuracy would represent performance across
+both classes more reliably. This step was necessary because, under an imbalanced
+dataset, a model may obtain high accuracy by favoring the majority class even
+when its detection of arc-fault cases is weak.
+
+Accuracy was computed as
 \begin{equation}
   \mathrm{Accuracy} =
   \frac{\mathrm{TP}+\mathrm{TN}}
-       {\mathrm{TP}+\mathrm{TN}+\mathrm{FP}+\mathrm{FN}},
+       {\mathrm{TP}+\mathrm{TN}+\mathrm{FP}+\mathrm{FN}}.
   \label{eq:metric-accuracy}
 \end{equation}
+Accuracy represents the proportion of all evaluated samples that were classified
+correctly. In this study, it indicates the general correctness of the classifier
+after the normal and arc-fault trials were balanced for evaluation.
+
+Precision was computed as
 \begin{equation}
   \mathrm{Precision} =
-  \frac{\mathrm{TP}}{\mathrm{TP}+\mathrm{FP}},
+  \frac{\mathrm{TP}}{\mathrm{TP}+\mathrm{FP}}.
   \label{eq:metric-precision}
 \end{equation}
+Precision measures how many arc-positive decisions were actually arc faults. A
+higher precision value means that fewer normal samples were incorrectly treated
+as arc faults, which is important for reducing unnecessary trip decisions during
+healthy operation.
+
+Recall was computed as
 \begin{equation}
   \mathrm{Recall} =
-  \frac{\mathrm{TP}}{\mathrm{TP}+\mathrm{FN}},
+  \frac{\mathrm{TP}}{\mathrm{TP}+\mathrm{FN}}.
   \label{eq:metric-recall}
 \end{equation}
-and
+Recall measures how many actual arc-fault samples were detected by the model. A
+higher recall value means that fewer arc-fault samples were missed, which is
+important because an undetected arc fault may allow the hazardous condition to
+continue.
+
+The F1-score was computed as
 \begin{equation}
   F_1 =
   2\frac{\mathrm{Precision}\times\mathrm{Recall}}
         {\mathrm{Precision}+\mathrm{Recall}}.
   \label{eq:metric-f1}
 \end{equation}
-In (\ref{eq:metric-accuracy})--(\ref{eq:metric-f1}), precision measures how
-many trip decisions were actually arc faults, recall measures how many arc
-faults were detected, and F1-score summarizes the balance between false trips
-and missed faults. These metrics are commonly used for supervised
-classification and confusion-matrix evaluation [74].
+The F1-score combines precision and recall into one measure. It was included
+because arc-fault detection must consider both false trips and missed faults,
+rather than relying on accuracy alone. These metrics are commonly used for
+supervised classification and confusion-matrix evaluation [74].

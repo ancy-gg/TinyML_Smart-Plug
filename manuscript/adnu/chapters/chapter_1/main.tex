@@ -12,12 +12,12 @@ the study.
 \section{Background of the Study}\label{background-of-the-study}
 
 Electrical faults remained one of the leading causes of residential
-fires in the Philippines. Bureau of Fire Protection records showed that
+fires in the Philippines. Bureau of Fire Protection (BFP) records showed that
 electrical faults accounted for 27.09\% of reported fire incidents,
 while related literature also identified undetected electrical
 abnormalities, faulty outlets, overloaded circuits, degraded wiring, and
 faulty appliances as recurring causes of residential fire events
-{[}1{]}--{[}3{]}. These incidents did not only result in property loss,
+{[}1{]}-{[}3{]}. These incidents did not only result in property loss,
 but also caused injuries, displacement, and long-term economic hardship
 for affected households.
 
@@ -29,7 +29,7 @@ accommodate more advanced protective devices, the actual residential
 protection landscape still depended primarily on miniature circuit
 breakers (MCBs), with wider adoption of specialized protective devices
 such as AFCIs and GFCIs remaining limited by cost, availability, and
-lack of mandatory implementation in ordinary homes {[}5{]}. As a result,
+lack of mandatory implementation in residential premises {[}5{]}. As a result,
 many households still relied on protection systems that were effective
 mainly against high overcurrent and short-circuit events, but not
 against slowly developing pre-fire electrical conditions.
@@ -61,7 +61,7 @@ constraints {[}10{]}. These developments suggested that a practical,
 socket-level protective device for residential environments was already
 technically feasible.
 
-This study therefore developed an ESP32-based protective smart plug that
+This study, therefore, developed an ESP32-based protective smart plug that
 combined voltage, current, and thermal sensing with hybrid fault
 detection. The system was designed as a complementary protection layer
 for Philippine single-phase residential circuits. It focused on three
@@ -87,7 +87,7 @@ Residential electrical fires remained a persistent public safety concern
 because the electrical protection normally present in ordinary homes was
 not sufficient to address all dangerous fault mechanisms. The Philippine
 residential setup commonly relied on MCBs as the primary mandatory
-protective device {[}4{]}, {[}5{]}. While effective against major
+protective device {[}4{]} {[}5{]}. While effective against major
 overload and short-circuit events, these devices did not provide early
 warning for progressive hazards and did not directly detect the
 low-current or localized fault mechanisms that often preceded electrical
@@ -118,7 +118,7 @@ practice still faced nuisance-alarm challenges when normal appliance
 behavior, switching events, or electrically noisy loads produced
 signatures similar to true faults.
 
-This study therefore addressed the need for an affordable, socket-level,
+Therefore, this study addressed the need for an affordable, socket-level,
 non-intrusive protective device that could operate alongside
 conventional circuit protection. Specifically, the device needed to
 detect and respond to three progressive fault classes relevant to
@@ -126,7 +126,7 @@ residential fire safety: overload-related hazardous current behavior,
 induced series arc faults, and contact heating at the socket interface.
 The device also needed to operate on resource-constrained embedded
 hardware, provide local protection even without cloud access, and
-support logging and remote visibility when network connectivity was
+support logging as well as remote visibility when network connectivity is
 available.
 
 \section{Significance of the Study}\label{significance-of-the-study}
@@ -139,7 +139,7 @@ conventional protective devices operate, the development of a
 socket-level smart plug offers a complementary approach for earlier
 detection, localized monitoring, and automatic response. The study also
 supports the principles of Sustainable Development Goal 11 by
-contributing to safer and more resilient communities through an
+contributing to safer and more resilient communities through
 accessible residential safety technology {[}11{]}. The key beneficiaries
 and their potential gains are outlined below.
 
@@ -155,7 +155,7 @@ hazardous conditions are detected. This gives households earlier
 awareness of possible electrical danger before the condition develops
 into visible damage, smoke, or fire.
 
-The study is especially relevant to ordinary residential users who rely
+The study is especially relevant to residential users who rely
 mainly on conventional circuit breakers for electrical protection. While
 breakers remain necessary, they may not directly detect localized socket
 heating or low-current arc behavior. The prototype therefore
@@ -301,7 +301,7 @@ computation, and on-device inference for real-time protection decisions.
 The developed prototype monitored three primary fault conditions
 relevant to residential fire risk: overload current behavior, induced
 series arc faults, and contact heating at the plug-socket interface.
-Within this scope, the device was implemented as a complementary safety
+With this scope, the device was implemented as a complementary safety
 function rather than a replacement for breaker protection. Overload
 protection used current-based warning and trip logic, socket-heating
 protection used estimated socket-temperature behavior and a conservative

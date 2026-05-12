@@ -8,7 +8,7 @@ history, CSV download, labeling support, and review of waveform-derived
 features. This separation allowed the prototype to remain protective during
 network loss while still supporting data collection and analysis.
 
-Figure~\ref{fig:ch3-pwa-block} shows the PWA and Firebase data path.
+\textit{Figure~\ref{fig:ch3-pwa-block}} shows the PWA and Firebase data path.
 \begin{figure}[H]
   \centering
   \begin{tikzpicture}
@@ -19,18 +19,24 @@ Figure~\ref{fig:ch3-pwa-block} shows the PWA and Firebase data path.
   \label{fig:ch3-pwa-block}
 \end{figure}
 
-Figure~\ref{fig:ch3-pwa-block} shows that the firmware publishes selected
-telemetry to Firebase, while the browser-based PWA subscribes to the same data
-for display and logging. The Firebase tree also includes control fields used
-for basic operator commands, such as clearing faults or relay control; however,
-the protection decisions and trip persistence remain local to the ESP32-S3.
-This arrangement matches the PWA role described in
-Firebase documentation: the web client improves access and installation
-behavior, but the embedded device remains responsible for field decisions
-[55], [56].
+\textit{Figure~\ref{fig:ch3-pwa-block}} shows the communication path 
+among the ESP32-S3 firmware, Firebase Realtime Database, and the 
+browser-based PWA. The firmware serves as the main decision-making 
+unit by acquiring sensor data, evaluating protection conditions, and 
+publishing selected voltage, current, temperature, fault-state, and 
+logging data to Firebase.
+
+The PWA subscribes to these Firebase paths to display live measurements, 
+time-series charts, fault history, and logging status. It may also 
+write operator commands, such as relay control or fault clearing, but 
+these commands are still validated and executed by the ESP32-S3. This 
+setup improves remote monitoring and data recording while keeping 
+time-critical protection actions, such as overload, arc-fault, and 
+socket-heating response, local to the device and less dependent on 
+browser availability or network delay [55], [56].
 
 The live dashboard used during testing is shown in
-Figure~\ref{fig:ch3-pwa-dashboard}.
+\textit{Figure~\ref{fig:ch3-pwa-dashboard}}.
 \begin{figure}[H]
   \centering
   \begin{tikzpicture}
@@ -43,13 +49,13 @@ Figure~\ref{fig:ch3-pwa-dashboard}.
   \label{fig:ch3-pwa-dashboard}
 \end{figure}
 
-Figure~\ref{fig:ch3-pwa-dashboard} displays the status and protection state,
+\textit{Figure~\ref{fig:ch3-pwa-dashboard}} displays the status and protection state,
 the main measurements, displays waveform-disturbance features, and displays conduction-intermittence
 features. The dashboard intentionally distinguishes the device temperature
 measurement from estimated socket temperature because the relay-facing thermal
 decision uses the compensated estimate, not the raw thermistor reading alone.
 
-The event-history page is shown in Figure~\ref{fig:ch3-pwa-history}.
+The event-history page is shown in \textit{Figure~\ref{fig:ch3-pwa-history}}.
 \begin{figure}[H]
   \centering
   \begin{tikzpicture}
@@ -62,7 +68,7 @@ The event-history page is shown in Figure~\ref{fig:ch3-pwa-history}.
   \label{fig:ch3-pwa-history}
 \end{figure}
 
-Figure~\ref{fig:ch3-pwa-history} documents the alert and event list. The history
+\textit{Figure~\ref{fig:ch3-pwa-history}} documents the alert and event list. The history
 function was useful for checking whether the firmware sequence matched the
 expected warning, persistence, and latching behavior during overload, heating,
 and arc-fault trials.
@@ -70,8 +76,8 @@ and arc-fault trials.
 \subsubsection{Telemetry Fields}
 \label{sec:ch3-telemetry-fields}
 
-The PWA displayed only a selected subset of firmware variables. The most
-important telemetry fields are listed in Table~\ref{tab:ch3-telemetry}.
+The PWA displayed only a selected subset of firmware variables. The
+important telemetry fields are listed in \textit{Table~\ref{tab:ch3-telemetry}}.
 \begin{table}[H]
   \centering
   \caption{Selected telemetry fields shown in the PWA}
@@ -90,7 +96,7 @@ important telemetry fields are listed in Table~\ref{tab:ch3-telemetry}.
   \end{tabular}
 \end{table}
 
-Table~\ref{tab:ch3-telemetry} shows that the PWA was both an operator display
+\textit{Table~\ref{tab:ch3-telemetry}} shows that the PWA was both an operator display
 and a research instrument. During data collection, these fields allowed the
 researchers to compare raw measurements, computed estimates, and protection
 outputs in the same session record.

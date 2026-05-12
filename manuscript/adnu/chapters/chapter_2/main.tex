@@ -152,8 +152,8 @@ targets of the study.
 The literature on glowing contacts, poor plug-receptacle interfaces, and
 overheated outlets converges on a single physical principle:
 electrical-fire precursors are often thermally local before becoming
-electrically global. The Development and Analysis of Electrical
-Receptacle Fires, authored by {[}24{]}, documented that loose terminal
+electrically global. The \textit{Development and Analysis of Electrical
+Receptacle Fires}, authored by {[}24{]}, documented that loose terminal
 conditions resulted in substantial overheating, visible damage, and
 failure in receptacle systems. Later fire studies showed that glowing
 connections can persist, consume surrounding non-metal parts, and ignite
@@ -232,7 +232,7 @@ waveform in ways that healthy operation does not. The literature
 repeatedly describes arc currents as random, discontinuous, pulse-rich,
 and rich in abnormal harmonic or high-frequency energy, but it also
 warns that the exact appearance depends strongly on the connected load
-{[}32{]}--{[}34{]}. This has two important implications for the study.
+{[}32{]}-{[}34{]}. This has two important implications for the study.
 
 First, it justifies a waveform-disturbance family of features. These
 include descriptors related to harmonic distortion, spectral change,
@@ -240,7 +240,7 @@ residual impulsiveness, and band-energy redistribution. In the
 literature, THD, high-frequency noise, residual or singular components,
 and spectral fluctuation are regularly used because arcs inject
 non-stationary energy that does not behave like ordinary steady-state
-appliance current {[}34{]}--{[}39{]}.
+appliance current {[}34{]}-{[}39{]}.
 
 Second, it justifies a conduction-intermittence family of features.
 Series arcs and unstable contacts often create partial conduction,
@@ -267,7 +267,7 @@ intentionally chop the waveform. NILM research demonstrates that these
 differences are not just nuisance artifacts but informative load
 signatures that can be extracted from current and voltage waveforms for
 appliance identification and load disaggregation {[}8{]},
-{[}40{]}--{[}42{]}.
+{[}40{]}-{[}42{]}.
 
 This is precisely why load family matters in fault detection. A waveform
 that looks abnormal for a resistive heater may be normal for a universal
@@ -286,7 +286,7 @@ architecture realistic: deterministic thresholds for hard safety limits,
 with lightweight inference for ambiguous waveform cases such as
 load-dependent series arcs.
 
-To summarize the theoretical boundary of the study, Table 2.1 compares
+To summarize the theoretical boundary of the study, \textit{Table 2.1} compares
 the main electrical fault classes reviewed in this section. The table
 identifies the primary hazard associated with each fault, whether
 conventional protection generally handles it, and how each fault class
@@ -311,7 +311,7 @@ relates to the proposed smart plug.
   \end{tabular}
 \end{table}
 
-Table 2.1 shows that the proposed smart plug is not intended to replace
+\textit{Table 2.1} shows that the proposed smart plug is not intended to replace
 breakers, GFCIs, AFCIs, or surge protective devices. Instead, it is
 positioned as a complementary protection layer for progressive
 fire-inducing faults that may remain dangerous before conventional
@@ -376,7 +376,7 @@ without context. The NILM literature supports the claim that family
 recognition provides a necessary interpretive layer before a
 protection-oriented detector decides whether a waveform disturbance is
 intrinsic to the load or evidence of a developing electrical fault
-{[}8{]}, {[}40{]}--{[}42{]}.
+{[}8{]}, {[}40{]}-{[}42{]}.
 
 Since load-family recognition requires embedded interpretation of
 waveform features, the next section examines whether machine-learning
@@ -440,7 +440,7 @@ analysis in a multi-load setting. More recent works such as {[}37{]},
 their final models differ. The common message across these studies is
 that useful arc evidence comes from combining complementary indicators
 of distortion, randomness, interruption, and context rather than from
-relying on current magnitude alone {[}34{]}--{[}39{]}.
+relying on current magnitude alone {[}34{]}-{[}39{]}.
 
 Another consistent lesson from this literature is that useful arc
 information is not confined to a single frequency band or a single
@@ -450,7 +450,7 @@ several feature families before classification. For the study, this
 supports organizing the current-signal review into two coherent groups:
 waveform disturbance and conduction intermittence. These groups are not
 independent mechanisms, but complementary views of the same arc process
-{[}34{]}--{[}39{]}, {[}49{]}.
+{[}34{]}-{[}39{]}, {[}49{]}.
 
 \subsubsection{Waveform Disturbance}\label{sec:waveform-disturbance}
 
@@ -517,10 +517,10 @@ extinguish and restrike, producing irregular current continuity even
 when the overall load current remains modest. {[}34{]} is the clearest
 support for this line of reasoning because it explicitly computes a
 zero-current time-proportional coefficient and combines it with a
-current-fluctuation measure. That makes {[}34{]} the proper anchor for
+current-fluctuation measure. This makes {[}34{]} the proper anchor for
 the study's low-current runtime and low-current ratio features: both are
 intended to quantify how much of the observation window is spent in weak
-or interrupted conduction {[}34{]}.
+or interrupted conduction.
 
 The same physical logic supports zero-dwell behavior around the zero-current
 region. In a healthy waveform, the near-zero portion of the cycle is
@@ -622,7 +622,7 @@ rather than from blind feature accumulation. NILM and arc studies
 consistently favor features that describe harmonic content, waveform
 stability, conduction gaps, restrikes, and cross-cycle irregularity
 because these are closer to the physical differences between healthy
-nonlinear loads and unstable electrical faults {[}34{]}--{[}37{]},
+nonlinear loads and unstable electrical faults {[}34{]}-{[}37{]},
 {[}41{]}, {[}42{]}. This supports the study's decision to treat waveform
 disturbance and conduction intermittence as two coherent feature
 families.
@@ -686,9 +686,9 @@ poor-contact studies justify separate thermal validation for localized
 heating risk. The resulting implication for the study is that overload,
 arc detection, and contact heating should not be merged into one generic
 accuracy test; they require distinct procedures, reference measurements,
-and nuisance checks {[}44{]}--{[}48{]}.
+and nuisance checks {[}44{]}-{[}48{]}.
 
-Table 2.2 summarizes how the reviewed literature maps to the feature and
+\textit{Table 2.2} summarizes how the reviewed literature maps to the feature and
 decision families used in the study. It groups the quantities into
 waveform disturbance, conduction intermittence, and deterministic stress
 variables to clarify why the prototype combines feature-based TinyML
@@ -702,14 +702,14 @@ inference with threshold-based protection logic.
     \toprule
     \textbf{Feature family} & \textbf{Representative quantities} & \textbf{Literature connection} \\
     \midrule
-    Waveform disturbance & Midband residual ratio; mid/high-frequency spectral flux; half-cycle asymmetry; current THD; high-frequency energy delta & Arc studies report random harmonic and high-frequency disturbance, while NILM studies show that healthy loads also have family-specific spectral signatures {[}34{]}--{[}39{]}, {[}41{]}, {[}42{]}, {[}49{]}--{[}53{]}. \\
+    Waveform disturbance & Midband residual ratio; mid/high-frequency spectral flux; half-cycle asymmetry; current THD; high-frequency energy delta & Arc studies report random harmonic and high-frequency disturbance, while NILM studies show that healthy loads also have family-specific spectral signatures {[}34{]}-{[}39{]}, {[}41{]}, {[}42{]}, {[}49{]}-{[}53{]}. \\
     Conduction intermittence & Low-current run time; low-current ratio; zero-dwell ratio; absolute RMS-current delta; baseline z-deviation & These quantities represent restrikes, current interruption, partial conduction, and unstable near-zero conduction timing, which are physically consistent with series arcs and weak-contact behavior {[}34{]}, {[}36{]}, {[}37{]}, {[}52{]}, {[}54{]}. \\
-    Deterministic stress variables & RMS current; estimated socket temperature; voltage sag or abnormal supply condition & These variables encode thermal or electrical stress and remain essential even when machine learning is added. They improve interpretability and provide hard safety overrides for overload and heating events {[}3{]}, {[}27{]}--{[}29{]}, {[}44{]}, {[}45{]}. \\
+    Deterministic stress variables & RMS current; estimated socket temperature; voltage sag or abnormal supply condition & These variables encode thermal or electrical stress and remain essential even when machine learning is added. They improve interpretability and provide hard safety overrides for overload and heating events {[}3{]}, {[}27{]}-{[}29{]}, {[}44{]}, {[}45{]}. \\
     \bottomrule
   \end{tabular}
 \end{table}
 
-Table 2.2 shows that the proposed feature set is not arbitrary. The
+\textit{Table 2.2} shows that the proposed feature set is not arbitrary. The
 waveform-disturbance features represent spectral and harmonic effects of
 arcing, while the conduction-intermittence features represent the
 extinguish-and-restrike behavior of unstable current flow. The
@@ -731,7 +731,7 @@ communicate with users, and actuate protective switching {[}44{]},
 plug-receptacle interface is itself a meaningful origin of heating and
 ignition risk {[}46{]}, {[}47{]}. Taken together, these findings justify
 a protection device that monitors hazards locally at the socket rather
-than relying only on upstream protection behavior {[}44{]}--{[}47{]}.
+than relying only on upstream protection behavior {[}44{]}-{[}47{]}.
 
 The literature also shows that overload, contact heating, and series
 arcing are related but not equivalent fault classes. Overload is
@@ -744,7 +744,7 @@ mixture of spectral disturbance, zero-current behavior, and cycle
 irregularity rather than as a dramatic increase in current magnitude.
 This is why the most defensible design is a hybrid one: hard thresholds
 for direct electrical or thermal stress, and feature-based inference for
-ambiguous waveform cases {[}34{]}--{[}39{]}, {[}44{]}--{[}47{]}.
+ambiguous waveform cases {[}34{]}-{[}39{]}, {[}44{]}-{[}47{]}.
 
 A second synthesis point concerns context. NILM and load-identification
 studies establish that healthy appliances have distinct waveform
@@ -753,7 +753,7 @@ behaviors can resemble fault signatures if load context is ignored.
 Therefore, load-family recognition is not merely an added analytics
 feature; it is part of the protection logic itself because it helps
 separate load-intrinsic nonlinearity from fault-induced non-stationarity
-{[}8{]}, {[}33{]}--{[}42{]}.
+{[}8{]}, {[}33{]}-{[}42{]}.
 
 A third synthesis point concerns implementation feasibility. The TinyML
 literature shows that on-device inference is realistic on
@@ -773,5 +773,5 @@ device that unifies these ideas into one protection-oriented platform.
 The proposed TinyML Smart Plug addresses that gap by combining
 socket-level thermal supervision, threshold-based overload protection,
 load-family recognition, and multi-feature series-arc interpretation in
-one embedded system {[}8{]}, {[}10{]}, {[}32{]}--{[}47{]}.
+one embedded system {[}8{]}, {[}10{]}, {[}32{]}-{[}47{]}.
 

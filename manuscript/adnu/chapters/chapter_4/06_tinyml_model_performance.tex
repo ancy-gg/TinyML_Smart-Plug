@@ -2,14 +2,32 @@
 \label{sec:ch4-tinyml-model-performance}
 
 The TinyML results were interpreted at two levels. First, the embedded
-prototype was evaluated by trial-level relay behavior in the laboratory.
-Second, the exported Random Forest report was evaluated by held-out
-frame-level and event-level metrics. Both views are useful: trial-level
-behavior reflects the complete protection sequence, while frame-level metrics
-show how the model performed before relay-counter persistence.
+prototype was evaluated through trial-level relay behavior in the laboratory.
+Second, the exported Random Forest report was evaluated through held-out
+frame-level and event-level metrics. This two-level interpretation is necessary
+because the relay decision represents the complete protection sequence, while
+the frame-level metrics show the behavior of the model before persistence
+counting and relay actuation are applied. This follows the methodology in
+\textit{Section~\ref{sec:ch3-feature-contract}}, where the deployed arc model
+was defined as a feature-based TinyML classifier whose output is further
+processed by firmware protection logic.
 
-Table~\ref{tab:ch4-trial-metrics} gives the trial-level metrics for
+This distinction is important because series arc-fault detection in the
+prototype was not based on a single instantaneous model output. The Random
+Forest classifier identified arc-like waveform frames from the selected
+features, but the relay response still depended on the protection manager
+confirming repeated or persistent evidence before actuation. This arrangement
+connects the TinyML model to the study objective of socket-level complementary
+protection: the model provides compact embedded inference for waveform
+disturbance, while the firmware logic reduces the chance that isolated
+transient behavior will immediately become a relay trip. This is consistent
+with the reviewed literature showing that series arcs can be intermittent,
+load-dependent, and difficult to separate from normal nonlinear-load
+distortion using RMS current alone [33]-[39], [49]-[54].
+
+\textit{Table~\ref{tab:ch4-trial-metrics}} gives the trial-level metrics for
 recognized loads, unrecognized loads, and all loads combined.
+
 \begin{table}[H]
   \centering
   \caption{Trial-level arc-fault performance metrics}
@@ -25,10 +43,11 @@ recognized loads, unrecognized loads, and all loads combined.
   \end{tabular}
 \end{table}
 
-Figure~\ref{fig:ch4-group-metrics} graphs the same four metrics by load
-setup. This presentation compares like quantities across recognized,
-unrecognized, and combined test groups; it does not mix unrelated metrics as
-separate one-off bars.
+\textit{Figure~\ref{fig:ch4-group-metrics}} graphs the same four metrics by
+load setup. The figure shows how performance changed from recognized loads to
+unrecognized loads while keeping the same metric definitions for accuracy,
+precision, recall, and F1-score.
+
 \begin{figure}[H]
   \centering
   \begin{tikzpicture}
@@ -60,25 +79,32 @@ separate one-off bars.
   \label{fig:ch4-group-metrics}
 \end{figure}
 
-Table~\ref{tab:ch4-trial-metrics} and Figure~\ref{fig:ch4-group-metrics} show
-high overall performance across 200 trial outcomes. Precision is related to
-nuisance trips: the 98.97\% overall precision means that only one normal
-event was incorrectly tripped in the trial set. Recall is related to safety
-sensitivity: the 96.00\% overall recall means that four arc trials were
-missed. The recognized-load group had slightly higher recall and no
-normal-event false trip, while the unrecognized-load group accounted for
-three of the four missed arc trials and the single false trip. This indicates
-that the deployed model generalized reasonably, but the unrecognized load
-cases remained the more difficult condition.
+\textit{Table~\ref{tab:ch4-trial-metrics}} and
+\textit{Figure~\ref{fig:ch4-group-metrics}} show high overall performance
+across 200 trial outcomes. Precision is related to nuisance-trip reduction:
+the 98.97\% overall precision means that only one normal event was incorrectly
+tripped in the trial set. Recall is related to safety sensitivity: the 96.00\%
+overall recall means that four arc trials were missed. The recognized-load
+group had slightly higher recall and no normal-event false trip, while the
+unrecognized-load group accounted for three of the four missed arc trials and
+the single false trip. This is consistent with the reviewed literature showing
+that arc detection is load-dependent and that normal nonlinear loads can
+produce waveform behavior that complicates fault interpretation [8], [33],
+[40]-[42].
 
-The trial-level classifier and persistence logic produced balanced
-performance: precision remained high for nuisance-trip reduction, while recall
-remained high enough to detect most arc trials. These results apply to the
-deployed feature contract described in Section~\ref{sec:ch3-feature-contract}:
-six selected waveform features were used by the arc model, with context fields
-appended to the model vector.
+The trial-level classifier and persistence logic therefore produced balanced
+performance for the tested conditions. Precision remained high for
+nuisance-trip reduction, while recall remained high enough to detect most
+induced arc trials. These results apply to the deployed feature contract
+described in \textit{Section~\ref{sec:ch3-feature-contract}}: six selected
+waveform features were used by the arc model, with context fields appended to
+the model vector. This supports the design choice of treating series arc-fault
+detection as a multi-feature and context-aware inference problem rather than as
+a direct RMS-current threshold decision [33]-[39], [49]-[54].
 
-The per-load trial metrics are shown in Table~\ref{tab:ch4-per-load-metrics}.
+The per-load trial metrics are shown in
+\textit{Table~\ref{tab:ch4-per-load-metrics}}.
+
 \begin{table}[H]
   \centering
   \caption{Per-load trial-level performance metrics}
@@ -103,24 +129,28 @@ The per-load trial metrics are shown in Table~\ref{tab:ch4-per-load-metrics}.
   \end{tabular}
 \end{table}
 
-Table~\ref{tab:ch4-per-load-metrics} shows where the group-level metrics came
-from without adding another graph below it. The impact drill is the only load
-listed with precision below 100\%, meaning it contributed the normal-event
-false trip. The handheld vacuum, vacuum cleaner, angle grinder, and bench
-cutter had lower recall, meaning those load cases contributed missed arc
-trials.
+\textit{Table~\ref{tab:ch4-per-load-metrics}} identifies the load cases that
+contributed to the remaining trial-level errors. The impact drill is the only
+load listed with precision below 100\%, meaning it contributed the
+normal-event false trip. The handheld vacuum, Electrolux vacuum, angle
+grinder, and bench cutter had lower recall, meaning those load cases
+contributed missed arc trials. These results show that the residual errors
+were concentrated in brushed or universal-motor loads rather than distributed
+equally across all tested devices.
 
-The same appendix data can also be aggregated by load setup and load family.
-For load setup, recognized loads contributed 49 detected arc trials, one
-missed arc trial, 50 correct normal trials, and no false trip; unrecognized
-loads contributed 47 detected arc trials, three missed arc trials, 49 correct
-normal trials, and one false trip. For family grouping, water heater, halogen
-lamp, electric kettle, and heat gun were treated as resistive loads; the 40W
-stand fan was treated as the inductive load; and the handheld vacuum,
-Electrolux vacuum, angle grinder, bench cutter, and impact drill were
-treated as brushed or universal-motor loads. These aggregations summarize the
-recorded trial tables in Appendix~\ref{app:e}; they are not additional test
-conditions.
+The trial records were also aggregated by load setup and load family to show
+where the errors occurred at a higher level. For load setup, recognized loads
+contributed 49 detected arc trials, one missed arc trial, 50 correct normal
+trials, and no false trip; unrecognized loads contributed 47 detected arc
+trials, three missed arc trials, 49 correct normal trials, and one false trip.
+For family grouping, water heater, halogen lamp, electric kettle, and heat gun
+were treated as resistive loads; the 40W stand fan was treated as the inductive
+load; and the handheld vacuum, Electrolux vacuum, angle grinder, bench cutter,
+and impact drill were treated as brushed or universal-motor loads. These
+aggregations summarize the recorded trial tables in
+\textit{Appendix~\ref{app:e}} and clarify the distribution of the trial-level
+errors.
+
 \begin{figure}[H]
   \centering
   \begin{minipage}{0.47\textwidth}
@@ -177,12 +207,15 @@ conditions.
   \label{fig:ch4-setup-outcomes}
 \end{figure}
 
-Figure~\ref{fig:ch4-setup-outcomes}(a) shows that the unrecognized group had
-more missed arc trials than the recognized group. Figure~\ref{fig:ch4-setup-outcomes}(b)
-shows that the only normal-event false trip also came from the unrecognized
-group. These results are consistent with the per-load results in
-Table~\ref{tab:ch4-per-load-metrics}: generalization loads were still handled
-by the protection sequence, but they produced the remaining errors.
+\textit{Figure~\ref{fig:ch4-setup-outcomes}(a)} shows that the unrecognized
+group had more missed arc trials than the recognized group.
+\textit{Figure~\ref{fig:ch4-setup-outcomes}(b)} shows that the only
+normal-event false trip also came from the unrecognized group. These results
+are consistent with the per-load results in
+\textit{Table~\ref{tab:ch4-per-load-metrics}}. The protection sequence still
+handled most generalization cases, but the remaining errors were associated
+with loads whose normal waveform behavior was more difficult to separate from
+arc-like disturbance.
 
 \begin{figure}[H]
   \centering
@@ -240,35 +273,41 @@ by the protection sequence, but they produced the remaining errors.
   \label{fig:ch4-family-outcomes}
 \end{figure}
 
-Figure~\ref{fig:ch4-family-outcomes} is normalized because the family groups
-did not contain the same number of devices or trials. In
-Figure~\ref{fig:ch4-family-outcomes}(a), resistive and inductive load-family
-trials had 100\% arc detection, while the brushed-load family had 92\%
-arc detection and 8\% missed arc trials. In
-Figure~\ref{fig:ch4-family-outcomes}(b), the brushed-load family also
-contained the only false trip, giving 98\% correct normal classification and
-2\% false-trip outcome for that family. The normalized view therefore shows
-that the brushed or universal-motor group was the main source of residual
-model error rather than simply the largest group in raw counts.
+\textit{Figure~\ref{fig:ch4-family-outcomes}} is normalized because the
+family groups did not contain the same number of devices or trials. In
+\textit{Figure~\ref{fig:ch4-family-outcomes}(a)}, resistive and inductive
+load-family trials had 100\% arc detection, while the brushed-load family had
+92\% arc detection and 8\% missed arc trials. In
+\textit{Figure~\ref{fig:ch4-family-outcomes}(b)}, the brushed-load family
+also contained the only false trip, giving 98\% correct normal classification
+and 2\% false-trip outcome for that family. The normalized view therefore
+shows that the brushed or universal-motor group was the main source of
+residual model error rather than simply the largest group in raw counts. This
+supports the reviewed finding that motor-type and nonlinear loads can produce
+commutation effects, waveform irregularity, and harmonic behavior that require
+context-aware interpretation [8], [40]-[42].
 
-The exported Random Forest report provides a second view of performance.
-The held-out test split contained 10,268 feature rows, including 90 positive
-rows. The frame-level confusion matrix contained 10,173 true negatives, 5
-false positives, 25 false negatives, and 65 true positives. The corresponding
+The exported Random Forest report provides a second view of performance. The
+held-out test split contained 10,268 feature rows, including 90 positive rows.
+The frame-level confusion matrix contained 10,173 true negatives, 5 false
+positives, 25 false negatives, and 65 true positives. The corresponding
 frame-level accuracy was 99.7078\%, precision was 92.8571\%, recall was
 72.2222\%, and F1-score was 81.25\%. At event level, the same report showed
 25 true arc events, 21 detected events, 4 missed events, 31 predicted events,
 1 false-alarm event, 84.0\% event recall, 96.7742\% event precision, and
 89.9358\% event F1-score. The data-preparation, training-report, and
 exported-model details supporting these metrics are summarized in
-Appendix~\ref{app:f-tinyml-training-summary}.
+\textit{Appendix~\ref{app:f-tinyml-training-summary}}.
 
-These model-report values are lower than the final trial-level relay metrics
-because they evaluate individual frames and event groupings before the full
-trial-level interpretation. This does not invalidate the trial results; it
-shows that the firmware's persistence logic is part of the protection
-behavior. The deployed model should therefore be judged as a
-model-plus-firmware system, not as a standalone frame classifier.
+The model-report values are lower than the final trial-level relay metrics
+because they evaluate individual frames and grouped arc events before the full
+firmware protection sequence is interpreted at trial level. This difference
+clarifies the role of the persistence counter: isolated model outputs are not
+treated as final relay decisions until they satisfy the firmware's protection
+logic. The deployed arc-detection result should therefore be interpreted as a
+model-plus-firmware protection behavior, where the Random Forest identifies
+arc-like frames and the persistence logic converts repeated evidence into a
+relay action.
 
 \section{Model Limitations}
 \label{sec:ch4-model-limitations}
@@ -276,6 +315,18 @@ model-plus-firmware system, not as a standalone frame classifier.
 The main limitation is dataset coverage. The tests included recognized and
 unrecognized loads, but they did not cover all appliance families, wiring
 conditions, electrode materials, contact gaps, ambient conditions, or utility
-waveform variations. The results therefore support prototype feasibility and
-future development, but they do not establish compliance with AFCI standards
-or replacement equivalence with certified protective devices.
+waveform variations. This limitation is consistent with the reviewed arc-fault
+literature, which identifies load dependence, limited data coverage, false
+alarms, and missed detections as recurring challenges in AI-based arc-fault
+detection [33]. The results therefore support controlled prototype feasibility
+within the tested scope, but they do not establish AFCI standard compliance or
+replacement equivalence with certified protective devices.
+
+The limitation is also important for interpreting the unrecognized-load and
+brushed-load results. The prototype generalized to most tested cases, but the
+remaining missed arcs and the single false trip show that wider load-family
+coverage would be required before the model could be treated as broadly
+representative of residential appliance behavior. This follows the reviewed
+literature showing that healthy nonlinear loads can produce waveform
+disturbance that overlaps with arc-related indicators, making load context an
+important part of false-positive control [8], [40]-[42].

@@ -11,22 +11,22 @@ logic; warnings alone do not disconnect the load.
 \label{sec:ch3-voltage-protection}
 
 Voltage supervision uses calibrated RMS voltage and mains-present state. The
-firmware defines the normal operating band as 200--250V. Instantaneous
+firmware defines the normal operating band as 200-250V. Instantaneous
 undervoltage protection is set at 170V, delayed undervoltage is set below
 200V for 7s, delayed overvoltage is set above 250V for 7s, and
 instantaneous overvoltage is set at 260V. Recovery requires the voltage to
-return to 212--250V and remain stable for 5min.
+return to 212-250V and remain stable for 5min.
 
-These thresholds were verified from the firmware and are treated as design
-choices for supply-state supervision. However, the study does not claim validated
-voltage-protection due to the nature of the paper and the focus on fire-inducing fault types.
+These thresholds are treated as design choices for supply-state supervision
+rather than validated voltage-protection performance, since the experimental
+validation focused on fire-inducing fault types. The implemented values are
+summarized in \textit{Table~\ref{tab:ch3-voltage-thresholds}}.
 
-These values are summarized in Table~\ref{tab:ch3-voltage-thresholds}.
 \begin{table}[H]
   \centering
   \caption{Voltage-protection thresholds verified from firmware}
   \label{tab:ch3-voltage-thresholds}
-  \begin{tabular}{p{0.36\textwidth}p{0.20\textwidth}p{0.34\textwidth}}
+  \begin{tabular}{@{}p{0.31\textwidth}p{0.17\textwidth}p{0.44\textwidth}@{}}
     \toprule
     \textbf{Condition} & \textbf{Firmware value} & \textbf{Interpretation} \\
     \midrule
@@ -36,12 +36,12 @@ These values are summarized in Table~\ref{tab:ch3-voltage-thresholds}.
     Delayed undervoltage & 200V for 7s & Persistent low-voltage trip \\
     Delayed overvoltage & 250V for 7s & Persistent high-voltage trip \\
     Instant overvoltage & 260V & Immediate severe overvoltage trip \\
-    Recovery band & 212--250V for 5min & Stable voltage required before recovery \\
+    Recovery band & 212-250V for 5min & Stable voltage required before recovery \\
     \bottomrule
   \end{tabular}
 \end{table}
 
-Table~\ref{tab:ch3-voltage-thresholds} shows that the voltage logic includes
+\textit{Table~\ref{tab:ch3-voltage-thresholds}} shows that the voltage logic includes
 both instantaneous and delayed decisions. This avoids treating every brief
 voltage excursion as a latched trip while still allowing severe voltage
 conditions to disconnect promptly.
@@ -135,15 +135,16 @@ off while still allowing fast response to arc-like interruption and restrike.
 \subsection{Protection Priority and Latching}
 \label{sec:ch3-priority-latching}
 
-When multiple protection conditions are present, the firmware assigns
-priorities: socket heating has priority 90, arc fault has priority 80,
-sustained overload has priority 60, and voltage protection has priority 50.
-The relay-latching circuit is pulsed by the firmware after a trip decision and
-the fault state remains latched until the user clears it. The priority values
-do not change the underlying detection equations; they determine which fault
-reason is reported when conditions overlap.
+When multiple protection conditions are present, the firmware resolves the
+reported fault according to protection priority. Socket heating is given the
+highest priority because temperature is the most direct indicator of thermal
+fire risk, followed by arc fault, sustained overload, and voltage-related
+protection states. The relay-latching circuit is pulsed by the firmware after a
+trip decision, and the fault state remains latched until the user clears it.
+This prioritization does not change the underlying detection equations; it only
+determines which fault reason is reported when conditions overlap.
 
-The principal thresholds are summarized in Table~\ref{tab:ch3-protection-summary}.
+The principal thresholds are summarized in \textit{Table~\ref{tab:ch3-protection-summary}}.
 \begin{table}[H]
   \centering
   \caption{Principal protection thresholds verified from firmware}
@@ -160,7 +161,7 @@ The principal thresholds are summarized in Table~\ref{tab:ch3-protection-summary
   \end{tabular}
 \end{table}
 
-Table~\ref{tab:ch3-protection-summary} shows that the prototype uses a hybrid
+\textit{Table~\ref{tab:ch3-protection-summary}} shows that the prototype uses a hybrid
 method: deterministic thresholds for voltage, overload, and temperature, and
 TinyML-supported classification for series arcs. The hybrid design is intended
 to complement existing protection devices by observing socket-level thermal

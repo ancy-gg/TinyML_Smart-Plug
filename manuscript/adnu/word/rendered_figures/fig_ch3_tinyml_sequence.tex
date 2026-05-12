@@ -1,0 +1,76 @@
+﻿\documentclass[border=6pt]{standalone}
+\usepackage{fontspec}
+\setmainfont{Times New Roman}
+\usepackage{graphicx}
+\usepackage{tikz}
+\usetikzlibrary{arrows.meta,calc,fit,positioning,shapes.geometric}
+\usepackage{pgfplots}
+\pgfplotsset{compat=1.18}
+\usepackage{amsmath,amssymb}
+\usepackage{array}
+\usepackage{booktabs}
+\usepackage{xcolor}
+\graphicspath{{figures/}{figures/ch3/}{figures/ch4/}{figures/apx/}}
+\newcommand{\degreeC}{\ensuremath{^\circ\mathrm{C}}}
+\newcommand{\figsource}[1]{}
+\tikzset{
+  thesis box/.style={
+    draw,
+    rounded corners=1pt,
+    align=center,
+    inner sep=4pt,
+    minimum height=0.36in,
+    font=\small
+  },
+  thesis process/.style={
+    thesis box,
+    fill=gray!8
+  },
+  thesis decision/.style={
+    diamond,
+    draw,
+    aspect=2,
+    align=center,
+    inner sep=2pt,
+    font=\small,
+    fill=gray!8
+  },
+  thesis arrow/.style={
+    -{Latex[length=2.2mm]},
+    line width=0.65pt
+  },
+  thesis bus/.style={
+    line width=0.8pt
+  }
+}
+\input{figures/ch4/socket_plots.tex}
+\begin{document}
+
+  \centering
+  \resizebox{0.58\textwidth}{!}{%
+  \begin{tikzpicture}[node distance=0.24in and 0.60in]
+    \node[thesis process,text width=1.75in] (frame) {Current waveform\\512-sample frame};
+    \node[thesis process,text width=1.75in,below=of frame] (features) {Computed/logged\\20 waveform fields};
+    \node[thesis process,text width=1.75in,below=of features] (context) {Context model\\6 selected inputs};
+    \node[thesis process,text width=1.75in,right=of context] (family) {Load-family\\code and confidence};
+    \node[thesis process,text width=1.75in,below=of context] (arcvec) {Arc input vector\\6 waveform + 7 context};
+    \node[thesis process,text width=1.75in,below=of arcvec] (rf) {Random Forest\\arc probability};
+    \node[thesis process,text width=1.75in,below=of rf] (persist) {Persistence\\counter and latch};
+    \node[thesis process,text width=1.75in,below=of persist] (relay) {Local relay,\\alerts, and logs};
+
+    \node[thesis process,text width=1.75in,right=of features] (pwa) {Firebase/PWA\\10 live feature cards\\logging and control};
+
+    \draw[thesis arrow] (frame) -- (features);
+    \draw[thesis arrow] (features) -- (context);
+    \draw[thesis arrow] (context) -- (arcvec);
+    \draw[thesis arrow] (context) -- (family);
+    \draw[thesis arrow] (family) |- (arcvec);
+    \draw[thesis arrow] (arcvec) -- (rf);
+    \draw[thesis arrow] (rf) -- (persist);
+    \draw[thesis arrow] (persist) -- (relay);
+    \draw[thesis arrow] (features) -- (pwa);
+  \end{tikzpicture}}
+  
+  
+
+\end{document}

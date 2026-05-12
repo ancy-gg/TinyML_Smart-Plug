@@ -1,0 +1,103 @@
+﻿\documentclass[border=6pt]{standalone}
+\usepackage{fontspec}
+\setmainfont{Times New Roman}
+\usepackage{graphicx}
+\usepackage{tikz}
+\usetikzlibrary{arrows.meta,calc,fit,positioning,shapes.geometric}
+\usepackage{pgfplots}
+\pgfplotsset{compat=1.18}
+\usepackage{amsmath,amssymb}
+\usepackage{array}
+\usepackage{booktabs}
+\usepackage{xcolor}
+\graphicspath{{figures/}{figures/ch3/}{figures/ch4/}{figures/apx/}}
+\newcommand{\degreeC}{\ensuremath{^\circ\mathrm{C}}}
+\newcommand{\figsource}[1]{}
+\tikzset{
+  thesis box/.style={
+    draw,
+    rounded corners=1pt,
+    align=center,
+    inner sep=4pt,
+    minimum height=0.36in,
+    font=\small
+  },
+  thesis process/.style={
+    thesis box,
+    fill=gray!8
+  },
+  thesis decision/.style={
+    diamond,
+    draw,
+    aspect=2,
+    align=center,
+    inner sep=2pt,
+    font=\small,
+    fill=gray!8
+  },
+  thesis arrow/.style={
+    -{Latex[length=2.2mm]},
+    line width=0.65pt
+  },
+  thesis bus/.style={
+    line width=0.8pt
+  }
+}
+\input{figures/ch4/socket_plots.tex}
+\begin{document}
+
+  \centering
+  \begin{minipage}{0.47\textwidth}
+    \centering
+    \begin{tikzpicture}
+      \begin{axis}[
+        ybar,
+        width=0.92\linewidth,
+        height=2.75in,
+        ymin=0,
+        ymax=55,
+        ylabel={Trials},
+        symbolic x coords={Recognized,Unrecognized},
+        xtick=data,
+        x tick label style={font=\scriptsize},
+        ymajorgrids=true,
+        grid style={black!12},
+        bar width=8pt,
+        legend style={font=\tiny,at={(0.5,1.03)},anchor=south,legend columns=2,draw=none},
+      ]
+        \addplot[fill=blue!60,draw=blue!70!black] coordinates {(Recognized,49) (Unrecognized,47)};
+        \addplot[fill=orange!75,draw=orange!85!black] coordinates {(Recognized,1) (Unrecognized,3)};
+        \legend{Detected arc,Missed arc}
+      \end{axis}
+    \end{tikzpicture}
+    {\small (a) Arc Trials}
+  \end{minipage}\hfill
+  \begin{minipage}{0.47\textwidth}
+    \centering
+    \begin{tikzpicture}
+      \begin{axis}[
+        ybar,
+        width=0.92\linewidth,
+        height=2.75in,
+        ymin=0,
+        ymax=55,
+        ylabel={Trials},
+        symbolic x coords={Recognized,Unrecognized},
+        xtick=data,
+        x tick label style={font=\scriptsize},
+        ymajorgrids=true,
+        grid style={black!12},
+        bar width=8pt,
+        legend style={font=\tiny,at={(0.5,1.03)},anchor=south,legend columns=2,draw=none},
+      ]
+        \addplot[fill=green!55!black,draw=green!35!black] coordinates {(Recognized,50) (Unrecognized,49)};
+        \addplot[fill=red!60,draw=red!70!black] coordinates {(Recognized,0) (Unrecognized,1)};
+        \legend{Correct normal,False trip}
+      \end{axis}
+    \end{tikzpicture}
+    {\small (b) Normal Trials}
+  \end{minipage}
+  
+  
+
+\end{document}

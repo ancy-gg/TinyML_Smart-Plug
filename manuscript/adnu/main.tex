@@ -33,18 +33,29 @@
 \include{chapters/chapter_5/main}
 \input{misc/references.tex}
 
-\clearpage
+\cleardoublepage
 \phantomsection
 \addcontentsline{toc}{chapter}{APPENDICES}
 \appendix
-\include{appendices/appendix_a}
-\include{appendices/appendix_b}
-\include{appendices/appendix_c}
-\include{appendices/appendix_d}
-\include{appendices/appendix_e}
-\include{appendices/appendix_f}
-\include{appendices/appendix_g}
-\include{appendices/appendix_h}
-\include{appendices/appendix_i}
+
+\begingroup
+\renewcommand{\manualappendixtable}[2]{%
+  \Needspace{4\baselineskip}%
+  \refstepcounter{table}%
+  \addcontentsline{lot}{table}{\protect\numberline{\thetable}{#1}}%
+  \par\noindent\textbf{Table \thetable. #1}\label{#2}\par\vspace{0.15\baselineskip}\nopagebreak[4]%
+}
+
+\input{appendices/appendix_a}
+\input{appendices/appendix_b}
+\input{appendices/appendix_c}
+\input{appendices/appendix_d}
+\input{appendices/appendix_e}
+\input{appendices/appendix_f}
+\input{appendices/appendix_g}
+\input{appendices/appendix_h}
+\input{appendices/appendix_i}
+
+\endgroup
 
 \end{document}

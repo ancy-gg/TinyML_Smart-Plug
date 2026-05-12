@@ -17,7 +17,7 @@ waveform, applies calibration and filtering, computes thermal and waveform
 features, updates the context classifier, evaluates the arc classifier, and
 passes the resulting variables to the protection manager.
 
-Figure~\ref{fig:ch3-program-flow} shows the operating sequence implemented by
+\textit{Figure~\ref{fig:ch3-program-flow}} shows the operating sequence implemented by
 the firmware.
 \begin{figure}[H]
   \centering
@@ -31,7 +31,7 @@ voltage, RMS current, and thermistor temperature are updated for ordinary
 monitoring and deterministic protection. In parallel, the current waveform is
 sampled at the higher ADC rate, conditioned, framed, and converted into
 candidate waveform features. Usable feature frames update the load-context
-classifier first; the accepted load-family code and confidence are then
+classifier first. Then, the accepted load-family code and confidence are
 appended to the arc-model input vector before Random Forest inference. The
 result is not used as a single-frame trip command. It is passed to the
 protection manager, where persistence counters, blanking intervals, and fault
@@ -45,12 +45,12 @@ even before a sustained current burden is established. Overload protection
 is handled after these conditions because excessive current is treated as a 
 time-dependent stress that requires persistence before relay action. Thus, 
 the protection manager resolves the fault sequence by prioritizing 
-temperature, then arc fault, and then overload.
+temperature, followed by the arc fault, and finally, the overload.
 
 \subsection{Protection-State Evaluation}
 \label{sec:ch3-protection-state-evaluation}
 
-Figure~\ref{fig:ch3-program-flow} shows that a relay trip can be caused by a
+\textit{Figure~\ref{fig:ch3-program-flow}} shows that a relay trip can be caused by a
 sustained overload, an estimated socket over-temperature, or an arc-fault
 classification. The overload path issues a warning above 10.0A, but relay
 disconnection is based on persistence above 14.5A. This persistence is
@@ -66,18 +66,17 @@ replacement for a surge protective device, AVR, GFCI, AFCI, branch-circuit
 breaker, or certified wiring protection. The firmware also latches fault
 states. After relay disconnection, the event is recorded locally and uploaded
 when the network is available. The plug remains in the fault state until the
-user clears the fault through the device or application workflow. This
-prevents a hazardous load from being automatically re-energized after a
-transient communication or reset event.
+user clears the fault through the device or PWA. This mandatory 
+acknowledgment ensures that the user is aware of the issue, prompting 
+them to actively identify and resolve the root cause of the fault 
+before resuming operation.
 
 \subsection{Timing Constants}
 \label{sec:ch3-timing-constants}
 
 The sampling, protection, and reporting constants used by the firmware are
-listed in Table~\ref{tab:ch3-firmware-constants}. These values were taken from
-the firmware configuration file and the current-feature implementation, so
-they describe the deployed firmware behavior rather than nominal design
-wishes.
+listed in \textit{Table~\ref{tab:ch3-firmware-constants}}. These values are from
+the firmware configuration file and the current-feature implementation.
 \begin{table}[H]
   \centering
   \caption{Selected firmware timing and sampling constants}
@@ -104,10 +103,10 @@ wishes.
   \end{tabular}
 \end{table}
 
-Table~\ref{tab:ch3-firmware-constants} explains why the current path is
-handled separately from slow telemetry. Arc-fault detection requires waveform
-frames with millisecond-scale timing, while Firebase updates and PWA displays
-operate at a slower human-monitoring cadence. Consequently, relay protection
-does not wait for Firebase or the PWA; the remote interface records,
-visualizes, and sends basic control fields, while the local firmware evaluates
-the safety states on the device.
+\textit{Table~\ref{tab:ch3-firmware-constants}} explains why the current
+path is handled separately from slow telemetry. Arc-fault detection 
+requires millisecond timing, while Firebase and PWA displays operate 
+slower for human monitoring. Consequently, the local firmware triggers 
+relay protection instantly, rather than waiting for Firebase updates. 
+It independently evaluates safety states, leaving the PWA solely to
+record and visualize conditions.

@@ -1,17 +1,22 @@
 \section{Series Arc-Fault Detection}
 \label{sec:ch4-series-arc-detection}
 
-The series arc-fault tests evaluated whether waveform disturbance could be
-converted into a relay decision. During arcing, the current waveform was
-expected to show low-current gaps, restrike spikes, unstable cycle shape, and
-changes in mid/high-frequency content. These behaviors correspond to the
-features defined in Section~\ref{sec:ch3-waveform-features}, especially
-maximum low-current run, low-current ratio, zero-dwell behavior, midband
-residual ratio, and spectral flux.
+The series arc-fault tests evaluated whether waveform disturbance and conduction
+intermittence could be converted into a relay decision. During arcing, the
+current waveform was expected to show low-current gaps, restrike spikes,
+unstable cycle shape, and changes in mid/high-frequency content. This follows
+the reviewed literature showing that series arcs may remain below conventional
+breaker trip levels while still producing waveform abnormalities that require
+multi-feature interpretation rather than RMS-current magnitude alone [16],
+[33]-[39], [49]-[54]. These behaviors correspond to the features defined in
+\textit{Section~\ref{sec:ch3-waveform-features}}, especially
+\texttt{max\_low\_current\_run\_ms}, \texttt{low\_current\_ratio},
+\texttt{zero\_dwell\_ratio}, \texttt{midband\_residual\_ratio}, and
+\texttt{spectral\_flux\_midhf}.
 
 The trial-level results are summarized as confusion matrices in
-Table~\ref{tab:ch4-arc-confusion}. Here, ``relay trips'' is the positive
-prototype response and ``arcing event'' is the positive ground-truth condition.
+\textit{Table~\ref{tab:ch4-arc-confusion}}. 
+
 \begin{table}[H]
   \centering
   \caption{Trial-level confusion matrices for series arc-fault testing}
@@ -32,34 +37,46 @@ prototype response and ``arcing event'' is the positive ground-truth condition.
   \end{tabular}
 \end{table}
 
-Table~\ref{tab:ch4-arc-confusion} shows that the prototype detected 96 of 100
-arc trials and produced one relay trip during 100 normal trials. The recognized
-load group had no normal-event false trip and one missed arc event. The
-unrecognized group was more difficult, with three missed arcs and one false
-trip. This difference is expected because unrecognized devices introduce
-waveform behavior not directly represented during model fitting.
+\textit{Table~\ref{tab:ch4-arc-confusion}} shows that the prototype detected
+96 of 100 arc trials and produced one relay trip during 100 normal trials. The
+recognized-load group had no normal-event false trip and one missed arc event,
+while the unrecognized-load group had three missed arc events and one false
+trip. This difference is consistent with the reviewed literature showing that
+healthy nonlinear loads can produce waveform distortion, conduction gaps, or
+spectral behavior that may resemble fault behavior when load context is not
+fully represented [8], [33], [40]-[42]. Thus, the unrecognized-load results
+show the practical importance of context-aware inference in reducing nuisance
+operation while still preserving sensitivity to arc-related waveform changes.
 
 The result supports the arc-detection objective under the tested laboratory
 conditions. The classifier response was strongest when the arc created
 persistent low-current gaps and spectral disturbance, allowing the leaky arc
 counter to reach the relay-trip threshold. The missed trials indicate that not
 all arcs produced equally strong or persistent feature responses, especially
-when the load type differed from the fitted set. Therefore, the prototype
-should be interpreted as a controlled feasibility demonstration, not as a
-certified AFCI-equivalent device.
+when the load type differed from the fitted set. This interpretation is
+consistent with the reviewed finding that series-arc detection is stochastic
+and load-dependent, and that reliable detection depends on combining several
+time-domain and frequency-domain indicators rather than treating one feature as
+conclusive evidence [33]-[39], [49]-[54]. Therefore, the prototype is best
+interpreted as a controlled feasibility demonstration of socket-level
+complementary arc-fault protection, not as a certified AFCI-equivalent device.
 
 \section{Arc-Fault Dataset Summary}
 \label{sec:ch4-arc-dataset-summary}
 
 The cleaned arc-training dataset contained 49,296 rows, of which 283 were arc
 markers, equivalent to about 0.577\% of the retained data. This confirms that
-the problem was highly imbalanced: most frames represented normal operation
+the arc fault dataset was highly imbalanced: most frames represented normal operation
 even in sessions that contained an arc event. The imbalance explains why
-frame-level accuracy alone can be misleading; a classifier can appear accurate
-by predicting mostly normal frames. Precision, recall, F1-score, and
-event-level metrics are therefore needed to interpret the safety behavior.
+frame-level accuracy alone can be misleading, since a classifier can appear
+accurate by predicting mostly normal frames. Precision, recall, F1-score,
+confusion matrices, and event-level metrics were therefore used to interpret
+the safety behavior of the prototype. This follows the methodology in
+\textit{Section~\ref{sec:ch3-tinyml-workflow}}, where the arc model was
+evaluated not only by row-level classification but also by its ability to
+support relay decisions during grouped arc episodes.
 
-Complete trial tables and raw collection logs are provided in
-Appendices~\ref{app:e} and~\ref{app:f}. These appendices are important because
-the summary table in the main text cannot show every feature frame, arc marker,
-or relay-state transition.
+The detailed trial records are presented in \textit{Appendices~\ref{app:e}
+and~\ref{app:f}}. These records extend the summarized results by showing the
+arc markers, feature-frame behavior, and relay-state transitions used to verify
+the trial outcomes.

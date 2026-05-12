@@ -11,9 +11,6 @@ with a series arc fault.
 Random Forest classification was selected because it can model nonlinear
 feature interactions while remaining exportable as a compact tree ensemble for
 microcontroller execution [68], [69].
-
-Figure~\ref{fig:ch3-data-labeling-deploy} shows the data-logging, labeling,
-training, and deployment path used by the project.
 \begin{figure}[H]
   \centering
   \resizebox{0.75\textwidth}{!}{%
@@ -43,7 +40,7 @@ training, and deployment path used by the project.
   \label{fig:ch3-data-labeling-deploy}
 \end{figure}
 
-Figure~\ref{fig:ch3-data-labeling-deploy} shows that the training workflow was
+\textit{Figure~\ref{fig:ch3-data-labeling-deploy}} shows that the training workflow was
 not performed directly on the microcontroller. The firmware generated CSV
 records from bench tests, the records were reviewed and labeled, and Python
 scripts then cleaned the rows, formed training and test splits, trained the
@@ -54,7 +51,7 @@ follows the usual TinyML pattern of offline training followed by
 resource-constrained on-device execution [43], [73].
 \begin{figure}[H]
   \centering
-  \resizebox{0.58\textwidth}{!}{%
+  \resizebox{0.56\textwidth}{!}{%
   \begin{tikzpicture}[node distance=0.24in and 0.60in]
     \node[thesis process,text width=1.75in] (frame) {Current waveform\\512-sample frame};
     \node[thesis process,text width=1.75in,below=of frame] (features) {Computed/logged\\20 waveform fields};
@@ -81,7 +78,7 @@ resource-constrained on-device execution [43], [73].
   \label{fig:ch3-tinyml-sequence}
 \end{figure}
 
-Figure~\ref{fig:ch3-tinyml-sequence} shows that the firmware computes feature
+\textit{Figure~\ref{fig:ch3-tinyml-sequence}} shows that the firmware computes feature
 fields first, then updates context, then evaluates the arc classifier. This
 order is important because the deployed arc header includes both waveform
 features and context fields. The load-family result is therefore not only a
@@ -93,47 +90,64 @@ feature cards shown by the PWA. A broader 14-feature order remains in the PWA
 metadata and session viewer for historical review and CSV inspection.
 
 Arc labels were assigned from logged waveform sessions. The labeling interface
-is shown in Figure~\ref{fig:ch3-arc-labeling}.
+is shown in \textit{Figure~\ref{fig:ch3-arc-labeling}}.
 \begin{figure}[H]
   \centering
-  \includegraphics[width=0.80\textwidth]{ch3/figure_3.28.png}
+  \includegraphics[width=0.99\textwidth]{ch3/figure_3.28.png}
   \caption{Arc labeling using logged waveform data.}
   \label{fig:ch3-arc-labeling}
 \end{figure}
 
-Figure~\ref{fig:ch3-arc-labeling} shows how the arc windows were marked from
-the collected logs. This manual labeling step was necessary because series
-arcs are sparse and brief relative to normal operating frames. The cleaning
-script prepared separate trainable datasets for arc detection and load-context
-classification from these records.
+\textit{Figure~\ref{fig:ch3-arc-labeling}} shows the interface used to mark arc
+events from the logged waveform sessions. The labels were based on the
+observed test action and on the expected behavior of series arcs during
+contact separation and restriking. Because the marking was done manually
+after the test, the selected points are not exact arc-onset locations, but
+time-aligned approximations near the RMS waveform changes associated with
+the disconnection and recontact events.
 
-The local Python trainer used for model development is shown in
-Figure~\ref{fig:ch3-python-trainer}.
+To account for this labeling uncertainty, the training set did not treat
+only the marked row as the arc event. Neighboring rows around each arc marker
+were also given soft arc weights so that brief timing delays in the manual
+marking would not force nearby arc-related frames to be learned as normal
+behavior. This is presented in \textit{Appendix F} and is also shown in 
+\textit{Figure~\ref{fig:ch3-python-trainer}}.
 \begin{figure}[H]
   \centering
-  \includegraphics[width=0.80\textwidth]{ch3/figure_3.29.png}
+  \includegraphics[width=0.99\textwidth]{ch3/figure_3.29.png}
   \caption{Local Python TinyML trainer.}
   \label{fig:ch3-python-trainer}
 \end{figure}
 
-Figure~\ref{fig:ch3-python-trainer} documents the offline training environment
+\textit{Figure~\ref{fig:ch3-python-trainer}} documents the offline training environment
 used to prepare the exported embedded model files. The workflow used separate
 data preparation, context-model training, Random Forest training, shared
 TinyML utility, and generation-path routines as the source of truth for
 feature selection, data splits, hyperparameter search, metric computation,
 and embedded export. The dataset-preparation, training-report, and exported
 embedded-model summaries are provided in
-Appendix~\ref{app:f-tinyml-training-summary}.
+\textit{Appendix~\ref{app:f-tinyml-training-summary}}.
 
 \subsection{Context Model}
 \label{sec:ch3-context-model}
 
-The deployed context model is a centroid or prototype classifier, not a
-Random Forest. The context model defines six input
-features: $\Delta I_{\mathrm{rms}}$, half-cycle asymmetry, midband residual
+The load context model is a centroid classifier, not a
+Random Forest. The context model defines six input features:
+$\Delta I_{\mathrm{rms}}$, half-cycle asymmetry, midband residual
 ratio, current THD, mid/high-frequency spectral flux, and high-frequency
-energy delta. During runtime, the firmware averages usable feature frames over
-the acquisition interval, standardizes each averaged feature, computes the
+energy delta. These features were used because they describe the waveform
+behavior of the connected load rather than a single fault event.
+For example, different load families may exhibit different harmonic content,
+asymmetry, and current-change patterns even during normal operation.
+
+In this study, the context model was used to provide load-family information
+to the arc classifier, but its experimental coverage was still limited by the
+available tested loads. As stated in the limitations of the study, the actual
+collected and tested load signatures were limited to resistive loads,
+inductive loads, and brushed motor loads.
+
+During runtime, the firmware averages usable feature frames over the
+acquisition interval, standardizes each averaged feature, computes the
 squared Euclidean distance to each family centroid, and applies a softmax to
 the negative distances:
 \begin{equation}
@@ -145,20 +159,25 @@ the negative distances:
   \left(\frac{x_i-\mu_i}{\sigma_i}-q_{c,i}\right)^2 .
   \label{eq:context-prototype}
 \end{equation}
-In (\ref{eq:context-prototype}), $p_c$ is the context confidence for family
+In \eqref{eq:context-prototype}, $p_c$ is the context confidence for family
 $c$, $x_i$ is the averaged runtime feature, $\mu_i$ and $\sigma_i$ are the
 training-set mean and standard deviation exported in the header, $q_{c,i}$ is
 the standardized centroid coordinate for family $c$, $m=6$ is the context
 input dimension, and $C=6$ is the number of load families. A family is accepted
 only when the best confidence is at least 0.45; otherwise, the context remains
-unknown.
+unknown. This threshold prevents weak or ambiguous feature patterns from being
+forced into a load family.
 
 The context acquisition constants in the firmware require a load to remain
 active before the context is latched. A provisional context may be used after
 the minimum acquisition period, and the final context is latched after the
 configured 5s acquisition window when confidence is sufficient. This prevents
 brief startup artifacts from immediately forcing a load family into the arc
-classifier.
+classifier. Once the context is latched, it remains stable for the continuous
+load run, so the arc model receives a consistent family condition during
+normal monitoring. The context is returned to unknown only after the load has
+been inactive long enough to indicate that the previous operating condition
+has ended.
 
 \subsection{Arc Model}
 \label{sec:ch3-arc-model}
@@ -171,10 +190,39 @@ ratio, low-current ratio, absolute RMS-current z-score relative to baseline,
 midband residual ratio, and mid/high-frequency spectral flux. These were
 selected because series arcs can produce current interruption, restrike spikes,
 cycle-to-cycle waveform disturbance, and broadband spectral changes [34],
-[35], [50], [53].
+[35], [50], [53]. Since the reviewed literature also shows that series arcs
+are load-dependent and difficult to detect using current magnitude alone, the
+arc decision was implemented as a multi-feature classifier rather than as a
+single-threshold current decision [33], [34], [36].
 
-The deployed arc decision is summarized in
-Table~\ref{tab:ch3-arc-model-export}.
+The first three base features describe current dropouts and low-current
+intervals that may occur when a contact separates. The RMS-current z-score
+compares the present current behavior with the recent baseline, allowing the
+model to detect abrupt deviations from the expected operating level. The
+midband residual ratio and mid/high-frequency spectral flux describe waveform
+disturbance and spectral changes that may occur during restriking. Together,
+these features allow the model to observe both the time-domain interruption
+and the frequency-domain disturbance caused by a possible arc event. This
+follows the reviewed arc-fault studies, where zero-current behavior,
+current-fluctuation features, high-frequency noise, and spectral changes were
+used as indicators of series arcing [34]-[39], [49]-[53].
+
+The context-family inputs allow the arc classifier to interpret the same
+waveform features differently depending on the connected load type. This is
+important because some normal loads, such as motors or phase-controlled
+devices, can naturally produce distorted or non-sinusoidal current waveforms.
+The context confidence is included so that the model can also account for how
+reliable the assigned load family is. When the context is unknown or weak, the
+arc decision is treated more conservatively to reduce false operation during
+unstable startup or ambiguous load behavior. This follows the reviewed NILM
+and load-family literature, where load signatures were shown to affect how
+waveform features should be interpreted [8], [40]-[42].
+
+Random Forest was used because the reviewed TinyML literature supports compact
+feature-based models that can be deployed on constrained embedded hardware
+when the feature space and runtime are carefully designed [32], [43]. In this
+study, the Random Forest therefore serves as the embedded decision layer that
+combines the selected arc-related features and the estimated load context.
 \begin{table}[H]
   \centering
   \caption{Deployed Random Forest arc-model settings}
@@ -194,9 +242,9 @@ Table~\ref{tab:ch3-arc-model-export}.
   \end{tabular}
 \end{table}
 
-Table~\ref{tab:ch3-arc-model-export} shows that the deployed inference was
+\textit{Table~\ref{tab:ch3-arc-model-export}} shows that the deployed inference was
 context-aware. The model used lower thresholds for selected known families and
-a higher threshold for unknown context, reducing nuisance trips when the load
+a higher threshold for unknown contexts, reducing nuisance trips when the load
 family could not be established confidently. The firmware then passed the arc
 classification to the protection manager, where a leaky counter required
 persistence before relay disconnection.
@@ -212,12 +260,12 @@ features. The selected waveform features are maximum low-current run,
 zero-dwell ratio, low-current ratio, absolute RMS-current z-score relative to
 baseline, midband residual ratio, and mid/high-frequency spectral flux. The
 full computed/logged feature contract is given in
-Section~\ref{sec:ch3-waveform-features}.
+\textit{Section~\ref{sec:ch3-waveform-features}}.
 
 \subsection{Training Split and Model Evaluation}
 \label{sec:ch3-training-split}
 
-The Random Forest report shows that the final arc dataset was split into
+The Random Forest report, as documented in \textit{Appendix F}, shows that the final arc dataset was split into
 35,512 training rows, 9,434 validation rows, and 10,268 test rows. The final
 training report used 5 cross-validation splits during search and reported the
 held-out test metrics after model selection. The best exported hyperparameters
