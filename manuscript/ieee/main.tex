@@ -38,52 +38,52 @@ Naga City, Philippines}}
 \begin{abstract}
 Miniature circuit breakers remain essential but mainly address major
 overcurrent and short-circuit events, leaving progressive socket-level
-fire-inducing conditions less directly observed. This paper presents a
+fire-inducing conditions less directly observed. This study presents a
 TinyML Smart Plug for complementary socket-level protection against sustained
 overload, degraded socket-contact heating, and load-limited series arc faults
-in 230V residential circuits. The prototype integrated calibrated sensing,
+in 230 V residential circuits. The prototype integrated calibrated sensing,
 ESP32-S3 control, relay-based load isolation, Firebase logging, and
 Progressive Web App (PWA) monitoring and labeling. Local firmware handled
 thermal estimation, threshold protection, load-context classification,
-Random Forest series-arc inference, fault latching, and relay actuation.
-Evaluation included sensor validation, controlled overload, socket-heating,
-and induced series-arc tests. Revalidation produced mean absolute errors of
-3.910V, 0.178A, and 1.02$^{\circ}$C. The highest-stress overload case
-reached 17.30A mean current and disconnected after 61.3s. Degraded sockets
-heated faster than normal sockets: at about 9A, relay trip occurred at 52min
-for the corroded socket and 120min for the normal socket; at about 13A, the
-corroded and normal sockets tripped at 5min and 46min, respectively. Across
+Random Forest-based series arc fault inference, fault latching, and relay actuation.
+Evaluation included sensor validation, controlled sustained-overload tests,
+degraded socket-contact heating tests, and induced series arc fault tests.
+Revalidation produced mean absolute errors of
+3.910 V, 0.178 A, and 1.02$^{\circ}$C. The highest-stress overload case
+reached 17.30 A mean current and disconnected after 61.3 s. Degraded sockets
+heated faster than normal sockets: at about 9 A, relay trip occurred at 52 min
+for the corroded socket and 120 min for the normal socket; at about 13 A, the
+corroded and normal sockets tripped at 5 min and 46 min, respectively. Across
 200 balanced normal and arc trials, the embedded model and firmware
 persistence logic achieved 97.50\% accuracy, 98.97\% precision, 96.00\%
 recall, and 97.46\% F1-score. The results support controlled laboratory
-feasibility for a smart plug that complements mandatory residential
+feasibility for the TinyML Smart Plug as a complement to mandatory residential
 electrical protection.
 \end{abstract}
 
 \begin{IEEEkeywords}
-ESP32-S3, series arc detection, socket-contact heating, sustained overload,
-Random Forest, load-type classifier, multi-domain sensing.
+ESP32-S3, series arc fault detection, socket-contact heating, sustained overload,
+Random Forest, load-context classifier, multi-domain sensing.
 \end{IEEEkeywords}
 
 \section{INTRODUCTION}
 
 Electrical faults remain a persistent residential fire concern. Philippine
-fire incident reporting identifies electrical issues as a leading cause of
-fires, while broader home-fire statistics also associate electrical failure
-or malfunction with structure fires, injuries, and property losses
-\cite{gma-bfp,nfpa-electrical}. The problem is not limited to
-catastrophic short circuits. It also includes progressive electrical hazards
-that may remain energized while producing thermal or waveform abnormalities
-before conventional circuit protection is forced to operate.
+fire incident reports identify electrical issues as a leading fire cause,
+and broader home-fire statistics associate electrical failure or malfunction
+with structure fires, injuries, and property losses
+\cite{gma-bfp,nfpa-electrical}. Beyond catastrophic short circuits,
+progressive electrical hazards may remain energized while producing thermal
+or waveform abnormalities before conventional circuit protection operates.
 
 Conventional residential protection remains essential. Branch-circuit
 breakers, leakage protection, surge protection, and certified wiring
-practice address the fault classes for which they are designed. However,
-ordinary overcurrent protection is coordinated mainly around conductor
-thermal protection and high-current events; it does not directly detect
-progressive contact heating at a socket, persistent sub-trip overload
-behavior, or low-current series arc faults that occur below the breaker
-immediate trip region \cite{schneider-inverse,bal-pvc,lee-afci}. At the
+practice address their intended fault classes. However, ordinary
+overcurrent protection is coordinated mainly around conductor heating and
+high-current events; it does not directly detect progressive contact heating
+at a socket, persistent sub-trip overload behavior, or low-current series
+arc faults below the breaker immediate trip region
+\cite{schneider-inverse,bal-pvc,lee-afci}. At the
 plug-socket interface, a poor or degraded connection can generate localized
 heating under otherwise ordinary current flow. A load-limited series arc can
 also disturb the current waveform without producing a large RMS-current
@@ -94,32 +94,32 @@ Sustained overload is a current-persistence and time-stress problem.
 Degraded socket-contact heating is a localized thermal problem in which the
 hottest contact region may be hidden from an external thermistor. Series
 arc faults are stochastic and load-dependent because normal nonlinear loads
-can produce waveform behavior that may resemble arc-like disturbances. For
-this reason, the prototype does not treat all abnormal conditions as one
-generic fault state. Each condition requires protection basis that matches
-its physical behavior.
+can resemble arc-like waveform disturbances. For this reason, the prototype
+does not treat all abnormal conditions as one generic fault state. Each
+condition requires protection evidence matched to its physical behavior.
 
-The objective of this work was to design, develop, and evaluate an
+This study designed, developed, and evaluated an
 ESP32-S3-based TinyML Smart Plug that provides complementary socket-level
 protection for selected progressive fire-inducing electrical faults in
-230V residential circuits. The work integrated calibrated voltage, current,
-and temperature sensing; threshold-based overload and socket-heating
-protection; load-context classification; Random Forest series arc-fault
-inference; relay-based load isolation; fault latching; local audio-visual
-alerts; Firebase logging; and Progressive Web App (PWA) monitoring, event
+230 V residential circuits. It integrated calibrated voltage, current,
+and temperature sensing; threshold-based sustained-overload and degraded
+socket-contact heating protection; load-context classification;
+Random Forest-based series arc fault inference; relay-based load isolation;
+fault latching; local audiovisual alerts; Firebase logging; and
+Progressive Web App (PWA) monitoring, event
 review, and data labeling.
 
-The prototype uses a hybrid protection approach because the three target
-fault conditions do not produce the same protection basis. Sustained
-overload is handled through RMS-current level and persistence; degraded
-socket-contact heating is handled through device temperature measurement
-and compensated estimated socket temperature; and series arc-fault detection
-is handled through load context, waveform features, Random Forest inference,
-and firmware persistence logic. The evaluation was conducted under controlled
-laboratory conditions involving overload, induced series arc fault, and
-socket/contact-heating scenarios. The device is treated as a complementary
-protective layer that operates alongside, not in place of, circuit breakers,
-AFCIs, GFCIs, wiring inspection, and code-compliant residential protection.
+The prototype uses hybrid protection because the three target faults require
+different evidence. Sustained overload uses RMS-current level and persistence;
+degraded socket-contact heating uses device temperature and compensated
+estimated socket temperature; and series arc fault detection uses load
+context, waveform features, Random Forest inference, and firmware persistence
+logic. Evaluation was conducted under controlled laboratory conditions
+involving sustained overload, induced series arc fault, and degraded
+socket-contact heating scenarios. The prototype is treated as a
+complementary protective layer that operates alongside, not in place of,
+circuit breakers, AFCIs, GFCIs, wiring inspection, and code-compliant
+residential protection.
 
 \section{DESIGN BASIS AND SYSTEM OVERVIEW}
 
@@ -161,9 +161,9 @@ The design basis is summarized in Table~\ref{tab:evidence}.
 \toprule
 \textbf{Fault Type} & \textbf{Observed Behavior} & \textbf{Protection Basis}\\
 \midrule
-Sustained overload & Thermal stress from persistent load current & RMS-current threshold plus approximately 60s persistence score\\
-Socket heating & Localized poor-contact heating at plug-socket interface & Thermistor input plus compensated estimated socket temperature\\
-Series arc & Load-limited intermittent conduction and waveform disturbance & Load context, waveform features, Random Forest arc inference, and persistence counter\\
+Sustained overload & Thermal stress from persistent load current & RMS-current threshold plus approximately 60 s persistence score\\
+Degraded socket-contact heating & Localized poor-contact heating at plug-socket interface & Thermistor input plus compensated estimated socket temperature\\
+Series arc fault & Load-limited intermittent conduction and waveform disturbance & Load context, waveform features, Random Forest arc inference, and persistence counter\\
 \bottomrule
 \end{tabularx}
 \end{table}
@@ -177,11 +177,12 @@ the present load context.
 
 Fig.~\ref{fig:architecture} shows the system architecture used in the
 prototype. The sensing layer measures line voltage, load current, and
-temperature near the plug/socket interface. The firmware layer performs
+temperature near the plug-socket interface. The firmware layer performs
 calibration, filtering, RMS calculations, temperature estimation,
 waveform-feature extraction, load-context classification, TinyML arc
 inference, protection-state evaluation, relay control, and event logging.
-The cloud/PWA layer provides visualization, history review, labeling, and
+The Firebase-backed PWA layer provides visualization, history review,
+labeling, and
 operator interaction. The relay decision remains local to the firmware.
 
 \begin{figure}[H]
@@ -195,7 +196,7 @@ The architecture is intentionally hybrid. Deterministic thresholds are
 used where the protection evidence is direct and interpretable, as in
 overload current and estimated socket temperature. TinyML is used where
 the evidence is multi-feature, load-dependent, and ambiguous, as in
-series arc-fault detection. The resulting protection process is local:
+series arc fault detection. The resulting protection process is local:
 even if Wi-Fi or Firebase is unavailable, the ESP32-S3 can still evaluate
 faults and engage relay isolation.
 
@@ -205,10 +206,10 @@ faults and engage relay isolation.
 
 Fig.~\ref{fig:hardware} shows the block diagram of the hardware implementation.
 The prototype was built as a plug-through socket-level device for a
-230V residential circuit. Its major elements were an ESP32-S3
+230 V residential circuit. Its major elements were an ESP32-S3
 microcontroller, ZMPT101B voltage-sensing channel, ACS37035 current
 sensor, MCP3204 external 12-bit ADC, second-order anti-aliasing circuit,
-10k$\Omega$ NTC thermistor, solid-state relay, relay latch, OLED display,
+10 k$\Omega$ NTC thermistor, solid-state relay, relay latch, OLED display,
 buzzer, low-voltage supply, and enclosed outlet assembly.
 
 \begin{figure}[H]
@@ -219,13 +220,13 @@ buzzer, low-voltage supply, and enclosed outlet assembly.
 \end{figure}
 
 The current channel was central to the design. It supplied RMS current
-for overload protection, a current-dependent term for socket-temperature
+for sustained-overload protection, a current-dependent term for socket-temperature
 estimation, and waveform samples for feature extraction. The conditioned
 current waveform was digitized through the MCP3204 and processed by the
 ESP32-S3. The voltage channel supported RMS-voltage supervision and
 mains-present interpretation. The thermistor was placed near the
 plug-side wire-contact region and insulated to reduce direct ambient-air
-influence. Because this point is necessarily offset from the hidden contact hotspot, the
+influence. Because this point is offset from the hidden contact hotspot, the
 thermal protection was based on compensated estimated socket temperature,
 which represents the available external thermal measurement rather than a
 direct internal-contact measurement.
@@ -234,8 +235,8 @@ The relay with a D-latch was the protective actuator. After a
 confirmed trip condition, the relay disconnected the protected outlet and
 the fault state remained latched until cleared. The OLED, buzzer, and PWA
 provided alerts and user visibility. Firebase carried live telemetry,
-history, CSV review, and operator fields, whereas the relay actuation path was
-implemented in firmware and hardware.
+history, CSV review, and operator fields, while relay actuation was
+implemented locally in firmware and hardware.
 
 \subsection{Firmware Protection Flow}
 
@@ -254,12 +255,13 @@ current, thermistor temperature, and current-frame features.
 \end{figure}
 
 The final relay decision occurs in the protection manager. Calibrated
-voltage and current values feed deterministic voltage and overload
+voltage and current values feed deterministic voltage and sustained-overload
 states. The temperature routine produces device temperature and estimated
 socket temperature for thermal warning and trip evaluation. The waveform
 path computes feature frames, updates load context, runs Random Forest
 arc inference, and passes the arc output to a leaky persistence counter.
-If overload, socket heating, or series arc evidence reaches its trip
+If sustained overload, degraded socket-contact heating, or series arc fault
+evidence reaches its trip
 condition, the firmware pulses the relay latch, records the fault, and
 reports the fault state locally and through Firebase when available.
 After relay isolation, the plug remains in a latched fault state until
@@ -275,18 +277,18 @@ the user clears the fault through local or PWA-supported interaction.
 \toprule
 \textbf{Function} & \textbf{Warning or model condition} & \textbf{Relay-trip condition}\\
 \midrule
-Voltage supervision & Outside 200-250V band & Instant 170/260V, or 7s delayed low/high voltage\\
-Overload & $I_{\mathrm{rms}}>10.0$A warning & 1s average current $\geq$14.5A for about 60s\\
-Socket heating & 39.0$^{\circ}$C estimated temperature & Estimated socket temperature $\geq$40.0$^{\circ}$C\\
+Voltage supervision & Outside 200-250 V band & Instant 170/260 V, or 7 s delayed low/high voltage\\
+Sustained overload & $I_{\mathrm{rms}}>10.0$ A warning & 1 s average current $\geq$14.5 A for about 60 s\\
+Degraded socket-contact heating & 39.0$^{\circ}$C estimated temperature & Estimated socket temperature $\geq$40.0$^{\circ}$C\\
 Series arc fault & Context-aware Random Forest output & Arc counter reaches 8; +2 for arc frame, -6 for normal frame\\
 \bottomrule
 \end{tabularx}
 \end{table}
 
-Socket heating had highest reported-fault priority because temperature
-is the most direct local fire-risk indicator. Arc fault was evaluated
+Degraded socket-contact heating had highest reported-fault priority because temperature
+is the most direct local fire-risk indicator. Series arc fault was evaluated
 next because a series arc may be hazardous without sustained overcurrent.
-Overload remained a relay-trip condition after the persistence criterion
+Sustained overload remained a relay-trip condition after the persistence criterion
 was satisfied. The protection constants are listed in Table~\ref{tab:thresholds}.
 
 \subsection{Sensor Calibration and Validation}
@@ -311,14 +313,14 @@ because standards and thermal-measurement literature caution that
 external temperatures may lag or under-read internal contact points
 \cite{iec-60884,vishay-ntc,watlow-placement,wilson-contact,dziarski-relay}.
 
-\subsection{Overload Protection Method}
+\subsection{Sustained Overload Protection Method}
 
-Overload testing used high-power load combinations connected through the
-prototype. The firmware issued warning-level alerts above 10.0A while
+Sustained-overload testing used high-power load combinations connected through the
+prototype. The firmware issued warning-level alerts above 10.0 A while
 retaining relay closure during warning-level excursions. A sustained trip
-required the 1s current average to remain at or above 14.5A long
+required the 1 s current average to remain at or above 14.5 A long
 enough for the overload score to reach six. Since the score increments
-every 10s, this corresponds to approximately 60s of persistent
+every 10 s, this corresponds to approximately 60 s of persistent
 overload. This design choice prevents
 momentary current peaks and short transients from being treated as
 confirmed overload trips while still responding to persistent current
@@ -328,17 +330,17 @@ The overload score can be represented by
 \begin{equation}
 S_{\mathrm{OL}}[k]=
 \begin{cases}
-\min(6,S_{\mathrm{OL}}[k-1]+1), & I_{\mathrm{avg}}\geq14.5\mathrm{A},\\
-\max(0,S_{\mathrm{OL}}[k-1]-1), & I_{\mathrm{avg}}\leq14.1\mathrm{A}.
+\min(6,S_{\mathrm{OL}}[k-1]+1), & I_{\mathrm{avg}}\geq14.5\,\mathrm{A},\\
+\max(0,S_{\mathrm{OL}}[k-1]-1), & I_{\mathrm{avg}}\leq14.1\,\mathrm{A}.
 \end{cases}
 \end{equation}
 The relay trips when $S_{\mathrm{OL}}=6$. The method was evaluated by
 recording mean voltage, mean current, peak current, warning state, relay
 state, and trip latency during each load case.
 
-\subsection{Socket-Heating Method}
+\subsection{Socket-Contact Heating Method}
 
-Socket-heating evaluation used normal and intentionally degraded socket
+Socket-contact heating evaluation used normal and intentionally degraded socket
 contacts under matched load cases. The degraded-contact trials served as
 accelerated laboratory comparisons rather than direct household field-fault
 replicas, allowing controlled observation of contact-heating behavior. For
@@ -387,7 +389,7 @@ T_{\mathrm{socket,est}} &=
 \end{aligned}
 \end{equation}
 The $\max(\cdot)$ operation prevents the relay-facing estimate from
-falling below the expected normal socket heating for the same load while
+falling below the expected normal socket-temperature rise for the same load while
 still allowing measured local heating to dominate. The trip rule was
 applied to $T_{\mathrm{socket,est}}$ so that raw thermistor readings and
 current-dependent normal heating both influenced the thermal state. The
@@ -395,13 +397,13 @@ estimate should be interpreted as a conservative relay-facing variable,
 with its behavior checked against normal and corroded-socket experiments
 under comparable loads.
 
-\subsection{TinyML and Arc-Fault Method}
+\subsection{TinyML and Series Arc Fault Method}
 
-Series arc detection used a two-stage load-aware TinyML pipeline. The
+Series arc fault detection used a two-stage load-aware TinyML pipeline. The
 method followed the firmware order: current-frame acquisition, waveform
 feature extraction, load-context classification, arc inference, and
 persistence-filtered relay evaluation. The firmware computed 512-sample
-current frames at a 27kHz target sampling rate with a 256-sample hop. A
+current frames at a 27 kHz target sampling rate with a 256-sample hop. A
 Hann-windowed frequency analysis and time-domain calculations generated
 waveform features; the Hann window was used to reduce spectral leakage
 in discrete Fourier analysis
@@ -540,7 +542,7 @@ loads. The selected Random Forest used 160 trees, a maximum depth of 16,
 minimum leaf size of 4, minimum split size of 12, bootstrap sampling,
 entropy splitting, and cost-complexity pruning alpha of 0.0001. The
 deployed feature set can be summarized in four groups. First,
-the conduction-gap inputs which are maximum low-current run, zero-dwell ratio,
+the conduction-gap inputs, maximum low-current run, zero-dwell ratio,
 and low-current ratio, represent extinction, weak conduction, and
 near-zero dwell that can occur during separation and restrike. Second,
 the current-departure input, expressed as an absolute RMS-current
@@ -556,21 +558,21 @@ context-sensitive decision boundaries.
 Training and testing were performed offline from firmware CSV logs.
 Records were reviewed, manually labeled, cleaned with Python scripts,
 split into training, validation, and reserved test views, and exported as
-firmware headers. Fig.~\ref{fig:data-deploy} summarizes this workflow from
+firmware headers. Fig.~\ref{fig:data-deploy} summarizes this process from
 laboratory CSV records to embedded deployment. The final arc report used
 35,512 training rows, 9,434 validation rows, and 10,268 reserved test rows.
 Embedded testing then evaluated the exported model inside the firmware
 protection path, where the model output was filtered by the arc persistence
 counter before relay action. Thus, the reported trial result represents the
 deployed protection pipeline, including embedded inference and counter-based
-relay logic. This is different from reporting an offline classifier alone:
-the relay result includes sensing, feature extraction, context gating,
+relay logic. Unlike an offline classifier report, the relay result includes
+sensing, feature extraction, context gating,
 model output, persistence scoring, and latch actuation.
 
 \begin{figure}[H]
   \centering
   \includegraphics[width=\linewidth]{fig_ch3_data_labeling_deploy.pdf}
-  \caption{Data labeling, model export, and embedded deployment workflow.}
+  \caption{Data labeling, model export, and embedded deployment process.}
   \label{fig:data-deploy}
 \end{figure}
 
@@ -582,7 +584,7 @@ why firmware persistence was used: a single arc-like frame was not treated
 as enough evidence for relay isolation.
 
 \begin{table}[H]
-\caption{Arc-Fault Dataset Preparation Summary}
+\caption{Series Arc Fault Dataset Preparation Summary}
 \label{tab:arc-data-prep}
 \centering
 \footnotesize
@@ -606,7 +608,7 @@ Load-context rows & 18,475\\
 \FloatBarrier
 \subsection{PWA, Firebase, and Logging Role}
 
-The PWA and Firebase backend supported the research workflow by showing
+The PWA and Firebase backend supported laboratory review and labeling by showing
 live voltage, current, device temperature, estimated socket temperature,
 context family, arc output, relay status, event history, and waveform
 features. They also supported CSV inspection, data labeling, and operator
@@ -620,12 +622,12 @@ evaluation and relay isolation.
 \subsection{Sensor Validation}
 
 Table~\ref{tab:sensor-validation} summarizes the revalidation results.
-Voltage MAE was 3.910V, current MAE was 0.178A, and temperature MAE was
+Voltage MAE was 3.910 V, current MAE was 0.178 A, and temperature MAE was
 1.02$^{\circ}$C. These errors were small relative to the implemented
 thresholds. Current error, for example, was much smaller than the
-separation between the 10.0A warning threshold and 14.5A sustained-trip
+separation between the 10.0 A warning threshold and 14.5 A sustained-trip
 threshold. The temperature result validates the external thermistor
-measurement point only; the socket-heating protection result is
+measurement point only; the socket-contact heating protection result is
 interpreted through the compensated estimate and degraded-contact
 tests.
 
@@ -639,28 +641,28 @@ tests.
 \toprule
 \textbf{Channel} & \textbf{MAE} & \textbf{MSE} & \textbf{RMSE}\\
 \midrule
-Voltage & 3.910V & $15.539\mathrm{V}^2$ & 3.94V\\
-Current & 0.178A & $0.04076\mathrm{A}^2$ & 0.202A\\
+Voltage & 3.910 V & $15.539\mathrm{V}^2$ & 3.94 V\\
+Current & 0.178 A & $0.04076\mathrm{A}^2$ & 0.202 A\\
 Temperature & 1.02$^{\circ}$C & $1.142^{\circ}\mathrm{C}^2$ & 1.07$^{\circ}$C\\
 \bottomrule
 \end{tabular*}
 \end{table}
 
-\subsection{Overload Protection}
+\subsection{Sustained Overload Protection}
 
-Table~\ref{tab:overload} gives the overload evaluation. All heavy-load
+Table~\ref{tab:overload} gives the sustained-overload evaluation. All heavy-load
 trials exceeded the warning threshold, while relay operation occurred in
-the highest-stress case. Trial 4 averaged 17.30A, reached a 19.73A peak,
-and opened the relay after 61.3s. That trip time agrees with the intended
-approximately 60s persistence behavior. Trials 1, 3, and 5 reached peaks
+the highest-stress case. Trial 4 averaged 17.30 A, reached a 19.73 A peak,
+and opened the relay after 61.3 s. That trip time agrees with the intended
+approximately 60 s persistence behavior. Trials 1, 3, and 5 reached peaks
 near or above the sustained threshold, then fell below the criterion
-before accumulating the required persistence score. Thus, the overload
+before accumulating the required persistence score. Thus, the sustained-overload
 function behaved as time-aware complementary protection. Breaker
 coordination and formal time-current compliance testing require a
 separate standards-oriented evaluation.
 
 \begin{table}[!htbp]
-\caption{Overload Evaluation Results}
+\caption{Sustained Overload Evaluation Results}
 \label{tab:overload}
 \centering
 \small
@@ -669,18 +671,18 @@ separate standards-oriented evaluation.
 \toprule
 \textbf{Trial} & \textbf{Load setup (WH: Water Heater)} & \textbf{\shortstack{Mean\\(A)}} & \textbf{\shortstack{Peak\\(A)}} & \textbf{\shortstack{Relay\\trip}}\\
 \midrule
-1 & 1.3kW kettle + WH & 12.87 & 14.85 & No\\
-2 & 1.3kW kettle + 1.5kW kettle & 12.33 & 13.63 & No\\
-3 & 1.5kW kettle + WH & 13.36 & 14.86 & No\\
-4 & 1.3kW kettle + WH + 2 lamps & 17.30 & 19.73 & 61.3s\\
-5 & 1.3kW kettle + WH + 1 lamp & 14.42 & 16.23 & No\\
+1 & 1.3 kW kettle + WH & 12.87 & 14.85 & No\\
+2 & 1.3 kW kettle + 1.5 kW kettle & 12.33 & 13.63 & No\\
+3 & 1.5 kW kettle + WH & 13.36 & 14.86 & No\\
+4 & 1.3 kW kettle + WH + 2 lamps & 17.30 & 19.73 & 61.3 s\\
+5 & 1.3 kW kettle + WH + 1 lamp & 14.42 & 16.23 & No\\
 \bottomrule
 \end{tabularx}
 \end{table}
 
-\subsection{Socket-Heating Protection}
+\subsection{Socket-Contact Heating Protection}
 
-Socket-heating characterization showed that contact condition changed the
+Socket-contact heating characterization showed that contact condition changed the
 thermal outcome at similar current levels. The low-current protection
 case is shown in Fig.~\ref{fig:heating-low}, while the severe
 high-current case is shown in Fig.~\ref{fig:heating}. The paired figures
@@ -691,28 +693,28 @@ severe case reached the relay-facing thermal threshold.
 \begin{figure}[!htbp]
   \centering
   \includegraphics[width=\linewidth]{fig_ch4_protect_water_heater.pdf}
-  \caption{Water-heater-only low-current socket-heating protection validation.}
+  \caption{Water-heater-only low-current socket-contact heating protection validation.}
   \label{fig:heating-low}
 \end{figure}
 
 \begin{figure}[!htbp]
   \centering
   \includegraphics[width=\linewidth]{fig_ch4_protect_four_lamps.pdf}
-  \caption{Water heater plus four halogen lamps during high-current socket-heating protection validation.}
+  \caption{Water heater plus four halogen lamps during high-current socket-contact heating protection validation.}
   \label{fig:heating}
 \end{figure}
 
-Table~\ref{tab:heating} summarizes all socket-heating protection trials.
-At about 5A in the water-heater-only case, neither socket tripped:
+Table~\ref{tab:heating} summarizes all socket-contact heating protection trials.
+At about 5 A in the water-heater-only case, neither socket tripped:
 the corroded terminal ended hotter than the normal terminal
 (38.5$^{\circ}$C versus 33.8$^{\circ}$C), but the estimated socket
 temperature remained below the 40.0$^{\circ}$C relay criterion. At about
-9A, the corroded socket reached the 38.2$^{\circ}$C comparison point in
-48min, compared with 105min for the normal socket. At about 11A, the
-corroded socket reached the same point in 7min, compared with 52min for
-the normal socket. In the severe 13A corroded case, the relay tripped
-after 5min and the reference terminal reached 56.0$^{\circ}$C. These
-results support the premise that socket heating cannot be inferred from
+9 A, the corroded socket reached the 38.2$^{\circ}$C comparison point in
+48 min, compared with 105 min for the normal socket. At about 11 A, the
+corroded socket reached the same point in 7 min, compared with 52 min for
+the normal socket. In the severe 13 A corroded case, the relay tripped
+after 5 min and the reference terminal reached 56.0$^{\circ}$C. These
+results support the premise that socket-contact heating cannot be inferred from
 RMS current alone. They also show that the thermal branch is a protection
 function, not a corrosion classifier: at higher current levels, normal and
 corroded sockets can both reach the conservative relay-facing threshold,
@@ -731,7 +733,7 @@ interpretive references rather than the quantity directly measured by the
 device.
 
 \begin{table}[!htbp]
-\caption{Socket-Heating Protection Summary}
+\caption{Socket-Contact Heating Protection Summary}
 \label{tab:heating}
 \centering
 \footnotesize
@@ -758,7 +760,8 @@ WH + 4 lamps & Corroded & 13.08 & 56.0 & Yes\\
 
 The cleaned arc-training dataset contained 49,296 rows with 283 arc
 markers, confirming that arc evidence was sparse and imbalanced in the
-logged feature records, as shown earlier in Table~\ref{tab:arc-data-prep}. This imbalance supports the design choice of
+logged feature records, as shown earlier in Table~\ref{tab:arc-data-prep}.
+This imbalance supports the design choice of
 interpreting relay-facing behavior at trial level, where embedded
 inference, context gating, persistence counting, and relay actuation are
 evaluated together.
@@ -774,7 +777,7 @@ complete firmware behavior: repeated arc-like outputs accumulate toward a
 relay decision, while isolated normal outputs decay.
 
 \begin{table}[!htbp]
-\caption{Series Arc-Fault Trial Confusion Matrix}
+\caption{Series Arc Fault Trial Confusion Matrix}
 \label{tab:arc-confusion}
 \centering
 \small
@@ -791,7 +794,7 @@ All tested loads & 96 & 1 & 4 & 99\\
 \end{table}
 
 \begin{table}[!htbp]
-\caption{Series Arc-Fault Performance Metrics}
+\caption{Series Arc Fault Performance Metrics}
 \label{tab:arc-metrics}
 \centering
 \small
@@ -818,7 +821,7 @@ Trial, all loads & 97.50\% & 98.97\% & 96.00\% & 97.46\%\\
 \textbf{Family} & \textbf{Tested loads} & \textbf{\shortstack{Arc\\detected}} & \textbf{\shortstack{Normal\\correct}}\\
 \midrule
 \shortstack[l]{Resistive} & Water heater, halogen lamp, electric kettle, heat gun & 40/40 & 40/40\\
-\shortstack[l]{Inductive} & 40W stand fan & 10/10 & 10/10\\
+\shortstack[l]{Inductive} & 40 W stand fan & 10/10 & 10/10\\
 \shortstack[l]{Brushed/\\universal} & Handheld vacuum, Electrolux vacuum, angle grinder, bench cutter, impact drill & 46/50 & 49/50\\
 \bottomrule
 \end{tabularx}
@@ -837,7 +840,7 @@ Trial, all loads & 97.50\% & 98.97\% & 96.00\% & 97.46\%\\
 Water heater & Resistive & 100\% & 100\% & 100\% & 100\%\\
 Halogen lamp & Resistive & 100\% & 100\% & 100\% & 100\%\\
 Electric kettle & Resistive & 100\% & 100\% & 100\% & 100\%\\
-40W stand fan & Inductive & 100\% & 100\% & 100\% & 100\%\\
+40 W stand fan & Inductive & 100\% & 100\% & 100\% & 100\%\\
 Handheld vacuum & Brushed & 95\% & 100\% & 90\% & 94.74\%\\
 Electrolux vacuum & Brushed & 95\% & 100\% & 90\% & 94.74\%\\
 Angle grinder & Brushed & 95\% & 100\% & 90\% & 94.74\%\\
@@ -883,10 +886,11 @@ as generally representative of residential loads.
 \subsection{Integrated Protection Assessment}
 
 The integrated results show complementary behavior among the three
-protection paths. Overload protection addressed persistent current stress
-without tripping every transient. Socket-heating protection responded to
-degraded-contact thermal behavior that current alone could not identify.
-Series arc protection used waveform features and context to address a
+protection paths. Sustained overload protection addressed persistent
+current stress without tripping every transient. Socket-contact heating
+protection responded to degraded-contact thermal behavior that current
+alone could not identify.
+Series arc fault protection used waveform features and context to address a
 load-limited fault that may remain below conventional overcurrent
 operation. These results indicate the value of separating evidence by
 fire-inducing mechanism while combining the outputs in one local
@@ -895,7 +899,7 @@ relay-protection pipeline.
 The demonstrated behavior is bounded by the laboratory scope: selected
 loads, induced faults, and bench conditions. Certification, field
 readiness, and full residential nuisance-immunity evaluation require
-separate future work.
+separate future studies.
 
 \subsection{Scope and Limitations}
 
@@ -904,15 +908,15 @@ deployment in occupied homes, aged installations, large appliance
 populations, full branch-circuit diversity, and naturally occurring
 faults were outside the evaluation scope. The load set and fault
 conditions were limited by safe bench testing, especially for induced
-series arcs.
+series arc faults.
 
 The arc model may produce nuisance detections or missed detections on
 unseen loads. Although the firmware context schema retained six possible
 family fields, the collected and tested load signatures were limited to
 resistive, inductive, and brushed or universal-motor loads. Sensitive
 SMPS loads, phase-angle-controlled loads, and mixed electronic loads were
-not included in comprehensive induced-fault coverage. The reported false positive
-and false negative cases show that the dataset remains incomplete,
+not included in comprehensive induced-fault coverage. The reported
+false-positive and false-negative cases show that the dataset remains incomplete,
 especially for brushed and nonlinear loads. The reported trial-level
 metrics should therefore be read together with the confusion matrix and
 load-family summary, not as a universal nuisance-immunity claim.
@@ -930,10 +934,11 @@ connectivity, although remote visualization and history features were
 reduced when the network was unavailable. The device provides supervision
 at one socket rather than whole-house fault localization.
 
-Certification-oriented testing was outside the present work. Creepage,
+Certification-oriented testing was outside the present study. Creepage,
 clearance, enclosure robustness, relay thermal rating, endurance,
 electromagnetic compatibility, abnormal operation, and regulatory safety
-tests remain future work. The implementation should be evaluated as
+tests must be addressed in future studies. The implementation should be
+evaluated as
 complementary socket-level supervision alongside breakers, AFCIs, GFCIs,
 surge protection, code-compliant wiring, and professional electrical
 assessment.
@@ -942,25 +947,25 @@ assessment.
 
 The TinyML Smart Plug demonstrated controlled laboratory feasibility as a
 hybrid socket-level protection implementation for selected progressive
-fire-inducing electrical faults. As an ECE implementation, it integrates
-calibrated sensing, deterministic protection logic, load-aware embedded
+fire-inducing electrical faults. The implementation integrates calibrated
+sensing, deterministic protection logic, load-aware embedded
 TinyML, relay latching, and monitoring support in one local protection
-pipeline. The work also shows why the evidence must be
-separated by mechanism: overload requires current persistence, degraded
-socket-contact heating requires conservative thermal estimation, and
-series arcs require load-aware waveform inference.
+pipeline. The study also shows why the evidence must be
+separated by mechanism: sustained overload requires current persistence,
+degraded socket-contact heating requires conservative thermal estimation, and
+series arc faults require load-aware waveform inference.
 
 Within the tested scope, sensor errors were acceptable for the implemented
-thresholds, the sustained overload function tripped the 17.30A case after
-61.3s, degraded-contact tests showed faster and hotter socket behavior
+thresholds, the sustained overload function tripped the 17.30 A case after
+61.3 s, degraded-contact tests showed faster and hotter socket behavior
 than normal contacts, and the deployed arc pipeline achieved 97.50\%
 trial-level accuracy while retaining the four missed arc trials and one
-normal false trip in the analysis. These findings support feasibility for the proposed
-complementary protection architecture.
+normal false trip in the analysis. These findings support the feasibility
+of the proposed complementary protection architecture.
 
-Future work should expand the normal, nuisance, and arc-fault dataset
-across more residential loads, plug conditions, contact gaps, and wiring
-arrangements. Longer semi-field testing should support later
+Future studies should expand the normal, nuisance, and series arc fault
+dataset across more residential loads, plug conditions, contact gaps, and
+wiring arrangements. Longer semi-field testing should support later
 field-readiness evaluation. Thermal sensing should be improved through better
 placement, multiple sensors, or stronger estimation models. Firmware and
 hardware should be optimized for longer sampling, logging reliability,
