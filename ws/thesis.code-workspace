@@ -4,10 +4,6 @@
       "name": "TinyML Smart Plug",
       "path": ".."
     },
-        {
-      "name": "User Manual",
-      "path": "../manual"
-    },
 	{
       "name": "Arc Generator",
       "path": "../arcstep"

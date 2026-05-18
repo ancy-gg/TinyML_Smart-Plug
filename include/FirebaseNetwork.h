@@ -45,14 +45,10 @@ public:
   void requestLiveUpdate(float v, float c, float apparentPower, float t, float tNtc,
                          float expectedNormalT, float socketTempExcessC,
                          float abs_irms_zscore_vs_baseline, float delta_irms_abs,
-                         float halfcycle_asymmetry, float suspicious_run_energy,
-                         float pulse_count_per_cycle, float zero_dwell_ratio,
+                         float halfcycle_asymmetry, float zero_dwell_ratio,
                          float low_current_ratio, float max_low_current_run_ms,
-                         float delta_hf_energy, float delta_flux, float v_sag_pct,
-                         float midband_residual_ratio, float zcv,
-                         float spectral_flux_midhf, float peak_fluct_cv,
-                         float residual_crest_factor, float thd_i,
-                         float hf_energy_delta, float edge_spike_ratio,
+                         float midband_residual_ratio, float spectral_flux_midhf,
+                         float thd_i, float hf_energy_delta,
                          uint8_t model_pred,
                          int8_t contextFamilyCodeRuntime,
                          float contextFamilyConfidence,
@@ -94,15 +90,10 @@ private:
     float v = 0.0f, c = 0.0f, apparentPower = 0.0f, t = 0.0f, tNtc = 0.0f;
     float tExpectedNormal = 0.0f, tExcess = 0.0f;
     float abs_irms_zscore_vs_baseline = 0.0f, delta_irms_abs = 0.0f;
-    float halfcycle_asymmetry = 0.0f, cycle_nmse = 0.0f;
-    float pulse_count_per_cycle = 0.0f, zero_dwell_ratio = 0.0f;
+    float halfcycle_asymmetry = 0.0f, zero_dwell_ratio = 0.0f;
     float low_current_ratio = 0.0f, max_low_current_run_ms = 0.0f;
-    float delta_hf_energy = 0.0f, v_sag_pct = 0.0f;
-    float suspicious_run_energy = 0.0f, delta_flux = 0.0f;
-    float midband_residual_ratio = 0.0f, zcv = 0.0f;
-    float spectral_flux_midhf = 0.0f, peak_fluct_cv = 0.0f;
-    float residual_crest_factor = 0.0f, thd_i = 0.0f;
-    float hf_energy_delta = 0.0f, edge_spike_ratio = 0.0f;
+    float midband_residual_ratio = 0.0f, spectral_flux_midhf = 0.0f;
+    float thd_i = 0.0f, hf_energy_delta = 0.0f;
     uint8_t model_pred = 0;
     int8_t contextFamilyCodeRuntime = CONTEXT_FAMILY_UNKNOWN;
     float contextFamilyConfidence = 0.0f;
@@ -174,7 +165,7 @@ private:
     float peak_fluct_cv, thd_i, hf_energy_delta, zcv, abs_irms_zscore_vs_baseline;
     float pulse_count_per_cycle, zero_dwell_ratio, low_current_ratio, max_low_current_run_ms;
     float fs_err_hz, suspicious_run_energy, delta_irms_abs, delta_hf_energy, delta_flux, v_sag_pct, halfcycle_asymmetry;
-    float v_rms, i_rms, temp_c, temp_ntc_c;
+    float v_rms, i_rms, temp_c, temp_ntc_c, expected_normal_socket_temp_c, socket_temp_excess_c;
     uint32_t queue_drop_count;
     uint16_t suspicious_run_len;
     uint16_t invalid_loaded_run_len;
@@ -183,7 +174,7 @@ private:
     uint8_t model_pred, feat_valid, current_valid, fault_state;
     uint8_t sampling_quality_bad, invalid_loaded_flag, invalid_off_flag;
     uint8_t relay_blank_active, turnon_blank_active, transient_blank_active;
-    uint8_t protection_alarm_active, protection_actuation_kind;
+    uint8_t relay_latched_on, protection_alarm_active, protection_actuation_kind;
     int8_t  device_family_code;
     int8_t  context_family_code_runtime;
     int8_t  context_family_code_provisional;
@@ -234,6 +225,9 @@ private:
   uint8_t _lastSentProtectionActuationKind = PROTECTION_ACTUATION_NONE;
   bool _lastSentProtectionAlarmActive = false;
   bool _lastSentRelayLatchedOn = false;
+  int8_t _lastSentContextFamilyCodeRuntime = CONTEXT_FAMILY_UNKNOWN;
+  float _lastSentContextFamilyConfidence = -1.0f;
+  bool _lastSentContextLatched = false;
   String _lastLoggedFaultState = "";
   String _lastHourlyNormalKey = "";
   String _fwVersion = "—";

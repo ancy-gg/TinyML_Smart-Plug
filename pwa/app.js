@@ -2173,6 +2173,8 @@ function sortSessionCsvLines(header, lines) {
 
 
 function normalizeUploadedCsvHeader(name) {
+  const schemaKey = window.TinyMLFeatureSchema?.normalizeFeatureKey?.(name);
+  if (schemaKey) return schemaKey;
   return String(name || "")
     .trim()
     .toLowerCase()

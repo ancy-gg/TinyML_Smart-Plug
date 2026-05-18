@@ -607,14 +607,10 @@ void FirebaseNetwork::pollControls(bool allowNet, bool portalActive) {
 void FirebaseNetwork::requestLiveUpdate(float v, float c, float apparentPower, float t, float tNtc,
                                         float expectedNormalT, float socketTempExcessC,
                                         float abs_irms_zscore_vs_baseline, float delta_irms_abs,
-                                        float halfcycle_asymmetry, float suspicious_run_energy,
-                                        float pulse_count_per_cycle, float zero_dwell_ratio,
+                                        float halfcycle_asymmetry, float zero_dwell_ratio,
                                         float low_current_ratio, float max_low_current_run_ms,
-                                        float delta_hf_energy, float delta_flux, float v_sag_pct,
-                                        float midband_residual_ratio, float zcv,
-                                        float spectral_flux_midhf, float peak_fluct_cv,
-                                        float residual_crest_factor, float thd_i,
-                                        float hf_energy_delta, float edge_spike_ratio,
+                                        float midband_residual_ratio, float spectral_flux_midhf,
+                                        float thd_i, float hf_energy_delta,
                                         uint8_t model_pred,
                                         int8_t contextFamilyCodeRuntime,
                                         float contextFamilyConfidence,
@@ -643,13 +639,17 @@ void FirebaseNetwork::requestLiveUpdate(float v, float c, float apparentPower, f
       (protectionActuationKind != _lastSentProtectionActuationKind) ||
       (protectionAlarmActive != _lastSentProtectionAlarmActive) ||
       (relayLatchedOn != _lastSentRelayLatchedOn);
+  const bool contextChanged =
+      (contextLatched != _lastSentContextLatched) ||
+      (contextFamilyCodeRuntime != _lastSentContextFamilyCodeRuntime) ||
+      (fabsf(contextFamilyConfidence - _lastSentContextFamilyConfidence) >= 0.02f);
   const unsigned long now = millis();
   const uint32_t interval = isNormal ? _normalIntervalMs : (isTripFault ? _faultIntervalMs : _warningIntervalMs);
   const bool shouldSend =
       stateChanged ||
       actuationChanged ||
-      (now - _lastLiveSend >= interval) ||
-      (now - _lastLiveSend >= CLOUD_REFRESH_KEEPALIVE_MS && !isNormal);
+      contextChanged ||
+      (now - _lastLiveSend >= interval);
   if (!shouldSend && !_pendingLive) return;
 
   _live.v = (isfinite(v) && v > 0.0f) ? v : 0.0f;
@@ -665,38 +665,20 @@ void FirebaseNetwork::requestLiveUpdate(float v, float c, float apparentPower, f
       tinymlClampFeatureValue(TINYML_FEATURE_DELTA_IRMS_ABS, delta_irms_abs);
   _live.halfcycle_asymmetry =
       tinymlClampFeatureValue(TINYML_FEATURE_HALFCYCLE_ASYMMETRY, halfcycle_asymmetry);
-  _live.suspicious_run_energy =
-      tinymlClampFeatureValue(TINYML_FEATURE_SUSPICIOUS_RUN_ENERGY, suspicious_run_energy);
-  _live.pulse_count_per_cycle =
-      tinymlClampFeatureValue(TINYML_FEATURE_PULSE_COUNT_PER_CYCLE, pulse_count_per_cycle);
   _live.zero_dwell_ratio =
       tinymlClampFeatureValue(TINYML_FEATURE_ZERO_DWELL_RATIO, zero_dwell_ratio);
   _live.low_current_ratio =
       tinymlClampFeatureValue(TINYML_FEATURE_LOW_CURRENT_RATIO, low_current_ratio);
   _live.max_low_current_run_ms =
       tinymlClampFeatureValue(TINYML_FEATURE_MAX_LOW_CURRENT_RUN_MS, max_low_current_run_ms);
-  _live.delta_hf_energy =
-      tinymlClampFeatureValue(TINYML_FEATURE_DELTA_HF_ENERGY, delta_hf_energy);
-  _live.delta_flux =
-      tinymlClampFeatureValue(TINYML_FEATURE_DELTA_FLUX, delta_flux);
-  _live.v_sag_pct =
-      tinymlClampFeatureValue(TINYML_FEATURE_V_SAG_PCT, v_sag_pct);
   _live.midband_residual_ratio =
       tinymlClampFeatureValue(TINYML_FEATURE_MIDBAND_RESIDUAL_RATIO, midband_residual_ratio);
-  _live.zcv =
-      tinymlClampFeatureValue(TINYML_FEATURE_ZCV, zcv);
   _live.spectral_flux_midhf =
       tinymlClampFeatureValue(TINYML_FEATURE_SPECTRAL_FLUX_MIDHF, spectral_flux_midhf);
-  _live.peak_fluct_cv =
-      tinymlClampFeatureValue(TINYML_FEATURE_PEAK_FLUCT_CV, peak_fluct_cv);
-  _live.residual_crest_factor =
-      tinymlClampFeatureValue(TINYML_FEATURE_RESIDUAL_CREST_FACTOR, residual_crest_factor);
   _live.thd_i =
       tinymlClampFeatureValue(TINYML_FEATURE_THD_I, thd_i);
   _live.hf_energy_delta =
       tinymlClampFeatureValue(TINYML_FEATURE_HF_ENERGY_DELTA, hf_energy_delta);
-  _live.edge_spike_ratio =
-      tinymlClampFeatureValue(TINYML_FEATURE_EDGE_SPIKE_RATIO, edge_spike_ratio);
   _live.model_pred = model_pred;
   _live.contextFamilyCodeRuntime = contextFamilyCodeRuntime;
   _live.contextFamilyConfidence =
@@ -744,11 +726,6 @@ bool FirebaseNetwork::pushHistoryRecord_(const HistoryJob& job) {
   json.set("protection_timing_state", job.useFeaturePayload ? job.status : "NORMAL");
   json.set("protection_alarm_active", job.f.protection_alarm_active != 0);
   json.set("protection_actuation_kind", (int)job.f.protection_actuation_kind);
-  json.set("protection_fault_onset_uptime_ms", (int)job.f.protection_fault_onset_uptime_ms);
-  json.set("protection_fault_detected_uptime_ms", (int)job.f.protection_fault_detected_uptime_ms);
-  json.set("protection_fault_actuated_uptime_ms", (int)job.f.protection_fault_actuated_uptime_ms);
-  json.set("protection_detection_latency_ms", (int)job.f.protection_detection_latency_ms);
-  json.set("protection_actuation_latency_ms", (int)job.f.protection_actuation_latency_ms);
 
   if (job.useFeaturePayload) {
     json.set("voltage", job.f.vrms);
@@ -757,21 +734,24 @@ bool FirebaseNetwork::pushHistoryRecord_(const HistoryJob& job) {
     json.set("temp", job.f.temp_c);
     json.set("estimated_socket_temp", job.f.temp_c);
     json.set("temp_ntc", job.f.temp_ntc_c);
-    json.set("spectral_flux_midhf", job.f.spectral_flux_midhf);
-    json.set("residual_crest_factor", job.f.residual_crest_factor);
-    json.set("edge_spike_ratio", job.f.edge_spike_ratio);
+    json.set("expected_normal_socket_temp", job.f.expected_normal_socket_temp_c);
+    json.set("socket_temp_excess", job.f.socket_temp_excess_c);
+    json.set("abs_irms_zscore_vs_baseline", job.f.abs_irms_zscore_vs_baseline);
+    json.set("delta_irms_abs", job.f.delta_irms_abs);
+    json.set("halfcycle_asymmetry", job.f.halfcycle_asymmetry);
+    json.set("zero_dwell_ratio", job.f.zero_dwell_ratio);
+    json.set("low_current_ratio", job.f.low_current_ratio);
+    json.set("max_low_current_run_ms", job.f.max_low_current_run_ms);
     json.set("midband_residual_ratio", job.f.midband_residual_ratio);
-    json.set("cycle_nmse", job.f.cycle_nmse);
-    json.set("peak_fluct_cv", job.f.peak_fluct_cv);
+    json.set("spectral_flux_midhf", job.f.spectral_flux_midhf);
     json.set("thd_i", job.f.thd_i);
     json.set("hf_energy_delta", job.f.hf_energy_delta);
-    json.set("zcv", job.f.zcv);
-    json.set("abs_irms_zscore_vs_baseline", job.f.abs_irms_zscore_vs_baseline);
-    json.set("adc_fs_hz", job.f.adc_fs_hz);
-    json.set("feat_valid", (int)job.f.feat_valid);
-    json.set("current_valid", (int)job.f.current_valid);
     json.set("model_pred", (int)job.f.model_pred);
     json.set("relay_trip", job.relayTrip);
+    json.set("relay_latched_on", job.f.relay_latched_on != 0);
+    json.set("context_family_code_runtime", (int)job.f.context_family_code_runtime);
+    json.set("context_family_confidence", job.f.context_family_confidence);
+    json.set("context_latched", job.f.context_latched != 0);
     json.set("mains_present", job.f.vrms >= MAINS_PRESENT_ON_V);
     json.set("power_condition", powerConditionForState(job.status, job.f.vrms));
   } else {
@@ -781,16 +761,6 @@ bool FirebaseNetwork::pushHistoryRecord_(const HistoryJob& job) {
     json.set("temp", job.f.temp_c);
     json.set("estimated_socket_temp", job.f.temp_c);
     json.set("temp_ntc", job.f.temp_ntc_c);
-    json.set("spectral_flux_midhf", 0.0f);
-    json.set("residual_crest_factor", 0.0f);
-    json.set("edge_spike_ratio", 0.0f);
-    json.set("midband_residual_ratio", 0.0f);
-    json.set("cycle_nmse", 0.0f);
-    json.set("peak_fluct_cv", 0.0f);
-    json.set("thd_i", 0.0f);
-    json.set("hf_energy_delta", 0.0f);
-    json.set("zcv", 0.0f);
-    json.set("abs_irms_zscore_vs_baseline", 0.0f);
     json.set("model_pred", 0);
     json.set("mains_present", job.f.vrms >= MAINS_PRESENT_ON_V);
     json.set("power_condition", powerConditionForState(job.status, job.f.vrms));
@@ -896,7 +866,6 @@ bool FirebaseNetwork::serviceLive_() {
   const bool loadDetected = (_live.c >= LOAD_ON_DETECT_A);
   const bool relayClosed = _live.relayLatchedOn;
   const String relayState = relayClosed ? String("RELAY ON") : String("RELAY OFF");
-  const bool compactLive = _manualEnabled || _mlUploadActive || _uploadFinalFlush;
   const String powerCondition = powerConditionForState(_live.state, _live.v);
   const String loadState = relayClosed ? String("LOAD ON") : String("LOAD OFF");
   String devicePhase = loadState;
@@ -942,31 +911,16 @@ bool FirebaseNetwork::serviceLive_() {
   json.set("abs_irms_zscore_vs_baseline", _live.abs_irms_zscore_vs_baseline);
   json.set("delta_irms_abs", _live.delta_irms_abs);
   json.set("halfcycle_asymmetry", _live.halfcycle_asymmetry);
-  json.set("suspicious_run_energy", _live.suspicious_run_energy);
-  json.set("pulse_count_per_cycle", _live.pulse_count_per_cycle);
   json.set("zero_dwell_ratio", _live.zero_dwell_ratio);
   json.set("low_current_ratio", _live.low_current_ratio);
   json.set("max_low_current_run_ms", _live.max_low_current_run_ms);
-  json.set("delta_hf_energy", _live.delta_hf_energy);
-  json.set("delta_flux", _live.delta_flux);
   json.set("midband_residual_ratio", _live.midband_residual_ratio);
   json.set("spectral_flux_midhf", _live.spectral_flux_midhf);
-  json.set("residual_crest_factor", _live.residual_crest_factor);
   json.set("thd_i", _live.thd_i);
   json.set("hf_energy_delta", _live.hf_energy_delta);
-  json.set("edge_spike_ratio", _live.edge_spike_ratio);
-  if (!compactLive) {
-    json.set("v_sag_pct", _live.v_sag_pct);
-    json.set("zcv", _live.zcv);
-    json.set("peak_fluct_cv", _live.peak_fluct_cv);
-    json.set("cycle_nmse", _live.cycle_nmse);
-  }
   json.set("model_pred", (int)_live.model_pred);
   json.set("context_family_code_runtime", (int)_live.contextFamilyCodeRuntime);
   json.set("context_family_confidence", _live.contextFamilyConfidence);
-  json.set("context_family_code_provisional", (int)_live.provisionalContextFamilyCode);
-  json.set("context_family_confidence_provisional", _live.provisionalContextFamilyConfidence);
-  json.set("context_acquiring", _live.contextAcquiring);
   json.set("context_latched", _live.contextLatched);
   json.set("status", _live.state);
   json.set("device_online", true);
@@ -987,11 +941,6 @@ bool FirebaseNetwork::serviceLive_() {
   json.set("protection_timing_state", stateToCstr(_live.protectionTimingState));
   json.set("protection_alarm_active", _live.protectionAlarmActive);
   json.set("protection_actuation_kind", (int)_live.protectionActuationKind);
-  json.set("protection_fault_onset_uptime_ms", (int)_live.protectionFaultOnsetUptimeMs);
-  json.set("protection_fault_detected_uptime_ms", (int)_live.protectionFaultDetectedUptimeMs);
-  json.set("protection_fault_actuated_uptime_ms", (int)_live.protectionFaultActuatedUptimeMs);
-  json.set("protection_detection_latency_ms", (int)_live.protectionDetectionLatencyMs);
-  json.set("protection_actuation_latency_ms", (int)_live.protectionActuationLatencyMs);
   json.set("ml_log_enabled", _manualEnabled);
   json.set("ml_log_session_id", _manual.sessionId);
   json.set("last_transition", _lastTransitionEvent);
@@ -1000,7 +949,6 @@ bool FirebaseNetwork::serviceLive_() {
   json.set("ts_iso", iso);
   json.set("uptime_ms", (int)millis());
   json.set("feature_space_version", ARC_RUNTIME_FEATURE_SPACE_VERSION);
-  json.set("compact_live_mode", compactLive);
   json.set("server_ts/.sv", "timestamp");
 
   if (!Firebase.RTDB.updateNode(&fbLive, "/live_data", &json)) {
@@ -1014,6 +962,9 @@ bool FirebaseNetwork::serviceLive_() {
   _lastSentProtectionActuationKind = _live.protectionActuationKind;
   _lastSentProtectionAlarmActive = _live.protectionAlarmActive;
   _lastSentRelayLatchedOn = _live.relayLatchedOn;
+  _lastSentContextFamilyCodeRuntime = _live.contextFamilyCodeRuntime;
+  _lastSentContextFamilyConfidence = _live.contextFamilyConfidence;
+  _lastSentContextLatched = _live.contextLatched;
   _pendingLive = false;
   _lastTxMs = _lastLiveSend;
 
@@ -1284,6 +1235,8 @@ void FirebaseNetwork::ingestLog(const FeatureFrame& f, FaultState st, int arcCou
   r.i_rms = f.irms;
   r.temp_c = f.temp_c;
   r.temp_ntc_c = f.temp_ntc_c;
+  r.expected_normal_socket_temp_c = f.expected_normal_socket_temp_c;
+  r.socket_temp_excess_c = f.socket_temp_excess_c;
   r.queue_drop_count = f.queue_drop_count;
   r.suspicious_run_len = f.suspicious_run_len;
   r.invalid_loaded_run_len = f.invalid_loaded_run_len;
@@ -1299,6 +1252,7 @@ void FirebaseNetwork::ingestLog(const FeatureFrame& f, FaultState st, int arcCou
   r.relay_blank_active = f.relay_blank_active;
   r.turnon_blank_active = f.turnon_blank_active;
   r.transient_blank_active = f.transient_blank_active;
+  r.relay_latched_on = f.relay_latched_on;
   r.protection_alarm_active = f.protection_alarm_active;
   r.protection_actuation_kind = f.protection_actuation_kind;
   const int8_t deviceFamilyCode = (f.device_family_code != CONTEXT_FAMILY_UNKNOWN)
@@ -1445,20 +1399,12 @@ bool FirebaseNetwork::serviceMlUpload_() {
       }
       const float measuredDurationS = computeContinuousDurationSeconds_(_buf, _uploadTotalCount);
       const float preferredDurationS = (wallDurationS > 0.0f) ? wallDurationS : measuredDurationS;
-      float fsSum = 0.0f;
-      uint32_t fsCount = 0;
-      for (uint16_t i = 0; i < _uploadTotalCount; ++i) {
-        const float fs = _buf[i].adc_fs_hz;
-        if (isfinite(fs) && fs > 0.0f) { fsSum += fs; fsCount++; }
-      }
       FirebaseJson sessMeta;
       sessMeta.set("row_count", (int)_uploadTotalCount);
       sessMeta.set("first_epoch_ms", (double)firstUploaded.epoch_ms);
       sessMeta.set("last_epoch_ms", (double)lastUploaded.epoch_ms);
       sessMeta.set("capture_start_ms", (double)firstUploaded.epoch_ms);
       sessMeta.set("capture_end_ms", (double)lastUploaded.epoch_ms);
-      sessMeta.set("first_frame_start_uptime_ms", (int)firstUploaded.frame_start_uptime_ms);
-      sessMeta.set("last_frame_end_uptime_ms", (int)lastUploaded.frame_end_uptime_ms);
       sessMeta.set("device_family", _uploadSpec.deviceFamily);
       sessMeta.set("device_name", _uploadSpec.deviceName);
       sessMeta.set("trial_number", _uploadSpec.trialNumber);
@@ -1468,7 +1414,6 @@ bool FirebaseNetwork::serviceMlUpload_() {
       if (preferredDurationS > 0.0f) sessMeta.set("source_duration_s", preferredDurationS);
       if (measuredDurationS > 0.0f) sessMeta.set("source_continuous_duration_s", measuredDurationS);
       if (wallDurationS > 0.0f) sessMeta.set("source_wall_duration_s", wallDurationS);
-      if (fsCount > 0) sessMeta.set("source_sample_rate_hz", fsSum / float(fsCount));
       if (_uploadTotalCount > 1) {
         const float meanFrameHz = (preferredDurationS > 0.0f) ? (float(_uploadTotalCount - 1U) / preferredDurationS) :
                                  ((measuredDurationS > 0.0f) ? (float(_uploadTotalCount - 1U) / measuredDurationS) : 0.0f);
@@ -1500,40 +1445,37 @@ bool FirebaseNetwork::serviceMlUpload_() {
   const uint16_t i1 = ((uint16_t)(i0 + ROWS_PER_CHUNK) < _uploadTotalCount) ? (uint16_t)(i0 + ROWS_PER_CHUNK) : _uploadTotalCount;
   const Rec& firstRec = _buf[i0];
   const Rec& lastRec  = _buf[i1 - 1];
-  const char* header = "abs_irms_zscore_vs_baseline,delta_irms_abs,halfcycle_asymmetry,suspicious_run_energy,pulse_count_per_cycle,zero_dwell_ratio,low_current_ratio,max_low_current_run_ms,delta_hf_energy,delta_flux,midband_residual_ratio,zcv,spectral_flux_midhf,peak_fluct_cv,residual_crest_factor,thd_i,hf_energy_delta,edge_spike_ratio,v_sag_pct,cycle_nmse,fs_err_hz,v_rms,i_rms,temp_c,temp_ntc_c,label_arc,device_family,device_name,trial_number,division_tag,notes,trusted_normal_session,load_type,session_id,epoch_ms,uptime_ms,frame_start_uptime_ms,frame_end_uptime_ms,feature_compute_end_uptime_ms,log_enqueue_uptime_ms,protection_fault_onset_uptime_ms,protection_fault_detected_uptime_ms,protection_fault_actuated_uptime_ms,protection_detection_latency_ms,protection_actuation_latency_ms,frame_dt_ms,compute_time_ms,timing_skew_ms,fft_size,hop_samples,queue_drop_count,suspicious_run_len,invalid_loaded_run_len,restrike_count_short,model_pred,feat_valid,current_valid,sampling_quality_bad,invalid_loaded_flag,invalid_off_flag,relay_blank_active,turnon_blank_active,transient_blank_active,protection_alarm_active,protection_actuation_kind,device_family_code,context_family_code_runtime,context_family_code_provisional,context_family_confidence,context_family_confidence_provisional,context_acquiring,context_latched,fault_state,arc_counter,adc_fs_hz,auto_capture,feature_space_version\n";
+  const char* header = "epoch_ms,uptime_ms,v_rms,i_rms,temp_c,temp_ntc_c,expected_normal_socket_temp,socket_temp_excess,abs_irms_zscore_vs_baseline,delta_irms_abs,halfcycle_asymmetry,zero_dwell_ratio,low_current_ratio,max_low_current_run_ms,midband_residual_ratio,spectral_flux_midhf,thd_i,hf_energy_delta,model_pred,fault_state,relay_latched_on,label_arc,device_family,device_family_code,device_name,trial_number,division_tag,notes,trusted_normal_session,load_type,session_id,context_family_code_runtime,context_family_confidence,context_latched,feature_space_version\n";
 
   String csv;
-  csv.reserve((i1 - i0) * 520 + 512);
+  csv.reserve((i1 - i0) * 260 + 256);
   csv += header;
   for (uint16_t i = i0; i < i1; ++i) {
     const Rec& r = _buf[i];
-    csv += String(r.abs_irms_zscore_vs_baseline, 6); csv += ",";
-    csv += String(r.delta_irms_abs, 6);              csv += ",";
-    csv += String(r.halfcycle_asymmetry, 6);         csv += ",";
-    csv += String(r.suspicious_run_energy, 6);       csv += ",";
-    csv += String(r.pulse_count_per_cycle, 6);       csv += ",";
-    csv += String(r.zero_dwell_ratio, 6);            csv += ",";
-    csv += String(r.low_current_ratio, 6);           csv += ",";
-    csv += String(r.max_low_current_run_ms, 6);      csv += ",";
-    csv += String(r.delta_hf_energy, 6);             csv += ",";
-    csv += String(r.delta_flux, 6);                  csv += ",";
-    csv += String(r.midband_residual_ratio, 6);      csv += ",";
-    csv += String(r.zcv, 6);                         csv += ",";
-    csv += String(r.spectral_flux_midhf, 6);         csv += ",";
-    csv += String(r.peak_fluct_cv, 6);               csv += ",";
-    csv += String(r.residual_crest_factor, 6);       csv += ",";
-    csv += String(r.thd_i, 4);                       csv += ",";
-    csv += String(r.hf_energy_delta, 6);             csv += ",";
-    csv += String(r.edge_spike_ratio, 6);            csv += ",";
-    csv += String(r.v_sag_pct, 6);                   csv += ",";
-    csv += String(r.cycle_nmse, 6);                  csv += ",";
-    csv += String(r.fs_err_hz, 3);                   csv += ",";
+    csv += String((unsigned long long)r.epoch_ms); csv += ",";
+    csv += String((unsigned long)r.uptime_ms); csv += ",";
     csv += String(r.v_rms, 3);                       csv += ",";
     csv += String(r.i_rms, 6);                       csv += ",";
     csv += String(r.temp_c, 3);                      csv += ",";
     csv += String(r.temp_ntc_c, 3);                  csv += ",";
+    csv += String(r.expected_normal_socket_temp_c, 3); csv += ",";
+    csv += String(r.socket_temp_excess_c, 3);        csv += ",";
+    csv += String(r.abs_irms_zscore_vs_baseline, 6); csv += ",";
+    csv += String(r.delta_irms_abs, 6);              csv += ",";
+    csv += String(r.halfcycle_asymmetry, 6);         csv += ",";
+    csv += String(r.zero_dwell_ratio, 6);            csv += ",";
+    csv += String(r.low_current_ratio, 6);           csv += ",";
+    csv += String(r.max_low_current_run_ms, 6);      csv += ",";
+    csv += String(r.midband_residual_ratio, 6);      csv += ",";
+    csv += String(r.spectral_flux_midhf, 6);         csv += ",";
+    csv += String(r.thd_i, 4);                       csv += ",";
+    csv += String(r.hf_energy_delta, 6);             csv += ",";
+    csv += String((int)r.model_pred);          csv += ",";
+    csv += String((int)r.fault_state);         csv += ",";
+    csv += String((int)r.relay_latched_on);    csv += ",";
     csv += String((int)r.label_arc);           csv += ",";
     csv += _uploadSpec.deviceFamily;           csv += ",";
+    csv += String((int)r.device_family_code);  csv += ",";
     csv += _uploadSpec.deviceName;             csv += ",";
     csv += String(_uploadSpec.trialNumber);    csv += ",";
     csv += _uploadSpec.divisionTag;            csv += ",";
@@ -1541,48 +1483,9 @@ bool FirebaseNetwork::serviceMlUpload_() {
     csv += String((int)_uploadSpec.trustedNormalSession); csv += ",";
     csv += _uploadSpec.loadType;               csv += ",";
     csv += _uploadSpec.sessionId;              csv += ",";
-    csv += String((unsigned long long)r.epoch_ms); csv += ",";
-    csv += String((unsigned long)r.uptime_ms); csv += ",";
-    csv += String((unsigned long)r.frame_start_uptime_ms); csv += ",";
-    csv += String((unsigned long)r.frame_end_uptime_ms); csv += ",";
-    csv += String((unsigned long)r.feature_compute_end_uptime_ms); csv += ",";
-    csv += String((unsigned long)r.log_enqueue_uptime_ms); csv += ",";
-    csv += String((unsigned long)r.protection_fault_onset_uptime_ms); csv += ",";
-    csv += String((unsigned long)r.protection_fault_detected_uptime_ms); csv += ",";
-    csv += String((unsigned long)r.protection_fault_actuated_uptime_ms); csv += ",";
-    csv += String((unsigned long)r.protection_detection_latency_ms); csv += ",";
-    csv += String((unsigned long)r.protection_actuation_latency_ms); csv += ",";
-    csv += String(r.frame_dt_ms, 3);           csv += ",";
-    csv += String(r.compute_time_ms, 3);       csv += ",";
-    csv += String(r.timing_skew_ms, 3);        csv += ",";
-    csv += String((unsigned int)r.fft_size);   csv += ",";
-    csv += String((unsigned int)r.hop_samples); csv += ",";
-    csv += String((unsigned long)r.queue_drop_count); csv += ",";
-    csv += String((int)r.suspicious_run_len);  csv += ",";
-    csv += String((int)r.invalid_loaded_run_len); csv += ",";
-    csv += String((int)r.restrike_count_short); csv += ",";
-    csv += String((int)r.model_pred);          csv += ",";
-    csv += String((int)r.feat_valid);          csv += ",";
-    csv += String((int)r.current_valid);       csv += ",";
-    csv += String((int)r.sampling_quality_bad); csv += ",";
-    csv += String((int)r.invalid_loaded_flag); csv += ",";
-    csv += String((int)r.invalid_off_flag);    csv += ",";
-    csv += String((int)r.relay_blank_active);  csv += ",";
-    csv += String((int)r.turnon_blank_active); csv += ",";
-    csv += String((int)r.transient_blank_active); csv += ",";
-    csv += String((int)r.protection_alarm_active); csv += ",";
-    csv += String((int)r.protection_actuation_kind); csv += ",";
-    csv += String((int)r.device_family_code);  csv += ",";
     csv += String((int)r.context_family_code_runtime); csv += ",";
-    csv += String((int)r.context_family_code_provisional); csv += ",";
     csv += String(r.context_family_confidence, 4); csv += ",";
-    csv += String(r.context_family_confidence_provisional, 4); csv += ",";
-    csv += String((int)r.context_acquiring);   csv += ",";
     csv += String((int)r.context_latched);     csv += ",";
-    csv += String((int)r.fault_state);         csv += ",";
-    csv += String((int)r.arc_counter);         csv += ",";
-    csv += String(r.adc_fs_hz, 2);             csv += ",";
-    csv += String((int)r.auto_capture);        csv += ",";
     csv += String((int)r.feature_space_version); csv += "\n";
   }
 
@@ -1614,8 +1517,6 @@ bool FirebaseNetwork::serviceMlUpload_() {
   json.set("last_epoch_ms", (double)lastRec.epoch_ms);
   json.set("first_uptime_ms", (int)firstRec.uptime_ms);
   json.set("last_uptime_ms", (int)lastRec.uptime_ms);
-  json.set("first_frame_start_uptime_ms", (int)firstRec.frame_start_uptime_ms);
-  json.set("last_frame_end_uptime_ms", (int)lastRec.frame_end_uptime_ms);
   if (sessionPreferredDurationS > 0.0f) json.set("source_duration_s", sessionPreferredDurationS);
   if (sessionWallDurationS > 0.0f) json.set("source_wall_duration_s", sessionWallDurationS);
   if (sessionContinuousDurationS > 0.0f) json.set("source_continuous_duration_s", sessionContinuousDurationS);
@@ -1635,11 +1536,8 @@ bool FirebaseNetwork::serviceMlUpload_() {
   if (sessionWallDurationS > 0.0f) json.set("meta/source_wall_duration_s", sessionWallDurationS);
   if (sessionContinuousDurationS > 0.0f) json.set("meta/source_continuous_duration_s", sessionContinuousDurationS);
   json.set("meta/auto_capture", _uploadAuto);
-  json.set("meta/feature_order", "abs_irms_zscore_vs_baseline,delta_irms_abs,halfcycle_asymmetry,suspicious_run_energy,pulse_count_per_cycle,zero_dwell_ratio,low_current_ratio,max_low_current_run_ms,delta_hf_energy,delta_flux,midband_residual_ratio,zcv,spectral_flux_midhf,peak_fluct_cv,residual_crest_factor,thd_i,hf_energy_delta,edge_spike_ratio,v_sag_pct,cycle_nmse");
-  json.set("meta/pwa_feature_order", "pulse_count_per_cycle,max_low_current_run_ms,zero_dwell_ratio,low_current_ratio,thd_i,spectral_flux_midhf,hf_energy_delta,residual_crest_factor,peak_fluct_cv,zcv,delta_irms_abs,midband_residual_ratio,edge_spike_ratio");
-  json.set("meta/fft_size", (int)ARC_RUNTIME_FRAME_SAMPLES);
-  json.set("meta/hop_samples", (int)ARC_RUNTIME_HOP_SAMPLES);
-  json.set("meta/feature_emit_every_hops", (int)ARC_RUNTIME_EMIT_EVERY_HOPS);
+  json.set("meta/feature_order", "abs_irms_zscore_vs_baseline,delta_irms_abs,halfcycle_asymmetry,zero_dwell_ratio,low_current_ratio,max_low_current_run_ms,midband_residual_ratio,spectral_flux_midhf,thd_i,hf_energy_delta");
+  json.set("meta/pwa_feature_order", "abs_irms_zscore_vs_baseline,delta_irms_abs,halfcycle_asymmetry,zero_dwell_ratio,low_current_ratio,max_low_current_run_ms,midband_residual_ratio,spectral_flux_midhf,thd_i,hf_energy_delta,voltage,current,temp_c,temp_ntc_c,expected_normal_socket_temp,socket_temp_excess,model_pred,fault_state,relay_latched_on,label_arc,device_family_code,context_family_confidence");
 
   if (!Firebase.RTDB.pushJSON(&fbLog, path.c_str(), &json)) {
     recoverClient_(fbLog, CLOUD_TX_RETRY_MS);

@@ -257,6 +257,9 @@ static inline void sanitizeFeatureFrame_(FeatureFrame& f) {
   if (!isfinite(f.irms) || f.irms < 0.0f) f.irms = 0.0f;
   else if (f.irms > 40.0f) f.irms = 40.0f;
   if (!isfinite(f.temp_c)) f.temp_c = 0.0f;
+  if (!isfinite(f.temp_ntc_c)) f.temp_ntc_c = 0.0f;
+  if (!isfinite(f.expected_normal_socket_temp_c)) f.expected_normal_socket_temp_c = 0.0f;
+  if (!isfinite(f.socket_temp_excess_c) || f.socket_temp_excess_c < 0.0f) f.socket_temp_excess_c = 0.0f;
   if (!isfinite(f.adc_fs_hz) || f.adc_fs_hz < 0.0f) f.adc_fs_hz = 0.0f;
   if (!isfinite(f.fs_err_hz) || f.fs_err_hz < 0.0f) f.fs_err_hz = fabsf(FS_INTENDED_HZ);
   if (f.fft_size == 0U) f.fft_size = ARC_RUNTIME_FRAME_SAMPLES;
@@ -447,27 +450,14 @@ static void updateContextTracker_(const FeatureFrame& f, float vProtect, float i
     gContext.family = CONTEXT_FAMILY_UNKNOWN;
     gContext.confidence = 0.0f;
     arcDetect.setContext(CONTEXT_FAMILY_UNKNOWN, 0.0f);
-  } else if (provisionalReady) {
-    arcDetect.setContext(gContext.provisionalFamily, gContext.provisionalConfidence);
   } else {
     arcDetect.setContext(CONTEXT_FAMILY_UNKNOWN, 0.0f);
   }
 }
 
 static inline void applyContextToFrame_(FeatureFrame& f) {
-  const uint32_t now = millis();
-  const uint32_t activeWindowMs = (gContext.activeSinceMs > 0U) ? (now - gContext.activeSinceMs) : 0U;
-  const bool provisionalReady =
-      !gContext.ready &&
-      (activeWindowMs >= CONTEXT_PROVISIONAL_MIN_MS) &&
-      (gContext.provisionalFamily != CONTEXT_FAMILY_UNKNOWN) &&
-      (gContext.provisionalConfidence >= CONTEXT_MIN_CONFIDENCE);
-
-  const int8_t runtimeFamily =
-      gContext.ready ? gContext.family : (provisionalReady ? gContext.provisionalFamily : (int8_t)CONTEXT_FAMILY_UNKNOWN);
-  const float runtimeConfidence =
-      gContext.ready ? gContext.confidence : (provisionalReady ? gContext.provisionalConfidence : 0.0f);
-
+  const int8_t runtimeFamily = gContext.ready ? gContext.family : (int8_t)CONTEXT_FAMILY_UNKNOWN;
+  const float runtimeConfidence = gContext.ready ? gContext.confidence : 0.0f;
   f.context_family_code_runtime = runtimeFamily;
   f.context_family_confidence = runtimeConfidence;
   f.context_family_code_provisional = gContext.provisionalFamily;
@@ -1642,6 +1632,8 @@ void loop() {
   tSocketExcessC = tempSensor.socketTempExcessC();
   f.temp_c = tSocketC;
   f.temp_ntc_c = tNtcC;
+  f.expected_normal_socket_temp_c = tExpectedNormalC;
+  f.socket_temp_excess_c = tSocketExcessC;
 
   if (vFast <= MAINS_PRESENT_OFF_V) {
     clearManualRelayAssume_();
@@ -1655,6 +1647,7 @@ void loop() {
   protection.setRelayOffHold(relayShouldHoldOff);
 
   const bool effectiveRelayLatchedOn = protection.relayLatchedOn();
+  f.relay_latched_on = effectiveRelayLatchedOn ? 1U : 0U;
   const bool featureBridgeUsed = stabilizeFeatureValidity(f, vFast, irmsRawForLogic, false);
   (void)featureBridgeUsed;
 
@@ -2446,14 +2439,10 @@ void loop() {
     network.requestLiveUpdate(vRms, f.irms, apparentPowerVa, tSocketC, tNtcC,
                               tExpectedNormalC, tSocketExcessC,
                               f.abs_irms_zscore_vs_baseline, f.delta_irms_abs,
-                              f.halfcycle_asymmetry, f.suspicious_run_energy,
-                              f.pulse_count_per_cycle, f.zero_dwell_ratio,
+                              f.halfcycle_asymmetry, f.zero_dwell_ratio,
                               f.low_current_ratio, f.max_low_current_run_ms,
-                              f.delta_hf_energy, f.delta_flux, f.v_sag_pct,
-                              f.midband_residual_ratio, f.zcv,
-                              f.spectral_flux_midhf, f.peak_fluct_cv,
-                              f.residual_crest_factor, f.thd_i,
-                              f.hf_energy_delta, f.edge_spike_ratio,
+                              f.midband_residual_ratio, f.spectral_flux_midhf,
+                              f.thd_i, f.hf_energy_delta,
                               f.model_pred,
                               f.context_family_code_runtime,
                               f.context_family_confidence,

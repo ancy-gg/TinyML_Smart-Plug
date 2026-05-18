@@ -102,20 +102,41 @@ CONTEXT_SWEEP_FEATURES = [
     "hf_energy_delta",
 ]
 
-ARC_PWA_VISIBLE_FEATURES = [
-    "pulse_count_per_cycle",
+DEPLOYED_ARC_BASE_FEATURES = [
     "max_low_current_run_ms",
     "zero_dwell_ratio",
     "low_current_ratio",
+    "abs_irms_zscore_vs_baseline",
+    "midband_residual_ratio",
+    "spectral_flux_midhf",
+]
+
+DEPLOYED_CONTEXT_FEATURES = [
+    "delta_irms_abs",
+    "halfcycle_asymmetry",
+    "midband_residual_ratio",
     "thd_i",
     "spectral_flux_midhf",
     "hf_energy_delta",
-    "residual_crest_factor",
-    "peak_fluct_cv",
-    "zcv",
+]
+
+DEPLOYED_MODEL_COMPUTED_FEATURES = list(dict.fromkeys(
+    DEPLOYED_ARC_BASE_FEATURES + DEPLOYED_CONTEXT_FEATURES
+))
+
+TRIMMED_COLLECT_CSV_FEATURES = list(DEPLOYED_MODEL_COMPUTED_FEATURES)
+
+ARC_PWA_VISIBLE_FEATURES = [
+    "abs_irms_zscore_vs_baseline",
     "delta_irms_abs",
+    "halfcycle_asymmetry",
+    "zero_dwell_ratio",
+    "low_current_ratio",
+    "max_low_current_run_ms",
     "midband_residual_ratio",
-    "edge_spike_ratio",
+    "spectral_flux_midhf",
+    "thd_i",
+    "hf_energy_delta",
 ]
 ARC_DEFAULT_BASE_FEATURES = list(ALL_COMPUTED_FEATURES)
 CONTEXT_DEFAULT_FEATURES = list(CONTEXT_SWEEP_FEATURES)
@@ -219,7 +240,22 @@ DB_NORMAL_ANCHORS = {
 }
 
 DB_ALIAS_MAP = {
+    "current": "i_rms",
+    "voltage": "v_rms",
+    "temperature": "temp_c",
+    "estimated_socket_temp": "temp_c",
+    "estimated_socket_temperature": "temp_c",
+    "temp_ntc": "temp_ntc_c",
+    "expected_normal_socket_temp": "expected_normal_socket_temp",
+    "expected_normal_socket_temp_c": "expected_normal_socket_temp",
+    "socket_temp_excess": "socket_temp_excess",
+    "socket_temp_excess_c": "socket_temp_excess",
+    "zero_cross_variance": "zcv",
+    "zero_crossing_variance": "zcv",
+    "residual_crest": "residual_crest_factor",
     "residual_crest_factor_db": "residual_crest_factor",
+    "edge_spike": "edge_spike_ratio",
+    "voltage_sag": "v_sag_pct",
     "edge_spike_ratio_db": "edge_spike_ratio",
     "midband_residual_ratio_db": "midband_residual_ratio",
     "thd_i_db": "thd_i",
@@ -1057,8 +1093,11 @@ def normalize_feature_names(df: pd.DataFrame) -> pd.DataFrame:
         "frame_end_uptime_ms": "frame_end_uptime_ms",
         "frame_dt_ms": "frame_dt_ms",
         "compute_time_ms": "compute_time_ms",
+        "compute_time": "compute_time_ms",
         "queue_drop_count": "queue_drop_count",
+        "queue_drops": "queue_drop_count",
         "fs_err_hz": "fs_err_hz",
+        "adc_rate_error": "fs_err_hz",
         "sampling_quality_bad": "sampling_quality_bad",
         "invalid_loaded_flag": "invalid_loaded_flag",
         "invalid_off_flag": "invalid_off_flag",
@@ -1082,14 +1121,21 @@ def normalize_feature_names(df: pd.DataFrame) -> pd.DataFrame:
         "midband_residual_rms": "midband_residual_rms",
         "irms_drop_vs_baseline": "irms_drop_vs_baseline",
         "pulse_count_per_cycle": "pulse_count_per_cycle",
+        "zero_dwell_ratio": "zero_dwell_ratio",
+        "low_current_ratio": "low_current_ratio",
+        "max_low_current_run_ms": "max_low_current_run_ms",
+        "relay_latched_on": "relay_latched_on",
+        "fault_state": "fault_state",
         **DB_ALIAS_MAP,
     }
 
-    rename_map = {
-        c: aliases[str(c).strip()]
-        for c in df.columns
-        if str(c).strip() in aliases
-    }
+    rename_map = {}
+    for c in df.columns:
+        raw = str(c).strip()
+        slug = re.sub(r"[^a-z0-9]+", "_", raw.lower()).strip("_")
+        target = aliases.get(raw) or aliases.get(slug)
+        if target:
+            rename_map[c] = target
     if rename_map:
         df = df.rename(columns=rename_map)
 
@@ -1120,6 +1166,17 @@ def normalize_feature_names(df: pd.DataFrame) -> pd.DataFrame:
             df["abs_irms_zscore_vs_baseline"] = pd.to_numeric(df["irms_drop_vs_baseline"], errors="coerce").abs()
 
     df = coerce_log_feature_space(df)
+
+    missing_deployed = [name for name in DEPLOYED_MODEL_COMPUTED_FEATURES if name not in df.columns]
+    if missing_deployed:
+        warnings.warn(
+            "CSV is missing deployed model-required feature columns: "
+            + ", ".join(missing_deployed)
+            + ". Compatibility fill will use 0.0; do not train or export a model from this data "
+              "unless those features are recovered or an intentional retraining plan is used.",
+            RuntimeWarning,
+            stacklevel=2,
+        )
 
     for missing in FEATURES:
         if missing not in df.columns:

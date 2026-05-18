@@ -5,6 +5,7 @@ import os
 import re
 import sys
 import time
+import warnings
 from pathlib import Path
 
 import numpy as np
@@ -12,6 +13,7 @@ import pandas as pd
 
 from tinyml_common import (
     FEATURES,
+    DEPLOYED_MODEL_COMPUTED_FEATURES,
     ARC_SWEEP_FEATURES,
     CONTEXT_SWEEP_FEATURES,
     TARGET,
@@ -179,7 +181,22 @@ DB_NORMAL_ANCHORS = {
 }
 
 DB_ALIAS_MAP = {
+    "current": "i_rms",
+    "voltage": "v_rms",
+    "temperature": "temp_c",
+    "estimated_socket_temp": "temp_c",
+    "estimated_socket_temperature": "temp_c",
+    "temp_ntc": "temp_ntc_c",
+    "expected_normal_socket_temp": "expected_normal_socket_temp",
+    "expected_normal_socket_temp_c": "expected_normal_socket_temp",
+    "socket_temp_excess": "socket_temp_excess",
+    "socket_temp_excess_c": "socket_temp_excess",
+    "zero_cross_variance": "zcv",
+    "zero_crossing_variance": "zcv",
+    "residual_crest": "residual_crest_factor",
     "residual_crest_factor_db": "residual_crest_factor",
+    "edge_spike": "edge_spike_ratio",
+    "voltage_sag": "v_sag_pct",
     "edge_spike_ratio_db": "edge_spike_ratio",
     "midband_residual_ratio_db": "midband_residual_ratio",
     "thd_i_db": "thd_i",
@@ -563,9 +580,23 @@ def normalize_feature_names(df: pd.DataFrame) -> pd.DataFrame:
         "midhf_flux": "spectral_flux_midhf",
         "resid_crest_factor": "residual_crest_factor",
         "pre_dip_spike_ratio": "edge_spike_ratio",
+        "zero_dwell_ratio": "zero_dwell_ratio",
+        "low_current_ratio": "low_current_ratio",
+        "max_low_current_run_ms": "max_low_current_run_ms",
+        "relay_latched_on": "relay_latched_on",
+        "fault_state": "fault_state",
+        "queue_drops": "queue_drop_count",
+        "compute_time": "compute_time_ms",
+        "adc_rate_error": "fs_err_hz",
         **DB_ALIAS_MAP,
     }
-    rename_map = {c: alias_map[c] for c in df.columns if c in alias_map}
+    rename_map = {}
+    for c in df.columns:
+        raw = str(c).strip()
+        slug = re.sub(r"[^a-z0-9]+", "_", raw.lower()).strip("_")
+        target = alias_map.get(raw) or alias_map.get(slug)
+        if target:
+            rename_map[c] = target
     if rename_map:
         df = df.rename(columns=rename_map)
 
@@ -596,6 +627,17 @@ def normalize_feature_names(df: pd.DataFrame) -> pd.DataFrame:
             df["abs_irms_zscore_vs_baseline"] = pd.to_numeric(df["irms_drop_vs_baseline"], errors="coerce").abs()
 
     df = coerce_log_feature_space(df)
+
+    missing_deployed = [name for name in DEPLOYED_MODEL_COMPUTED_FEATURES if name not in df.columns]
+    if missing_deployed:
+        warnings.warn(
+            "CSV is missing deployed model-required feature columns: "
+            + ", ".join(missing_deployed)
+            + ". Compatibility fill will use 0.0; do not train or export a model from this data "
+              "unless those features are recovered or an intentional retraining plan is used.",
+            RuntimeWarning,
+            stacklevel=2,
+        )
 
     for missing in FEATURES:
         if missing not in df.columns:

@@ -74,6 +74,7 @@
   const btnSelAll = $("btnSelAll");
   const btnSelNone = $("btnSelNone");
   const chkSelectedOnly = $("chkSelectedOnly");
+  const chkLegacyDiagnostics = $("chkLegacyDiagnostics");
   const seriesCountText = $("seriesCountText");
   const btnPrevArc = $("btnPrevArc");
   const btnNextArc = $("btnNextArc");
@@ -639,18 +640,18 @@
       ? parsedFields.map(normalizeHeaderName).filter(Boolean)
       : [];
     const headers = normalizedFields.length ? normalizedFields.slice() : Object.keys(rows[0] || {});
-    ["label_arc", "device_family", "device_family_code", "device_name", "trial_number", "division_tag", "notes", "trusted_normal_session", "load_type", "context_family_code_runtime", "context_family_code_provisional", "context_family_confidence", "context_family_confidence_provisional", "context_acquiring", "context_latched"].forEach((name) => { if (!headers.includes(name)) headers.push(name); });
+    PREFERRED_EXPORT_HEADER_ORDER.forEach((name) => { if (!headers.includes(name)) headers.push(name); });
+    ["label_arc", "device_family", "device_family_code", "device_name", "trial_number", "division_tag", "notes", "trusted_normal_session", "load_type", "context_family_code_runtime", "context_family_confidence", "context_latched", "relay_latched_on", "fault_state"].forEach((name) => { if (!headers.includes(name)) headers.push(name); });
 
     rows.forEach((row) => {
       if (!row || typeof row !== "object") return;
       row.label_arc = normalizeBinaryLabel(row.label_arc);
       mergeRowMetadata(row, currentMeta || {});
       if (!("context_family_code_runtime" in row)) row.context_family_code_runtime = row.device_family_code;
-      if (!("context_family_code_provisional" in row)) row.context_family_code_provisional = row.context_family_code_runtime;
       if (!("context_family_confidence" in row)) row.context_family_confidence = row.device_family_code >= 0 ? 1 : 0;
-      if (!("context_family_confidence_provisional" in row)) row.context_family_confidence_provisional = row.context_family_confidence;
-      if (!("context_acquiring" in row)) row.context_acquiring = 0;
       if (!("context_latched" in row)) row.context_latched = 0;
+      if (!("relay_latched_on" in row)) row.relay_latched_on = 0;
+      if (!("fault_state" in row)) row.fault_state = "";
       headers.forEach((key) => {
         if (!(key in row)) row[key] = (key === "label_arc") ? 0 : "";
       });
@@ -1177,52 +1178,28 @@
 const PREFERRED_EXPORT_HEADER_ORDER = FEATURE_SCHEMA?.csvHeaderOrder || [
   "epoch_ms",
   "uptime_ms",
-  "frame_start_uptime_ms",
-  "frame_end_uptime_ms",
-  "feature_compute_end_uptime_ms",
-  "log_enqueue_uptime_ms",
-  "frame_dt_ms",
-  "compute_time_ms",
-  "timing_skew_ms",
   "v_rms",
-  "voltage",
   "i_rms",
-  "current",
   "temp_c",
   "temp_ntc_c",
-  "temperature",
+  "expected_normal_socket_temp",
+  "socket_temp_excess",
 
   "abs_irms_zscore_vs_baseline",
   "delta_irms_abs",
   "halfcycle_asymmetry",
-  "suspicious_run_energy",
-  "delta_hf_energy",
-  "delta_flux",
+  "zero_dwell_ratio",
+  "low_current_ratio",
+  "max_low_current_run_ms",
   "midband_residual_ratio",
-  "zcv",
   "spectral_flux_midhf",
-  "peak_fluct_cv",
-  "residual_crest_factor",
   "thd_i",
   "hf_energy_delta",
-  "edge_spike_ratio",
-  "v_sag_pct",
-  "cycle_nmse",
 
   "model_pred",
+  "fault_state",
+  "relay_latched_on",
   "label_arc",
-  "feat_valid",
-  "current_valid",
-  "sampling_quality_bad",
-  "invalid_loaded_flag",
-  "invalid_off_flag",
-  "relay_blank_active",
-  "turnon_blank_active",
-  "transient_blank_active",
-  "suspicious_run_len",
-  "invalid_loaded_run_len",
-  "restrike_count_short",
-
   "device_family",
   "device_family_code",
   "device_name",
@@ -1233,18 +1210,15 @@ const PREFERRED_EXPORT_HEADER_ORDER = FEATURE_SCHEMA?.csvHeaderOrder || [
   "load_type",
   "session_id",
   "context_family_code_runtime",
-  "context_family_code_provisional",
   "context_family_confidence",
-  "context_family_confidence_provisional",
-  "context_acquiring",
   "context_latched",
-  "adc_fs_hz",
   "feature_space_version"
 ];
 
 function orderCsvHeaders(headers) {
   const seen = new Set();
   const ordered = [];
+  const preferred = new Set(PREFERRED_EXPORT_HEADER_ORDER);
   const push = (name) => {
     const key = String(name || "").trim();
     if (!key || seen.has(key) || !headers.includes(key)) return;
@@ -1252,16 +1226,25 @@ function orderCsvHeaders(headers) {
     ordered.push(key);
   };
   PREFERRED_EXPORT_HEADER_ORDER.forEach(push);
-  headers.forEach(push);
+  headers.forEach((name) => {
+    if (!preferred.has(name) && isDeprecatedSeriesKey(name)) return;
+    push(name);
+  });
   return ordered;
 }
 
+  function isDeprecatedSeriesKey(key) {
+    return !!FEATURE_SCHEMA?.isDeprecatedFeatureKey?.(key);
+  }
+
   function buildSeriesKeys(rows) {
     if (!rows.length) return [];
+    const includeLegacyDiagnostics = !!chkLegacyDiagnostics?.checked;
     const keys = Object.keys(rows[0]);
     return keys.filter((k) => {
       if (k === "timestamp" || k === "session_id" || k === "load_type") return false;
       if (k === "epoch_ms" || k === "uptime_ms" || k === "feature_space_version" || k === "wpe_entropy" || k === "dip_rebound_ratio") return false;
+      if (!includeLegacyDiagnostics && isDeprecatedSeriesKey(k)) return false;
       const val = rows.find((r) => r[k] !== undefined && r[k] !== null)?.[k];
       if (val === undefined) return false;
       const num = typeof val === "number" ? val : Number(String(val).trim());
@@ -1706,8 +1689,33 @@ function orderCsvHeaders(headers) {
     persisted.axis.forEach((v, k) => axisPref.set(k, String(v || "y")));
   }
 
-  const DEFAULT_ON = new Set(["voltage", "v_rms", "current", "i_rms"]);
-  const DEFAULT_Y2 = new Set(["residual_crest_factor", "edge_spike_ratio", "midband_residual_ratio", "hf_energy_delta", "i_rms", "current", "temp_c", "temp", "temp_ntc_c"]);
+  const DEFAULT_ON = new Set(FEATURE_SCHEMA?.defaultSeriesKeys || [
+    "abs_irms_zscore_vs_baseline",
+    "delta_irms_abs",
+    "halfcycle_asymmetry",
+    "zero_dwell_ratio",
+    "low_current_ratio",
+    "max_low_current_run_ms",
+    "midband_residual_ratio",
+    "spectral_flux_midhf",
+    "thd_i",
+    "hf_energy_delta",
+    "voltage",
+    "v_rms",
+    "current",
+    "i_rms",
+    "temp_c",
+    "temp_ntc_c",
+    "expected_normal_socket_temp",
+    "socket_temp_excess",
+    "model_pred",
+    "fault_state",
+    "relay_latched_on",
+    "label_arc",
+    "device_family_code",
+    "context_family_confidence",
+  ]);
+  const DEFAULT_Y2 = new Set(["i_rms", "current", "temp_c", "temp", "temp_ntc_c", "expected_normal_socket_temp", "socket_temp_excess", "model_pred", "fault_state", "relay_latched_on", "label_arc", "device_family_code", "context_family_confidence"]);
 
   setViewerOpen(false);
   ensureArcEditorControls();
@@ -1716,6 +1724,8 @@ function orderCsvHeaders(headers) {
 
 
   function seriesMeta(key) {
+    const schemaMeta = FEATURE_SCHEMA?.featureMeta?.(key);
+    if (schemaMeta) return schemaMeta;
     return SERIES_META[key] || null;
   }
 
@@ -1735,11 +1745,17 @@ function orderCsvHeaders(headers) {
   }
 
   function preferredDefaultKeys(keys) {
-    const voltageKey = ["voltage", "v_rms"].find((k) => keys.includes(k));
-    const currentKey = ["current", "i_rms"].find((k) => keys.includes(k));
-    const picked = [voltageKey, currentKey].filter(Boolean);
-    if (picked.length) return picked;
-    return keys.filter((k) => k === "voltage" || k === "v_rms" || k === "current" || k === "i_rms").slice(0, 2);
+    const ordered = [];
+    const add = (key) => {
+      if (key && keys.includes(key) && !ordered.includes(key)) ordered.push(key);
+    };
+    (FEATURE_SCHEMA?.computedFeatureOrder || []).forEach(add);
+    ["voltage", "v_rms", "current", "i_rms", "temp_c", "temp", "temp_ntc_c",
+      "expected_normal_socket_temp", "socket_temp_excess", "model_pred",
+      "fault_state", "relay_latched_on", "label_arc", "device_family_code",
+      "context_family_confidence"].forEach(add);
+    if (ordered.length) return ordered;
+    return keys.filter((k) => DEFAULT_ON.has(k) && !isDeprecatedSeriesKey(k)).slice(0, 16);
   }
 
   function resetState(options = {}) {
@@ -2801,6 +2817,13 @@ function orderCsvHeaders(headers) {
   }
   seriesSearch?.addEventListener("input", applySeriesFilter);
   chkSelectedOnly?.addEventListener("change", applySeriesFilter);
+  chkLegacyDiagnostics?.addEventListener("change", () => {
+    if (ROWS.length) {
+      refreshDerivedData(true);
+      buildPlot(captureViewerState() || {});
+    }
+    applySeriesFilter();
+  });
 
   function setAllSeries(on) {
     const viewState = captureViewerState();

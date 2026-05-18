@@ -14,7 +14,7 @@ static constexpr bool ENABLE_AUTO_ARC_CAPTURE = false;
 // Cloud / OTA configuration
 static constexpr const char* FIREBASE_API_KEY = "AIzaSyAmJlZZszyWPJFgIkTAAl_TbIySys1nvEw";
 static constexpr const char* FIREBASE_DB_URL  = "tinyml-smart-plug-default-rtdb.asia-southeast1.firebasedatabase.app";
-static constexpr const char* FW_VERSION       = "v7.8.2-p-gen0-final";
+static constexpr const char* FW_VERSION       = "v7.8.2-p-gen0-light";
 static constexpr const char* OTA_DESIRED_VERSION_PATH = "/ota/desired_version";
 static constexpr const char* OTA_FIRMWARE_URL_PATH    = "/ota/firmware_url";
 
@@ -103,6 +103,8 @@ struct FeatureFrame {
   float irms   = 0.0f;
   float temp_c = 0.0f;
   float temp_ntc_c = 0.0f;
+  float expected_normal_socket_temp_c = 0.0f;
+  float socket_temp_excess_c = 0.0f;
 
   float spectral_flux_midhf          = 0.0f;
   float residual_crest_factor        = 0.0f;
@@ -145,6 +147,7 @@ struct FeatureFrame {
   uint8_t transient_blank_active = 0;
   uint8_t protection_alarm_active = 0;
   uint8_t protection_actuation_kind = PROTECTION_ACTUATION_NONE;
+  uint8_t relay_latched_on = 0;
 
   int8_t  device_family_code = CONTEXT_FAMILY_UNKNOWN;
   int8_t  context_family_code_runtime = CONTEXT_FAMILY_UNKNOWN;
@@ -159,7 +162,7 @@ struct FeatureFrame {
 // Context timing
 static constexpr float CONTEXT_MIN_IRMS_A = 0.09f;
 static constexpr float CONTEXT_UNLATCH_ZERO_IRMS_A = 0.020f;
-static constexpr uint32_t CONTEXT_ACQUIRE_WINDOW_MS = 5000UL;
+static constexpr uint32_t CONTEXT_ACQUIRE_WINDOW_MS = 2000UL;
 static constexpr uint32_t CONTEXT_ACQUIRE_DROP_GRACE_MS = 0UL;
 static constexpr uint32_t CONTEXT_UNLATCH_ZERO_MS = 5000UL;
 static constexpr uint32_t CONTEXT_PROVISIONAL_MIN_MS = 300UL;
@@ -425,7 +428,7 @@ static constexpr uint32_t SENSOR_BOOT_SETTLE_MS         = 450UL;
 static constexpr uint32_t PROTECTION_INHIBIT_MS         = 5000UL;
 static constexpr uint32_t ML_CONTROL_POLL_MS            = 5000UL;
 static constexpr uint32_t CLOUD_CONTROL_POLL_MS         = 5000UL;
-static constexpr uint32_t LIVE_REQUEST_UPDATE_MS        = 5000UL;
+static constexpr uint32_t LIVE_REQUEST_UPDATE_MS        = 250UL;
 static constexpr uint16_t AUTO_ARC_CAPTURE_DURATION_S   = 12;
 static constexpr uint32_t AUTO_ARC_CAPTURE_COOLDOWN_MS  = 60000UL;
 static constexpr int8_t ML_UNKNOWN_LABEL                = -1;
